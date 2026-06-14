@@ -1,0 +1,6 @@
+streamlit>=1.40
+plotly>=6.0
+requests>=2.30
+pandas>=2.0
+streamlit-authenticator>=0.4
+# kaleido   # (tùy chọn) chỉ cần nếu muốn xuất biểu đồ Plotly ra PNG để gửi Zalo

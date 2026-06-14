@@ -1,0 +1,21 @@
+# Bí mật & dữ liệu — KHÔNG đưa lên GitHub
+.streamlit/secrets.toml
+snapshot.json
+sapo_snapshot.json
+
+# Log
+streamlit.out.log
+streamlit.err.log
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# File cục bộ / chứa dữ liệu shop — không đưa lên repo công khai
+*.png
+*.xlsx
+*.csv
+SKILL.md
+start_dashboard.bat

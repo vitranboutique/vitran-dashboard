@@ -1,0 +1,270 @@
+"""
+sapo_logic.py — Logic nghiệp vụ "Báo cáo sáng" (dịch từ script JS gốc).
+
+Mọi hàm nhận `fetch_json` (lấy từ sapo_client.make_fetch_json) làm tham số
+=> dễ test, tách rời tầng mạng. Cuối file có dữ liệu DEMO cho chế độ xem thử.
+
+QUY TẮC NGHIỆP VỤ (bắt buộc giữ đúng):
+  1. Múi giờ Sapo = UTC. Giờ VN = UTC+7. "Hôm nay" = từ 00:00 VN = 17:00 UTC hôm trước.
+  2. Chờ xác nhận  = status=open  & issue_status='pending'.
+  3. Đơn hủy       = status=cancelled & có fulfillments & cancelled_on trong 7 ngày.
+  4. LOẠI TRỪ kháng nghị thành công: order.id thuộc tập order_id của order_returns
+     có status='canceled' -> bỏ khỏi danh sách đơn hủy / đơn trả.
+  5. Đóng gói: packed_status='packed' = đã đóng gói (kho phải lấy lại) · khác = chưa.
+"""
+from __future__ import annotations
+
+import io
+import json
+import os
+from datetime import datetime, timedelta, timezone
+
+SNAPSHOT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "snapshot.json")
+
+
+# ───────────────────────── Helpers thời gian ─────────────────────────
+
+def _now_utc() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _vn_day_bounds():
+    """Trả về (today_start, yest_start) dạng ISO không zone, theo mốc 00:00 VN."""
+    today_utc = _now_utc().replace(hour=17, minute=0, second=0, microsecond=0)
+    today_start = (today_utc - timedelta(days=1)).isoformat().replace("+00:00", "")
+    yest_start = (today_utc - timedelta(days=2)).isoformat().replace("+00:00", "")
+    return today_start, yest_start
+
+
+# ───────────────────────── 1. Chờ xác nhận ─────────────────────────
+
+def get_pending(fetch_json) -> dict:
+    orders = fetch_json("/admin/orders.json", limit=250, page=1, status="open")["orders"]
+    pending = [o for o in orders if o.get("issue_status") == "pending"]
+
+    today_start, yest_start = _vn_day_bounds()
+
+    sources: dict[str, int] = {}
+    carriers: dict[str, int] = {}
+    sku_map: dict[str, dict] = {}
+    total_items = fast = express = 0
+
+    for o in pending:
+        src = o.get("source_name") or "Khác"
+        sources[src] = sources.get(src, 0) + 1
+
+        sl = (o.get("shipping_lines") or [{}])[0]
+        carrier = sl.get("carrier_name") or sl.get("title") or "Chưa rõ"
+        if sl.get("code") == "sapo_fulfillment_by_seller" and not sl.get("carrier_name"):
+            carrier = "NB tự VC"
+        carriers[carrier] = carriers.get(carrier, 0) + 1
+
+        if o.get("shipment_category") == "express":
+            express += 1
+        else:
+            fast += 1
+
+        for li in (o.get("line_items") or []):
+            sku = li.get("sku") or "N/A"
+            m = sku_map.setdefault(sku, {"sku": sku, "name": li.get("title") or sku, "qty": 0, "orders": 0})
+            m["qty"] += li.get("quantity", 0)
+            m["orders"] += 1
+            total_items += li.get("quantity", 0)
+
+    return {
+        "total": len(pending),
+        "today": sum(1 for o in pending if o.get("created_on", "") >= today_start),
+        "yesterday": sum(1 for o in pending if yest_start <= o.get("created_on", "") < today_start),
+        "total_items": total_items,
+        "sources": sources,
+        "carriers": carriers,
+        "fast": fast,
+        "express": express,
+        "skus": sorted(sku_map.values(), key=lambda x: -x["qty"]),
+        "sku_count": len(sku_map),
+    }
+
+
+# ───────────────────── 2. Đã đẩy VC → hủy (7 ngày) ─────────────────────
+
+def get_appealed_order_ids(fetch_json, days: int = 30) -> set:
+    """order_id có phiếu trả status='canceled' (kháng nghị thành công)."""
+    cutoff = (_now_utc() - timedelta(days=days)).isoformat()
+    ids: set = set()
+    for p in range(1, 21):
+        rows = fetch_json("/admin/order_returns.json", limit=250, page=p).get("order_returns", [])
+        if not rows:
+            break
+        ids.update(x["order_id"] for x in rows if x.get("status") == "canceled")
+        if rows[-1].get("created_on", "") < cutoff:  # returns sắp xếp mới->cũ
+            break
+    return ids
+
+
+def get_cancelled(fetch_json, days: int = 7, scan_days: int = 30) -> dict:
+    week_ago = (_now_utc() - timedelta(days=days)).isoformat()
+    # Đơn hủy sắp xếp theo created_on mới->cũ. Đơn hủy trong 7 ngày gần như chắc
+    # chắn được tạo trong ~30 ngày gần đây -> dừng quét khi đã lùi quá mốc này.
+    scan_cutoff = (_now_utc() - timedelta(days=scan_days)).isoformat()
+    appealed = get_appealed_order_ids(fetch_json)
+
+    all_orders = []
+    for p in range(1, 26):
+        rows = fetch_json("/admin/orders.json", limit=250, page=p, status="cancelled").get("orders", [])
+        if not rows:
+            break
+        all_orders += [
+            o for o in rows
+            if o.get("fulfillments")
+            and o.get("cancelled_on", "") >= week_ago
+            and o.get("id") not in appealed
+        ]
+        if rows[-1].get("created_on", "") < scan_cutoff:  # đã lùi quá 30 ngày -> dừng
+            break
+
+    packed = [o for o in all_orders if o["fulfillments"][0].get("packed_status") == "packed"]
+    not_packed = [o for o in all_orders if o["fulfillments"][0].get("packed_status") != "packed"]
+    return {
+        "total": len(all_orders),
+        "excluded_appeal": len(appealed),
+        "packed": packed,
+        "not_packed": not_packed,
+    }
+
+
+# ───────────────────────── 3. Đơn trả hàng ─────────────────────────
+
+def get_returns_summary(fetch_json, days: int = 7) -> dict:
+    """Gom phiếu trả trong N ngày, phân theo status (đã tách 'canceled')."""
+    week_ago = (_now_utc() - timedelta(days=days)).isoformat()
+    rows = []
+    for p in range(1, 11):
+        chunk = fetch_json("/admin/order_returns.json", limit=250, page=p).get("order_returns", [])
+        if not chunk:
+            break
+        rows += chunk
+        if chunk[-1].get("created_on", "") < week_ago:
+            break
+
+    recent = [x for x in rows if x.get("created_on", "") >= week_ago]
+    by = lambda s: sum(1 for x in recent if x.get("status") == s)
+    return {
+        "recent7d_total": len(recent),
+        "open": by("open"),
+        "closed": by("closed"),
+        "canceled": by("canceled"),
+        "active": sum(1 for x in recent if x.get("status") != "canceled"),
+    }
+
+
+# ───────────────────────── Tải gộp (LIVE) ─────────────────────────
+
+def load_live(fetch_json) -> dict:
+    return {
+        "pending": get_pending(fetch_json),
+        "cancelled": get_cancelled(fetch_json),
+        "returns": get_returns_summary(fetch_json),
+    }
+
+
+# ───────────────────── Snapshot (dữ liệu thật đã chụp) ─────────────────────
+
+def snapshot_exists() -> bool:
+    return os.path.exists(SNAPSHOT_PATH)
+
+
+def load_snapshot() -> dict:
+    """Đọc snapshot.json (dữ liệu thật chụp từ phiên Sapo)."""
+    with io.open(SNAPSHOT_PATH, encoding="utf-8") as f:
+        d = json.load(f)
+    return {
+        "pending": d["pending"],
+        "cancelled": d["cancelled"],
+        "returns": d["returns"],
+        "generated_at_vn": d.get("generated_at_vn"),
+    }
+
+
+# ═══════════════════════════ DỮ LIỆU DEMO ═══════════════════════════
+# Số liệu mẫu theo Phụ lục tài liệu (lần chạy 13/06/2026) để xem giao diện
+# mà không cần đăng nhập Sapo.
+
+def _demo_cancel_order(name, carrier, packed, day, items):
+    return {
+        "id": name,
+        "name": name,
+        "cancelled_on": f"2026-06-{day:02d}T03:00:00",
+        "shipping_lines": [{"carrier_name": carrier}],
+        "fulfillments": [{
+            "tracking_number": f"VN{name[-6:]}",
+            "tracking_company": carrier,
+            "packed_status": "packed" if packed else "packing",
+        }],
+        "line_items": [{"sku": sku, "quantity": q} for sku, q in items],
+    }
+
+
+def demo_payload() -> dict:
+    pending = {
+        "total": 95, "today": 28, "yesterday": 67,
+        "total_items": 99, "sku_count": 29,
+        "sources": {"tiktokshop": 68, "shopee": 27},
+        "carriers": {
+            "J&T Express": 55, "SPX Express": 22, "NB tự VC": 13,
+            "Hỏa Tốc": 2, "Giao Hàng Nhanh": 2, "Nhanh": 1,
+        },
+        "fast": 93, "express": 2,
+        "skus": [
+            {"sku": "VTB-DAM-001", "name": "Đầm suông tay lỡ", "qty": 11, "orders": 9},
+            {"sku": "VTB-SET-014", "name": "Set áo + chân váy", "qty": 9, "orders": 7},
+            {"sku": "VTB-AO-203", "name": "Áo sơ mi linen", "qty": 8, "orders": 8},
+            {"sku": "VTB-QUAN-077", "name": "Quần ống rộng", "qty": 7, "orders": 6},
+            {"sku": "VTB-DAM-052", "name": "Đầm hai dây lụa", "qty": 6, "orders": 5},
+            {"sku": "VTB-AO-118", "name": "Áo croptop gân", "qty": 6, "orders": 4},
+            {"sku": "VTB-CHANVAY-09", "name": "Chân váy chữ A", "qty": 5, "orders": 5},
+            {"sku": "VTB-SET-031", "name": "Set thể thao nỉ", "qty": 5, "orders": 3},
+            {"sku": "VTB-AO-220", "name": "Áo blazer dáng dài", "qty": 4, "orders": 4},
+            {"sku": "VTB-DAM-088", "name": "Đầm body ôm", "qty": 4, "orders": 3},
+            {"sku": "VTB-QUAN-101", "name": "Quần jean baggy", "qty": 3, "orders": 3},
+            {"sku": "VTB-PK-005", "name": "Túi vải canvas", "qty": 3, "orders": 2},
+        ],
+    }
+
+    cancelled = {
+        "total": 16, "excluded_appeal": 6,
+        "packed": [
+            _demo_cancel_order("VTB2406A1", "J&T Express", True, 11, [("VTB-DAM-001", 1)]),
+            _demo_cancel_order("VTB2406A2", "SPX Express", True, 10, [("VTB-AO-203", 2)]),
+            _demo_cancel_order("VTB2406A3", "J&T Express", True, 10, [("VTB-SET-014", 1)]),
+            _demo_cancel_order("VTB2406A4", "Giao Hàng Nhanh", True, 9, [("VTB-QUAN-077", 1), ("VTB-AO-118", 1)]),
+            _demo_cancel_order("VTB2406A5", "SPX Express", True, 9, [("VTB-DAM-052", 1)]),
+            _demo_cancel_order("VTB2406A6", "J&T Express", True, 8, [("VTB-CHANVAY-09", 1)]),
+            _demo_cancel_order("VTB2406A7", "Nhanh", True, 7, [("VTB-AO-220", 1)]),
+        ],
+        "not_packed": [
+            _demo_cancel_order("VTB2406B1", "J&T Express", False, 11, [("VTB-DAM-088", 1)]),
+            _demo_cancel_order("VTB2406B2", "SPX Express", False, 11, [("VTB-QUAN-101", 1)]),
+            _demo_cancel_order("VTB2406B3", "J&T Express", False, 10, [("VTB-PK-005", 2)]),
+            _demo_cancel_order("VTB2406B4", "SPX Express", False, 10, [("VTB-AO-203", 1)]),
+            _demo_cancel_order("VTB2406B5", "Giao Hàng Nhanh", False, 9, [("VTB-SET-031", 1)]),
+            _demo_cancel_order("VTB2406B6", "J&T Express", False, 9, [("VTB-DAM-001", 1)]),
+            _demo_cancel_order("VTB2406B7", "SPX Express", False, 8, [("VTB-AO-118", 1)]),
+            _demo_cancel_order("VTB2406B8", "J&T Express", False, 8, [("VTB-QUAN-077", 1)]),
+            _demo_cancel_order("VTB2406B9", "Nhanh", False, 7, [("VTB-CHANVAY-09", 1)]),
+        ],
+    }
+
+    returns = {"recent7d_total": 103, "open": 80, "closed": 17, "canceled": 6, "active": 97}
+
+    return {"pending": pending, "cancelled": cancelled, "returns": returns}
+
+
+if __name__ == "__main__":
+    # Smoke test: in nhanh payload demo
+    import json
+    d = demo_payload()
+    print("pending.total =", d["pending"]["total"])
+    print("cancelled.total =", d["cancelled"]["total"],
+          "| packed =", len(d["cancelled"]["packed"]),
+          "| not_packed =", len(d["cancelled"]["not_packed"]))
+    print("returns =", json.dumps(d["returns"], ensure_ascii=False))
