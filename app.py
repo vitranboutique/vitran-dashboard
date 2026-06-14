@@ -72,6 +72,23 @@ st.markdown(
         }
         div[data-testid="stMetricValue"] { font-size: 1.5rem !important; }
       }
+
+      /* ====== IN A4 / PDF (chỉ áp dụng khi in) ====== */
+      .print-only { display: none; }
+      @media print {
+        @page { size: A4 portrait; margin: 12mm; }
+        section[data-testid="stSidebar"], [data-testid="stToolbar"], [data-testid="stHeader"],
+        [data-testid="stStatusWidget"], iframe, [data-testid="stAlert"] { display: none !important; }
+        .block-container { padding: 0 !important; max-width: 100% !important; }
+        /* In bảng HTML đầy đủ thay cho dataframe dạng canvas */
+        .print-only { display: block !important; margin: 4px 0 10px; }
+        [data-testid="stDataFrame"] { display: none !important; }
+        .print-only table { width: 100%; border-collapse: collapse; font-size: 11px; }
+        .print-only th, .print-only td { border: 1px solid #ccc; padding: 3px 6px; text-align: left; }
+        .print-only th { background: #f3f3f3; }
+        div[data-testid="stHorizontalBlock"], [data-testid="stPlotlyChart"] { break-inside: avoid; }
+        .sec { break-after: avoid; }
+      }
     </style>
     """,
     unsafe_allow_html=True,
@@ -214,6 +231,17 @@ with st.sidebar:
         "⏱️ Tự làm mới mỗi 5 phút", value=True,
         help="Tự tải lại số liệu mới nhất sau mỗi 5 phút (giữ tab luôn mới).",
     )
+    st.caption("🖨️ In hoặc lưu PDF khổ A4:")
+    components.html(
+        """
+        <button onclick="(function(){try{window.parent.print()}catch(e){try{window.top.print()}catch(e2){window.print()}}})()"
+          style="width:100%;padding:9px 12px;border:0;background:#BA7517;color:#fff;border-radius:8px;
+                 font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;">
+          🖨️ In A4 / Lưu PDF
+        </button>
+        """,
+        height=48,
+    )
 
 # ───────────────────────── Lấy dữ liệu ─────────────────────────
 snap_time = None
@@ -307,6 +335,8 @@ st.dataframe(
         ),
     },
 )
+st.markdown('<div class="print-only">' + sku_df.to_html(index=False, border=0) + '</div>',
+            unsafe_allow_html=True)
 
 # ═══════════════════════ PHẦN 2 — ĐÃ ĐẨY VC → HỦY (7 NGÀY) ═══════════════════════
 st.markdown(
@@ -326,6 +356,8 @@ if packed_df.empty:
     st.success("Không có đơn đã đóng gói nào bị hủy. 👍")
 else:
     st.dataframe(packed_df, width="stretch", hide_index=True)
+    st.markdown('<div class="print-only">' + packed_df.to_html(index=False, border=0) + '</div>',
+                unsafe_allow_html=True)
 
 st.markdown("**Chưa đóng gói**")
 np_df = cancel_table(c["not_packed"])
@@ -333,6 +365,8 @@ if np_df.empty:
     st.info("Không có đơn chưa đóng gói.")
 else:
     st.dataframe(np_df, width="stretch", hide_index=True)
+    st.markdown('<div class="print-only">' + np_df.to_html(index=False, border=0) + '</div>',
+                unsafe_allow_html=True)
 
 # ═══════════════════════ PHẦN 3 — ĐƠN TRẢ HÀNG (7 NGÀY) ═══════════════════════
 st.markdown(
