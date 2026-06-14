@@ -48,6 +48,30 @@ st.markdown(
       .sec-red    { border-color: #E24B4A; color: #E24B4A; }
       .sec-blue   { border-color: #378ADD; color: #378ADD; }
       .sub { color: #6b6b6b; font-size: .95rem; font-weight: 400; }
+
+      /* ====== TỰ ĐỘNG: GIAO DIỆN ĐIỆN THOẠI (màn hình ≤ 640px) ====== */
+      @media (max-width: 640px) {
+        .block-container { padding: 1rem 0.6rem 2.5rem 0.6rem !important; }
+        h1 { font-size: 1.4rem !important; line-height: 1.25 !important; }
+        .sec { font-size: 1.05rem !important; padding-left: 10px !important; }
+        /* Mặc định: mọi cột xếp DỌC -> biểu đồ tràn full màn hình */
+        div[data-testid="stHorizontalBlock"] {
+          flex-direction: column !important; gap: 0.4rem !important;
+        }
+        div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"],
+        div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {
+          width: 100% !important; flex: 1 1 100% !important; min-width: 0 !important;
+        }
+        /* Riêng hàng số liệu: xếp 2 ô/hàng cho gọn (máy hỗ trợ :has) */
+        div[data-testid="stHorizontalBlock"]:has(div[data-testid="stMetric"]) {
+          flex-direction: row !important; flex-wrap: wrap !important;
+        }
+        div[data-testid="stHorizontalBlock"]:has(div[data-testid="stMetric"]) > div[data-testid="stColumn"],
+        div[data-testid="stHorizontalBlock"]:has(div[data-testid="stMetric"]) > div[data-testid="column"] {
+          flex: 1 1 44% !important; width: auto !important; min-width: 42% !important;
+        }
+        div[data-testid="stMetricValue"] { font-size: 1.5rem !important; }
+      }
     </style>
     """,
     unsafe_allow_html=True,
