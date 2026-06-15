@@ -16,6 +16,7 @@ import streamlit_authenticator as stauth
 
 import sapo_logic as L
 from sapo_client import SapoAuthError, build_session, credential_present, make_fetch_json
+from picking_render import picking_html
 
 # ───────────────────────── Cấu hình trang ─────────────────────────
 st.set_page_config(
@@ -161,13 +162,47 @@ PAGE_PICK = "🧾 Phiếu nhặt hàng"
 _page = st.sidebar.radio("Trang", [PAGE_REPORT, PAGE_PICK], index=0)
 st.sidebar.divider()
 
+
+@st.cache_data(ttl=120, show_spinner="Đang kéo đơn cần nhặt từ Sapo…")
+def load_picking():
+    return L.get_picking(make_fetch_json(build_session()))
+
+
 if _page == PAGE_PICK:
-    st.title("🧾 Phiếu nhặt hàng (in K80)")
-    st.caption("Tải file .xlsx xuất từ Sapo → tự tổng hợp → In K80 hoặc tải PNG. "
-               "Công cụ chạy ngay trong trình duyệt, không gửi dữ liệu đi đâu.")
-    _html_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "picking_slip.html")
-    with open(_html_path, encoding="utf-8") as _f:
-        components.html(_f.read(), height=1500, scrolling=True)
+    st.title("🧾 Phiếu nhặt hàng")
+    st.caption("Tự kéo từ Sapo: đơn **đã in phiếu giao hàng** + **chờ đóng gói**. "
+               "Hỏa tốc ưu tiên nhặt trước. Đếm cũ/mới theo ngày xác nhận, cảnh báo xác nhận trễ.")
+    if not credential_present():
+        st.warning("⚠️ Trang này cần kết nối Sapo (API LIVE) — hiện chưa có credential.")
+        st.stop()
+    if st.button("🔄 Tải lại đơn cần nhặt"):
+        st.cache_data.clear()
+        st.rerun()
+    try:
+        pdata = load_picking()
+    except Exception as e:
+        st.error(f"❌ Lỗi kéo đơn từ Sapo: `{e}`")
+        st.stop()
+
+    exp, nor = pdata["express"], pdata["normal"]
+    k = st.columns(4)
+    k[0].metric("🔴 Hỏa tốc (nhặt trước)", exp["total_orders"])
+    k[1].metric("Thường", nor["total_orders"])
+    k[2].metric("🟢 Đơn mới (nay)", exp["new"] + nor["new"])
+    k[3].metric("Đơn cũ (tồn)", exp["old"] + nor["old"])
+
+    late_list = exp["late_list"] + nor["late_list"]
+    if late_list:
+        st.error(f"⚠ **{len(late_list)} đơn xác nhận TRỄ** (sau 18h ngày đặt): "
+                 + ", ".join(late_list[:25]) + ("…" if len(late_list) > 25 else ""))
+
+    now_str = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%H:%M %d/%m/%Y")
+    components.html(picking_html(pdata, now_str), height=820, scrolling=True)
+
+    with st.expander("📄 Hoặc: tạo phiếu từ file Excel (upload thủ công)"):
+        _html_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "picking_slip.html")
+        with open(_html_path, encoding="utf-8") as _f:
+            components.html(_f.read(), height=1300, scrolling=True)
     st.stop()
 
 

@@ -132,6 +132,90 @@ def get_cancelled(fetch_json, days: int = 7, scan_days: int = 30) -> dict:
     }
 
 
+# ───────────────────── Phiếu nhặt hàng (tự kéo từ Sapo) ─────────────────────
+
+def _parse_vn(iso):
+    """Parse ISO UTC (có/không Z) -> datetime giờ VN (+7)."""
+    if not iso:
+        return None
+    s = str(iso).replace("Z", "").replace("+00:00", "").split(".")[0]
+    try:
+        return datetime.fromisoformat(s) + timedelta(hours=7)
+    except Exception:
+        return None
+
+
+def _picking_deadline_vn(created_vn):
+    """Hạn xác nhận: 18h ngày đặt; nếu đặt từ 18h trở đi -> 18h hôm sau."""
+    cutoff = created_vn.replace(hour=18, minute=0, second=0, microsecond=0)
+    return cutoff if created_vn < cutoff else cutoff + timedelta(days=1)
+
+
+def _summarize_picking(orders):
+    today = (_now_utc() + timedelta(hours=7)).date()
+    channels, stores, carriers, sku = {}, {}, {}, {}
+    total_qty = old = new = late = 0
+    late_list = []
+    for o in orders:
+        cd = o.get("channel_definition") or {}
+        ch = cd.get("main_name") or o.get("source_name") or "Khác"
+        store = cd.get("branch_name") or ch or "Khác"
+        sl = (o.get("shipping_lines") or [{}])[0]
+        carrier = sl.get("carrier_name") or sl.get("title") or "Chưa rõ"
+        channels[ch] = channels.get(ch, 0) + 1
+        stores[store] = stores.get(store, 0) + 1
+        carriers[carrier] = carriers.get(carrier, 0) + 1
+        for li in (o.get("line_items") or []):
+            s = li.get("sku") or "N/A"
+            q = li.get("quantity", 0) or 0
+            sku[s] = sku.get(s, 0) + q
+            total_qty += q
+        conf_vn = _parse_vn(o.get("confirmed_on"))
+        cre_vn = _parse_vn(o.get("created_on"))
+        if conf_vn:
+            if conf_vn.date() == today:
+                new += 1
+            else:
+                old += 1
+            if cre_vn and conf_vn > _picking_deadline_vn(cre_vn):
+                late += 1
+                late_list.append(o.get("name"))
+    srt = lambda d: dict(sorted(d.items(), key=lambda x: (-x[1], str(x[0]))))
+    return {
+        "total_orders": len(orders),
+        "total_qty": total_qty,
+        "sku_count": len(sku),
+        "old": old, "new": new, "late": late, "late_list": late_list,
+        "channels": srt(channels), "stores": srt(stores), "carriers": srt(carriers),
+        "skus": sorted(sku.items(), key=lambda x: (-x[1], str(x[0]))),
+    }
+
+
+def get_picking(fetch_json, max_pages: int = 15) -> dict:
+    """Đơn cần nhặt = chờ đóng gói (packing) + đã in phiếu giao hàng (shipping_label_slip_url).
+    Tách hỏa tốc (express) / thường (còn lại)."""
+    orders = []
+    for p in range(1, max_pages + 1):
+        rows = fetch_json("/admin/orders.json", limit=250, page=p, status="open").get("orders", [])
+        if not rows:
+            break
+        orders += rows
+
+    def f0(o):
+        return (o.get("fulfillments") or [{}])[0]
+
+    pick = [o for o in orders
+            if f0(o).get("packed_status") == "packing"
+            and f0(o).get("shipping_label_slip_url")]
+    express = [o for o in pick if o.get("shipment_category") == "express"]
+    normal = [o for o in pick if o.get("shipment_category") != "express"]
+    return {
+        "express": _summarize_picking(express),
+        "normal": _summarize_picking(normal),
+        "total": len(pick),
+    }
+
+
 # ───────────────────────── 3. Đơn trả hàng ─────────────────────────
 
 def get_returns_summary(fetch_json, days: int = 7) -> dict:
