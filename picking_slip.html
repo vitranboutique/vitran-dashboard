@@ -1,0 +1,497 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PHIẾU NHẶT HÀNG (K80)</title>
+
+  <!-- Nhúng trên cloud: dùng CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+  <style>
+    :root{
+      --paper-mm: 80mm;          /* khổ K80 */
+      --paper-px: 302px;         /* hiển thị trên màn hình (ước lượng) */
+      --font: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    }
+
+    body{ font-family:var(--font); background:#f6f6f6; margin:16px; color:#111; }
+    .app{ display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start; }
+    .panel{
+      background:#fff; border:1px solid #e6e6e6; border-radius:12px; padding:12px;
+      width:min(560px,100%); box-shadow:0 1px 6px rgba(0,0,0,.06);
+    }
+    .panel h2{ margin:0 0 10px; font-size:16px; }
+    .row{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin:10px 0; }
+    label{ font-size:13px; color:#333; }
+    input[type="file"], input[type="text"], input[type="date"], input[type="time"]{
+      padding:8px 10px; border:1px solid #ddd; border-radius:10px; font-size:14px; outline:none; background:#fff;
+    }
+    input[type="text"]{ width:260px; }
+    .btn{ cursor:pointer; border:none; background:#111; color:#fff; padding:10px 12px; border-radius:12px; font-size:14px; }
+    .btn.secondary{ background:#fff; color:#111; border:1px solid #111; }
+    .warn{ font-size:12px; color:#b00020; margin-top:8px; display:none; }
+    .hint{ font-size:12px; color:#666; line-height:1.4; margin-top:6px; }
+
+    /* Receipt view */
+    .receipt-wrap{
+      width:var(--paper-px);
+      background:#fff; border:1px solid #e6e6e6; border-radius:12px;
+      padding:10px 10px 14px; box-shadow:0 1px 6px rgba(0,0,0,.06);
+    }
+    .receipt{
+      width:100%;
+      background:#fff; color:#000;
+      padding:6px 4px 12px;
+      box-sizing:border-box;
+    }
+
+    .title{ text-align:center; font-weight:900; letter-spacing:.5px; font-size:28px; margin:2px 0 8px; }
+    .kv{ display:grid; grid-template-columns:1fr auto; gap:2px 8px; font-size:16px; font-weight:800; }
+    .kv .v{ text-align:right; }
+    .section{ margin-top:10px; }
+    .section h3{ margin:10px 0 4px; font-size:18px; letter-spacing:.3px; font-weight:900; }
+    .subkv{ display:grid; grid-template-columns:1fr auto; gap:2px 8px; font-size:14px; font-weight:700; }
+    .subkv .v{ text-align:right; }
+    .line{ border-top:2px solid #111; margin:8px 0; }
+    .skuhead{ display:grid; grid-template-columns:1fr auto; font-size:14px; font-weight:900; margin-bottom:4px; }
+    .skutable{ border-top:1px solid #111; margin-top:4px; }
+    .skurow{ display:grid; grid-template-columns:1fr auto; padding:3px 0; border-bottom:1px solid #999; font-size:14px; font-weight:700; }
+    .skurow .qty{ text-align:right; }
+    .footer-line{ border-top:2px solid #111; margin:14px 0 10px; }
+    .sign{ display:grid; grid-template-columns:1fr 1fr; gap:10px; font-size:13px; font-weight:800; text-align:center; padding:0 4px; }
+
+    /* ===== PRINT K80: dài không giới hạn ===== */
+   @media print{
+  /* chỉ in phiếu */
+  body{ background:#fff !important; margin:0 !important; padding:0 !important; }
+  .panel{ display:none !important; }
+
+  /* quan trọng: K80 + chiều dài tự động */
+  @page{
+    size: 80mm auto;
+    margin: 0mm;
+  }
+
+  /* loại bỏ mọi khoảng dư */
+  html, body{ width:80mm !important; height:auto !important; }
+  .receipt-wrap{
+    width:80mm !important;
+    border:0 !important;
+    border-radius:0 !important;
+    box-shadow:none !important;
+    padding:0 !important;
+    margin:0 !important;
+  }
+  .receipt{
+    width:80mm !important;
+    padding:0 !important;
+    margin:0 !important;
+  }
+
+  /* tránh bị ngắt trang giữa chừng */
+  .section, .skurow, .sign{ page-break-inside: avoid; break-inside: avoid; }
+
+  /* tắt header/footer của trình duyệt (vẫn cần bỏ trong dialog print) */
+  *{ -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+
+  </style>
+</head>
+
+<body>
+  <div class="app">
+    <div class="panel">
+      <h2>Tạo PHIẾU NHẶT HÀNG (K80) từ file SAPO</h2>
+
+      <div class="row">
+        <label>Upload .xlsx:</label>
+        <input id="file" type="file" accept=".xlsx,.xls" />
+      </div>
+
+      <div class="row">
+        <label>Tên shop (in trên phiếu):</label>
+        <input id="shopName" type="text" value="VITRAN BOUTIQUE" />
+      </div>
+
+      <div class="row">
+        <label>Ngày nhặt:</label>
+        <input id="pickDate" type="date" />
+        <label>Giờ nhặt:</label>
+        <input id="pickTime" type="time" />
+      </div>
+
+      <div class="row">
+        <button class="btn" id="btnRender">Tổng hợp & tạo phiếu</button>
+        <button class="btn secondary" id="btnPrint">In K80</button>
+        <button class="btn secondary" id="btnPng">Tải ảnh PNG</button>
+      </div>
+
+      <div class="hint">
+        Đếm theo <b>SỐ ĐƠN (Mã đơn hàng unique)</b> cho Kênh/Gian hàng/Đối tác giao hàng/Dịch vụ VC.
+      </div>
+
+      <div class="warn" id="warn"></div>
+    </div>
+
+    <div class="receipt-wrap">
+      <div class="receipt" id="receipt">
+        <div class="title">PHIẾU NHẶT HÀNG</div>
+
+        <div class="kv">
+          <div>Ngày nhặt:</div><div class="v" id="rDate">--/--/----</div>
+          <div>Giờ nhặt:</div><div class="v" id="rTime">--:--</div>
+        </div>
+
+        <div class="section">
+          <div class="kv">
+            <div>TỔNG ĐƠN HÀNG:</div><div class="v" id="rOrders">0</div>
+            <div>TỔNG SẢN PHẨM:</div><div class="v" id="rQty">0</div>
+            <div>TỔNG SL BẰNG SKU:</div><div class="v" id="rSkuQty">0</div>
+          </div>
+        </div>
+
+        <div class="section">
+          <h3>KÊNH BÁN</h3>
+          <div class="subkv" id="rChannel"></div>
+        </div>
+
+        <div class="section">
+          <h3>GIAN HÀNG</h3>
+          <div class="subkv" id="rStore"></div>
+        </div>
+
+        <div class="section">
+          <h3>ĐỐI TÁC GIAO HÀNG</h3>
+          <div class="subkv" id="rCarrier"></div>
+        </div>
+
+        <div class="section">
+          <h3>DỊCH VỤ VC</h3>
+          <div class="subkv" id="rService"></div>
+        </div>
+
+        <div class="line"></div>
+
+        <div class="skuhead"><div>SKU &nbsp;|&nbsp; SL</div><div></div></div>
+        <div class="skutable" id="rSku"></div>
+
+        <div class="footer-line"></div>
+        <div class="sign"><div>NV kho ký</div><div>NV đóng hàng ký</div></div>
+      </div>
+    </div>
+  </div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+  function showWarn(msg){
+    const w = $("warn");
+    w.style.display = msg ? "block" : "none";
+    w.textContent = msg || "";
+  }
+  function normalize(s){ return String(s ?? "").trim().toLowerCase(); }
+  function toInt(v){
+    const n = Number(String(v ?? "").replace(/[^0-9.-]/g,""));
+    return Number.isFinite(n) ? n : 0;
+  }
+  function fmtDateISOToVN(iso){
+    if(!iso) return "--/--/----";
+    const [y,m,d] = iso.split("-");
+    return `${d}/${m}/${y}`;
+  }
+  function renderSubKV(el, entries){
+    el.innerHTML = "";
+    if(!entries.length){
+      el.innerHTML = `<div>-</div><div class="v">0</div>`;
+      return;
+    }
+    for(const [k,v] of entries){
+      const a = document.createElement("div");
+      a.textContent = String(k) + ":";
+      const b = document.createElement("div");
+      b.className = "v";
+      b.textContent = v;
+      el.appendChild(a); el.appendChild(b);
+    }
+  }
+  function renderSku(el, entries){
+    el.innerHTML = "";
+    for(const [sku, qty] of entries){
+      const r = document.createElement("div");
+      r.className = "skurow";
+      const a = document.createElement("div"); a.textContent = sku;
+      const b = document.createElement("div"); b.className = "qty"; b.textContent = qty;
+      r.appendChild(a); r.appendChild(b);
+      el.appendChild(r);
+    }
+  }
+  function sortedEntries(obj){
+    return Object.entries(obj).sort((a,b)=> b[1]-a[1] || String(a[0]).localeCompare(String(b[0])));
+  }
+
+  // ===== Read XLSX with header auto-detect =====
+  async function readExcelSmart(file){
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, {type:"array"});
+    const ws = wb.Sheets[wb.SheetNames[0]];
+
+    const raw = XLSX.utils.sheet_to_json(ws, {header: 1, defval: ""});
+    if(!raw || raw.length === 0) throw new Error("File rỗng hoặc không đọc được sheet.");
+
+    // dò header trong 120 dòng đầu
+    // bắt buộc có: Mã đơn hàng, SKU, Số lượng
+    // và ít nhất 1 trong: Kênh bán hàng / Gian hàng / Dịch vụ vận chuyển / Đối tác giao hàng
+    let headerIdx = -1;
+    for(let i=0; i<Math.min(raw.length, 120); i++){
+      const joined = (raw[i]||[]).map(x=>normalize(x)).join(" | ");
+      const ok = joined.includes("mã đơn hàng")
+             && joined.includes("sku")
+             && joined.includes("số lượng")
+             && (joined.includes("kênh bán hàng") || joined.includes("gian hàng") || joined.includes("dịch vụ vận chuyển") || joined.includes("đối tác giao hàng"));
+      if(ok){ headerIdx = i; break; }
+    }
+    if(headerIdx === -1) throw new Error("Không dò được dòng header SAPO. (Không thấy Mã đơn hàng + SKU + Số lượng)");
+
+    const headers = (raw[headerIdx]||[]).map(h => String(h).trim());
+    const rows = [];
+    for(const arr of raw.slice(headerIdx+1)){
+      if(!arr || arr.every(v => String(v ?? "").trim() === "")) continue;
+      const obj = {};
+      for(let c=0;c<headers.length;c++){
+        const key = headers[c] || `COL_${c}`;
+        obj[key] = arr[c] ?? "";
+      }
+      rows.push(obj);
+    }
+    return {headers, rows};
+  }
+
+  function findCol(headers, keywordExactVN){
+    const n = normalize(keywordExactVN);
+    return headers.find(h => normalize(h) === n) || headers.find(h => normalize(h).includes(n)) || null;
+  }
+
+  // ===== Aggregate: count by UNIQUE ORDER for sections; sum qty for SKU =====
+  function aggregate(rows, headers){
+    const colOrder   = findCol(headers, "Mã đơn hàng");
+    const colSku     = findCol(headers, "SKU");
+    const colQty     = findCol(headers, "Số lượng");
+
+    const colChannel = findCol(headers, "Kênh bán hàng");
+    const colStore   = findCol(headers, "Gian hàng");
+    const colCarrier = findCol(headers, "Đối tác giao hàng");     // ✅ theo yêu cầu
+    const colService = findCol(headers, "Dịch vụ vận chuyển");
+
+    if(!colOrder || !colSku || !colQty) throw new Error("Thiếu cột bắt buộc: Mã đơn hàng / SKU / Số lượng.");
+    if(!colCarrier) throw new Error("Không thấy cột “Đối tác giao hàng” trong file.");
+
+    const ordersAll = new Set();
+
+    // map: key -> Set(orderId)
+    const chOrders = {};
+    const stOrders = {};
+    const caOrders = {};
+    const svOrders = {};
+
+    const skuQty = {};
+    let totalQty = 0;
+
+    for(const r of rows){
+      const oid = String(r[colOrder] ?? "").trim();
+      if(!oid) continue;
+
+      ordersAll.add(oid);
+
+      // SKU sum
+      const sku = String(r[colSku] ?? "").trim();
+      const qty = Math.max(0, toInt(r[colQty]));
+      if(sku && qty > 0){
+        totalQty += qty;
+        skuQty[sku] = (skuQty[sku] || 0) + qty;
+      }
+
+      // Count by unique order
+      const ch = colChannel ? (String(r[colChannel] ?? "").trim() || "Không rõ") : null;
+      const st = colStore   ? (String(r[colStore] ?? "").trim() || "Không rõ")   : null;
+      const ca = String(r[colCarrier] ?? "").trim() || "Không rõ";
+      const sv = colService ? (String(r[colService] ?? "").trim() || "Không rõ") : null;
+
+      if(ch) (chOrders[ch] ||= new Set()).add(oid);
+      if(st) (stOrders[st] ||= new Set()).add(oid);
+      (caOrders[ca] ||= new Set()).add(oid);
+      if(sv) (svOrders[sv] ||= new Set()).add(oid);
+    }
+
+    const channelCount = Object.fromEntries(Object.entries(chOrders).map(([k,s])=>[k,s.size]));
+    const storeCount   = Object.fromEntries(Object.entries(stOrders).map(([k,s])=>[k,s.size]));
+    const carrierCount = Object.fromEntries(Object.entries(caOrders).map(([k,s])=>[k,s.size]));
+    const serviceCount = Object.fromEntries(Object.entries(svOrders).map(([k,s])=>[k,s.size]));
+
+    const skuEntries = Object.entries(skuQty).sort((a,b)=> b[1]-a[1] || String(a[0]).localeCompare(String(b[0])));
+    const skuTotalQty = skuEntries.reduce((s,[,v])=>s+v,0);
+
+    return {
+      totalOrders: ordersAll.size,
+      totalQty,
+      skuTotalQty,
+      channelEntries: sortedEntries(channelCount),
+      storeEntries:   sortedEntries(storeCount),
+      carrierEntries: sortedEntries(carrierCount),
+      serviceEntries: sortedEntries(serviceCount),
+      skuEntries
+    };
+  }
+
+  function renderReceipt(data){
+    $("rDate").textContent = fmtDateISOToVN($("pickDate").value);
+    $("rTime").textContent = $("pickTime").value || "--:--";
+
+    $("rOrders").textContent = data.totalOrders;
+    $("rQty").textContent = data.totalQty;
+    $("rSkuQty").textContent = data.skuTotalQty;
+
+    renderSubKV($("rChannel"), data.channelEntries);
+    renderSubKV($("rStore"), data.storeEntries);
+    renderSubKV($("rCarrier"), data.carrierEntries);
+    renderSubKV($("rService"), data.serviceEntries);
+    renderSku($("rSku"), data.skuEntries);
+  }
+
+  // init date/time
+  (function initDT(){
+    const now = new Date();
+    const pad = (n)=> String(n).padStart(2,"0");
+    $("pickDate").value = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
+    $("pickTime").value = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  })();
+
+  let lastRendered = null;
+
+  $("btnPng").addEventListener("click", async ()=>{
+    showWarn("");
+    try{
+      if(typeof html2canvas === "undefined") throw new Error("Không có html2canvas. Hãy chắc bạn đã tải html2canvas.min.js vào cùng folder.");
+      if(!lastRendered) return showWarn("Chưa có dữ liệu. Bấm “Tổng hợp & tạo phiếu” trước.");
+
+      const canvas = await html2canvas($("receipt"), {scale: 3, backgroundColor:"#fff"});
+      const url = canvas.toDataURL("image/png");
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `phieu-nhat-hang_${$("pickDate").value}_${$("pickTime").value}.png`;
+      a.click();
+    }catch(e){
+      showWarn(e.message || String(e));
+    }
+  });
+
+  // ===== Auto set date/time + auto render when upload =====
+  function setNowToPickDateTime(){
+    const now = new Date();
+    const pad = (n)=> String(n).padStart(2,"0");
+    $("pickDate").value = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
+    $("pickTime").value = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  }
+
+  async function processCurrentFile(){
+    showWarn("");
+    try{
+      if(typeof XLSX === "undefined") throw new Error("Không có XLSX. Hãy chắc bạn đã tải xlsx.full.min.js vào cùng folder.");
+      const f = $("file").files?.[0];
+      if(!f) return;
+
+      // ✅ tự điền ngày giờ khi upload
+      setNowToPickDateTime();
+
+      const {headers, rows} = await readExcelSmart(f);
+      const data = aggregate(rows, headers);
+      renderReceipt(data);
+      lastRendered = data;
+    }catch(e){
+      showWarn(e.message || String(e));
+    }
+  }
+
+  // ✅ chọn file là tự tổng hợp + lên phiếu
+  $("file").addEventListener("change", () => {
+    processCurrentFile();
+  });
+
+  // nút Tổng hợp dùng chung 1 luồng
+  $("btnRender").addEventListener("click", async ()=>{
+    await processCurrentFile();
+  });
+
+  // ===== Print optimized for thermal K80 (print only receipt via iframe) =====
+  function printThermalK80(){
+    const receiptHTML = document.getElementById("receipt").outerHTML;
+
+    const iframe = document.createElement("iframe");
+    iframe.style.position = "fixed";
+    iframe.style.right = "0";
+    iframe.style.bottom = "0";
+    iframe.style.width = "0";
+    iframe.style.height = "0";
+    iframe.style.border = "0";
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow.document;
+    doc.open();
+    doc.write(`
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  html, body{ margin:0; padding:0; width:80mm; height:auto; background:#fff; }
+  @page{ size:80mm auto; margin:0; }
+
+  .receipt{ width:80mm; margin:0; padding:0; color:#000; font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; }
+  .title{ text-align:center; font-weight:900; letter-spacing:.5px; font-size:28px; margin:2px 0 8px; }
+
+  .kv{ display:grid; grid-template-columns:1fr auto; gap:2px 8px; font-size:16px; font-weight:800; }
+  .kv .v{ text-align:right; }
+
+  .section{ margin-top:10px; page-break-inside:avoid; break-inside:avoid; }
+  .section h3{ margin:10px 0 4px; font-size:18px; letter-spacing:.3px; font-weight:900; }
+
+  .subkv{ display:grid; grid-template-columns:1fr auto; gap:2px 8px; font-size:14px; font-weight:700; }
+  .subkv .v{ text-align:right; }
+
+  .line{ border-top:2px solid #111; margin:8px 0; }
+
+  .skuhead{ display:grid; grid-template-columns:1fr auto; font-size:14px; font-weight:900; margin-bottom:4px; }
+  .skutable{ border-top:1px solid #111; margin-top:4px; }
+  .skurow{ display:grid; grid-template-columns:1fr auto; padding:3px 0; border-bottom:1px solid #999; font-size:14px; font-weight:700; page-break-inside:avoid; break-inside:avoid; }
+  .skurow .qty{ text-align:right; }
+
+  .footer-line{ border-top:2px solid #111; margin:14px 0 10px; }
+  .sign{ display:grid; grid-template-columns:1fr 1fr; gap:10px; font-size:13px; font-weight:800; text-align:center; padding:0 4px; page-break-inside:avoid; break-inside:avoid; }
+
+  *{ -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+</style>
+</head>
+<body>
+  ${receiptHTML}
+</body>
+</html>
+    `);
+    doc.close();
+
+    iframe.onload = () => {
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+      setTimeout(() => document.body.removeChild(iframe), 500);
+    };
+  }
+
+  // nút In dùng chế độ thermal tối ưu
+  $("btnPrint").addEventListener("click", ()=>{
+    printThermalK80();
+  });
+
+</script>
+</body>
+</html>

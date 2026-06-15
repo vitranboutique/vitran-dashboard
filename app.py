@@ -4,6 +4,7 @@ app.py — Dashboard "Báo cáo sáng" VITRAN BOUTIQUE HCM (Sapo → Streamlit +
 Chạy:  streamlit run app.py
 DEMO:  tự bật khi chưa cấu hình credential (xem README để chuyển sang LIVE).
 """
+import os
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd
@@ -152,6 +153,22 @@ def require_login():
 
 
 CUR_NAME, CUR_USER, CUR_ROLE = require_login()
+
+
+# ───────────────────────── Chọn trang ─────────────────────────
+PAGE_REPORT = "📊 Báo cáo sáng"
+PAGE_PICK = "🧾 Phiếu nhặt hàng"
+_page = st.sidebar.radio("Trang", [PAGE_REPORT, PAGE_PICK], index=0)
+st.sidebar.divider()
+
+if _page == PAGE_PICK:
+    st.title("🧾 Phiếu nhặt hàng (in K80)")
+    st.caption("Tải file .xlsx xuất từ Sapo → tự tổng hợp → In K80 hoặc tải PNG. "
+               "Công cụ chạy ngay trong trình duyệt, không gửi dữ liệu đi đâu.")
+    _html_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "picking_slip.html")
+    with open(_html_path, encoding="utf-8") as _f:
+        components.html(_f.read(), height=1500, scrolling=True)
+    st.stop()
 
 
 # ───────────────────────── Tiện ích ─────────────────────────
