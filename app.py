@@ -337,6 +337,28 @@ else:
     vn_now = datetime.now(timezone.utc) + timedelta(hours=7)
     right.metric("Cập nhật (giờ VN)", vn_now.strftime("%H:%M"), vn_now.strftime("%d/%m/%Y"))
 
+
+# ── 🚨 TỔNG KẾT TRONG NGÀY: đơn đã đẩy VC → hủy hôm nay (nổi bật, đầu trang) ──
+def _vn_day(iso):
+    s = (iso or "").replace("Z", "").replace("+00:00", "").split(".")[0]
+    try:
+        return (datetime.fromisoformat(s) + timedelta(hours=7)).date()
+    except Exception:
+        return None
+
+
+_today_vn = (datetime.now(timezone.utc) + timedelta(hours=7)).date()
+_cancel_today = [o for o in (c["packed"] + c["not_packed"]) if _vn_day(o.get("cancelled_on")) == _today_vn]
+if _cancel_today:
+    _pk = sum(1 for o in _cancel_today
+              if (o.get("fulfillments") or [{}])[0].get("packed_status") == "packed")
+    _names = ", ".join(o.get("name", "") for o in _cancel_today[:20]) + ("…" if len(_cancel_today) > 20 else "")
+    st.error(f"🚨 **{len(_cancel_today)} đơn ĐÃ ĐẨY VC → HỦY trong HÔM NAY** — "
+             f"{_pk} đơn đã đóng gói (cần LẤY LẠI hàng ngay), {len(_cancel_today) - _pk} chưa đóng gói. "
+             f"Mã đơn: {_names}")
+else:
+    st.success("✅ Hôm nay chưa có đơn đã đẩy VC bị hủy.")
+
 # ═══════════════════════ PHẦN 1 — CHỜ XÁC NHẬN ═══════════════════════
 st.markdown(
     f'<div class="sec sec-orange">Chờ xác nhận'
@@ -397,21 +419,38 @@ st.plotly_chart(
     width="stretch",
 )
 
-st.markdown("**Chi tiết SKU chờ xác nhận**")
-sku_df = pd.DataFrame(p["skus"]).rename(
-    columns={"sku": "SKU", "name": "Sản phẩm", "qty": "SL", "orders": "Đơn"}
-)
-st.dataframe(
-    sku_df, width="stretch", hide_index=True,
-    column_config={
-        "SL": st.column_config.ProgressColumn(
-            "SL", format="%d",
-            min_value=0, max_value=int(sku_df["SL"].max()) if not sku_df.empty else 1,
-        ),
-    },
-)
-st.markdown('<div class="print-only">' + sku_df.to_html(index=False, border=0) + '</div>',
+st.markdown('**Chi tiết SKU chờ xác nhận** <span class="ic" title="Số lượng cần nhặt theo từng mã SKU. SKU cùng «mã đầu» (vd SD-, OL-) được nhóm lại & tô cùng màu để dễ gom hàng.">&#9432;</span>',
             unsafe_allow_html=True)
+
+if p["skus"]:
+    sku_df = pd.DataFrame(p["skus"])
+    sku_df["nhom"] = sku_df["sku"].astype(str).str.split("-").str[0]
+    grp = sku_df.groupby("nhom")["qty"].sum().sort_values(ascending=False)
+
+    cc = st.columns([2, 3])
+    with cc[0]:
+        st.markdown("Tỉ trọng theo **nhóm SKU**")
+        gk = list(grp.index)
+        st.plotly_chart(
+            donut(gk, [int(v) for v in grp.values],
+                  [PALETTE[i % len(PALETTE)] for i in range(len(gk))], str(int(grp.sum()))),
+            width="stretch",
+        )
+    with cc[1]:
+        view = sku_df.sort_values(["nhom", "qty"], ascending=[True, False]).rename(
+            columns={"sku": "SKU", "name": "Sản phẩm", "qty": "SL", "orders": "Đơn", "nhom": "Nhóm"}
+        )[["Nhóm", "SKU", "Sản phẩm", "SL", "Đơn"]]
+        _groups = list(dict.fromkeys(view["Nhóm"]))
+        _light = ["#FDF1E7", "#E9F5EF", "#FBF3DF", "#FDEBEA", "#E8F1FB", "#EFF4E6", "#F3E9F6", "#E6F2F0"]
+        _cmap = {g: _light[i % len(_light)] for i, g in enumerate(_groups)}
+        _styler = view.style.apply(
+            lambda row: [f"background-color:{_cmap.get(row['Nhóm'], '#ffffff')}"] * len(row), axis=1
+        )
+        st.dataframe(_styler, width="stretch", hide_index=True)
+        st.markdown('<div class="print-only">' + view.to_html(index=False, border=0) + '</div>',
+                    unsafe_allow_html=True)
+else:
+    st.info("Không có SKU chờ xác nhận.")
 
 # ═══════════════════════ PHẦN 2 — ĐÃ ĐẨY VC → HỦY (7 NGÀY) ═══════════════════════
 st.markdown(
