@@ -20,8 +20,8 @@ from picking_render import picking_html
 
 # ───────────────────────── Cấu hình trang ─────────────────────────
 st.set_page_config(
-    page_title="Báo cáo sáng — VITRAN BOUTIQUE HCM",
-    page_icon="📦",
+    page_title="VITRAN BOUTIQUE",
+    page_icon="🛍️",
     layout="wide",
 )
 
@@ -57,6 +57,18 @@ st.markdown(
       .ic { cursor: help; color: #9aa3ab; font-size: .82em; margin-left: 5px; font-weight: 400;
             border: 1px solid #c7ccd1; border-radius: 50%; padding: 0 5px; }
       .ic:hover { color: #fff; background: #6b6b6b; border-color: #6b6b6b; }
+
+      /* ====== PHONG CÁCH SAPO: nền xám, thẻ trắng bo góc, số to ====== */
+      .stApp { background: #f4f6f8; }
+      [data-testid="stMetric"] {
+        background: #ffffff; border: 1px solid #e8eaed; border-radius: 12px;
+        padding: 14px 16px 12px; box-shadow: 0 1px 3px rgba(16,24,40,.06);
+      }
+      [data-testid="stMetricLabel"] p { color: #6b7280; font-size: .82rem; font-weight: 600; }
+      [data-testid="stMetricValue"] { font-size: 1.9rem !important; font-weight: 800; color: #111827; }
+      [data-testid="stHorizontalBlock"] { gap: 12px; }
+      h1 { color: #111827; font-weight: 900; letter-spacing: .3px; }
+      [data-testid="stDataFrame"] { border: 1px solid #e8eaed; border-radius: 12px; }
 
       /* ====== TỰ ĐỘNG: GIAO DIỆN ĐIỆN THOẠI (màn hình ≤ 640px) ====== */
       @media (max-width: 640px) {
@@ -348,7 +360,8 @@ p, c, r = data["pending"], data["cancelled"], data["returns"]
 
 # ───────────────────────── Header ─────────────────────────
 left, right = st.columns([3, 1])
-left.title("📦 Báo cáo sáng — VITRAN BOUTIQUE HCM")
+left.title("🛍️ VITRAN BOUTIQUE")
+left.caption("Báo cáo vận hành đơn hàng")
 if snap_time:
     right.metric("Dữ liệu chụp lúc", snap_time[11:16], snap_time[:10])
 else:
