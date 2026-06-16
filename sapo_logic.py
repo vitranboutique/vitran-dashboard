@@ -46,12 +46,17 @@ def get_pending(fetch_json) -> dict:
 
     sources: dict[str, int] = {}
     carriers: dict[str, int] = {}
+    stores: dict[str, int] = {}
     sku_map: dict[str, dict] = {}
     total_items = fast = express = 0
 
     for o in pending:
         src = o.get("source_name") or "Khác"
         sources[src] = sources.get(src, 0) + 1
+
+        cd = o.get("channel_definition") or {}
+        store = cd.get("branch_name") or src or "Khác"
+        stores[store] = stores.get(store, 0) + 1
 
         sl = (o.get("shipping_lines") or [{}])[0]
         carrier = sl.get("carrier_name") or sl.get("title") or "Chưa rõ"
@@ -77,6 +82,7 @@ def get_pending(fetch_json) -> dict:
         "yesterday": sum(1 for o in pending if yest_start <= o.get("created_on", "") < today_start),
         "total_items": total_items,
         "sources": sources,
+        "stores": stores,
         "carriers": carriers,
         "fast": fast,
         "express": express,
@@ -293,6 +299,8 @@ def demo_payload() -> dict:
         "total": 95, "today": 28, "yesterday": 67,
         "total_items": 99, "sku_count": 29,
         "sources": {"tiktokshop": 68, "shopee": 27},
+        "stores": {"VITRAN BOUTIQUE - Tiktokshop": 55, "VITRAN BOUTIQUE - Shopee": 22,
+                   "SMOSS - Shopee": 13, "MUN - AI - Shopee": 5},
         "carriers": {
             "J&T Express": 55, "SPX Express": 22, "NB tự VC": 13,
             "Hỏa Tốc": 2, "Giao Hàng Nhanh": 2, "Nhanh": 1,

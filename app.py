@@ -26,13 +26,17 @@ st.set_page_config(
 )
 
 # ───────────────────────── Bảng màu (đồng bộ báo cáo PNG) ─────────────────────────
-COLOR_SOURCE = {"tiktokshop": "#534AB7", "shopee": "#D85A30"}
+COLOR_SOURCE = {"tiktokshop": "#161823", "shopee": "#EE4D2D"}   # TikTok đen, Shopee cam
 SOURCE_LABEL = {"tiktokshop": "TikTok Shop", "shopee": "Shopee"}
 COLOR_CARRIER = {
-    "J&T Express": "#378ADD", "NB tự VC": "#888780", "Nhanh": "#BA7517",
-    "SPX Express": "#1D9E75", "Hỏa Tốc": "#E24B4A", "SPX Instant": "#639922",
-    "Giao Hàng Nhanh": "#639922", "GHN": "#639922",
+    "J&T Express": "#E2231A", "SPX Express": "#F26922", "SPX Instant": "#FB8C00",
+    "Giao Hàng Nhanh": "#F9A825", "GHN": "#F9A825", "Hỏa Tốc": "#D32F2F",
+    "Nhanh": "#1E88E5", "NB tự VC": "#888780", "Viettel Post": "#E4002B",
+    "Ninja Van": "#C62828", "Best Express": "#1565C0", "Chưa rõ": "#B0BEC5",
 }
+# Palette cho gian hàng (không có màu thương hiệu cố định)
+PALETTE = ["#534AB7", "#1D9E75", "#BA7517", "#E24B4A", "#378ADD",
+           "#639922", "#D85A30", "#7B1FA2", "#00897B", "#5D4037", "#C2185B"]
 ACCENT_ORANGE = "#BA7517"   # phần Chờ xác nhận
 ACCENT_RED = "#E24B4A"      # phần Đơn hủy
 ACCENT_BLUE = "#378ADD"     # phần Đơn trả
@@ -50,6 +54,9 @@ st.markdown(
       .sec-red    { border-color: #E24B4A; color: #E24B4A; }
       .sec-blue   { border-color: #378ADD; color: #378ADD; }
       .sub { color: #6b6b6b; font-size: .95rem; font-weight: 400; }
+      .ic { cursor: help; color: #9aa3ab; font-size: .82em; margin-left: 5px; font-weight: 400;
+            border: 1px solid #c7ccd1; border-radius: 50%; padding: 0 5px; }
+      .ic:hover { color: #fff; background: #6b6b6b; border-color: #6b6b6b; }
 
       /* ====== TỰ ĐỘNG: GIAO DIỆN ĐIỆN THOẠI (màn hình ≤ 640px) ====== */
       @media (max-width: 640px) {
@@ -332,25 +339,27 @@ else:
 
 # ═══════════════════════ PHẦN 1 — CHỜ XÁC NHẬN ═══════════════════════
 st.markdown(
-    f'<div class="sec sec-orange">Chờ xác nhận '
+    f'<div class="sec sec-orange">Chờ xác nhận'
+    f'<span class="ic" title="Đơn mới từ sàn (TikTok/Shopee) đã đồng bộ về Sapo, đang chờ shop bấm «Xác nhận» để bắt đầu xử lý/đóng gói. Cần xác nhận trong ngày (trước 18h giờ VN) để không bị tính trễ với sàn.">&#9432;</span> '
     f'<span class="sub">— {p["total"]} đơn · {p["total_items"]} SP · {p["sku_count"]} SKU</span></div>',
     unsafe_allow_html=True,
 )
 
 k = st.columns(5)
-k[0].metric("Tổng đơn", p["total"])
-k[1].metric("Sản phẩm", p["total_items"])
-k[2].metric("SKU", p["sku_count"])
-k[3].metric("🟠 Đặt hôm nay", p["today"])
-k[4].metric("Đặt hôm qua", p["yesterday"])
+k[0].metric("Tổng đơn", p["total"], help="Tổng số đơn đang chờ xác nhận (mỗi mã đơn tính 1 đơn).")
+k[1].metric("Sản phẩm", p["total_items"], help="Tổng số lượng sản phẩm trong các đơn chờ (cộng số lượng từng dòng hàng).")
+k[2].metric("SKU", p["sku_count"], help="Số mã SKU khác nhau trong các đơn chờ (1 SKU có thể nằm trong nhiều đơn).")
+k[3].metric("🟠 Đặt hôm nay", p["today"], help="Đơn được KHÁCH đặt trong hôm nay (từ 00:00 giờ VN).")
+k[4].metric("Đặt hôm qua", p["yesterday"], help="Đơn được khách đặt trong ngày hôm qua (giờ VN).")
 
 k2 = st.columns(5)
-k2[0].metric("Giao nhanh", p["fast"])
-k2[1].metric("Hỏa tốc", p["express"])
+k2[0].metric("Giao nhanh", p["fast"], help="Đơn dùng dịch vụ giao tiêu chuẩn/nhanh (không phải hỏa tốc).")
+k2[1].metric("Hỏa tốc", p["express"], help="Đơn dịch vụ HỎA TỐC — giao siêu nhanh, cần ưu tiên nhặt & đóng trước.")
 
 g1, g2 = st.columns(2)
 with g1:
-    st.markdown("**Sàn TMĐT**")
+    st.markdown('**Sàn TMĐT** <span class="ic" title="Đơn đến từ sàn nào: TikTok Shop (đen), Shopee (cam).">&#9432;</span>',
+                unsafe_allow_html=True)
     src_keys = list(p["sources"].keys())
     st.plotly_chart(
         donut(
@@ -362,17 +371,31 @@ with g1:
         width="stretch",
     )
 with g2:
-    st.markdown("**Đơn vị vận chuyển**")
-    car_keys = list(p["carriers"].keys())
+    st.markdown('**Gian hàng** <span class="ic" title="Mỗi sàn có thể có nhiều gian hàng (VITRAN BOUTIQUE, SMOSS, MUN-AI...). Đây là số đơn chờ xác nhận theo từng gian hàng.">&#9432;</span>',
+                unsafe_allow_html=True)
+    store_keys = list(p.get("stores", {}).keys())
     st.plotly_chart(
         donut(
-            car_keys,
-            list(p["carriers"].values()),
-            [COLOR_CARRIER.get(k_, "#CCCCCC") for k_ in car_keys],
+            store_keys,
+            list(p.get("stores", {}).values()),
+            [PALETTE[i % len(PALETTE)] for i in range(len(store_keys))],
             str(p["total"]),
         ),
         width="stretch",
     )
+
+st.markdown('**Đơn vị vận chuyển** <span class="ic" title="Đơn vị giao hàng (J&amp;T, SPX, GHN...). «NB tự VC» = «Vận hành bởi nhà bán hàng» — shop tự sắp xếp giao, Sapo chưa gắn hãng cụ thể (không phải lỗi).">&#9432;</span>',
+            unsafe_allow_html=True)
+car_keys = list(p["carriers"].keys())
+st.plotly_chart(
+    donut(
+        car_keys,
+        list(p["carriers"].values()),
+        [COLOR_CARRIER.get(k_, "#CCCCCC") for k_ in car_keys],
+        str(p["total"]),
+    ),
+    width="stretch",
+)
 
 st.markdown("**Chi tiết SKU chờ xác nhận**")
 sku_df = pd.DataFrame(p["skus"]).rename(
@@ -392,15 +415,16 @@ st.markdown('<div class="print-only">' + sku_df.to_html(index=False, border=0) +
 
 # ═══════════════════════ PHẦN 2 — ĐÃ ĐẨY VC → HỦY (7 NGÀY) ═══════════════════════
 st.markdown(
-    f'<div class="sec sec-red">Đã đẩy VC → hủy (7 ngày) '
+    f'<div class="sec sec-red">Đã đẩy VC → hủy (7 ngày)'
+    f'<span class="ic" title="Đơn đã bàn giao/đẩy cho đơn vị vận chuyển nhưng SAU ĐÓ bị hủy (trong 7 ngày). Nếu đã đóng gói thì kho phải LẤY LẠI hàng khỏi kiện. Đã loại các đơn kháng nghị thành công.">&#9432;</span> '
     f'<span class="sub">— loại trừ {c["excluded_appeal"]} đơn kháng nghị thành công</span></div>',
     unsafe_allow_html=True,
 )
 
 m = st.columns(3)
-m[0].metric("Tổng đơn hủy", c["total"])
-m[1].metric("⚠ Đã đóng gói (lấy lại)", len(c["packed"]))
-m[2].metric("Chưa đóng gói", len(c["not_packed"]))
+m[0].metric("Tổng đơn hủy", c["total"], help="Tổng đơn đã đẩy VC rồi bị hủy trong 7 ngày (đã loại kháng nghị thành công).")
+m[1].metric("⚠ Đã đóng gói (lấy lại)", len(c["packed"]), help="Đơn đã ĐÓNG GÓI mà bị hủy → kho cần LẤY LẠI hàng khỏi kiện.")
+m[2].metric("Chưa đóng gói", len(c["not_packed"]), help="Đơn bị hủy khi CHƯA đóng gói → không phải lấy lại hàng.")
 
 st.markdown("**⚠ Đã đóng gói — cần lấy lại hàng**")
 packed_df = cancel_table(c["packed"])
@@ -422,16 +446,17 @@ else:
 
 # ═══════════════════════ PHẦN 3 — ĐƠN TRẢ HÀNG (7 NGÀY) ═══════════════════════
 st.markdown(
-    f'<div class="sec sec-blue">Đơn trả hàng (7 ngày) '
+    f'<div class="sec sec-blue">Đơn trả hàng (7 ngày)'
+    f'<span class="ic" title="Phiếu khách yêu cầu trả hàng trong 7 ngày. Đã bỏ các phiếu «canceled» = kháng nghị thành công / khách tự đóng yêu cầu.">&#9432;</span> '
     f'<span class="sub">— đã loại {r["canceled"]} phiếu canceled (khách đóng yêu cầu)</span></div>',
     unsafe_allow_html=True,
 )
 
 rm = st.columns(4)
-rm[0].metric("Tổng phiếu (7 ngày)", r["recent7d_total"])
-rm[1].metric("🟢 Đang xử lý (open)", r["open"])
-rm[2].metric("Đã trả xong (closed)", r["closed"])
-rm[3].metric("Cần xử lý (active)", r["active"])
+rm[0].metric("Tổng phiếu (7 ngày)", r["recent7d_total"], help="Tổng phiếu trả hàng tạo trong 7 ngày (gồm cả đã/đang xử lý).")
+rm[1].metric("🟢 Đang xử lý (open)", r["open"], help="Phiếu trả đang mở, CHƯA xử lý xong.")
+rm[2].metric("Đã trả xong (closed)", r["closed"], help="Phiếu trả đã đóng/hoàn tất.")
+rm[3].metric("Cần xử lý (active)", r["active"], help="Tổng phiếu cần để mắt = open + closed (đã loại canceled).")
 
 st.plotly_chart(
     donut(
