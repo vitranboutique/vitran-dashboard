@@ -235,6 +235,18 @@ def donut(labels, values, colors, center_text):
     return fig
 
 
+def _evidence_need(o):
+    """Phân loại bằng chứng NV kho cần up cho 1 đơn đã đẩy VC → hủy."""
+    f = (o.get("fulfillments") or [{}])[0]
+    if f.get("packed_status") == "packed":
+        return "📦 Ảnh đơn có chữ «HỦY» (cần lấy lại hàng)"
+    if f.get("picked_on") or f.get("sorted_on"):
+        return "🏷️ Phiếu vận đơn + ảnh SL/SKU (đối chiếu SKU)"
+    if f.get("shipping_label_slip_url"):
+        return "📄 Chụp / quét mã phiếu vận đơn"
+    return "✔️ Chỉ cần xác nhận hủy"
+
+
 def cancel_table(orders):
     return pd.DataFrame([{
         "Mã đơn": o.get("name"),
@@ -245,6 +257,7 @@ def cancel_table(orders):
         "ĐVVC": (o.get("fulfillments") or [{}])[0].get("tracking_company")
                 or (o.get("shipping_lines") or [{}])[0].get("carrier_name"),
         "Ngày hủy": (o.get("cancelled_on") or "")[:10],
+        "📸 Bằng chứng cần up": _evidence_need(o),
     } for o in orders])
 
 
@@ -469,6 +482,9 @@ m = st.columns(3)
 m[0].metric("Tổng đơn hủy", c["total"], help="Tổng đơn đã đẩy VC rồi bị hủy trong 7 ngày (đã loại kháng nghị thành công).")
 m[1].metric("⚠ Đã đóng gói (lấy lại)", len(c["packed"]), help="Đơn đã ĐÓNG GÓI mà bị hủy → kho cần LẤY LẠI hàng khỏi kiện.")
 m[2].metric("Chưa đóng gói", len(c["not_packed"]), help="Đơn bị hủy khi CHƯA đóng gói → không phải lấy lại hàng.")
+
+st.info("🚨 **NV kho:** mỗi đơn dưới đây cần **xác nhận + up ảnh bằng chứng** theo cột «📸 Bằng chứng cần up». "
+        "(Ô bấm xác nhận & up ảnh lên Google Drive đang được thêm ở bước kế tiếp.)")
 
 st.markdown("**⚠ Đã đóng gói — cần lấy lại hàng**")
 packed_df = cancel_table(c["packed"])
