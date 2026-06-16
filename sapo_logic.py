@@ -224,8 +224,13 @@ def get_picking(fetch_json, max_pages: int = 15) -> dict:
 
 # ───────────────────────── 3. Đơn trả hàng ─────────────────────────
 
+def _has_thang(note) -> bool:
+    n = (note or "").lower()
+    return "thắng" in n or ("thang" in n and "tháng" not in n)
+
+
 def get_returns_summary(fetch_json, days: int = 7) -> dict:
-    """Gom phiếu trả trong N ngày, phân theo status (đã tách 'canceled')."""
+    """Summary phiếu trả 7 ngày (nhanh, vài trang)."""
     week_ago = (_now_utc() - timedelta(days=days)).isoformat()
     rows = []
     for p in range(1, 11):
@@ -235,16 +240,39 @@ def get_returns_summary(fetch_json, days: int = 7) -> dict:
         rows += chunk
         if chunk[-1].get("created_on", "") < week_ago:
             break
-
     recent = [x for x in rows if x.get("created_on", "") >= week_ago]
     by = lambda s: sum(1 for x in recent if x.get("status") == s)
     return {
-        "recent7d_total": len(recent),
-        "open": by("open"),
-        "closed": by("closed"),
-        "canceled": by("canceled"),
-        "active": sum(1 for x in recent if x.get("status") != "canceled"),
+        "recent7d_total": len(recent), "open": by("open"), "closed": by("closed"),
+        "canceled": by("canceled"), "active": sum(1 for x in recent if x.get("status") != "canceled"),
     }
+
+
+def get_returns_followup(fetch_json, max_pages: int = 26) -> list:
+    """Danh sách đơn trả NĂM NAY cần theo dõi: chưa nhận hàng trả (restock 'unrestock'),
+    chưa 'THẮNG', chưa canceled. Quét cả năm -> gọi riêng (cache lâu)."""
+    now_vn = _now_utc() + timedelta(hours=7)
+    year_start = f"{now_vn.year}-01-01T00:00:00"
+    rows = []
+    for p in range(1, max_pages):
+        chunk = fetch_json("/admin/order_returns.json", limit=250, page=p).get("order_returns", [])
+        if not chunk:
+            break
+        rows += chunk
+        if chunk[-1].get("created_on", "") < year_start:
+            break
+    return [{
+        "name": x.get("name"),
+        "note": (x.get("note") or "").strip() or "(không ghi chú)",
+        "status": x.get("status"),
+        "loai": x.get("return_type"),
+        "SL": x.get("total_quantity"),
+        "ngay_tao": (x.get("created_on") or "")[:10],
+    } for x in rows
+        if x.get("created_on", "") >= year_start
+        and x.get("restock_status") == "unrestock"
+        and x.get("status") != "canceled"
+        and not _has_thang(x.get("note"))]
 
 
 # ───────────────────────── Tải gộp (LIVE) ─────────────────────────
@@ -346,7 +374,18 @@ def demo_payload() -> dict:
         ],
     }
 
-    returns = {"recent7d_total": 103, "open": 80, "closed": 17, "canceled": 6, "active": 97}
+    returns = {
+        "recent7d_total": 103, "open": 80, "closed": 17, "canceled": 6, "active": 97,
+        "followup_count": 3,
+        "followup": [
+            {"name": "584491689258616181", "note": "Sản phẩm quá to/quá nhỏ", "status": "open",
+             "loai": "return_and_refund", "SL": 1, "ngay_tao": "2026-06-15"},
+            {"name": "584465093436212384", "note": "Không còn nhu cầu", "status": "open",
+             "loai": "return_and_refund", "SL": 2, "ngay_tao": "2026-06-14"},
+            {"name": "584426414620771662", "note": "Giao hàng thất bại", "status": "open",
+             "loai": "delivery_failed", "SL": 1, "ngay_tao": "2026-06-12"},
+        ],
+    }
 
     return {"pending": pending, "cancelled": cancelled, "returns": returns}
 

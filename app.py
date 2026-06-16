@@ -175,6 +175,11 @@ def load_picking():
     return L.get_picking(make_fetch_json(build_session()))
 
 
+@st.cache_data(ttl=900, show_spinner="Đang quét đơn trả cả năm…")
+def load_returns_followup():
+    return L.get_returns_followup(make_fetch_json(build_session()))
+
+
 if _page == PAGE_PICK:
     st.title("🧾 Phiếu nhặt hàng")
     st.caption("Tự kéo từ Sapo: đơn **đã in phiếu giao hàng** + **chờ đóng gói**. "
@@ -506,6 +511,23 @@ st.plotly_chart(
     ),
     width="stretch",
 )
+
+# ── #8 Đơn trả CẦN THEO DÕI năm nay (tải riêng khi bấm để giữ trang nhanh) ──
+st.markdown('**📋 Đơn trả cần theo dõi (năm nay)** '
+            '<span class="ic" title="Phiếu trả của NĂM NAY mà CHƯA nhận lại hàng (chưa nhập kho), CHƯA có ghi chú «THẮNG» (kháng nghị thắng) và chưa bị hủy. Là các đơn còn phải xử lý / đòi hàng về.">&#9432;</span>',
+            unsafe_allow_html=True)
+if st.checkbox("Hiện danh sách (quét đơn trả cả năm — mất vài giây)", value=False):
+    fu = load_returns_followup() if credential_present() else r.get("followup", [])
+    if fu:
+        st.caption(f"**{len(fu)} đơn** cần theo dõi.")
+        fu_df = pd.DataFrame(fu).rename(columns={
+            "name": "Mã đơn", "note": "Ghi chú (lý do)", "status": "Trạng thái",
+            "loai": "Loại trả", "SL": "SL", "ngay_tao": "Ngày tạo"})
+        st.dataframe(fu_df, width="stretch", hide_index=True)
+        st.markdown('<div class="print-only">' + fu_df.to_html(index=False, border=0) + '</div>',
+                    unsafe_allow_html=True)
+    else:
+        st.success("Không có đơn trả nào cần theo dõi năm nay. 👍")
 
 st.caption("Cache 5 phút · tự làm mới mỗi 5 phút (bật/tắt ở sidebar) · múi giờ VN (UTC+7).")
 
