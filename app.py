@@ -203,10 +203,47 @@ CUR_NAME, CUR_USER, CUR_ROLE = require_login()
 
 
 # ───────────────────────── Chọn trang ─────────────────────────
-PAGE_REPORT = "📊 Báo cáo sáng"
+PAGE_OVERVIEW = "📊 Tổng quan điều hành"
+PAGE_REPORT = "📋 Báo cáo sáng"
 PAGE_PICK = "🧾 Phiếu nhặt hàng"
-_page = st.sidebar.radio("Trang", [PAGE_REPORT, PAGE_PICK], index=0)
+_page = st.sidebar.radio("Trang", [PAGE_OVERVIEW, PAGE_REPORT, PAGE_PICK], index=0)
 st.sidebar.divider()
+
+
+# ── Biểu đồ dùng chung ──
+def donut(labels, values, colors, center_text):
+    fig = go.Figure(go.Pie(
+        labels=labels, values=values, hole=0.58,
+        marker=dict(colors=colors, line=dict(color="white", width=2)),
+        sort=False, textinfo="label+value", textposition="outside",
+    ))
+    fig.update_layout(
+        annotations=[dict(text=center_text, x=0.5, y=0.5, font_size=24,
+                          font_color="#333", showarrow=False)],
+        showlegend=True,
+        legend=dict(orientation="h", y=-0.12, x=0.5, xanchor="center"),
+        margin=dict(t=10, b=10, l=10, r=10), height=330,
+    )
+    return fig
+
+
+def daily_chart(daily):
+    x = [d["ngay"] for d in daily]
+    fig = go.Figure()
+    fig.add_bar(x=x, y=[d["don"] for d in daily], name="Tổng đơn", marker_color="#534AB7")
+    fig.add_scatter(x=x, y=[d["sp"] for d in daily], name="Tổng SP", mode="lines+markers",
+                    line=dict(color="#1D9E75", width=3), yaxis="y2")
+    fig.update_layout(
+        height=300, margin=dict(t=24, b=10, l=10, r=10),
+        yaxis2=dict(overlaying="y", side="right", showgrid=False),
+        legend=dict(orientation="h", y=1.14, x=0), bargap=0.45,
+    )
+    return fig
+
+
+@st.cache_data(ttl=300, show_spinner="Đang tải tổng quan từ Sapo…")
+def load_overview():
+    return L.get_overview(make_fetch_json(build_session()))
 
 
 @st.cache_data(ttl=120, show_spinner="Đang kéo đơn cần nhặt từ Sapo…")
@@ -217,6 +254,56 @@ def load_picking():
 @st.cache_data(ttl=900, show_spinner="Đang quét đơn trả cả năm…")
 def load_returns_followup():
     return L.get_returns_followup(make_fetch_json(build_session()))
+
+
+# ════════════════ TRANG TỔNG QUAN ĐIỀU HÀNH ════════════════
+if _page == PAGE_OVERVIEW:
+    _l, _r = st.columns([3, 1])
+    _l.title("🛍️ VITRAN BOUTIQUE")
+    _l.caption("Tổng quan điều hành")
+    _vn = datetime.now(timezone.utc) + timedelta(hours=7)
+    _r.metric("Cập nhật (giờ VN)", _vn.strftime("%H:%M"), _vn.strftime("%d/%m/%Y"))
+    if not credential_present():
+        st.warning("⚠️ Trang này cần kết nối Sapo (LIVE).")
+        st.stop()
+    if st.button("🔄 Tải lại số liệu"):
+        st.cache_data.clear()
+        st.rerun()
+    try:
+        ov = load_overview()
+    except Exception as e:
+        st.error(f"❌ Lỗi tải tổng quan: `{e}`")
+        st.stop()
+
+    st.markdown('<div class="sec sec-orange">Tổng quan 7 ngày gần nhất</div>', unsafe_allow_html=True)
+    _a = st.columns(3)
+    _a[0].metric("📦 Đơn đặt hôm nay", f"{ov['don_today']:,}", f"Tổng SP: {ov['sp_today']:,}", delta_color="off")
+    _a[1].metric("📦 Đơn đặt hôm qua", f"{ov['don_yest']:,}", f"Tổng SP: {ov['sp_yest']:,}", delta_color="off")
+    _a[2].metric("🗓️ Tổng đơn 7 ngày", f"{ov['don_week']:,}", f"Tổng SP: {ov['sp_week']:,}", delta_color="off")
+    _b = st.columns(3)
+    _b[0].metric("🏷️ Tổng SKU (7 ngày)", f"{ov['sku_count']:,}")
+    _b[1].metric("🛒 Tổng SP (7 ngày)", f"{ov['sp_week']:,}")
+    _b[2].metric("📊 SP / đơn (TB)", ov['sp_per_order'])
+
+    st.markdown('<div class="sec sec-orange">Đơn đặt 7 ngày</div>', unsafe_allow_html=True)
+    _c1, _c2 = st.columns([3, 2])
+    with _c1:
+        st.markdown("**Theo ngày** — cột = số đơn · đường = số SP")
+        st.plotly_chart(daily_chart(ov["daily"]), width="stretch")
+    with _c2:
+        st.markdown("**Theo sàn**")
+        _sk = list(ov["sources"].keys())
+        st.plotly_chart(donut([SOURCE_LABEL.get(k, k) for k in _sk], list(ov["sources"].values()),
+                              [COLOR_SOURCE.get(k, "#ccc") for k in _sk],
+                              str(sum(ov["sources"].values()))), width="stretch")
+    st.markdown("**Theo gian hàng**")
+    _stk = list(ov["stores"].keys())
+    st.plotly_chart(donut(_stk, list(ov["stores"].values()),
+                          [PALETTE[i % len(PALETTE)] for i in range(len(_stk))],
+                          str(sum(ov["stores"].values()))), width="stretch")
+    st.caption("Số liệu 7 ngày gần nhất · cache 5 phút · giờ VN (UTC+7). "
+               "(Khối Đơn cần giao / Cảnh báo / Hàng hoàn sẽ thêm ở bước sau.)")
+    st.stop()
 
 
 if _page == PAGE_PICK:
@@ -258,22 +345,6 @@ if _page == PAGE_PICK:
 
 
 # ───────────────────────── Tiện ích ─────────────────────────
-def donut(labels, values, colors, center_text):
-    fig = go.Figure(go.Pie(
-        labels=labels, values=values, hole=0.58,
-        marker=dict(colors=colors, line=dict(color="white", width=2)),
-        sort=False, textinfo="label+value", textposition="outside",
-    ))
-    fig.update_layout(
-        annotations=[dict(text=center_text, x=0.5, y=0.5, font_size=24,
-                          font_color="#333", showarrow=False)],
-        showlegend=True,
-        legend=dict(orientation="h", y=-0.12, x=0.5, xanchor="center"),
-        margin=dict(t=10, b=10, l=10, r=10), height=330,
-    )
-    return fig
-
-
 def _evidence_need(o):
     """Phân loại bằng chứng NV kho cần up cho 1 đơn đã đẩy VC → hủy."""
     f = (o.get("fulfillments") or [{}])[0]

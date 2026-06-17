@@ -222,6 +222,83 @@ def get_picking(fetch_json, max_pages: int = 15) -> dict:
     }
 
 
+# ───────────────────── Tổng quan điều hành (overview) ─────────────────────
+
+def _vn_date_of(iso):
+    d = _parse_vn(iso)
+    return d.date() if d else None
+
+
+def get_overview(fetch_json, days: int = 7) -> dict:
+    """6 thẻ tổng + dữ liệu 3 biểu đồ (theo ngày / sàn / gian hàng) cho trang Tổng quan.
+    Dùng count.json (nhanh) cho các con số tổng; tải đơn tuần để tính breakdown."""
+    now_vn = _now_utc() + timedelta(hours=7)
+    today = now_vn.date()
+    yest = today - timedelta(days=1)
+    week_start = today - timedelta(days=days - 1)
+
+    def _iso(d, end=False):
+        return d.isoformat() + ("T23:59:59+07:00" if end else "T00:00:00+07:00")
+
+    def _count(cmin, cmax):
+        try:
+            return int(fetch_json("/admin/orders/count.json",
+                                  created_on_min=cmin, created_on_max=cmax).get("count", 0))
+        except Exception:
+            return 0
+
+    don_today = _count(_iso(today), _iso(today, True))
+    don_yest = _count(_iso(yest), _iso(yest, True))
+    don_week = _count(_iso(week_start), _iso(today, True))
+
+    # Tải đơn tuần này để tính breakdown + biểu đồ
+    orders, cmin = [], _iso(week_start)
+    for p in range(1, 25):
+        rows = fetch_json("/admin/orders.json", limit=250, page=p, created_on_min=cmin).get("orders", [])
+        if not rows:
+            break
+        orders += rows
+        last = _parse_vn(rows[-1].get("created_on"))
+        if last and last.date() < week_start:
+            break
+
+    daily = {week_start + timedelta(days=i): {"don": 0, "sp": 0} for i in range(days)}
+    sources, stores, sku_set = {}, {}, set()
+    week_sp = today_sp = yest_sp = 0
+    for o in orders:
+        d = _vn_date_of(o.get("created_on"))
+        if not d or d < week_start or d > today:
+            continue
+        sp = sum((li.get("quantity", 0) or 0) for li in (o.get("line_items") or []))
+        for li in (o.get("line_items") or []):
+            if li.get("sku"):
+                sku_set.add(li["sku"])
+        week_sp += sp
+        if d in daily:
+            daily[d]["don"] += 1
+            daily[d]["sp"] += sp
+        if d == today:
+            today_sp += sp
+        elif d == yest:
+            yest_sp += sp
+        src = o.get("source_name") or "Khác"
+        sources[src] = sources.get(src, 0) + 1
+        cd = o.get("channel_definition") or {}
+        store = cd.get("branch_name") or src or "Khác"
+        stores[store] = stores.get(store, 0) + 1
+
+    srt = lambda dd: dict(sorted(dd.items(), key=lambda x: -x[1]))
+    return {
+        "don_today": don_today, "don_yest": don_yest, "don_week": don_week,
+        "sp_today": today_sp, "sp_yest": yest_sp, "sp_week": week_sp,
+        "sku_count": len(sku_set),
+        "sp_per_order": round(week_sp / don_week, 2) if don_week else 0,
+        "daily": [{"ngay": d.strftime("%d/%m"), "don": v["don"], "sp": v["sp"]}
+                  for d, v in daily.items()],
+        "sources": srt(sources), "stores": srt(stores),
+    }
+
+
 # ───────────────────────── 3. Đơn trả hàng ─────────────────────────
 
 def _has_thang(note) -> bool:
