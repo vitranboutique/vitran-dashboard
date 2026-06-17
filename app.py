@@ -456,25 +456,42 @@ if _page == PAGE_PICK:
 
     now_str = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%H:%M %d/%m/%Y")
 
-    # ── LỊCH SỬ IN PHIẾU hôm nay (qua dashboard) — từ kho lưu trữ ──
-    st.markdown("#### 📋 Lịch sử in phiếu nhặt hôm nay (qua dashboard)")
-    if not picklog.configured():
-        st.info("Chưa bật lưu lịch sử in. Mở hướng dẫn bên dưới để bật (1 lần).")
-        with st.expander("⚙️ Cách bật lưu lịch sử in phiếu (~5 phút)"):
-            st.markdown(_PICKLOG_SETUP)
-    else:
-        _logrows = picklog.read_today()
-        if _logrows:
-            _ldf = pd.DataFrame([{"Lượt": i + 1, "Giờ": r.get("gio", ""),
-                                  "Số đơn": r.get("so_don", 0), "Số SP": r.get("so_sp", 0),
-                                  "Số SKU": r.get("so_sku", 0), "Hỏa tốc": r.get("ht_don", 0),
-                                  "Thường": r.get("th_don", 0)} for i, r in enumerate(_logrows)])
-            st.markdown(f"**{len(_logrows)} lượt in** · {int(_ldf['Số đơn'].sum())} đơn · "
-                        f"{int(_ldf['Số SP'].sum())} SP")
-            render_compact_table(_ldf)
+    # ── Phiếu in (trái) + Lịch sử in & nút Lưu (phải, KẾ BÊN phiếu) ──
+    _cslip, _clog = st.columns([3, 2])
+    with _cslip:
+        components.html(picking_html(pdata, now_str), height=820, scrolling=True)
+    with _clog:
+        st.markdown("#### 📋 Lịch sử in phiếu hôm nay")
+        if not picklog.configured():
+            st.info("Chưa bật lưu lịch sử in.")
+            with st.expander("⚙️ Cách bật (~30 giây)"):
+                st.markdown(_PICKLOG_SETUP)
         else:
-            st.caption("Chưa lưu lượt in nào hôm nay. Bấm **🖨️ In K80** ở phiếu bên dưới, "
-                       "rồi bấm **💾 Lưu đợt vừa in**.")
+            _logrows = picklog.read_today()
+            if _logrows:
+                _ldf = pd.DataFrame([{"Lượt": i + 1, "Giờ": r.get("gio", ""),
+                                      "Số đơn": r.get("so_don", 0), "Số SP": r.get("so_sp", 0),
+                                      "Số SKU": r.get("so_sku", 0), "HT": r.get("ht_don", 0),
+                                      "Thường": r.get("th_don", 0)} for i, r in enumerate(_logrows)])
+                st.markdown(f"**{len(_logrows)} lượt** · {int(_ldf['Số đơn'].sum())} đơn · "
+                            f"{int(_ldf['Số SP'].sum())} SP")
+                render_compact_table(_ldf)
+            else:
+                st.caption("Chưa lưu lượt nào hôm nay.")
+        if pdata["total"] > 0:
+            st.caption("➡️ In K80 xong thì bấm:")
+            if st.button("💾 Lưu đợt vừa in", type="primary", disabled=not picklog.configured()):
+                _now_vn = datetime.now(timezone.utc) + timedelta(hours=7)
+                _allsku = {s for s, _ in exp["skus"]} | {s for s, _ in nor["skus"]}
+                ok, msg = picklog.log_batch({
+                    "ngay": _now_vn.strftime("%Y-%m-%d"), "gio": _now_vn.strftime("%H:%M"),
+                    "so_don": exp["total_orders"] + nor["total_orders"],
+                    "so_sp": exp["total_qty"] + nor["total_qty"], "so_sku": len(_allsku),
+                    "ht_don": exp["total_orders"], "th_don": nor["total_orders"],
+                })
+                (st.success(msg + " Bấm 🔄 Tải lại để thấy.") if ok else st.error(msg))
+            if not picklog.configured():
+                st.caption("⚠️ Cần bật kho lưu (xem hướng dẫn trên).")
 
     # ── Đối chiếu SP soạn hàng vs xuất kho hôm nay (theo SKU) ──
     rec = pdata.get("reconcile", {})
@@ -494,24 +511,6 @@ if _page == PAGE_PICK:
         st.caption("**Soạn** = đóng gói hôm nay. **Xuất kho** = giao ĐVVC hôm nay. "
                    "Lệch > 0 = đã soạn chưa xuất (chờ shipper); < 0 = xuất từ đơn soạn hôm trước. "
                    "Cột **Lý do lệch** ghi rõ đơn nào.")
-
-    components.html(picking_html(pdata, now_str), height=820, scrolling=True)
-
-    # ── Lưu đợt vừa in vào lịch sử (Google Sheet) ──
-    if pdata["total"] > 0:
-        st.caption("➡️ Sau khi bấm **🖨️ In K80** ở trên, bấm nút này để ghi vào *Lịch sử in phiếu*:")
-        if st.button("💾 Lưu đợt vừa in", type="primary", disabled=not picklog.configured()):
-            _now_vn = datetime.now(timezone.utc) + timedelta(hours=7)
-            _allsku = {s for s, _ in exp["skus"]} | {s for s, _ in nor["skus"]}
-            ok, msg = picklog.log_batch({
-                "ngay": _now_vn.strftime("%Y-%m-%d"), "gio": _now_vn.strftime("%H:%M"),
-                "so_don": exp["total_orders"] + nor["total_orders"],
-                "so_sp": exp["total_qty"] + nor["total_qty"], "so_sku": len(_allsku),
-                "ht_don": exp["total_orders"], "th_don": nor["total_orders"],
-            })
-            (st.success(msg + " Bấm '🔄 Tải lại' để thấy trong lịch sử.") if ok else st.error(msg))
-        if not picklog.configured():
-            st.caption("⚠️ Nút lưu cần bật Google Sheet (xem hướng dẫn ở mục *Lịch sử in phiếu* phía trên).")
 
     with st.expander("📄 Hoặc: tạo phiếu từ file Excel (upload thủ công)"):
         _html_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "picking_slip.html")
