@@ -381,6 +381,9 @@ def get_picking(fetch_json, max_pages: int = 15) -> dict:
             and f0(o).get("packed_status") not in ("packed", None)]
     express = [o for o in pick if o.get("shipment_category") == "express"]
     normal = [o for o in pick if o.get("shipment_category") != "express"]
+    today = (_now_utc() + timedelta(hours=7)).date()
+    packed_tracks = [f0(o).get("tracking_number") for o in orders
+                     if _vn_date_of(f0(o).get("packed_on")) == today and f0(o).get("tracking_number")]
     return {
         "express": _summarize_picking(express),
         "normal": _summarize_picking(normal),
@@ -388,6 +391,7 @@ def get_picking(fetch_json, max_pages: int = 15) -> dict:
         "history": _packing_history(orders),
         "reconcile": _packing_reconcile(orders),
         "cancel_pick": _cancel_after_pick(orders, fetch_json),
+        "packed_tracks": packed_tracks,
     }
 
 

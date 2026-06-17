@@ -17,6 +17,7 @@ import streamlit_authenticator as stauth
 
 import sapo_logic as L
 import picklog
+import dohana
 from sapo_client import SapoAuthError, build_session, credential_present, make_fetch_json
 from picking_render import picking_html
 
@@ -187,6 +188,18 @@ Trợ lý đã tạo sẵn kho lưu trữ. Bạn chỉ cần dán URL kho vào S
 3. App tự khởi động lại là dùng được — mỗi lần in bấm **💾 Lưu đợt vừa in**.
 """
 
+_DOHANA_SETUP = """
+**Bật đối chiếu video đóng hàng (Dohana) — thêm vào Streamlit Secrets:**
+
+1. Mở **Streamlit Cloud** → app VITRAN → **⋮ Manage app → Settings → Secrets**.
+2. Thêm 2 dòng (API Key lấy ở Dohana → Cài đặt → API Keys) rồi **Save**:
+   ```toml
+   [dohana]
+   x_api_key = "API-KEY-CỦA-BẠN"
+   ```
+3. App tự khởi động lại — sẽ tự đối chiếu số video vs số đơn đã đóng + báo video trùng.
+"""
+
 
 # ═══════════════════════ ĐĂNG NHẬP (multi-user) ═══════════════════════
 def _auth_configured() -> bool:
@@ -299,6 +312,11 @@ def load_overview():
 @st.cache_data(ttl=120, show_spinner="Đang kéo đơn cần nhặt từ Sapo…")
 def load_picking():
     return L.get_picking(make_fetch_json(build_session()))
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def load_dohana():
+    return dohana.today_package_videos()
 
 
 @st.cache_data(ttl=900, show_spinner="Đang quét đơn trả cả năm…")
@@ -497,6 +515,35 @@ if _page == PAGE_PICK:
         st.caption("**Soạn** = đóng gói hôm nay. **Xuất kho** = giao ĐVVC hôm nay. "
                    "Lệch > 0 = đã soạn chưa xuất (chờ shipper); < 0 = xuất từ đơn soạn hôm trước. "
                    "Cột **Lý do lệch** ghi rõ đơn nào.")
+
+    # ── 🎥 Video đóng hàng (Dohana): đối chiếu video vs đơn đã đóng + video trùng ──
+    st.markdown('<div class="sec sec-orange">🎥 Video đóng hàng (Dohana)</div>', unsafe_allow_html=True)
+    if not dohana.configured():
+        st.info("Chưa bật API Dohana — thêm key để đối chiếu video đóng hàng.")
+        with st.expander("⚙️ Cách bật (dán 1 dòng vào Secrets)"):
+            st.markdown(_DOHANA_SETUP)
+    else:
+        _dv = load_dohana() or {"total": 0, "codes": {}, "dup": {}}
+        _packed = set(pdata.get("packed_tracks", []))
+        _missing = _packed - set(_dv["codes"])
+        _dup = _dv["dup"]
+        _vc = st.columns(3)
+        _vc[0].metric("🎥 Video đóng hàng hôm nay", _dv["total"],
+                      help="Số video type=package tạo hôm nay trên Dohana.")
+        _vc[1].metric("📦 Đơn đã đóng (Sapo)", len(_packed))
+        _vc[2].metric("⚠️ Đơn THIẾU video", len(_missing),
+                      help="Đơn đã đóng gói (Sapo) nhưng chưa tìm thấy video đóng hàng.")
+        if not _missing and not _dup and _packed:
+            st.success("✅ KHỚP — mọi đơn đã đóng đều có video, không trùng.")
+        if _dup:
+            st.warning(f"⚠️ **{len(_dup)} mã có VIDEO TRÙNG** (quay ≥2 lần):")
+            render_compact_table(pd.DataFrame(
+                [{"Mã vận đơn": k, "Số video": v} for k, v in sorted(_dup.items(), key=lambda x: -x[1])]))
+        if _missing:
+            st.warning(f"⚠️ **{len(_missing)} đơn đã đóng nhưng THIẾU video** (chưa quay):")
+            render_compact_table(pd.DataFrame([{"Mã vận đơn": t} for t in sorted(_missing)]))
+        st.caption("Đối chiếu mã vận đơn (Sapo, đóng hôm nay) ↔ orderCode video Dohana (type=package). "
+                   "Trùng = 1 mã có ≥2 video. Thiếu = đơn đã đóng mà chưa có video.")
 
     # ── Phiếu in (trái) + Lịch sử in & nút Lưu (phải, KẾ BÊN phiếu) ──
     _cslip, _clog = st.columns([3, 2])
