@@ -329,6 +329,11 @@ if _page == PAGE_OVERVIEW:
     _e[3].metric("🔴 Hỏa tốc chờ", f"{dl['hoa_toc_cho']:,}",
                  help="Trong nhóm chờ giao: đơn HỎA TỐC cần ưu tiên đẩy trước.")
     st.caption(f"Trong nhóm chờ giao: đã đóng **{dl['cho_packed']}** · chưa đóng **{dl['cho_chua_dong']}**.")
+    if dl.get("sot_list"):
+        with st.expander(f"📌 Xem chi tiết {dl['cho_sot']} đơn SÓT (xác nhận hôm trước · đã in · hôm nay mới nhặt & đóng)"):
+            st.dataframe(pd.DataFrame(dl["sot_list"]), width="stretch", hide_index=True)
+            st.caption("Đối chiếu các mã đơn này với Sapo để kiểm chứng. Số 'sót' đổi theo thời điểm xem "
+                       "(mỗi lượt đóng hàng/lần shipper lấy đều làm thay đổi).")
     st.markdown("**Phân bổ đơn chờ giao theo đơn vị vận chuyển**")
     _dv = pd.DataFrame(ov["dvvc"]).rename(columns={
         "dvvc": "ĐVVC", "total": "Tổng", "thuong": "Thường", "hoatoc": "Hỏa tốc",

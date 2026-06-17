@@ -302,6 +302,8 @@ def get_overview(fetch_json, days: int = 7) -> dict:
           "cho_packed": 0, "cho_chua_dong": 0}
     dvvc = {}
     al = {"conf_after18": 0, "late_confirm": 0, "express_pending": 0}
+    sot_list = []
+    _fmtvn = lambda x: (_parse_vn(x).strftime("%d/%m %H:%M") if _parse_vn(x) else "")
 
     for o in open_orders:
         f = (o.get("fulfillments") or [{}])[0]
@@ -327,11 +329,20 @@ def get_overview(fetch_json, days: int = 7) -> dict:
         # Đang chờ giao = đã có vận đơn, shipper CHƯA LẤY (shipment_status=pending)
         if ss == "pending":
             cg["cho_giao"] += 1
-            if conf_d == today:
-                cg["cho_moi"] += 1       # mới: xác nhận hôm nay
-            else:
-                cg["cho_sot"] += 1       # sót: xác nhận hôm trước, xử lý hôm nay
             packed = f.get("packed_status") == "packed"
+            da_in = bool(f.get("shipping_label_slip_url"))
+            packed_today = _vn_date_of(f.get("packed_on")) == today
+            # SÓT = xác nhận HÔM TRƯỚC + ĐÃ IN phiếu + HÔM NAY mới nhặt & đóng gói
+            if conf_d and conf_d < today and da_in and packed_today:
+                cg["cho_sot"] += 1
+                sot_list.append({
+                    "Mã đơn": o.get("name") or "",
+                    "Xác nhận": _fmtvn(o.get("confirmed_on")),
+                    "Đóng gói": _fmtvn(f.get("packed_on")),
+                    "ĐVVC": (o.get("shipping_lines") or [{}])[0].get("carrier_name") or "NB tự VC",
+                })
+            elif conf_d == today:
+                cg["cho_moi"] += 1       # mới: xác nhận hôm nay
             cg["cho_packed" if packed else "cho_chua_dong"] += 1
             if is_express:
                 cg["hoa_toc_cho"] += 1
@@ -342,6 +353,7 @@ def get_overview(fetch_json, days: int = 7) -> dict:
             e["total"] += 1
             e["hoatoc" if is_express else "thuong"] += 1
             e["packed" if packed else "chua_dong"] += 1
+    cg["sot_list"] = sorted(sot_list, key=lambda x: x["Xác nhận"])
 
     # ---- Đơn hủy sau đẩy VC (dùng get_cancelled) ----
     try:
