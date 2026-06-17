@@ -265,10 +265,6 @@ def get_overview(fetch_json, days: int = 7) -> dict:
     daily = {week_start + timedelta(days=i): {"don": 0, "sp": 0} for i in range(days)}
     sources, stores, sku_set = {}, {}, set()
     week_sp = today_sp = yest_sp = 0
-    # Đơn cần giao shipper + cảnh báo
-    cg = {"total": 0, "new": 0, "sot": 0, "packed": 0, "not_packed": 0, "express": 0}
-    dvvc = {}
-    al = {"conf_after18": 0, "late_confirm": 0, "express_pending": 0}
 
     for o in orders:
         d = _vn_date_of(o.get("created_on"))
@@ -292,35 +288,60 @@ def get_overview(fetch_json, days: int = 7) -> dict:
         store = cd.get("branch_name") or src or "Khác"
         stores[store] = stores.get(store, 0) + 1
 
-        # ---- Đơn CẦN GIAO SHIPPER = đã xác nhận + shipper CHƯA LẤY ----
+    # ---- PHỄU GIAO HÀNG HÔM NAY: quét đơn open theo TRẠNG THÁI HIỆN TẠI ----
+    # Đếm theo NGÀY XÁC NHẬN / ĐÓNG GÓI / XUẤT VC (không phụ thuộc ngày tạo đơn).
+    open_orders = []
+    for p in range(1, 30):
+        rows = fetch_json("/admin/orders.json", limit=250, page=p, status="open").get("orders", [])
+        if not rows:
+            break
+        open_orders += rows
+
+    cg = {"da_xac_nhan": 0, "da_dong": 0, "shipper_nhan": 0,
+          "cho_giao": 0, "cho_moi": 0, "cho_sot": 0, "hoa_toc_cho": 0,
+          "cho_packed": 0, "cho_chua_dong": 0}
+    dvvc = {}
+    al = {"conf_after18": 0, "late_confirm": 0, "express_pending": 0}
+
+    for o in open_orders:
         f = (o.get("fulfillments") or [{}])[0]
         ss = f.get("shipment_status")
         is_express = o.get("shipment_category") == "express"
         conf_vn = _parse_vn(o.get("confirmed_on"))
-        if ss == "pending":   # đã có vận đơn nhưng shipper CHƯA LẤY
-            cg["total"] += 1
-            if conf_vn and conf_vn.date() == today:
-                cg["new"] += 1          # xác nhận hôm nay
+        conf_d = conf_vn.date() if conf_vn else None
+
+        # Đã xác nhận hôm nay (+ cảnh báo xác nhận sau 18h)
+        if conf_d == today:
+            cg["da_xac_nhan"] += 1
+            if conf_vn.hour >= 18:
+                al["conf_after18"] += 1
+                _cre = _parse_vn(o.get("created_on"))
+                if _cre and _cre.date() == today and _cre.hour < 18:
+                    al["late_confirm"] += 1
+        # Đã đóng hàng hôm nay / Shipper đã nhận (xuất VC) hôm nay
+        if _vn_date_of(f.get("packed_on")) == today:
+            cg["da_dong"] += 1
+        if _vn_date_of(f.get("issued_on")) == today:
+            cg["shipper_nhan"] += 1
+
+        # Đang chờ giao = đã có vận đơn, shipper CHƯA LẤY (shipment_status=pending)
+        if ss == "pending":
+            cg["cho_giao"] += 1
+            if conf_d == today:
+                cg["cho_moi"] += 1       # mới: xác nhận hôm nay
             else:
-                cg["sot"] += 1          # xác nhận hôm qua/trước, shipper chưa lấy
+                cg["cho_sot"] += 1       # sót: xác nhận hôm trước, xử lý hôm nay
             packed = f.get("packed_status") == "packed"
-            cg["packed" if packed else "not_packed"] += 1
+            cg["cho_packed" if packed else "cho_chua_dong"] += 1
             if is_express:
-                cg["express"] += 1
+                cg["hoa_toc_cho"] += 1
+                al["express_pending"] += 1
             car = (o.get("shipping_lines") or [{}])[0].get("carrier_name") or "NB tự VC"
             e = dvvc.setdefault(car, {"dvvc": car, "total": 0, "thuong": 0,
                                       "hoatoc": 0, "packed": 0, "chua_dong": 0})
             e["total"] += 1
             e["hoatoc" if is_express else "thuong"] += 1
             e["packed" if packed else "chua_dong"] += 1
-            if is_express:
-                al["express_pending"] += 1
-        # ---- Cảnh báo xác nhận trễ (hôm nay) ----
-        if conf_vn and conf_vn.date() == today and conf_vn.hour >= 18:
-            al["conf_after18"] += 1
-            _cre = _parse_vn(o.get("created_on"))
-            if _cre and _cre.date() == today and _cre.hour < 18:
-                al["late_confirm"] += 1
 
     # ---- Đơn hủy sau đẩy VC (dùng get_cancelled) ----
     try:
