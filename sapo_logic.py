@@ -222,11 +222,13 @@ def _packing_history(orders, gap_min: int = 20) -> dict:
     for i, b in enumerate(batches, 1):
         g = _summarize_picking(b["orders"])         # full summary để render phiếu
         g1, g2 = b["_start"].strftime("%H:%M"), b["_last"].strftime("%H:%M")
+        xuat = sum(1 for o in b["orders"]
+                   if _vn_date_of((o.get("fulfillments") or [{}])[0].get("issued_on")) == today)
         out.append({
             "dot": i, "gio": g1 if g1 == g2 else f"{g1}–{g2}",
             "don": g["total_orders"], "sp": g["total_qty"], "sku_count": g["sku_count"],
             "hoatoc": sum(1 for o in b["orders"] if o.get("shipment_category") == "express"),
-            "summary": g,
+            "xuat": xuat, "summary": g,
         })
     return {
         "batches": out,

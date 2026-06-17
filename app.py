@@ -443,12 +443,15 @@ if _page == PAGE_PICK:
     # ── Lịch sử soạn hàng hôm nay (theo đợt đóng gói) ──
     hist = pdata.get("history", {})
     if hist.get("batches"):
-        st.markdown(f"#### 📦 Lịch sử soạn hàng hôm nay — **{hist['so_dot']} đợt** · "
+        st.markdown(f"#### 📦 Lịch sử đóng gói hôm nay (trên Sapo) — **{hist['so_dot']} lượt** · "
                     f"{hist['tong_don']} đơn · {hist['tong_sp']} SP")
         render_compact_table(pd.DataFrame(
-            [{"Đợt": b["dot"], "Giờ": b["gio"], "Số đơn": b["don"], "Số SP": b["sp"],
-              "Số SKU": b["sku_count"], "Hỏa tốc": b["hoatoc"]} for b in hist["batches"]]))
-        st.caption("Mỗi cụm thời gian đóng gói gần nhau = 1 đợt soạn (suy từ packed_on). Dùng báo cáo cuối ngày.")
+            [{"Lượt": b["dot"], "Giờ": b["gio"], "Số đơn": b["don"], "Số SP": b["sp"],
+              "Số SKU": b["sku_count"], "Hỏa tốc": b["hoatoc"], "Đã xuất kho": b["xuat"]}
+             for b in hist["batches"]]))
+        st.caption("Mỗi cụm thời gian đánh dấu 'đã đóng gói' trên Sapo = 1 lượt (gồm cả bấm hàng loạt + phiếu in ở đây). "
+                   "Đây là TẤT CẢ đơn đóng gói thật trên Sapo — thường NHIỀU HƠN số phiếu bạn in tại dashboard "
+                   "(vì có lượt bấm đóng gói thẳng trên Sapo, không qua phiếu).")
         with st.expander("🖨️ Xem & in lại phiếu nhặt từng đợt"):
             components.html(history_slips_html(hist["batches"], now_str), height=560, scrolling=True)
 
