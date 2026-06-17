@@ -241,14 +241,17 @@ def _packing_reconcile(orders) -> dict:
     kèm LÝ DO từng SKU lệch (đơn nào đã soạn chưa xuất / xuất từ đơn soạn hôm trước)."""
     today = (_now_utc() + timedelta(hours=7)).date()
     soan, xuat = {}, {}
-    pend, prev = {}, {}   # sku -> {"qty": int, "orders": [mã đơn]}
+    pend, prev = {}, {}   # sku -> {"qty": int, "pairs": [(mã vận đơn, ĐVVC)]}
     for o in orders:
         f = (o.get("fulfillments") or [{}])[0]
         p_today = _vn_date_of(f.get("packed_on")) == today
         i_today = _vn_date_of(f.get("issued_on")) == today
         if not (p_today or i_today):
             continue
-        code = o.get("name") or ""
+        vd = (f.get("tracking_number") or (f.get("tracking_numbers") or [None])[0]
+              or o.get("name") or "?")
+        carrier = ((f.get("tracking_info") or {}).get("carrier_name")
+                   or (o.get("shipping_lines") or [{}])[0].get("carrier_name") or "Chưa rõ")
         for li in (o.get("line_items") or []):
             sk = li.get("sku") or "N/A"
             q = li.get("quantity", 0) or 0
@@ -257,17 +260,25 @@ def _packing_reconcile(orders) -> dict:
             if i_today:
                 xuat[sk] = xuat.get(sk, 0) + q
             if p_today and not i_today:        # đã soạn hôm nay, chưa xuất
-                e = pend.setdefault(sk, {"qty": 0, "orders": []})
+                e = pend.setdefault(sk, {"qty": 0, "pairs": []})
                 e["qty"] += q
-                e["orders"].append(code)
+                e["pairs"].append((vd, carrier))
             elif i_today and not p_today:       # xuất hôm nay từ đơn soạn hôm trước
-                e = prev.setdefault(sk, {"qty": 0, "orders": []})
+                e = prev.setdefault(sk, {"qty": 0, "pairs": []})
                 e["qty"] += q
-                e["orders"].append(code)
+                e["pairs"].append((vd, carrier))
 
-    def _codes(lst, n=4):
-        u = list(dict.fromkeys(c for c in lst if c))
-        return ", ".join(u[:n]) + (f" …+{len(u) - n} đơn" if len(u) > n else "")
+    def _fmt_vd(pairs, n=4):
+        by = {}
+        for vd, ca in pairs:
+            by.setdefault(ca, [])
+            if vd not in by[ca]:
+                by[ca].append(vd)
+        segs = []
+        for ca, vds in by.items():
+            shown = ", ".join(vds[:n]) + (f" …+{len(vds) - n}" if len(vds) > n else "")
+            segs.append(f"{ca} (VĐ {shown})")
+        return " · ".join(segs)
 
     rows = []
     for sk in set(soan) | set(xuat):
@@ -277,9 +288,9 @@ def _packing_reconcile(orders) -> dict:
         if lech != 0:
             parts = []
             if sk in pend:
-                parts.append(f"🕒 {pend[sk]['qty']} đã soạn chưa xuất (chờ shipper lấy): {_codes(pend[sk]['orders'])}")
+                parts.append(f"🕒 {pend[sk]['qty']} đã soạn chưa xuất (chờ lấy) — {_fmt_vd(pend[sk]['pairs'])}")
             if sk in prev:
-                parts.append(f"📤 {prev[sk]['qty']} xuất từ đơn soạn hôm trước: {_codes(prev[sk]['orders'])}")
+                parts.append(f"📤 {prev[sk]['qty']} xuất từ đơn soạn hôm trước — {_fmt_vd(prev[sk]['pairs'])}")
             reason = " · ".join(parts) if parts else "—"
         rows.append({"SKU": sk, "SL soạn": sn, "SL xuất kho": xu, "Lệch": lech, "Lý do lệch": reason})
     rows.sort(key=lambda r: (r["Lệch"] == 0, -abs(r["Lệch"]), -r["SL soạn"]))
@@ -433,10 +444,13 @@ def get_overview(fetch_json, days: int = 7) -> dict:
             if xuly_d and xuly_d < today and da_in:
                 cg["cho_sot"] += 1
                 sot_list.append({
-                    "Mã đơn": o.get("name") or "",
+                    "Mã vận đơn": (f.get("tracking_number")
+                                   or (f.get("tracking_numbers") or [None])[0]
+                                   or o.get("name") or ""),
+                    "ĐVVC": ((f.get("tracking_info") or {}).get("carrier_name")
+                             or (o.get("shipping_lines") or [{}])[0].get("carrier_name") or "NB tự VC"),
                     "Ngày xử lý": _fmtvn(f.get("shipment_created_on") or f.get("created_on")),
                     "Trạng thái đóng": "Đã đóng" if packed else "Chờ đóng gói",
-                    "ĐVVC": (o.get("shipping_lines") or [{}])[0].get("carrier_name") or "NB tự VC",
                 })
             elif xuly_d == today:
                 cg["cho_moi"] += 1       # mới: xử lý hôm nay

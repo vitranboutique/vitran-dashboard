@@ -364,10 +364,14 @@ if _page == PAGE_OVERVIEW:
                  help="Trong nhóm chờ giao: đơn HỎA TỐC cần ưu tiên đẩy trước.")
     st.caption(f"Trong nhóm chờ giao: đã đóng **{dl['cho_packed']}** · chưa đóng **{dl['cho_chua_dong']}**.")
     if dl.get("sot_list"):
-        with st.expander(f"📌 Xem chi tiết {dl['cho_sot']} đơn SÓT (Ngày xử lý hôm trước · đã in · shipper chưa lấy)"):
+        _by = {}
+        for _r in dl["sot_list"]:
+            _by[_r["ĐVVC"]] = _by.get(_r["ĐVVC"], 0) + 1
+        _bytxt = " · ".join(f"{k}: {v}" for k, v in sorted(_by.items(), key=lambda x: -x[1]))
+        with st.expander(f"📌 Xem {dl['cho_sot']} đơn SÓT theo ĐVVC — {_bytxt}"):
             render_compact_table(pd.DataFrame(dl["sot_list"]))
-            st.caption("Đối chiếu các mã đơn này với Sapo để kiểm chứng. Số 'sót' đổi theo thời điểm xem "
-                       "(mỗi lượt đóng hàng/lần shipper lấy đều làm thay đổi).")
+            st.caption("Mã vận đơn + ĐVVC để đối chiếu Sapo. Số 'sót' đổi theo thời điểm xem "
+                       "(mỗi lượt đóng hàng / shipper lấy đều thay đổi).")
     st.markdown("**Phân bổ đơn chờ giao theo đơn vị vận chuyển**")
     if ov["dvvc"]:
         render_compact_table(pd.DataFrame(ov["dvvc"]).rename(columns={
