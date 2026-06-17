@@ -455,6 +455,18 @@ if _page == PAGE_PICK:
                  + ", ".join(late_list[:25]) + ("…" if len(late_list) > 25 else ""))
 
     now_str = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%H:%M %d/%m/%Y")
+    _picklog_today = picklog.read_today() if picklog.configured() else []
+
+    # ── 📦 Số ĐỢT SOẠN HÀNG hôm nay (đếm theo phiếu đã lưu) ──
+    if picklog.configured():
+        _ps = st.columns(3)
+        _ps[0].metric("📦 Số đợt soạn hôm nay", len(_picklog_today),
+                      help="Số lần bấm 'Lưu đợt vừa in' hôm nay = số đợt soạn/in phiếu.")
+        _ps[1].metric("Tổng đơn đã soạn", sum(r.get("so_don", 0) for r in _picklog_today))
+        _ps[2].metric("Tổng SP đã soạn", sum(r.get("so_sp", 0) for r in _picklog_today))
+    else:
+        st.info("📦 **Số đợt soạn hàng hôm nay** — bật lưu lịch sử in (mục ⚙️ bên phải phiếu) "
+                "để đếm theo số phiếu bạn lưu.")
 
     # ── ⚠️ SP bị HỦY sau khi đã in phiếu nhặt (quan trọng, trên cùng) ──
     cp = pdata.get("cancel_pick", {})
@@ -498,7 +510,7 @@ if _page == PAGE_PICK:
             with st.expander("⚙️ Cách bật (~30 giây)"):
                 st.markdown(_PICKLOG_SETUP)
         else:
-            _logrows = picklog.read_today()
+            _logrows = _picklog_today
             if _logrows:
                 _ldf = pd.DataFrame([{"Lượt": i + 1, "Giờ": r.get("gio", ""),
                                       "Số đơn": r.get("so_don", 0), "Số SP": r.get("so_sp", 0),
