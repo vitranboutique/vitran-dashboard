@@ -480,9 +480,9 @@ def get_overview(fetch_json, days: int = 7) -> dict:
             break
         open_orders += rows
 
-    cg = {"da_xac_nhan": 0, "da_dong": 0, "shipper_nhan": 0,
-          "cho_giao": 0, "cho_moi": 0, "cho_sot": 0, "hoa_toc_cho": 0,
-          "cho_packed": 0, "cho_chua_dong": 0}
+    # Phễu "Đơn cần giao hôm nay": Tổng = Mới + Sót = Đã giao shipper + Còn chưa giao
+    cg = {"tong": 0, "moi": 0, "sot": 0, "da_xac_nhan": 0, "da_dong": 0,
+          "shipper_nhan": 0, "chua_giao": 0, "hoa_toc": 0}
     dvvc = {}
     al = {"conf_after18": 0, "late_confirm": 0, "express_pending": 0}
     sot_list = []
@@ -492,53 +492,51 @@ def get_overview(fetch_json, days: int = 7) -> dict:
         f = (o.get("fulfillments") or [{}])[0]
         ss = f.get("shipment_status")
         is_express = o.get("shipment_category") == "express"
-        # "Ngày xử lý" trên Sapo = lúc TẠO VẬN ĐƠN = thời gian XÁC NHẬN của shop
+        # "Ngày xử lý" = lúc TẠO VẬN ĐƠN = thời gian xác nhận của shop
         xuly_vn = _parse_vn(f.get("shipment_created_on") or f.get("created_on"))
         xuly_d = xuly_vn.date() if xuly_vn else None
+        issued_today = _vn_date_of(f.get("issued_on")) == today
 
-        # Đã xác nhận (xử lý) hôm nay (+ cảnh báo xử lý sau 18h)
-        if xuly_d == today:
+        # Cảnh báo xử lý sau 18h (theo Ngày xử lý hôm nay)
+        if xuly_d == today and xuly_vn.hour >= 18:
+            al["conf_after18"] += 1
+            _cre = _parse_vn(o.get("created_on"))
+            if _cre and _cre.date() == today and _cre.hour < 18:
+                al["late_confirm"] += 1
+
+        # ĐƠN CẦN GIAO HÔM NAY = đang chờ giao (pending) HOẶC đã giao shipper HÔM NAY
+        if not (xuly_vn and (ss == "pending"
+                             or (ss in ("delivering", "delivered") and issued_today))):
+            continue
+        handed = ss != "pending"
+        cg["tong"] += 1
+        cg["moi" if xuly_d == today else "sot"] += 1
+        cg["shipper_nhan" if handed else "chua_giao"] += 1
+        if o.get("confirmed_on"):
             cg["da_xac_nhan"] += 1
-            if xuly_vn.hour >= 18:
-                al["conf_after18"] += 1
-                _cre = _parse_vn(o.get("created_on"))
-                if _cre and _cre.date() == today and _cre.hour < 18:
-                    al["late_confirm"] += 1
-        # Đã đóng hàng hôm nay / Shipper đã nhận (xuất VC) hôm nay
-        if _vn_date_of(f.get("packed_on")) == today:
+        if f.get("packed_status") == "packed":
             cg["da_dong"] += 1
-        if _vn_date_of(f.get("issued_on")) == today:
-            cg["shipper_nhan"] += 1
-
-        # Đang chờ giao = đã có vận đơn, shipper CHƯA LẤY (shipment_status=pending)
-        if ss == "pending":
-            cg["cho_giao"] += 1
-            packed = f.get("packed_status") == "packed"
-            da_in = bool(f.get("shipping_label_slip_url"))
-            # SÓT = NGÀY XỬ LÝ (tạo vận đơn) HÔM TRƯỚC + ĐÃ IN, shipper chưa lấy
-            if xuly_d and xuly_d < today and da_in:
-                cg["cho_sot"] += 1
-                sot_list.append({
-                    "Mã vận đơn": (f.get("tracking_number")
-                                   or (f.get("tracking_numbers") or [None])[0]
-                                   or o.get("name") or ""),
-                    "ĐVVC": ((f.get("tracking_info") or {}).get("carrier_name")
-                             or (o.get("shipping_lines") or [{}])[0].get("carrier_name") or "NB tự VC"),
-                    "Ngày xử lý": _fmtvn(f.get("shipment_created_on") or f.get("created_on")),
-                    "Trạng thái đóng": "Đã đóng" if packed else "Chờ đóng gói",
-                })
-            elif xuly_d == today:
-                cg["cho_moi"] += 1       # mới: xử lý hôm nay
-            cg["cho_packed" if packed else "cho_chua_dong"] += 1
-            if is_express:
-                cg["hoa_toc_cho"] += 1
+        if is_express:
+            cg["hoa_toc"] += 1
+            if not handed:
                 al["express_pending"] += 1
-            car = (o.get("shipping_lines") or [{}])[0].get("carrier_name") or "NB tự VC"
-            e = dvvc.setdefault(car, {"dvvc": car, "total": 0, "thuong": 0,
-                                      "hoatoc": 0, "packed": 0, "chua_dong": 0})
-            e["total"] += 1
-            e["hoatoc" if is_express else "thuong"] += 1
-            e["packed" if packed else "chua_dong"] += 1
+        # Chi tiết đơn SÓT còn chưa giao (xử lý hôm trước, chưa giao)
+        if xuly_d != today and not handed:
+            sot_list.append({
+                "Mã vận đơn": (f.get("tracking_number") or (f.get("tracking_numbers") or [None])[0]
+                               or o.get("name") or ""),
+                "ĐVVC": ((f.get("tracking_info") or {}).get("carrier_name")
+                         or (o.get("shipping_lines") or [{}])[0].get("carrier_name") or "NB tự VC"),
+                "Ngày xử lý": _fmtvn(f.get("shipment_created_on") or f.get("created_on")),
+                "Trạng thái đóng": "Đã đóng" if f.get("packed_status") == "packed" else "Chờ đóng gói",
+            })
+        # Bảng phân bổ theo ĐVVC
+        car = (o.get("shipping_lines") or [{}])[0].get("carrier_name") or "NB tự VC"
+        e = dvvc.setdefault(car, {"dvvc": car, "total": 0, "thuong": 0,
+                                  "hoatoc": 0, "da_giao": 0, "chua_giao": 0})
+        e["total"] += 1
+        e["hoatoc" if is_express else "thuong"] += 1
+        e["da_giao" if handed else "chua_giao"] += 1
     cg["sot_list"] = sorted(sot_list, key=lambda x: x["Ngày xử lý"])
 
     # ---- Đơn hủy sau đẩy VC (dùng get_cancelled) ----

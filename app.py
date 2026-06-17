@@ -357,47 +357,41 @@ if _page == PAGE_OVERVIEW:
                           [PALETTE[i % len(PALETTE)] for i in range(len(_stk))],
                           str(sum(ov["stores"].values()))), width="stretch")
 
-    # ═══════════ ĐƠN CẦN GIAO SHIPPER (hôm nay) ═══════════
+    # ═══════════ ĐƠN CẦN GIAO HÔM NAY (theo mẫu) ═══════════
     dl = ov["delivery"]
-    st.markdown('<div class="sec sec-orange">Đơn cần giao shipper hôm nay'
-                '<span class="ic" title="Phễu xử lý giao hàng TRONG NGÀY HÔM NAY: xử lý (tạo vận đơn) → đóng gói → xuất cho ĐVVC, kèm số đơn đang chờ shipper tới lấy. Mốc xác nhận = NGÀY XỬ LÝ trên Sapo. Giờ VN.">&#9432;</span></div>',
+    st.markdown('<div class="sec sec-orange">Đơn cần giao hôm nay'
+                '<span class="ic" title="Đơn cần giao = Đơn mới hôm nay (Ngày xử lý hôm nay) + Đơn sót (xử lý hôm trước, hôm nay mới giao/còn chờ). Phễu: Đã xác nhận → Đã đóng hàng → Shipper đã nhận; phần còn lại = Còn chưa giao. Giờ VN.">&#9432;</span></div>',
                 unsafe_allow_html=True)
-    # Hàng 1 — hoạt động trong ngày
+    st.caption("**Đơn cần giao = Đơn mới hôm nay + Đơn sót** (gồm đơn đã giao shipper hôm nay và đơn còn chờ).")
+    # Hàng 1 — Tổng / Mới / Sót
     _d = st.columns(3)
-    _d[0].metric("📋 Đã xác nhận", f"{dl['da_xac_nhan']:,}",
-                 help="Số đơn được XỬ LÝ (tạo vận đơn) trong hôm nay — đúng cột 'Ngày xử lý' trên Sapo.")
-    _d[1].metric("✅ Đã đóng hàng", f"{dl['da_dong']:,}",
-                 help="Số đơn ĐÓNG GÓI XONG trong hôm nay — gồm cả đơn sót (xử lý hôm trước, nay mới đóng).")
-    _d[2].metric("🚚 Shipper đã nhận", f"{dl['shipper_nhan']:,}",
-                 help="Số đơn ĐÃ XUẤT/giao cho ĐVVC (shipper) trong hôm nay (theo issued_on).")
-    # Hàng 2 — đang chờ shipper tới lấy (snapshot hiện tại)
-    st.markdown("**🟠 Đang chờ shipper tới lấy** "
-                "<span class='ic' title='Đơn đã có vận đơn nhưng shipper CHƯA LẤY (shipment_status=pending). Con số này thay đổi LIÊN TỤC trong ngày khi shipper lấy hàng dần.'>&#9432;</span>",
-                unsafe_allow_html=True)
+    _d[0].metric("🚚 Tổng đơn cần giao", f"{dl['tong']:,}",
+                 help="Đơn cần đẩy cho shipper hôm nay = Đơn mới + Đơn sót.")
+    _d[1].metric("🆕 Đơn mới hôm nay", f"{dl['moi']:,}", help="Đơn có NGÀY XỬ LÝ = hôm nay.")
+    _d[2].metric("📌 Đơn sót", f"{dl['sot']:,}",
+                 help="Đơn NGÀY XỬ LÝ hôm trước, hôm nay mới giao hoặc còn chờ.")
+    # Hàng 2 — funnel tiến độ
     _e = st.columns(4)
-    _e[0].metric("⏳ Đang chờ giao", f"{dl['cho_giao']:,}",
-                 help="Tổng đơn đang chờ shipper tới lấy ngay lúc này.")
-    _e[1].metric("🆕 Mới hôm nay", f"{dl['cho_moi']:,}",
-                 help="Trong nhóm chờ giao: đơn có NGÀY XỬ LÝ = hôm nay.")
-    _e[2].metric("📌 Sót", f"{dl['cho_sot']:,}",
-                 help="Trong nhóm chờ giao: đơn NGÀY XỬ LÝ HÔM TRƯỚC, đã in, hôm nay mới nhặt/đóng — shipper chưa lấy.")
-    _e[3].metric("🔴 Hỏa tốc chờ", f"{dl['hoa_toc_cho']:,}",
-                 help="Trong nhóm chờ giao: đơn HỎA TỐC cần ưu tiên đẩy trước.")
-    st.caption(f"Trong nhóm chờ giao: đã đóng **{dl['cho_packed']}** · chưa đóng **{dl['cho_chua_dong']}**.")
+    _e[0].metric("📋 Đã xác nhận", f"{dl['da_xac_nhan']:,}", help="Đơn đã xác nhận (có confirmed_on).")
+    _e[1].metric("✅ Đã đóng hàng", f"{dl['da_dong']:,}", help="Đơn đã đóng gói (packed).")
+    _e[2].metric("🚚 Shipper đã nhận", f"{dl['shipper_nhan']:,}",
+                 help="Đơn đã giao cho ĐVVC / shipper (đang giao).")
+    _e[3].metric("⏳ Còn chưa giao", f"{dl['chua_giao']:,}",
+                 help="Đơn còn chờ shipper tới lấy (pending) = Tổng − Shipper đã nhận.")
+    st.caption(f"🔴 Hỏa tốc trong nhóm cần giao: **{dl['hoa_toc']}**.")
     if dl.get("sot_list"):
         _by = {}
         for _r in dl["sot_list"]:
             _by[_r["ĐVVC"]] = _by.get(_r["ĐVVC"], 0) + 1
         _bytxt = " · ".join(f"{k}: {v}" for k, v in sorted(_by.items(), key=lambda x: -x[1]))
-        with st.expander(f"📌 Xem {dl['cho_sot']} đơn SÓT theo ĐVVC — {_bytxt}"):
+        with st.expander(f"📌 Xem {len(dl['sot_list'])} đơn SÓT còn chưa giao theo ĐVVC — {_bytxt}"):
             render_compact_table(pd.DataFrame(dl["sot_list"]))
-            st.caption("Mã vận đơn + ĐVVC để đối chiếu Sapo. Số 'sót' đổi theo thời điểm xem "
-                       "(mỗi lượt đóng hàng / shipper lấy đều thay đổi).")
-    st.markdown("**Phân bổ đơn chờ giao theo đơn vị vận chuyển**")
+            st.caption("Đơn xử lý hôm trước, còn chưa giao shipper. Mã vận đơn + ĐVVC để đối chiếu Sapo.")
+    st.markdown("**📊 Bảng phân bổ đơn cần giao theo đơn vị vận chuyển**")
     if ov["dvvc"]:
         render_compact_table(pd.DataFrame(ov["dvvc"]).rename(columns={
-            "dvvc": "ĐVVC", "total": "Tổng", "thuong": "Thường", "hoatoc": "Hỏa tốc",
-            "packed": "Đã đóng", "chua_dong": "Chưa đóng"}))
+            "dvvc": "ĐVVC", "total": "Tổng đơn", "thuong": "Đơn thường", "hoatoc": "Hỏa tốc",
+            "da_giao": "Đã giao shipper", "chua_giao": "Còn chưa giao"}))
 
     # ═══════════ CẢNH BÁO + ĐƠN HỦY ═══════════
     _w1, _w2 = st.columns(2)
@@ -407,7 +401,7 @@ if _page == PAGE_OVERVIEW:
         st.error(
             f"🕒 Xác nhận sau 18h hôm nay: **{al['conf_after18']}**\n\n"
             f"📌 Đặt trước 18h, xác nhận sau 18h: **{al['late_confirm']}**\n\n"
-            f"📦 Đang chờ shipper tới lấy: **{dl['cho_giao']}**\n\n"
+            f"📦 Còn chưa giao (chờ shipper): **{dl['chua_giao']}**\n\n"
             f"🔴 Hỏa tốc chưa giao: **{al['express_pending']}**"
         )
     with _w2:
