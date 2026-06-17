@@ -18,7 +18,7 @@ import streamlit_authenticator as stauth
 import sapo_logic as L
 import picklog
 from sapo_client import SapoAuthError, build_session, credential_present, make_fetch_json
-from picking_render import history_slips_html, picking_html
+from picking_render import picking_html
 
 # ───────────────────────── Cấu hình trang ─────────────────────────
 st.set_page_config(
@@ -456,7 +456,7 @@ if _page == PAGE_PICK:
 
     now_str = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%H:%M %d/%m/%Y")
 
-    # ── LỊCH SỬ IN PHIẾU hôm nay (qua dashboard) — từ Google Sheet ──
+    # ── LỊCH SỬ IN PHIẾU hôm nay (qua dashboard) — từ kho lưu trữ ──
     st.markdown("#### 📋 Lịch sử in phiếu nhặt hôm nay (qua dashboard)")
     if not picklog.configured():
         st.info("Chưa bật lưu lịch sử in. Mở hướng dẫn bên dưới để bật (1 lần).")
@@ -475,19 +475,6 @@ if _page == PAGE_PICK:
         else:
             st.caption("Chưa lưu lượt in nào hôm nay. Bấm **🖨️ In K80** ở phiếu bên dưới, "
                        "rồi bấm **💾 Lưu đợt vừa in**.")
-
-    # ── Đối chiếu: TẤT CẢ đơn đóng gói trên Sapo (tham khảo) ──
-    hist = pdata.get("history", {})
-    if hist.get("batches"):
-        with st.expander(f"📦 Đối chiếu: tất cả đơn ĐÓNG GÓI trên Sapo hôm nay "
-                         f"({hist['so_dot']} lượt · {hist['tong_don']} đơn · {hist['tong_sp']} SP)"):
-            render_compact_table(pd.DataFrame(
-                [{"Lượt": b["dot"], "Giờ": b["gio"], "Số đơn": b["don"], "Số SP": b["sp"],
-                  "Số SKU": b["sku_count"], "Hỏa tốc": b["hoatoc"], "Đã xuất kho": b["xuat"]}
-                 for b in hist["batches"]]))
-            st.caption("Gồm cả lượt bấm đóng gói HÀNG LOẠT thẳng trên Sapo (vd ca sáng) — thường "
-                       "nhiều hơn số phiếu in ở dashboard. Dùng để đối chiếu, không phải số phiếu bạn in.")
-            components.html(history_slips_html(hist["batches"], now_str), height=460, scrolling=True)
 
     # ── Đối chiếu SP soạn hàng vs xuất kho hôm nay (theo SKU) ──
     rec = pdata.get("reconcile", {})
