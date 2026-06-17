@@ -265,11 +265,10 @@ def get_overview(fetch_json, days: int = 7) -> dict:
     daily = {week_start + timedelta(days=i): {"don": 0, "sp": 0} for i in range(days)}
     sources, stores, sku_set = {}, {}, set()
     week_sp = today_sp = yest_sp = 0
-    # Đơn cần giao + cảnh báo
-    cg = {"total": 0, "new": 0, "sot": 0, "confirmed": 0, "packed": 0,
-          "handed": 0, "pending": 0, "express_pending": 0}
+    # Đơn cần giao shipper + cảnh báo
+    cg = {"total": 0, "new": 0, "sot": 0, "packed": 0, "not_packed": 0, "express": 0}
     dvvc = {}
-    al = {"conf_after18": 0, "late_confirm": 0, "confirmed_pending": 0, "express_pending": 0}
+    al = {"conf_after18": 0, "late_confirm": 0, "express_pending": 0}
 
     for o in orders:
         d = _vn_date_of(o.get("created_on"))
@@ -293,46 +292,34 @@ def get_overview(fetch_json, days: int = 7) -> dict:
         store = cd.get("branch_name") or src or "Khác"
         stores[store] = stores.get(store, 0) + 1
 
-        # ---- Đơn cần giao (chưa giao xong) ----
+        # ---- Đơn CẦN GIAO SHIPPER = đã xác nhận + shipper CHƯA LẤY ----
         f = (o.get("fulfillments") or [{}])[0]
         ss = f.get("shipment_status")
-        confirmed = o.get("issue_status") == "issued"
         is_express = o.get("shipment_category") == "express"
-        chua_giao = ss in (None, "pending", "wait_to_confirm")
-        delivered = ss in ("delivered", "returned", "returning", "cancelled")
         conf_vn = _parse_vn(o.get("confirmed_on"))
-        if not delivered:
+        if ss == "pending":   # đã có vận đơn nhưng shipper CHƯA LẤY
             cg["total"] += 1
-            if d == today:
-                cg["new"] += 1
+            if conf_vn and conf_vn.date() == today:
+                cg["new"] += 1          # xác nhận hôm nay
             else:
-                cg["sot"] += 1
-            if confirmed:
-                cg["confirmed"] += 1
-            if f.get("packed_status") == "packed":
-                cg["packed"] += 1
-            if ss == "delivering":
-                cg["handed"] += 1
-            if chua_giao:
-                cg["pending"] += 1
-                if is_express:
-                    cg["express_pending"] += 1
+                cg["sot"] += 1          # xác nhận hôm qua/trước, shipper chưa lấy
+            packed = f.get("packed_status") == "packed"
+            cg["packed" if packed else "not_packed"] += 1
+            if is_express:
+                cg["express"] += 1
             car = (o.get("shipping_lines") or [{}])[0].get("carrier_name") or "NB tự VC"
-            e = dvvc.setdefault(car, {"dvvc": car, "total": 0, "thuong": 0, "hoatoc": 0, "giao": 0, "chua": 0})
+            e = dvvc.setdefault(car, {"dvvc": car, "total": 0, "thuong": 0,
+                                      "hoatoc": 0, "packed": 0, "chua_dong": 0})
             e["total"] += 1
             e["hoatoc" if is_express else "thuong"] += 1
-            if ss == "delivering":
-                e["giao"] += 1
-            if chua_giao:
-                e["chua"] += 1
-            if confirmed and chua_giao:
-                al["confirmed_pending"] += 1
-            if is_express and chua_giao:
+            e["packed" if packed else "chua_dong"] += 1
+            if is_express:
                 al["express_pending"] += 1
-        # ---- Cảnh báo xác nhận trễ ----
+        # ---- Cảnh báo xác nhận trễ (hôm nay) ----
         if conf_vn and conf_vn.date() == today and conf_vn.hour >= 18:
             al["conf_after18"] += 1
-            if d == today and _parse_vn(o.get("created_on")).hour < 18:
+            _cre = _parse_vn(o.get("created_on"))
+            if _cre and _cre.date() == today and _cre.hour < 18:
                 al["late_confirm"] += 1
 
     # ---- Đơn hủy sau đẩy VC (dùng get_cancelled) ----

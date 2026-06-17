@@ -302,25 +302,23 @@ if _page == PAGE_OVERVIEW:
                           [PALETTE[i % len(PALETTE)] for i in range(len(_stk))],
                           str(sum(ov["stores"].values()))), width="stretch")
 
-    # ═══════════ ĐƠN CẦN GIAO ═══════════
+    # ═══════════ ĐƠN CẦN GIAO SHIPPER (hôm nay) ═══════════
     dl = ov["delivery"]
-    st.markdown('<div class="sec sec-orange">Đơn cần giao (7 ngày)'
-                '<span class="ic" title="Đơn đang trong quy trình giao, CHƯA giao xong (gồm chờ giao + shipper đang giao). Tách: mới hôm nay vs đơn cũ chưa xong.">&#9432;</span></div>',
+    st.markdown('<div class="sec sec-orange">Đơn cần giao shipper'
+                '<span class="ic" title="Đơn ĐÃ XÁC NHẬN mà shipper CHƯA LẤY = đơn xác nhận hôm nay + đơn sót (xác nhận hôm qua/trước nhưng shipper chưa lấy). Đây là việc cần đẩy cho shipper hôm nay.">&#9432;</span></div>',
                 unsafe_allow_html=True)
     _d = st.columns(3)
-    _d[0].metric("🚚 Tổng cần giao", f"{dl['total']:,}")
-    _d[1].metric("🆕 Mới hôm nay", f"{dl['new']:,}")
-    _d[2].metric("⏳ Đơn cũ chưa xong", f"{dl['sot']:,}")
-    _e = st.columns(5)
-    _e[0].metric("Đã xác nhận", dl["confirmed"], help="Đơn đã bấm xác nhận (issue_status=issued).")
-    _e[1].metric("Đã đóng hàng", dl["packed"], help="Đơn đã đóng gói xong.")
-    _e[2].metric("Shipper đã nhận", dl["handed"], help="Đơn shipper đã lấy, đang giao.")
-    _e[3].metric("Còn chưa giao", dl["pending"], help="Đơn chưa được shipper lấy.")
-    _e[4].metric("🔴 Hỏa tốc chưa giao", dl["express_pending"], help="Đơn HỎA TỐC chưa được lấy — ưu tiên gấp!")
+    _d[0].metric("🚚 Tổng cần giao", f"{dl['total']:,}", help="Đã xác nhận mà shipper chưa lấy.")
+    _d[1].metric("🆕 Xác nhận hôm nay", f"{dl['new']:,}")
+    _d[2].metric("⏳ Sót (chưa lấy)", f"{dl['sot']:,}", help="Đơn xác nhận hôm qua/trước mà shipper vẫn chưa lấy.")
+    _e = st.columns(3)
+    _e[0].metric("✅ Đã đóng hàng (sẵn giao)", dl["packed"])
+    _e[1].metric("📦 Chưa đóng hàng", dl["not_packed"])
+    _e[2].metric("🔴 Hỏa tốc", dl["express"])
     st.markdown("**Phân bổ theo đơn vị vận chuyển**")
     _dv = pd.DataFrame(ov["dvvc"]).rename(columns={
-        "dvvc": "ĐVVC", "total": "Tổng đơn", "thuong": "Thường", "hoatoc": "Hỏa tốc",
-        "giao": "Đã giao shipper", "chua": "Còn chưa giao"})
+        "dvvc": "ĐVVC", "total": "Tổng", "thuong": "Thường", "hoatoc": "Hỏa tốc",
+        "packed": "Đã đóng", "chua_dong": "Chưa đóng"}) if ov["dvvc"] else pd.DataFrame()
     st.dataframe(_dv, width="stretch", hide_index=True)
 
     # ═══════════ CẢNH BÁO + ĐƠN HỦY ═══════════
@@ -331,7 +329,7 @@ if _page == PAGE_OVERVIEW:
         st.error(
             f"🕒 Xác nhận sau 18h hôm nay: **{al['conf_after18']}**\n\n"
             f"📌 Đặt trước 18h, xác nhận sau 18h: **{al['late_confirm']}**\n\n"
-            f"📦 Đã xác nhận, shipper chưa lấy: **{al['confirmed_pending']}**\n\n"
+            f"📦 Đã xác nhận, shipper chưa lấy: **{dl['total']}**\n\n"
             f"🔴 Hỏa tốc chưa giao: **{al['express_pending']}**"
         )
     with _w2:
