@@ -456,6 +456,37 @@ if _page == PAGE_PICK:
 
     now_str = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%H:%M %d/%m/%Y")
 
+    # ── ⚠️ SP bị HỦY sau khi đã in phiếu nhặt (quan trọng, trên cùng) ──
+    cp = pdata.get("cancel_pick", {})
+    st.markdown('<div class="sec sec-red">⚠️ SP bị HỦY sau khi đã in phiếu nhặt</div>',
+                unsafe_allow_html=True)
+    if cp.get("rows"):
+        st.error(f"**{cp['tong_don']} đơn · {cp['tong_sp']} SP** đã in phiếu nhặt rồi BỊ HỦY hôm nay "
+                 "— cần lấy lại hàng / kiểm kho ngay.")
+        render_compact_table(pd.DataFrame(cp["rows"]))
+        st.caption("Đơn đã có vận đơn (đã in phiếu) rồi bị hủy. Dò **mã vận đơn + đợt in phiếu** để thu hồi hàng đúng đợt.")
+    else:
+        st.success("✅ Hôm nay chưa có đơn nào hủy sau khi in phiếu nhặt.")
+
+    # ── 🔍 Đối chiếu SP soạn hàng vs xuất kho hôm nay (theo SKU) ──
+    rec = pdata.get("reconcile", {})
+    if rec.get("rows"):
+        st.markdown("#### 🔍 Đối chiếu SP soạn hàng vs xuất kho hôm nay")
+        rc = st.columns(3)
+        rc[0].metric("📦 SP đã soạn (đóng gói)", rec["tong_soan"])
+        rc[1].metric("🚚 SP đã xuất kho (giao VC)", rec["tong_xuat"])
+        rc[2].metric("⚠️ SKU lệch", rec["so_sku_lech"], help="Số SKU có SL soạn ≠ SL xuất kho.")
+        if rec["so_sku_lech"] == 0 and rec["tong_soan"] == rec["tong_xuat"]:
+            st.success("✅ KHỚP hoàn toàn — số SP soạn = số SP xuất kho hôm nay.")
+        else:
+            st.warning(f"⚠️ Lệch tổng **{rec['tong_soan'] - rec['tong_xuat']:+d} SP** · "
+                       f"**{rec['so_sku_lech']} SKU** chưa khớp (xem các dòng tô đỏ).")
+        _rdf = pd.DataFrame(rec["rows"])
+        render_compact_table(_rdf, red_mask=(_rdf["Lệch"] != 0).tolist())
+        st.caption("**Soạn** = đóng gói hôm nay. **Xuất kho** = giao ĐVVC hôm nay. "
+                   "Lệch > 0 = đã soạn chưa xuất (chờ shipper); < 0 = xuất từ đơn soạn hôm trước. "
+                   "Cột **Lý do lệch** ghi rõ đơn nào.")
+
     # ── Phiếu in (trái) + Lịch sử in & nút Lưu (phải, KẾ BÊN phiếu) ──
     _cslip, _clog = st.columns([3, 2])
     with _cslip:
@@ -492,25 +523,6 @@ if _page == PAGE_PICK:
                 (st.success(msg + " Bấm 🔄 Tải lại để thấy.") if ok else st.error(msg))
             if not picklog.configured():
                 st.caption("⚠️ Cần bật kho lưu (xem hướng dẫn trên).")
-
-    # ── Đối chiếu SP soạn hàng vs xuất kho hôm nay (theo SKU) ──
-    rec = pdata.get("reconcile", {})
-    if rec.get("rows"):
-        st.markdown("#### 🔍 Đối chiếu SP soạn hàng vs xuất kho hôm nay")
-        rc = st.columns(3)
-        rc[0].metric("📦 SP đã soạn (đóng gói)", rec["tong_soan"])
-        rc[1].metric("🚚 SP đã xuất kho (giao VC)", rec["tong_xuat"])
-        rc[2].metric("⚠️ SKU lệch", rec["so_sku_lech"], help="Số SKU có SL soạn ≠ SL xuất kho.")
-        if rec["so_sku_lech"] == 0 and rec["tong_soan"] == rec["tong_xuat"]:
-            st.success("✅ KHỚP hoàn toàn — số SP soạn = số SP xuất kho hôm nay.")
-        else:
-            st.warning(f"⚠️ Lệch tổng **{rec['tong_soan'] - rec['tong_xuat']:+d} SP** · "
-                       f"**{rec['so_sku_lech']} SKU** chưa khớp (xem các dòng tô đỏ).")
-        _rdf = pd.DataFrame(rec["rows"])
-        render_compact_table(_rdf, red_mask=(_rdf["Lệch"] != 0).tolist())
-        st.caption("**Soạn** = đóng gói hôm nay. **Xuất kho** = giao ĐVVC hôm nay. "
-                   "Lệch > 0 = đã soạn chưa xuất (chờ shipper); < 0 = xuất từ đơn soạn hôm trước. "
-                   "Cột **Lý do lệch** ghi rõ đơn nào.")
 
     with st.expander("📄 Hoặc: tạo phiếu từ file Excel (upload thủ công)"):
         _html_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "picking_slip.html")

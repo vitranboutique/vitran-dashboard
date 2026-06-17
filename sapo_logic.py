@@ -305,6 +305,63 @@ def _packing_reconcile(orders) -> dict:
     }
 
 
+def _cancel_after_pick(open_orders, fetch_json) -> dict:
+    """SP bị HỦY sau khi đã IN PHIẾU NHẶT hôm nay (đơn hủy + có shipping_label_slip_url).
+    Báo mã vận đơn / SKU+SL / SP / thuộc ĐỢT soạn nào (khớp theo packed_on cụm như lịch sử)."""
+    today = (_now_utc() + timedelta(hours=7)).date()
+
+    def f0(o):
+        return (o.get("fulfillments") or [{}])[0]
+
+    # Đợt soạn hôm nay = cụm packed_on của đơn open (giống _packing_history)
+    pts = sorted(p for o in open_orders
+                 for p in [_parse_vn(f0(o).get("packed_on"))] if p and p.date() == today)
+    windows = []
+    for t in pts:
+        if windows and (t - windows[-1][1]).total_seconds() <= 20 * 60:
+            windows[-1][1] = t
+        else:
+            windows.append([t, t])
+
+    def dot_of(t):
+        if not t:
+            return None
+        for i, (s, e) in enumerate(windows, 1):
+            if s - timedelta(minutes=20) <= t <= e + timedelta(minutes=20):
+                return i
+        return None
+
+    try:
+        canc = get_cancelled(fetch_json)
+    except Exception:
+        return {"rows": [], "tong_don": 0, "tong_sp": 0}
+    rows = []
+    for o in (canc.get("packed", []) + canc.get("not_packed", [])):
+        f = f0(o)
+        if not f.get("shipping_label_slip_url"):          # chưa in phiếu -> bỏ
+            continue
+        if _vn_date_of(o.get("cancelled_on")) != today:    # chỉ hủy hôm nay
+            continue
+        t_pack = _parse_vn(f.get("packed_on"))
+        t_ref = t_pack or _parse_vn(f.get("shipment_created_on") or f.get("created_on"))
+        dot = dot_of(t_pack) or dot_of(t_ref)
+        ch = _parse_vn(o.get("cancelled_on"))
+        rows.append({
+            "Mã vận đơn": (f.get("tracking_number") or (f.get("tracking_numbers") or [None])[0]
+                           or o.get("name") or ""),
+            "ĐVVC": ((f.get("tracking_info") or {}).get("carrier_name")
+                     or (o.get("shipping_lines") or [{}])[0].get("carrier_name") or "?"),
+            "SKU (SL)": "; ".join(f"{li.get('sku') or 'N/A'} ×{li.get('quantity', 0) or 0}"
+                                  for li in (o.get("line_items") or [])),
+            "SP": sum((li.get("quantity", 0) or 0) for li in (o.get("line_items") or [])),
+            "Đợt in phiếu": f"Đợt {dot}" if dot else "—",
+            "Giờ in phiếu": t_ref.strftime("%H:%M") if t_ref else "",
+            "Giờ hủy": ch.strftime("%H:%M") if ch else "",
+        })
+    rows.sort(key=lambda r: r["Giờ in phiếu"])
+    return {"rows": rows, "tong_don": len(rows), "tong_sp": sum(r["SP"] for r in rows)}
+
+
 def get_picking(fetch_json, max_pages: int = 15) -> dict:
     """Đơn cần nhặt = chờ đóng gói (packing) + đã in phiếu giao hàng (shipping_label_slip_url).
     Tách hỏa tốc (express) / thường (còn lại). Kèm lịch sử đợt soạn hàng hôm nay."""
@@ -330,6 +387,7 @@ def get_picking(fetch_json, max_pages: int = 15) -> dict:
         "total": len(pick),
         "history": _packing_history(orders),
         "reconcile": _packing_reconcile(orders),
+        "cancel_pick": _cancel_after_pick(orders, fetch_json),
     }
 
 
