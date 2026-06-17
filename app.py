@@ -373,7 +373,7 @@ if _page == PAGE_OVERVIEW:
 if _page == PAGE_PICK:
     st.title("🧾 Phiếu nhặt hàng")
     st.caption("Tự kéo từ Sapo: đơn **đã in phiếu giao hàng** + **chờ đóng gói**. "
-               "Hỏa tốc ưu tiên nhặt trước. Đếm cũ/mới theo ngày xác nhận, cảnh báo xác nhận trễ.")
+               "Hỏa tốc ưu tiên nhặt trước. Đếm cũ/mới theo **Ngày xử lý** (Sapo), cảnh báo xử lý trễ.")
     if not credential_present():
         st.warning("⚠️ Trang này cần kết nối Sapo (API LIVE) — hiện chưa có credential.")
         st.stop()
@@ -390,13 +390,24 @@ if _page == PAGE_PICK:
     k = st.columns(4)
     k[0].metric("🔴 Hỏa tốc (nhặt trước)", exp["total_orders"])
     k[1].metric("Thường", nor["total_orders"])
-    k[2].metric("🟢 Đơn mới (nay)", exp["new"] + nor["new"])
-    k[3].metric("Đơn cũ (tồn)", exp["old"] + nor["old"])
+    k[2].metric("🟢 Đơn mới (nay)", exp["new"] + nor["new"],
+                help="Đơn có NGÀY XỬ LÝ = hôm nay.")
+    k[3].metric("Đơn cũ (tồn)", exp["old"] + nor["old"],
+                help="Đơn có NGÀY XỬ LÝ hôm trước, nay mới nhặt.")
 
     late_list = exp["late_list"] + nor["late_list"]
     if late_list:
-        st.error(f"⚠ **{len(late_list)} đơn xác nhận TRỄ** (sau 18h ngày đặt): "
+        st.error(f"⚠ **{len(late_list)} đơn xử lý TRỄ** (sau 18h ngày đặt): "
                  + ", ".join(late_list[:25]) + ("…" if len(late_list) > 25 else ""))
+
+    # ── Lịch sử soạn hàng hôm nay (theo đợt đóng gói) ──
+    hist = pdata.get("history", {})
+    if hist.get("batches"):
+        st.markdown(f"#### 📦 Lịch sử soạn hàng hôm nay — **{hist['so_dot']} đợt** · "
+                    f"{hist['tong_don']} đơn · {hist['tong_sp']} SP")
+        st.dataframe(pd.DataFrame(hist["batches"]), width="stretch", hide_index=True)
+        st.caption("Tự suy từ mốc đóng gói (packed_on) trên Sapo — mỗi cụm thời gian gần nhau = 1 đợt soạn. "
+                   "Dùng báo cáo cuối ngày. (Muốn lưu lịch sử các NGÀY TRƯỚC thì cần Google Sheet — làm sau nếu cần.)")
 
     now_str = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%H:%M %d/%m/%Y")
     components.html(picking_html(pdata, now_str), height=820, scrolling=True)

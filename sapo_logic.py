@@ -176,14 +176,15 @@ def _summarize_picking(orders):
             q = li.get("quantity", 0) or 0
             sku[s] = sku.get(s, 0) + q
             total_qty += q
-        conf_vn = _parse_vn(o.get("confirmed_on"))
+        f = (o.get("fulfillments") or [{}])[0]
+        xuly_vn = _parse_vn(f.get("shipment_created_on") or f.get("created_on"))
         cre_vn = _parse_vn(o.get("created_on"))
-        if conf_vn:
-            if conf_vn.date() == today:
+        if xuly_vn:
+            if xuly_vn.date() == today:   # mới: Ngày xử lý hôm nay
                 new += 1
-            else:
+            else:                          # cũ/tồn: Ngày xử lý hôm trước
                 old += 1
-            if cre_vn and conf_vn > _picking_deadline_vn(cre_vn):
+            if cre_vn and xuly_vn > _picking_deadline_vn(cre_vn):
                 late += 1
                 late_list.append(o.get("name"))
     srt = lambda d: dict(sorted(d.items(), key=lambda x: (-x[1], str(x[0]))))
@@ -197,9 +198,46 @@ def _summarize_picking(orders):
     }
 
 
+def _packing_history(orders, gap_min: int = 20) -> dict:
+    """Suy ra các ĐỢT SOẠN HÀNG hôm nay từ mốc đóng gói (packed_on).
+    Gom các đơn đóng gói cách nhau <= gap_min phút thành 1 đợt."""
+    today = (_now_utc() + timedelta(hours=7)).date()
+    rows = []
+    for o in orders:
+        f = (o.get("fulfillments") or [{}])[0]
+        pv = _parse_vn(f.get("packed_on"))
+        if pv and pv.date() == today:
+            sp = sum((li.get("quantity", 0) or 0) for li in (o.get("line_items") or []))
+            express = o.get("shipment_category") == "express"
+            rows.append((pv, sp, express))
+    rows.sort(key=lambda x: x[0])
+    batches = []
+    for pv, sp, express in rows:
+        if batches and (pv - batches[-1]["_last"]).total_seconds() <= gap_min * 60:
+            b = batches[-1]
+        else:
+            b = {"_start": pv, "_last": pv, "don": 0, "sp": 0, "hoatoc": 0}
+            batches.append(b)
+        b["_last"] = pv
+        b["don"] += 1
+        b["sp"] += sp
+        b["hoatoc"] += 1 if express else 0
+    out = []
+    for i, b in enumerate(batches, 1):
+        g1, g2 = b["_start"].strftime("%H:%M"), b["_last"].strftime("%H:%M")
+        out.append({"Đợt": i, "Giờ": g1 if g1 == g2 else f"{g1}–{g2}",
+                    "Số đơn": b["don"], "Số SP": b["sp"], "Hỏa tốc": b["hoatoc"]})
+    return {
+        "batches": out,
+        "so_dot": len(out),
+        "tong_don": sum(b["don"] for b in batches),
+        "tong_sp": sum(b["sp"] for b in batches),
+    }
+
+
 def get_picking(fetch_json, max_pages: int = 15) -> dict:
     """Đơn cần nhặt = chờ đóng gói (packing) + đã in phiếu giao hàng (shipping_label_slip_url).
-    Tách hỏa tốc (express) / thường (còn lại)."""
+    Tách hỏa tốc (express) / thường (còn lại). Kèm lịch sử đợt soạn hàng hôm nay."""
     orders = []
     for p in range(1, max_pages + 1):
         rows = fetch_json("/admin/orders.json", limit=250, page=p, status="open").get("orders", [])
@@ -219,6 +257,7 @@ def get_picking(fetch_json, max_pages: int = 15) -> dict:
         "express": _summarize_picking(express),
         "normal": _summarize_picking(normal),
         "total": len(pick),
+        "history": _packing_history(orders),
     }
 
 
