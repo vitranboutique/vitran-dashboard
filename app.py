@@ -426,9 +426,11 @@ if _page == PAGE_PICK:
         _sty = _rdf.style.apply(
             lambda r: ['background-color:#fdecea;color:#b3261e;font-weight:700' if r["Lệch"] != 0 else ''
                        for _ in r], axis=1)
-        st.dataframe(_sty, width="stretch", hide_index=True)
+        st.dataframe(_sty, width="stretch", hide_index=True,
+                     column_config={"Lý do lệch": st.column_config.TextColumn("Lý do lệch", width="large")})
         st.caption("**Soạn** = đóng gói hôm nay (packed_on). **Xuất kho** = giao cho ĐVVC hôm nay (issued_on). "
-                   "Lệch > 0 = đã soạn nhưng chưa xuất (còn trong kho chờ shipper); < 0 = xuất đơn đã soạn hôm trước.")
+                   "Lệch > 0 = đã soạn nhưng chưa xuất (còn trong kho chờ shipper); < 0 = xuất đơn đã soạn hôm trước. "
+                   "Cột **Lý do lệch** ghi rõ đơn nào gây lệch.")
 
     now_str = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%H:%M %d/%m/%Y")
     components.html(picking_html(pdata, now_str), height=820, scrolling=True)

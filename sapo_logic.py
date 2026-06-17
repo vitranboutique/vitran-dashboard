@@ -236,23 +236,51 @@ def _packing_history(orders, gap_min: int = 20) -> dict:
 
 
 def _packing_reconcile(orders) -> dict:
-    """Đối chiếu SP SOẠN HÀNG (đóng gói hôm nay) vs SP XUẤT KHO (giao ĐVVC hôm nay) theo SKU."""
+    """Đối chiếu SP SOẠN HÀNG (đóng gói hôm nay) vs SP XUẤT KHO (giao ĐVVC hôm nay) theo SKU,
+    kèm LÝ DO từng SKU lệch (đơn nào đã soạn chưa xuất / xuất từ đơn soạn hôm trước)."""
     today = (_now_utc() + timedelta(hours=7)).date()
     soan, xuat = {}, {}
+    pend, prev = {}, {}   # sku -> {"qty": int, "orders": [mã đơn]}
     for o in orders:
         f = (o.get("fulfillments") or [{}])[0]
-        items = [(li.get("sku") or "N/A", li.get("quantity", 0) or 0)
-                 for li in (o.get("line_items") or [])]
-        if _vn_date_of(f.get("packed_on")) == today:
-            for sk, q in items:
+        p_today = _vn_date_of(f.get("packed_on")) == today
+        i_today = _vn_date_of(f.get("issued_on")) == today
+        if not (p_today or i_today):
+            continue
+        code = o.get("name") or ""
+        for li in (o.get("line_items") or []):
+            sk = li.get("sku") or "N/A"
+            q = li.get("quantity", 0) or 0
+            if p_today:
                 soan[sk] = soan.get(sk, 0) + q
-        if _vn_date_of(f.get("issued_on")) == today:
-            for sk, q in items:
+            if i_today:
                 xuat[sk] = xuat.get(sk, 0) + q
+            if p_today and not i_today:        # đã soạn hôm nay, chưa xuất
+                e = pend.setdefault(sk, {"qty": 0, "orders": []})
+                e["qty"] += q
+                e["orders"].append(code)
+            elif i_today and not p_today:       # xuất hôm nay từ đơn soạn hôm trước
+                e = prev.setdefault(sk, {"qty": 0, "orders": []})
+                e["qty"] += q
+                e["orders"].append(code)
+
+    def _codes(lst, n=4):
+        u = list(dict.fromkeys(c for c in lst if c))
+        return ", ".join(u[:n]) + (f" …+{len(u) - n} đơn" if len(u) > n else "")
+
     rows = []
     for sk in set(soan) | set(xuat):
         sn, xu = soan.get(sk, 0), xuat.get(sk, 0)
-        rows.append({"SKU": sk, "SL soạn": sn, "SL xuất kho": xu, "Lệch": sn - xu})
+        lech = sn - xu
+        reason = ""
+        if lech != 0:
+            parts = []
+            if sk in pend:
+                parts.append(f"🕒 {pend[sk]['qty']} đã soạn chưa xuất (chờ shipper lấy): {_codes(pend[sk]['orders'])}")
+            if sk in prev:
+                parts.append(f"📤 {prev[sk]['qty']} xuất từ đơn soạn hôm trước: {_codes(prev[sk]['orders'])}")
+            reason = " · ".join(parts) if parts else "—"
+        rows.append({"SKU": sk, "SL soạn": sn, "SL xuất kho": xu, "Lệch": lech, "Lý do lệch": reason})
     rows.sort(key=lambda r: (r["Lệch"] == 0, -abs(r["Lệch"]), -r["SL soạn"]))
     return {
         "rows": rows,
