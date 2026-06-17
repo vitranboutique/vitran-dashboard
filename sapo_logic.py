@@ -309,13 +309,14 @@ def get_overview(fetch_json, days: int = 7) -> dict:
         f = (o.get("fulfillments") or [{}])[0]
         ss = f.get("shipment_status")
         is_express = o.get("shipment_category") == "express"
-        conf_vn = _parse_vn(o.get("confirmed_on"))
-        conf_d = conf_vn.date() if conf_vn else None
+        # "Ngày xử lý" trên Sapo = lúc TẠO VẬN ĐƠN = thời gian XÁC NHẬN của shop
+        xuly_vn = _parse_vn(f.get("shipment_created_on") or f.get("created_on"))
+        xuly_d = xuly_vn.date() if xuly_vn else None
 
-        # Đã xác nhận hôm nay (+ cảnh báo xác nhận sau 18h)
-        if conf_d == today:
+        # Đã xác nhận (xử lý) hôm nay (+ cảnh báo xử lý sau 18h)
+        if xuly_d == today:
             cg["da_xac_nhan"] += 1
-            if conf_vn.hour >= 18:
+            if xuly_vn.hour >= 18:
                 al["conf_after18"] += 1
                 _cre = _parse_vn(o.get("created_on"))
                 if _cre and _cre.date() == today and _cre.hour < 18:
@@ -331,18 +332,17 @@ def get_overview(fetch_json, days: int = 7) -> dict:
             cg["cho_giao"] += 1
             packed = f.get("packed_status") == "packed"
             da_in = bool(f.get("shipping_label_slip_url"))
-            packed_today = _vn_date_of(f.get("packed_on")) == today
-            # SÓT = xác nhận HÔM TRƯỚC + ĐÃ IN phiếu + HÔM NAY mới nhặt & đóng gói
-            if conf_d and conf_d < today and da_in and packed_today:
+            # SÓT = NGÀY XỬ LÝ (tạo vận đơn) HÔM TRƯỚC + ĐÃ IN, shipper chưa lấy
+            if xuly_d and xuly_d < today and da_in:
                 cg["cho_sot"] += 1
                 sot_list.append({
                     "Mã đơn": o.get("name") or "",
-                    "Xác nhận": _fmtvn(o.get("confirmed_on")),
-                    "Đóng gói": _fmtvn(f.get("packed_on")),
+                    "Ngày xử lý": _fmtvn(f.get("shipment_created_on") or f.get("created_on")),
+                    "Trạng thái đóng": "Đã đóng" if packed else "Chờ đóng gói",
                     "ĐVVC": (o.get("shipping_lines") or [{}])[0].get("carrier_name") or "NB tự VC",
                 })
-            elif conf_d == today:
-                cg["cho_moi"] += 1       # mới: xác nhận hôm nay
+            elif xuly_d == today:
+                cg["cho_moi"] += 1       # mới: xử lý hôm nay
             cg["cho_packed" if packed else "cho_chua_dong"] += 1
             if is_express:
                 cg["hoa_toc_cho"] += 1
@@ -353,7 +353,7 @@ def get_overview(fetch_json, days: int = 7) -> dict:
             e["total"] += 1
             e["hoatoc" if is_express else "thuong"] += 1
             e["packed" if packed else "chua_dong"] += 1
-    cg["sot_list"] = sorted(sot_list, key=lambda x: x["Xác nhận"])
+    cg["sot_list"] = sorted(sot_list, key=lambda x: x["Ngày xử lý"])
 
     # ---- Đơn hủy sau đẩy VC (dùng get_cancelled) ----
     try:

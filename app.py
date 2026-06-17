@@ -305,14 +305,14 @@ if _page == PAGE_OVERVIEW:
     # ═══════════ ĐƠN CẦN GIAO SHIPPER (hôm nay) ═══════════
     dl = ov["delivery"]
     st.markdown('<div class="sec sec-orange">Đơn cần giao shipper hôm nay'
-                '<span class="ic" title="Phễu xử lý giao hàng TRONG NGÀY HÔM NAY: xác nhận → đóng gói → xuất cho ĐVVC, kèm số đơn đang chờ shipper tới lấy. Đếm theo ngày xác nhận/đóng/xuất, giờ VN.">&#9432;</span></div>',
+                '<span class="ic" title="Phễu xử lý giao hàng TRONG NGÀY HÔM NAY: xử lý (tạo vận đơn) → đóng gói → xuất cho ĐVVC, kèm số đơn đang chờ shipper tới lấy. Mốc xác nhận = NGÀY XỬ LÝ trên Sapo. Giờ VN.">&#9432;</span></div>',
                 unsafe_allow_html=True)
     # Hàng 1 — hoạt động trong ngày
     _d = st.columns(3)
     _d[0].metric("📋 Đã xác nhận", f"{dl['da_xac_nhan']:,}",
-                 help="Số đơn ĐƯỢC XÁC NHẬN trong hôm nay (theo confirmed_on, giờ VN).")
+                 help="Số đơn được XỬ LÝ (tạo vận đơn) trong hôm nay — đúng cột 'Ngày xử lý' trên Sapo.")
     _d[1].metric("✅ Đã đóng hàng", f"{dl['da_dong']:,}",
-                 help="Số đơn ĐÓNG GÓI XONG trong hôm nay — gồm cả đơn sót (xác nhận hôm trước, nay mới đóng).")
+                 help="Số đơn ĐÓNG GÓI XONG trong hôm nay — gồm cả đơn sót (xử lý hôm trước, nay mới đóng).")
     _d[2].metric("🚚 Shipper đã nhận", f"{dl['shipper_nhan']:,}",
                  help="Số đơn ĐÃ XUẤT/giao cho ĐVVC (shipper) trong hôm nay (theo issued_on).")
     # Hàng 2 — đang chờ shipper tới lấy (snapshot hiện tại)
@@ -323,14 +323,14 @@ if _page == PAGE_OVERVIEW:
     _e[0].metric("⏳ Đang chờ giao", f"{dl['cho_giao']:,}",
                  help="Tổng đơn đang chờ shipper tới lấy ngay lúc này.")
     _e[1].metric("🆕 Mới hôm nay", f"{dl['cho_moi']:,}",
-                 help="Trong nhóm chờ giao: đơn XÁC NHẬN HÔM NAY.")
+                 help="Trong nhóm chờ giao: đơn có NGÀY XỬ LÝ = hôm nay.")
     _e[2].metric("📌 Sót", f"{dl['cho_sot']:,}",
-                 help="Trong nhóm chờ giao: đơn XÁC NHẬN HÔM TRƯỚC, hôm nay mới nhặt/đóng — shipper chưa lấy.")
+                 help="Trong nhóm chờ giao: đơn NGÀY XỬ LÝ HÔM TRƯỚC, đã in, hôm nay mới nhặt/đóng — shipper chưa lấy.")
     _e[3].metric("🔴 Hỏa tốc chờ", f"{dl['hoa_toc_cho']:,}",
                  help="Trong nhóm chờ giao: đơn HỎA TỐC cần ưu tiên đẩy trước.")
     st.caption(f"Trong nhóm chờ giao: đã đóng **{dl['cho_packed']}** · chưa đóng **{dl['cho_chua_dong']}**.")
     if dl.get("sot_list"):
-        with st.expander(f"📌 Xem chi tiết {dl['cho_sot']} đơn SÓT (xác nhận hôm trước · đã in · hôm nay mới nhặt & đóng)"):
+        with st.expander(f"📌 Xem chi tiết {dl['cho_sot']} đơn SÓT (Ngày xử lý hôm trước · đã in · shipper chưa lấy)"):
             st.dataframe(pd.DataFrame(dl["sot_list"]), width="stretch", hide_index=True)
             st.caption("Đối chiếu các mã đơn này với Sapo để kiểm chứng. Số 'sót' đổi theo thời điểm xem "
                        "(mỗi lượt đóng hàng/lần shipper lấy đều làm thay đổi).")
