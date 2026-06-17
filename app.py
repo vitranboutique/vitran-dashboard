@@ -70,6 +70,28 @@ st.markdown(
       h1 { color: #111827; font-weight: 900; letter-spacing: .3px; }
       [data-testid="stDataFrame"] { border: 1px solid #e8eaed; border-radius: 12px; }
 
+      /* ====== SIDEBAR TỐI KIỂU SAPO (navy) ====== */
+      section[data-testid="stSidebar"] { background: #16233f; }
+      section[data-testid="stSidebar"] h1,
+      section[data-testid="stSidebar"] h2,
+      section[data-testid="stSidebar"] h3,
+      section[data-testid="stSidebar"] [data-testid="stWidgetLabel"] p,
+      section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
+      section[data-testid="stSidebar"] label p,
+      section[data-testid="stSidebar"] label span { color: #e3e9f3 !important; }
+      section[data-testid="stSidebar"] [data-testid="stCaptionContainer"] p,
+      section[data-testid="stSidebar"] small { color: #9fb0cc !important; }
+      section[data-testid="stSidebar"] hr { border-color: rgba(255,255,255,.14) !important; }
+      section[data-testid="stSidebar"] [data-testid="stExpander"] { border-color: rgba(255,255,255,.18) !important; }
+      section[data-testid="stSidebar"] .stButton button {
+        background: rgba(255,255,255,.10) !important; border: 1px solid rgba(255,255,255,.28) !important;
+        color: #fff !important;
+      }
+      section[data-testid="stSidebar"] .stButton button:hover {
+        background: rgba(255,255,255,.20) !important; border-color: rgba(255,255,255,.5) !important;
+      }
+      section[data-testid="stSidebar"] .stButton button p { color: #fff !important; }
+
       /* ====== TỰ ĐỘNG: GIAO DIỆN ĐIỆN THOẠI (màn hình ≤ 640px) ====== */
       @media (max-width: 640px) {
         .block-container { padding: 1rem 0.6rem 2.5rem 0.6rem !important; }
@@ -166,7 +188,12 @@ def require_login():
     username = st.session_state.get("username")
     roles = st.session_state.get("roles") or ["viewer"]
     with st.sidebar:
-        st.success(f"👤 **{name}**\n\n`{username}` · vai trò: {roles[0]}")
+        st.markdown(
+            f'<div style="background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);'
+            f'border-radius:10px;padding:10px 12px;margin-bottom:8px">'
+            f'<div style="font-weight:800;color:#fff">👤 {name}</div>'
+            f'<div style="font-size:.78rem;color:#aebcd4">{username} · vai trò: {roles[0]}</div></div>',
+            unsafe_allow_html=True)
         authenticator.logout("🚪 Đăng xuất", "sidebar")
         st.divider()
     return (name, username, roles[0])
