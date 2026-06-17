@@ -174,34 +174,17 @@ def render_compact_table(df, red_mask=None):
 
 
 _PICKLOG_SETUP = """
-**Bật lưu lịch sử in phiếu (Google Sheet) — chỉ làm 1 lần (~5 phút):**
+**Bật lưu lịch sử in phiếu — chỉ 1 bước (~30 giây), KHÔNG cần Google:**
 
-1. Tạo 1 **Google Sheet** mới (vd: *VITRAN – Lịch sử in phiếu*).
-2. Trong Sheet mở **Tiện ích mở rộng → Apps Script**.
-3. Xoá hết code mẫu, dán đoạn dưới rồi bấm **Lưu** 💾:
+Trợ lý đã tạo sẵn kho lưu trữ. Bạn chỉ cần dán URL kho vào Streamlit:
 
-```javascript
-function doPost(e){
-  var ss=SpreadsheetApp.getActiveSpreadsheet();
-  var sh=ss.getSheetByName('Log')||ss.insertSheet('Log');
-  var d=JSON.parse(e.postData.contents).data||{};
-  sh.appendRow([new Date(),d.ngay||'',d.gio||'',d.so_don||0,d.so_sp||0,d.so_sku||0,d.ht_don||0,d.th_don||0]);
-  return ContentService.createTextOutput(JSON.stringify({ok:true})).setMimeType(ContentService.MimeType.JSON);
-}
-function doGet(e){
-  var sh=SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Log');var rows=[],dt=e.parameter.date;
-  if(sh){var v=sh.getDataRange().getValues();
-    for(var i=0;i<v.length;i++){
-      var ds=(v[i][0] instanceof Date)?Utilities.formatDate(v[i][0],'Asia/Ho_Chi_Minh','yyyy-MM-dd'):String(v[i][1]);
-      if(ds===dt){rows.push({gio:v[i][2],so_don:v[i][3],so_sp:v[i][4],so_sku:v[i][5],ht_don:v[i][6],th_don:v[i][7]});}}}
-  return ContentService.createTextOutput(JSON.stringify({rows:rows})).setMimeType(ContentService.MimeType.JSON);
-}
-```
-
-4. **Triển khai → Bản triển khai mới**: Loại = **Ứng dụng web**, Thực thi với tư cách = **Tôi**, Người truy cập = **Bất kỳ ai** → **Triển khai** và cấp quyền.
-5. Copy **URL ứng dụng web** (`https://script.google.com/macros/s/…/exec`).
-6. **Gửi URL đó cho mình** để dán vào cấu hình (hoặc tự thêm vào Streamlit *Settings → Secrets*):
-   `[picklog]` rồi dòng `url = "…"`.
+1. Mở **Streamlit Cloud** → app VITRAN → **⋮ Manage app → Settings → Secrets**.
+2. Thêm 2 dòng (URL trợ lý gửi trong khung chat) rồi **Save**:
+   ```toml
+   [picklog]
+   url = "https://jsonblob.com/api/jsonBlob/XXXX"
+   ```
+3. App tự khởi động lại là dùng được — mỗi lần in bấm **💾 Lưu đợt vừa in**.
 """
 
 
