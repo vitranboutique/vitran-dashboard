@@ -92,6 +92,42 @@ def _slip(title, accent, g, now_str):
 </div>"""
 
 
+def history_slips_html(batches, now_str):
+    """Render phiếu nhặt cho TỪNG ĐỢT đã soạn hôm nay — xem lại & in lại từng đợt."""
+    if not batches:
+        return "<div style='padding:12px;font-family:sans-serif'>Chưa có đợt nào hôm nay.</div>"
+    items = []
+    for b in batches:
+        sid = "dot%s" % b["dot"]
+        title = "PHIẾU NHẶT — ĐỢT %s (%s)" % (b["dot"], b["gio"])
+        slip = _slip(title, "#16233f", b["summary"], now_str)
+        items.append(
+            "<div style='margin-bottom:4px'>"
+            "<div style='text-align:center;margin:4px 0 8px'>"
+            "<button class='printbtn' onclick=\"printOne('%s')\">&#128424;&#65039; In lại đợt %s</button></div>"
+            "<div id='%s'>%s</div></div>" % (sid, b["dot"], sid, slip)
+        )
+    body = "<div style='height:10px'></div>".join(items)
+    js = (
+        "var PRINT_CSS=" + json.dumps(PRINT_CSS) + ";"
+        "function printOne(id){"
+        "var html=document.getElementById(id).innerHTML;"
+        "var f=document.createElement('iframe');"
+        "f.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0';"
+        "document.body.appendChild(f);"
+        "var d=f.contentWindow.document;d.open();"
+        "d.write('<!doctype html><html><head><meta charset=\\\"utf-8\\\"><style>'+PRINT_CSS+'</style></head><body><div id=\\\"slips\\\">'+html+'</div></body></html>');"
+        "d.close();"
+        "f.onload=function(){f.contentWindow.focus();f.contentWindow.print();setTimeout(function(){document.body.removeChild(f);},600);};"
+        "}"
+    )
+    return (
+        "<style>" + RECEIPT_CSS + "</style>"
+        "<div id='hist'>" + body + "</div>"
+        "<script>" + js + "</script>"
+    )
+
+
 def picking_html(data, now_str):
     parts = []
     if data["express"]["total_orders"] > 0:

@@ -6,6 +6,7 @@ DEMO:  tự bật khi chưa cấu hình credential (xem README để chuyển sa
 """
 import os
 from datetime import datetime, timedelta, timezone
+from html import escape as _esc
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -16,7 +17,7 @@ import streamlit_authenticator as stauth
 
 import sapo_logic as L
 from sapo_client import SapoAuthError, build_session, credential_present, make_fetch_json
-from picking_render import picking_html
+from picking_render import history_slips_html, picking_html
 
 # ───────────────────────── Cấu hình trang ─────────────────────────
 st.set_page_config(
@@ -131,11 +132,44 @@ st.markdown(
         .print-only th { background: #f3f3f3; }
         div[data-testid="stHorizontalBlock"], [data-testid="stPlotlyChart"] { break-inside: avoid; }
         .sec { break-after: avoid; }
+        .ctab-wrap { display: none !important; }
       }
+
+      /* ====== BẢNG GỌN (compact HTML table) ====== */
+      .ctab-wrap { max-height: 360px; overflow: auto; border: 1px solid #e8eaed; border-radius: 10px; margin: 2px 0 6px; }
+      .ctab { width: 100%; border-collapse: collapse; font-size: .78rem; }
+      .ctab th, .ctab td { padding: 3px 8px; border-bottom: 1px solid #eef0f3; text-align: left; vertical-align: top; }
+      .ctab thead th { position: sticky; top: 0; background: #f4f6f8; font-weight: 700; color: #374151; z-index: 1; white-space: nowrap; }
+      .ctab tbody tr:hover { background: #fafbfc; }
+      .ctab tr.hl td { background: #fdecea; color: #b3261e; font-weight: 700; }
+      .ctab td.num { text-align: right; white-space: nowrap; }
     </style>
     """,
     unsafe_allow_html=True,
 )
+
+
+def render_compact_table(df, red_mask=None):
+    """Bảng HTML gọn (nhỏ, ít khoảng trắng); red_mask=list bool để tô đỏ dòng lệch."""
+    cols = list(df.columns)
+    head = "".join(f"<th>{_esc(str(c))}</th>" for c in cols)
+    rm = list(red_mask) if red_mask is not None else None
+    body = []
+    for i in range(len(df)):
+        row = df.iloc[i]
+        cls = " class='hl'" if rm is not None and rm[i] else ""
+        tds = ""
+        for c in cols:
+            v = row[c]
+            is_num = isinstance(v, (int, float)) and not isinstance(v, bool)
+            tds += (f"<td class='num'>{_esc(str(v))}</td>" if is_num
+                    else f"<td>{_esc(str(v))}</td>")
+        body.append(f"<tr{cls}>{tds}</tr>")
+    st.markdown(
+        "<div class='ctab-wrap'><table class='ctab'><thead><tr>" + head
+        + "</tr></thead><tbody>" + "".join(body) + "</tbody></table></div>",
+        unsafe_allow_html=True,
+    )
 
 
 # ═══════════════════════ ĐĂNG NHẬP (multi-user) ═══════════════════════
@@ -331,14 +365,14 @@ if _page == PAGE_OVERVIEW:
     st.caption(f"Trong nhóm chờ giao: đã đóng **{dl['cho_packed']}** · chưa đóng **{dl['cho_chua_dong']}**.")
     if dl.get("sot_list"):
         with st.expander(f"📌 Xem chi tiết {dl['cho_sot']} đơn SÓT (Ngày xử lý hôm trước · đã in · shipper chưa lấy)"):
-            st.dataframe(pd.DataFrame(dl["sot_list"]), width="stretch", hide_index=True)
+            render_compact_table(pd.DataFrame(dl["sot_list"]))
             st.caption("Đối chiếu các mã đơn này với Sapo để kiểm chứng. Số 'sót' đổi theo thời điểm xem "
                        "(mỗi lượt đóng hàng/lần shipper lấy đều làm thay đổi).")
     st.markdown("**Phân bổ đơn chờ giao theo đơn vị vận chuyển**")
-    _dv = pd.DataFrame(ov["dvvc"]).rename(columns={
-        "dvvc": "ĐVVC", "total": "Tổng", "thuong": "Thường", "hoatoc": "Hỏa tốc",
-        "packed": "Đã đóng", "chua_dong": "Chưa đóng"}) if ov["dvvc"] else pd.DataFrame()
-    st.dataframe(_dv, width="stretch", hide_index=True)
+    if ov["dvvc"]:
+        render_compact_table(pd.DataFrame(ov["dvvc"]).rename(columns={
+            "dvvc": "ĐVVC", "total": "Tổng", "thuong": "Thường", "hoatoc": "Hỏa tốc",
+            "packed": "Đã đóng", "chua_dong": "Chưa đóng"}))
 
     # ═══════════ CẢNH BÁO + ĐƠN HỦY ═══════════
     _w1, _w2 = st.columns(2)
@@ -363,7 +397,7 @@ if _page == PAGE_OVERVIEW:
             st.markdown("**Top SKU bị hủy nhiều**")
             _ts = pd.DataFrame(cn["top_sku"]).rename(
                 columns={"sku": "SKU", "qty": "SL", "value": "Giá trị (đ)"})
-            st.dataframe(_ts, width="stretch", hide_index=True)
+            render_compact_table(_ts)
 
     st.caption("Số liệu 7 ngày gần nhất · cache 5 phút · giờ VN (UTC+7). "
                "(Khối Hàng hoàn/Khiếu nại — Phần 3 — cần nhập tay Google Sheet, làm sau.)")
@@ -400,14 +434,19 @@ if _page == PAGE_PICK:
         st.error(f"⚠ **{len(late_list)} đơn xử lý TRỄ** (sau 18h ngày đặt): "
                  + ", ".join(late_list[:25]) + ("…" if len(late_list) > 25 else ""))
 
+    now_str = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%H:%M %d/%m/%Y")
+
     # ── Lịch sử soạn hàng hôm nay (theo đợt đóng gói) ──
     hist = pdata.get("history", {})
     if hist.get("batches"):
         st.markdown(f"#### 📦 Lịch sử soạn hàng hôm nay — **{hist['so_dot']} đợt** · "
                     f"{hist['tong_don']} đơn · {hist['tong_sp']} SP")
-        st.dataframe(pd.DataFrame(hist["batches"]), width="stretch", hide_index=True)
-        st.caption("Tự suy từ mốc đóng gói (packed_on) trên Sapo — mỗi cụm thời gian gần nhau = 1 đợt soạn. "
-                   "Dùng báo cáo cuối ngày. (Muốn lưu lịch sử các NGÀY TRƯỚC thì cần Google Sheet — làm sau nếu cần.)")
+        render_compact_table(pd.DataFrame(
+            [{"Đợt": b["dot"], "Giờ": b["gio"], "Số đơn": b["don"], "Số SP": b["sp"],
+              "Số SKU": b["sku_count"], "Hỏa tốc": b["hoatoc"]} for b in hist["batches"]]))
+        st.caption("Mỗi cụm thời gian đóng gói gần nhau = 1 đợt soạn (suy từ packed_on). Dùng báo cáo cuối ngày.")
+        with st.expander("🖨️ Xem & in lại phiếu nhặt từng đợt"):
+            components.html(history_slips_html(hist["batches"], now_str), height=560, scrolling=True)
 
     # ── Đối chiếu SP soạn hàng vs xuất kho hôm nay (theo SKU) ──
     rec = pdata.get("reconcile", {})
@@ -423,16 +462,11 @@ if _page == PAGE_PICK:
             st.warning(f"⚠️ Lệch tổng **{rec['tong_soan'] - rec['tong_xuat']:+d} SP** · "
                        f"**{rec['so_sku_lech']} SKU** chưa khớp (xem các dòng tô đỏ).")
         _rdf = pd.DataFrame(rec["rows"])
-        _sty = _rdf.style.apply(
-            lambda r: ['background-color:#fdecea;color:#b3261e;font-weight:700' if r["Lệch"] != 0 else ''
-                       for _ in r], axis=1)
-        st.dataframe(_sty, width="stretch", hide_index=True,
-                     column_config={"Lý do lệch": st.column_config.TextColumn("Lý do lệch", width="large")})
-        st.caption("**Soạn** = đóng gói hôm nay (packed_on). **Xuất kho** = giao cho ĐVVC hôm nay (issued_on). "
-                   "Lệch > 0 = đã soạn nhưng chưa xuất (còn trong kho chờ shipper); < 0 = xuất đơn đã soạn hôm trước. "
-                   "Cột **Lý do lệch** ghi rõ đơn nào gây lệch.")
+        render_compact_table(_rdf, red_mask=(_rdf["Lệch"] != 0).tolist())
+        st.caption("**Soạn** = đóng gói hôm nay. **Xuất kho** = giao ĐVVC hôm nay. "
+                   "Lệch > 0 = đã soạn chưa xuất (chờ shipper); < 0 = xuất từ đơn soạn hôm trước. "
+                   "Cột **Lý do lệch** ghi rõ đơn nào.")
 
-    now_str = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%H:%M %d/%m/%Y")
     components.html(picking_html(pdata, now_str), height=820, scrolling=True)
 
     with st.expander("📄 Hoặc: tạo phiếu từ file Excel (upload thủ công)"):

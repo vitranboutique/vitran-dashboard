@@ -207,31 +207,32 @@ def _packing_history(orders, gap_min: int = 20) -> dict:
         f = (o.get("fulfillments") or [{}])[0]
         pv = _parse_vn(f.get("packed_on"))
         if pv and pv.date() == today:
-            sp = sum((li.get("quantity", 0) or 0) for li in (o.get("line_items") or []))
-            express = o.get("shipment_category") == "express"
-            rows.append((pv, sp, express))
+            rows.append((pv, o))
     rows.sort(key=lambda x: x[0])
     batches = []
-    for pv, sp, express in rows:
+    for pv, o in rows:
         if batches and (pv - batches[-1]["_last"]).total_seconds() <= gap_min * 60:
             b = batches[-1]
         else:
-            b = {"_start": pv, "_last": pv, "don": 0, "sp": 0, "hoatoc": 0}
+            b = {"_start": pv, "_last": pv, "orders": []}
             batches.append(b)
         b["_last"] = pv
-        b["don"] += 1
-        b["sp"] += sp
-        b["hoatoc"] += 1 if express else 0
+        b["orders"].append(o)
     out = []
     for i, b in enumerate(batches, 1):
+        g = _summarize_picking(b["orders"])         # full summary để render phiếu
         g1, g2 = b["_start"].strftime("%H:%M"), b["_last"].strftime("%H:%M")
-        out.append({"Đợt": i, "Giờ": g1 if g1 == g2 else f"{g1}–{g2}",
-                    "Số đơn": b["don"], "Số SP": b["sp"], "Hỏa tốc": b["hoatoc"]})
+        out.append({
+            "dot": i, "gio": g1 if g1 == g2 else f"{g1}–{g2}",
+            "don": g["total_orders"], "sp": g["total_qty"], "sku_count": g["sku_count"],
+            "hoatoc": sum(1 for o in b["orders"] if o.get("shipment_category") == "express"),
+            "summary": g,
+        })
     return {
         "batches": out,
         "so_dot": len(out),
-        "tong_don": sum(b["don"] for b in batches),
-        "tong_sp": sum(b["sp"] for b in batches),
+        "tong_don": sum(x["don"] for x in out),
+        "tong_sp": sum(x["sp"] for x in out),
     }
 
 
