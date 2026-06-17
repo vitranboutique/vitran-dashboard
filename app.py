@@ -189,9 +189,11 @@ function doPost(e){
   return ContentService.createTextOutput(JSON.stringify({ok:true})).setMimeType(ContentService.MimeType.JSON);
 }
 function doGet(e){
-  var sh=SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Log');var rows=[];
-  if(sh){var v=sh.getDataRange().getValues();var dt=e.parameter.date;
-    for(var i=0;i<v.length;i++){if(String(v[i][1])===dt){rows.push({gio:v[i][2],so_don:v[i][3],so_sp:v[i][4],so_sku:v[i][5],ht_don:v[i][6],th_don:v[i][7]});}}}
+  var sh=SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Log');var rows=[],dt=e.parameter.date;
+  if(sh){var v=sh.getDataRange().getValues();
+    for(var i=0;i<v.length;i++){
+      var ds=(v[i][0] instanceof Date)?Utilities.formatDate(v[i][0],'Asia/Ho_Chi_Minh','yyyy-MM-dd'):String(v[i][1]);
+      if(ds===dt){rows.push({gio:v[i][2],so_don:v[i][3],so_sp:v[i][4],so_sku:v[i][5],ht_don:v[i][6],th_don:v[i][7]});}}}
   return ContentService.createTextOutput(JSON.stringify({rows:rows})).setMimeType(ContentService.MimeType.JSON);
 }
 ```
