@@ -318,9 +318,10 @@ def get_picking(fetch_json, max_pages: int = 15) -> dict:
     def f0(o):
         return (o.get("fulfillments") or [{}])[0]
 
+    # cần nhặt = ĐÃ IN phiếu giao + CHƯA đóng gói (labeling/packing... — mọi trạng thái trước "packed")
     pick = [o for o in orders
-            if f0(o).get("packed_status") == "packing"
-            and f0(o).get("shipping_label_slip_url")]
+            if f0(o).get("shipping_label_slip_url")
+            and f0(o).get("packed_status") not in ("packed", None)]
     express = [o for o in pick if o.get("shipment_category") == "express"]
     normal = [o for o in pick if o.get("shipment_category") != "express"]
     return {

@@ -16,6 +16,7 @@ import streamlit.components.v1 as components
 import streamlit_authenticator as stauth
 
 import sapo_logic as L
+import picklog
 from sapo_client import SapoAuthError, build_session, credential_present, make_fetch_json
 from picking_render import history_slips_html, picking_html
 
@@ -170,6 +171,36 @@ def render_compact_table(df, red_mask=None):
         + "</tr></thead><tbody>" + "".join(body) + "</tbody></table></div>",
         unsafe_allow_html=True,
     )
+
+
+_PICKLOG_SETUP = """
+**Bật lưu lịch sử in phiếu (Google Sheet) — chỉ làm 1 lần (~5 phút):**
+
+1. Tạo 1 **Google Sheet** mới (vd: *VITRAN – Lịch sử in phiếu*).
+2. Trong Sheet mở **Tiện ích mở rộng → Apps Script**.
+3. Xoá hết code mẫu, dán đoạn dưới rồi bấm **Lưu** 💾:
+
+```javascript
+function doPost(e){
+  var ss=SpreadsheetApp.getActiveSpreadsheet();
+  var sh=ss.getSheetByName('Log')||ss.insertSheet('Log');
+  var d=JSON.parse(e.postData.contents).data||{};
+  sh.appendRow([new Date(),d.ngay||'',d.gio||'',d.so_don||0,d.so_sp||0,d.so_sku||0,d.ht_don||0,d.th_don||0]);
+  return ContentService.createTextOutput(JSON.stringify({ok:true})).setMimeType(ContentService.MimeType.JSON);
+}
+function doGet(e){
+  var sh=SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Log');var rows=[];
+  if(sh){var v=sh.getDataRange().getValues();var dt=e.parameter.date;
+    for(var i=0;i<v.length;i++){if(String(v[i][1])===dt){rows.push({gio:v[i][2],so_don:v[i][3],so_sp:v[i][4],so_sku:v[i][5],ht_don:v[i][6],th_don:v[i][7]});}}}
+  return ContentService.createTextOutput(JSON.stringify({rows:rows})).setMimeType(ContentService.MimeType.JSON);
+}
+```
+
+4. **Triển khai → Bản triển khai mới**: Loại = **Ứng dụng web**, Thực thi với tư cách = **Tôi**, Người truy cập = **Bất kỳ ai** → **Triển khai** và cấp quyền.
+5. Copy **URL ứng dụng web** (`https://script.google.com/macros/s/…/exec`).
+6. **Gửi URL đó cho mình** để dán vào cấu hình (hoặc tự thêm vào Streamlit *Settings → Secrets*):
+   `[picklog]` rồi dòng `url = "…"`.
+"""
 
 
 # ═══════════════════════ ĐĂNG NHẬP (multi-user) ═══════════════════════
@@ -440,20 +471,38 @@ if _page == PAGE_PICK:
 
     now_str = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%H:%M %d/%m/%Y")
 
-    # ── Lịch sử soạn hàng hôm nay (theo đợt đóng gói) ──
+    # ── LỊCH SỬ IN PHIẾU hôm nay (qua dashboard) — từ Google Sheet ──
+    st.markdown("#### 📋 Lịch sử in phiếu nhặt hôm nay (qua dashboard)")
+    if not picklog.configured():
+        st.info("Chưa bật lưu lịch sử in. Mở hướng dẫn bên dưới để bật (1 lần).")
+        with st.expander("⚙️ Cách bật lưu lịch sử in phiếu (~5 phút)"):
+            st.markdown(_PICKLOG_SETUP)
+    else:
+        _logrows = picklog.read_today()
+        if _logrows:
+            _ldf = pd.DataFrame([{"Lượt": i + 1, "Giờ": r.get("gio", ""),
+                                  "Số đơn": r.get("so_don", 0), "Số SP": r.get("so_sp", 0),
+                                  "Số SKU": r.get("so_sku", 0), "Hỏa tốc": r.get("ht_don", 0),
+                                  "Thường": r.get("th_don", 0)} for i, r in enumerate(_logrows)])
+            st.markdown(f"**{len(_logrows)} lượt in** · {int(_ldf['Số đơn'].sum())} đơn · "
+                        f"{int(_ldf['Số SP'].sum())} SP")
+            render_compact_table(_ldf)
+        else:
+            st.caption("Chưa lưu lượt in nào hôm nay. Bấm **🖨️ In K80** ở phiếu bên dưới, "
+                       "rồi bấm **💾 Lưu đợt vừa in**.")
+
+    # ── Đối chiếu: TẤT CẢ đơn đóng gói trên Sapo (tham khảo) ──
     hist = pdata.get("history", {})
     if hist.get("batches"):
-        st.markdown(f"#### 📦 Lịch sử đóng gói hôm nay (trên Sapo) — **{hist['so_dot']} lượt** · "
-                    f"{hist['tong_don']} đơn · {hist['tong_sp']} SP")
-        render_compact_table(pd.DataFrame(
-            [{"Lượt": b["dot"], "Giờ": b["gio"], "Số đơn": b["don"], "Số SP": b["sp"],
-              "Số SKU": b["sku_count"], "Hỏa tốc": b["hoatoc"], "Đã xuất kho": b["xuat"]}
-             for b in hist["batches"]]))
-        st.caption("Mỗi cụm thời gian đánh dấu 'đã đóng gói' trên Sapo = 1 lượt (gồm cả bấm hàng loạt + phiếu in ở đây). "
-                   "Đây là TẤT CẢ đơn đóng gói thật trên Sapo — thường NHIỀU HƠN số phiếu bạn in tại dashboard "
-                   "(vì có lượt bấm đóng gói thẳng trên Sapo, không qua phiếu).")
-        with st.expander("🖨️ Xem & in lại phiếu nhặt từng đợt"):
-            components.html(history_slips_html(hist["batches"], now_str), height=560, scrolling=True)
+        with st.expander(f"📦 Đối chiếu: tất cả đơn ĐÓNG GÓI trên Sapo hôm nay "
+                         f"({hist['so_dot']} lượt · {hist['tong_don']} đơn · {hist['tong_sp']} SP)"):
+            render_compact_table(pd.DataFrame(
+                [{"Lượt": b["dot"], "Giờ": b["gio"], "Số đơn": b["don"], "Số SP": b["sp"],
+                  "Số SKU": b["sku_count"], "Hỏa tốc": b["hoatoc"], "Đã xuất kho": b["xuat"]}
+                 for b in hist["batches"]]))
+            st.caption("Gồm cả lượt bấm đóng gói HÀNG LOẠT thẳng trên Sapo (vd ca sáng) — thường "
+                       "nhiều hơn số phiếu in ở dashboard. Dùng để đối chiếu, không phải số phiếu bạn in.")
+            components.html(history_slips_html(hist["batches"], now_str), height=460, scrolling=True)
 
     # ── Đối chiếu SP soạn hàng vs xuất kho hôm nay (theo SKU) ──
     rec = pdata.get("reconcile", {})
@@ -475,6 +524,22 @@ if _page == PAGE_PICK:
                    "Cột **Lý do lệch** ghi rõ đơn nào.")
 
     components.html(picking_html(pdata, now_str), height=820, scrolling=True)
+
+    # ── Lưu đợt vừa in vào lịch sử (Google Sheet) ──
+    if pdata["total"] > 0:
+        st.caption("➡️ Sau khi bấm **🖨️ In K80** ở trên, bấm nút này để ghi vào *Lịch sử in phiếu*:")
+        if st.button("💾 Lưu đợt vừa in", type="primary", disabled=not picklog.configured()):
+            _now_vn = datetime.now(timezone.utc) + timedelta(hours=7)
+            _allsku = {s for s, _ in exp["skus"]} | {s for s, _ in nor["skus"]}
+            ok, msg = picklog.log_batch({
+                "ngay": _now_vn.strftime("%Y-%m-%d"), "gio": _now_vn.strftime("%H:%M"),
+                "so_don": exp["total_orders"] + nor["total_orders"],
+                "so_sp": exp["total_qty"] + nor["total_qty"], "so_sku": len(_allsku),
+                "ht_don": exp["total_orders"], "th_don": nor["total_orders"],
+            })
+            (st.success(msg + " Bấm '🔄 Tải lại' để thấy trong lịch sử.") if ok else st.error(msg))
+        if not picklog.configured():
+            st.caption("⚠️ Nút lưu cần bật Google Sheet (xem hướng dẫn ở mục *Lịch sử in phiếu* phía trên).")
 
     with st.expander("📄 Hoặc: tạo phiếu từ file Excel (upload thủ công)"):
         _html_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "picking_slip.html")
