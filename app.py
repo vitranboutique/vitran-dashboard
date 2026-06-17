@@ -301,8 +301,55 @@ if _page == PAGE_OVERVIEW:
     st.plotly_chart(donut(_stk, list(ov["stores"].values()),
                           [PALETTE[i % len(PALETTE)] for i in range(len(_stk))],
                           str(sum(ov["stores"].values()))), width="stretch")
+
+    # ═══════════ ĐƠN CẦN GIAO ═══════════
+    dl = ov["delivery"]
+    st.markdown('<div class="sec sec-orange">Đơn cần giao (7 ngày)'
+                '<span class="ic" title="Đơn đang trong quy trình giao, CHƯA giao xong (gồm chờ giao + shipper đang giao). Tách: mới hôm nay vs đơn cũ chưa xong.">&#9432;</span></div>',
+                unsafe_allow_html=True)
+    _d = st.columns(3)
+    _d[0].metric("🚚 Tổng cần giao", f"{dl['total']:,}")
+    _d[1].metric("🆕 Mới hôm nay", f"{dl['new']:,}")
+    _d[2].metric("⏳ Đơn cũ chưa xong", f"{dl['sot']:,}")
+    _e = st.columns(5)
+    _e[0].metric("Đã xác nhận", dl["confirmed"], help="Đơn đã bấm xác nhận (issue_status=issued).")
+    _e[1].metric("Đã đóng hàng", dl["packed"], help="Đơn đã đóng gói xong.")
+    _e[2].metric("Shipper đã nhận", dl["handed"], help="Đơn shipper đã lấy, đang giao.")
+    _e[3].metric("Còn chưa giao", dl["pending"], help="Đơn chưa được shipper lấy.")
+    _e[4].metric("🔴 Hỏa tốc chưa giao", dl["express_pending"], help="Đơn HỎA TỐC chưa được lấy — ưu tiên gấp!")
+    st.markdown("**Phân bổ theo đơn vị vận chuyển**")
+    _dv = pd.DataFrame(ov["dvvc"]).rename(columns={
+        "dvvc": "ĐVVC", "total": "Tổng đơn", "thuong": "Thường", "hoatoc": "Hỏa tốc",
+        "giao": "Đã giao shipper", "chua": "Còn chưa giao"})
+    st.dataframe(_dv, width="stretch", hide_index=True)
+
+    # ═══════════ CẢNH BÁO + ĐƠN HỦY ═══════════
+    _w1, _w2 = st.columns(2)
+    with _w1:
+        st.markdown('<div class="sec sec-red">⚠️ Cảnh báo quan trọng</div>', unsafe_allow_html=True)
+        al = ov["alerts"]
+        st.error(
+            f"🕒 Xác nhận sau 18h hôm nay: **{al['conf_after18']}**\n\n"
+            f"📌 Đặt trước 18h, xác nhận sau 18h: **{al['late_confirm']}**\n\n"
+            f"📦 Đã xác nhận, shipper chưa lấy: **{al['confirmed_pending']}**\n\n"
+            f"🔴 Hỏa tốc chưa giao: **{al['express_pending']}**"
+        )
+    with _w2:
+        st.markdown('<div class="sec sec-red">Đơn hủy sau đẩy VC</div>', unsafe_allow_html=True)
+        cn = ov["cancel"]
+        _cc = st.columns(3)
+        _cc[0].metric("Hôm nay", cn["today"])
+        _cc[1].metric("Hôm qua", cn["yest"])
+        _cc[2].metric("7 ngày", cn["total7d"])
+        st.metric("💸 Giá trị hàng rủi ro (ước tính)", f"{int(cn['risk_value']):,} đ")
+        if cn["top_sku"]:
+            st.markdown("**Top SKU bị hủy nhiều**")
+            _ts = pd.DataFrame(cn["top_sku"]).rename(
+                columns={"sku": "SKU", "qty": "SL", "value": "Giá trị (đ)"})
+            st.dataframe(_ts, width="stretch", hide_index=True)
+
     st.caption("Số liệu 7 ngày gần nhất · cache 5 phút · giờ VN (UTC+7). "
-               "(Khối Đơn cần giao / Cảnh báo / Hàng hoàn sẽ thêm ở bước sau.)")
+               "(Khối Hàng hoàn/Khiếu nại — Phần 3 — cần nhập tay Google Sheet, làm sau.)")
     st.stop()
 
 

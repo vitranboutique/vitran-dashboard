@@ -265,6 +265,12 @@ def get_overview(fetch_json, days: int = 7) -> dict:
     daily = {week_start + timedelta(days=i): {"don": 0, "sp": 0} for i in range(days)}
     sources, stores, sku_set = {}, {}, set()
     week_sp = today_sp = yest_sp = 0
+    # Đơn cần giao + cảnh báo
+    cg = {"total": 0, "new": 0, "sot": 0, "confirmed": 0, "packed": 0,
+          "handed": 0, "pending": 0, "express_pending": 0}
+    dvvc = {}
+    al = {"conf_after18": 0, "late_confirm": 0, "confirmed_pending": 0, "express_pending": 0}
+
     for o in orders:
         d = _vn_date_of(o.get("created_on"))
         if not d or d < week_start or d > today:
@@ -287,6 +293,72 @@ def get_overview(fetch_json, days: int = 7) -> dict:
         store = cd.get("branch_name") or src or "Khác"
         stores[store] = stores.get(store, 0) + 1
 
+        # ---- Đơn cần giao (chưa giao xong) ----
+        f = (o.get("fulfillments") or [{}])[0]
+        ss = f.get("shipment_status")
+        confirmed = o.get("issue_status") == "issued"
+        is_express = o.get("shipment_category") == "express"
+        chua_giao = ss in (None, "pending", "wait_to_confirm")
+        delivered = ss in ("delivered", "returned", "returning", "cancelled")
+        conf_vn = _parse_vn(o.get("confirmed_on"))
+        if not delivered:
+            cg["total"] += 1
+            if d == today:
+                cg["new"] += 1
+            else:
+                cg["sot"] += 1
+            if confirmed:
+                cg["confirmed"] += 1
+            if f.get("packed_status") == "packed":
+                cg["packed"] += 1
+            if ss == "delivering":
+                cg["handed"] += 1
+            if chua_giao:
+                cg["pending"] += 1
+                if is_express:
+                    cg["express_pending"] += 1
+            car = (o.get("shipping_lines") or [{}])[0].get("carrier_name") or "NB tự VC"
+            e = dvvc.setdefault(car, {"dvvc": car, "total": 0, "thuong": 0, "hoatoc": 0, "giao": 0, "chua": 0})
+            e["total"] += 1
+            e["hoatoc" if is_express else "thuong"] += 1
+            if ss == "delivering":
+                e["giao"] += 1
+            if chua_giao:
+                e["chua"] += 1
+            if confirmed and chua_giao:
+                al["confirmed_pending"] += 1
+            if is_express and chua_giao:
+                al["express_pending"] += 1
+        # ---- Cảnh báo xác nhận trễ ----
+        if conf_vn and conf_vn.date() == today and conf_vn.hour >= 18:
+            al["conf_after18"] += 1
+            if d == today and _parse_vn(o.get("created_on")).hour < 18:
+                al["late_confirm"] += 1
+
+    # ---- Đơn hủy sau đẩy VC (dùng get_cancelled) ----
+    try:
+        canc = get_cancelled(fetch_json)
+        canc_orders = canc["packed"] + canc["not_packed"]
+    except Exception:
+        canc, canc_orders = {"total": 0}, []
+    sku_canc, risk_value = {}, 0
+    for o in canc_orders:
+        for li in (o.get("line_items") or []):
+            sku = li.get("sku") or "N/A"
+            q = li.get("quantity", 0) or 0
+            val = q * (li.get("price", 0) or 0)
+            m = sku_canc.setdefault(sku, {"sku": sku, "qty": 0, "value": 0})
+            m["qty"] += q
+            m["value"] += val
+            risk_value += val
+    cancel = {
+        "today": sum(1 for o in canc_orders if _vn_date_of(o.get("cancelled_on")) == today),
+        "yest": sum(1 for o in canc_orders if _vn_date_of(o.get("cancelled_on")) == yest),
+        "total7d": canc.get("total", 0),
+        "risk_value": risk_value,
+        "top_sku": sorted(sku_canc.values(), key=lambda x: -x["qty"])[:6],
+    }
+
     srt = lambda dd: dict(sorted(dd.items(), key=lambda x: -x[1]))
     return {
         "don_today": don_today, "don_yest": don_yest, "don_week": don_week,
@@ -296,6 +368,10 @@ def get_overview(fetch_json, days: int = 7) -> dict:
         "daily": [{"ngay": d.strftime("%d/%m"), "don": v["don"], "sp": v["sp"]}
                   for d, v in daily.items()],
         "sources": srt(sources), "stores": srt(stores),
+        "delivery": cg,
+        "dvvc": sorted(dvvc.values(), key=lambda x: -x["total"]),
+        "alerts": al,
+        "cancel": cancel,
     }
 
 
