@@ -327,9 +327,14 @@ if _page == PAGE_OVERVIEW:
 
     st.markdown('<div class="sec sec-orange">Tổng quan 7 ngày gần nhất</div>', unsafe_allow_html=True)
     _a = st.columns(3)
-    _a[0].metric("📦 Đơn đặt hôm nay", f"{ov['don_today']:,}", f"Tổng SP: {ov['sp_today']:,}", delta_color="off")
-    _a[1].metric("📦 Đơn đặt hôm qua", f"{ov['don_yest']:,}", f"Tổng SP: {ov['sp_yest']:,}", delta_color="off")
-    _a[2].metric("🗓️ Tổng đơn 7 ngày", f"{ov['don_week']:,}", f"Tổng SP: {ov['sp_week']:,}", delta_color="off")
+    _help_dat = ("Đơn khách đặt, ĐÃ LOẠI đơn đặt-nhưng-chưa-xử-lý đã hủy. "
+                 "Vẫn giữ đơn đã xử lý (có vận đơn) dù sau đó bị hủy.")
+    _a[0].metric("📦 Đơn đặt hôm nay", f"{ov['don_today']:,}", f"Tổng SP: {ov['sp_today']:,}",
+                 delta_color="off", help=_help_dat)
+    _a[1].metric("📦 Đơn đặt hôm qua", f"{ov['don_yest']:,}", f"Tổng SP: {ov['sp_yest']:,}",
+                 delta_color="off", help=_help_dat)
+    _a[2].metric("🗓️ Tổng đơn 7 ngày", f"{ov['don_week']:,}", f"Tổng SP: {ov['sp_week']:,}",
+                 delta_color="off", help=_help_dat)
     _b = st.columns(3)
     _b[0].metric("🏷️ Tổng SKU (7 ngày)", f"{ov['sku_count']:,}")
     _b[1].metric("🛒 Tổng SP (7 ngày)", f"{ov['sp_week']:,}")

@@ -434,10 +434,19 @@ def get_overview(fetch_json, days: int = 7) -> dict:
     daily = {week_start + timedelta(days=i): {"don": 0, "sp": 0} for i in range(days)}
     sources, stores, sku_set = {}, {}, set()
     week_sp = today_sp = yest_sp = 0
+    excl_today = excl_yest = excl_week = 0   # đơn khách đặt CHƯA xử lý đã hủy -> loại
 
     for o in orders:
         d = _vn_date_of(o.get("created_on"))
         if not d or d < week_start or d > today:
+            continue
+        # Loại đơn khách đặt nhưng CHƯA xử lý (chưa có vận đơn) đã bị HỦY
+        if o.get("cancelled_on") and not (o.get("fulfillments") or [{}])[0].get("shipment_created_on"):
+            if d == today:
+                excl_today += 1
+            elif d == yest:
+                excl_yest += 1
+            excl_week += 1
             continue
         sp = sum((li.get("quantity", 0) or 0) for li in (o.get("line_items") or []))
         for li in (o.get("line_items") or []):
@@ -456,6 +465,11 @@ def get_overview(fetch_json, days: int = 7) -> dict:
         cd = o.get("channel_definition") or {}
         store = cd.get("branch_name") or src or "Khác"
         stores[store] = stores.get(store, 0) + 1
+
+    # Trừ đơn hủy-chưa-xử-lý khỏi "đơn đặt" (giữ đơn đã xử lý dù sau đó hủy)
+    don_today = max(0, don_today - excl_today)
+    don_yest = max(0, don_yest - excl_yest)
+    don_week = max(0, don_week - excl_week)
 
     # ---- PHỄU GIAO HÀNG HÔM NAY: quét đơn open theo TRẠNG THÁI HIỆN TẠI ----
     # Đếm theo NGÀY XÁC NHẬN / ĐÓNG GÓI / XUẤT VC (không phụ thuộc ngày tạo đơn).
