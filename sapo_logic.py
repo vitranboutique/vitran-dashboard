@@ -235,6 +235,34 @@ def _packing_history(orders, gap_min: int = 20) -> dict:
     }
 
 
+def _packing_reconcile(orders) -> dict:
+    """Đối chiếu SP SOẠN HÀNG (đóng gói hôm nay) vs SP XUẤT KHO (giao ĐVVC hôm nay) theo SKU."""
+    today = (_now_utc() + timedelta(hours=7)).date()
+    soan, xuat = {}, {}
+    for o in orders:
+        f = (o.get("fulfillments") or [{}])[0]
+        items = [(li.get("sku") or "N/A", li.get("quantity", 0) or 0)
+                 for li in (o.get("line_items") or [])]
+        if _vn_date_of(f.get("packed_on")) == today:
+            for sk, q in items:
+                soan[sk] = soan.get(sk, 0) + q
+        if _vn_date_of(f.get("issued_on")) == today:
+            for sk, q in items:
+                xuat[sk] = xuat.get(sk, 0) + q
+    rows = []
+    for sk in set(soan) | set(xuat):
+        sn, xu = soan.get(sk, 0), xuat.get(sk, 0)
+        rows.append({"SKU": sk, "SL soạn": sn, "SL xuất kho": xu, "Lệch": sn - xu})
+    rows.sort(key=lambda r: (r["Lệch"] == 0, -abs(r["Lệch"]), -r["SL soạn"]))
+    return {
+        "rows": rows,
+        "tong_soan": sum(soan.values()),
+        "tong_xuat": sum(xuat.values()),
+        "so_sku": len(rows),
+        "so_sku_lech": sum(1 for r in rows if r["Lệch"] != 0),
+    }
+
+
 def get_picking(fetch_json, max_pages: int = 15) -> dict:
     """Đơn cần nhặt = chờ đóng gói (packing) + đã in phiếu giao hàng (shipping_label_slip_url).
     Tách hỏa tốc (express) / thường (còn lại). Kèm lịch sử đợt soạn hàng hôm nay."""
@@ -258,6 +286,7 @@ def get_picking(fetch_json, max_pages: int = 15) -> dict:
         "normal": _summarize_picking(normal),
         "total": len(pick),
         "history": _packing_history(orders),
+        "reconcile": _packing_reconcile(orders),
     }
 
 

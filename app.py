@@ -409,6 +409,27 @@ if _page == PAGE_PICK:
         st.caption("Tự suy từ mốc đóng gói (packed_on) trên Sapo — mỗi cụm thời gian gần nhau = 1 đợt soạn. "
                    "Dùng báo cáo cuối ngày. (Muốn lưu lịch sử các NGÀY TRƯỚC thì cần Google Sheet — làm sau nếu cần.)")
 
+    # ── Đối chiếu SP soạn hàng vs xuất kho hôm nay (theo SKU) ──
+    rec = pdata.get("reconcile", {})
+    if rec.get("rows"):
+        st.markdown("#### 🔍 Đối chiếu SP soạn hàng vs xuất kho hôm nay")
+        rc = st.columns(3)
+        rc[0].metric("📦 SP đã soạn (đóng gói)", rec["tong_soan"])
+        rc[1].metric("🚚 SP đã xuất kho (giao VC)", rec["tong_xuat"])
+        rc[2].metric("⚠️ SKU lệch", rec["so_sku_lech"], help="Số SKU có SL soạn ≠ SL xuất kho.")
+        if rec["so_sku_lech"] == 0 and rec["tong_soan"] == rec["tong_xuat"]:
+            st.success("✅ KHỚP hoàn toàn — số SP soạn = số SP xuất kho hôm nay.")
+        else:
+            st.warning(f"⚠️ Lệch tổng **{rec['tong_soan'] - rec['tong_xuat']:+d} SP** · "
+                       f"**{rec['so_sku_lech']} SKU** chưa khớp (xem các dòng tô đỏ).")
+        _rdf = pd.DataFrame(rec["rows"])
+        _sty = _rdf.style.apply(
+            lambda r: ['background-color:#fdecea;color:#b3261e;font-weight:700' if r["Lệch"] != 0 else ''
+                       for _ in r], axis=1)
+        st.dataframe(_sty, width="stretch", hide_index=True)
+        st.caption("**Soạn** = đóng gói hôm nay (packed_on). **Xuất kho** = giao cho ĐVVC hôm nay (issued_on). "
+                   "Lệch > 0 = đã soạn nhưng chưa xuất (còn trong kho chờ shipper); < 0 = xuất đơn đã soạn hôm trước.")
+
     now_str = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%H:%M %d/%m/%Y")
     components.html(picking_html(pdata, now_str), height=820, scrolling=True)
 
