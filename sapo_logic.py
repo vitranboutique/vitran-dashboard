@@ -526,7 +526,8 @@ def get_overview(fetch_json, days: int = 7) -> dict:
 
     # Phễu "Đơn cần giao hôm nay": Tổng = Mới + Sót = Đã giao shipper + Còn chưa giao
     cg = {"tong": 0, "moi": 0, "sot": 0, "da_xac_nhan": 0, "da_dong": 0,
-          "shipper_nhan": 0, "chua_giao": 0, "hoa_toc": 0, "cho_xac_nhan": 0}
+          "shipper_nhan": 0, "chua_giao": 0, "hoa_toc": 0, "cho_xac_nhan": 0,
+          "da_ban_giao": 0}
     cg_tracks = []
     dvvc = {}
     al = {"conf_after18": 0, "late_confirm": 0, "express_pending": 0}
@@ -552,6 +553,9 @@ def get_overview(fetch_json, days: int = 7) -> dict:
         # Đơn CHỜ XÁC NHẬN = đơn mở CHƯA tạo vận đơn (chưa xử lý)
         if not f.get("shipment_created_on"):
             cg["cho_xac_nhan"] += 1
+        # Đã BÀN GIAO ĐVVC (đã xuất VC) hôm nay — gần nhất với "quét biên bản bàn giao"
+        if _vn_date_of(f.get("issued_on")) == today:
+            cg["da_ban_giao"] += 1
 
         # ĐƠN CẦN GIAO HÔM NAY = đang chờ giao (pending) HOẶC đã giao shipper HÔM NAY
         if not (xuly_vn and (ss == "pending"

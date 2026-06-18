@@ -457,15 +457,18 @@ if _page == PAGE_OVERVIEW:
                  help="Đơn mở CHƯA tạo vận đơn (chưa xử lý / chờ xác nhận).")
     _e[1].metric("📋 Đã xác nhận", f"{dl['da_xac_nhan']:,}", help="Đơn đã xác nhận (có confirmed_on).")
     _e[2].metric("✅ Đã đóng hàng", f"{dl['da_dong']:,}", help="Đơn đã đóng gói (packed).")
-    # Hàng 3 — phễu: quay video → shipper nhận → chưa giao
-    _g = st.columns(3)
+    # Hàng 3 — phễu: quay video → biên bản bàn giao → shipper nhận → chưa giao
+    _g = st.columns(4)
     _g[0].metric("🎥 Đã quay video đóng hàng",
                  f"{_video_done:,}" if _video_done is not None else "—",
                  help="Đơn cần giao đã có video đóng hàng trên Dohana (khớp mã vận đơn). "
                       "'—' = chưa bật API Dohana.")
-    _g[1].metric("🚚 Shipper đã nhận", f"{dl['shipper_nhan']:,}",
+    _g[1].metric("📋 Đã quét biên bản bàn giao", f"{dl['da_ban_giao']:,}",
+                 help="Đơn ĐÃ XUẤT cho ĐVVC hôm nay (issued_on) — gần nhất với 'quét biên bản bàn giao'. "
+                      "(Sapo chặn API biên bản bàn giao nên dùng số đã xuất VC; đối chiếu với màn Sapo.)")
+    _g[2].metric("🚚 Shipper đã nhận", f"{dl['shipper_nhan']:,}",
                  help="Đơn đã giao cho ĐVVC / shipper (đang giao).")
-    _g[2].metric("⏳ Còn chưa giao", f"{dl['chua_giao']:,}",
+    _g[3].metric("⏳ Còn chưa giao", f"{dl['chua_giao']:,}",
                  help="Đơn còn chờ shipper tới lấy (pending) = Tổng − Shipper đã nhận.")
     st.caption(f"🔴 Hỏa tốc trong nhóm cần giao: **{dl['hoa_toc']}**.")
     if dl.get("sot_list"):
