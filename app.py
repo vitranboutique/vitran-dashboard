@@ -339,6 +339,11 @@ def load_dohana():
 
 
 @st.cache_data(ttl=180, show_spinner=False)
+def load_handover():
+    return L.get_handover_pending(make_fetch_json(build_session()))
+
+
+@st.cache_data(ttl=180, show_spinner=False)
 def load_alerts():
     return L.get_alerts(make_fetch_json(build_session()))
 
@@ -463,9 +468,11 @@ if _page == PAGE_OVERVIEW:
                  f"{_video_done:,}" if _video_done is not None else "—",
                  help="Đơn cần giao đã có video đóng hàng trên Dohana (khớp mã vận đơn). "
                       "'—' = chưa bật API Dohana.")
-    _g[1].metric("📋 Đã quét biên bản bàn giao", f"{dl['da_ban_giao']:,}",
-                 help="Đơn ĐÃ XUẤT cho ĐVVC hôm nay (issued_on) — gần nhất với 'quét biên bản bàn giao'. "
-                      "(Sapo chặn API biên bản bàn giao nên dùng số đã xuất VC; đối chiếu với màn Sapo.)")
+    _hand = load_handover()
+    _g[1].metric("📋 Đã quét biên bản (chờ bàn giao)", f"{_hand['cho_ban_giao']:,}",
+                 help="Đơn đã quét vào biên bản bàn giao, đang CHỜ ĐVVC tới lấy "
+                      "(khớp 'Bàn giao kiện hàng' trên Sapo). Theo ĐVVC: "
+                      + (" · ".join(f"{k}: {v}" for k, v in _hand["by_carrier"].items()) or "—"))
     _g[2].metric("🚚 Shipper đã nhận", f"{dl['shipper_nhan']:,}",
                  help="Đơn đã giao cho ĐVVC / shipper (đang giao).")
     _g[3].metric("⏳ Còn chưa giao", f"{dl['chua_giao']:,}",
