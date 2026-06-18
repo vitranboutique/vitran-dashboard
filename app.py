@@ -147,8 +147,8 @@ st.markdown(
       .ctab td.num { text-align: right; white-space: nowrap; }
 
       /* ====== POPUP CẢNH BÁO cố định (mọi trang, trượt không mất) ====== */
-      .alert-pop { position: fixed; right: 14px; bottom: 14px; z-index: 99999;
-        width: 250px; max-width: 70vw; background: #fff5f5; border: 2px solid #e24b4a;
+      .alert-pop { position: fixed; right: 14px; bottom: 76px; z-index: 99999;
+        width: 240px; max-width: 70vw; background: #fff5f5; border: 2px solid #e24b4a;
         border-radius: 12px; box-shadow: 0 6px 22px rgba(180,30,30,.28); overflow: hidden;
         font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; }
       .alert-pop summary { list-style: none; cursor: pointer; padding: 8px 12px;
@@ -162,7 +162,7 @@ st.markdown(
       .alert-pop .v { font-weight: 800; color: #9aa0a6; }
       .alert-pop .v.hot { color: #b3261e; }
       .alert-pop .ok { color: #1e7d3c; font-weight: 700; padding: 6px 2px; }
-      @media (max-width: 640px) { .alert-pop { width: 200px; right: 8px; bottom: 8px; } }
+      @media (max-width: 640px) { .alert-pop { width: 190px; right: 8px; bottom: 72px; } }
       @media print { .alert-pop { display: none !important; } }
     </style>
     """,
