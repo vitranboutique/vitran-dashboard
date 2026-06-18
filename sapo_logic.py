@@ -417,29 +417,34 @@ def get_alerts(fetch_json) -> dict:
             break
         open_orders += rows
     conf_after18 = late_confirm = chua_giao = express_pending = 0
+    retrieve = 0   # đơn đã GÓI bị hủy/hoàn, CHƯA nhập lại kho (no_restock) = cần lấy lại
     for o in open_orders:
         f = f0(o)
+        ss = f.get("shipment_status")
         xuly = _parse_vn(f.get("shipment_created_on") or f.get("created_on"))
         if xuly and xuly.date() == today and xuly.hour >= 18:
             conf_after18 += 1
             cre = _parse_vn(o.get("created_on"))
             if cre and cre.date() == today and cre.hour < 18:
                 late_confirm += 1
-        if f.get("shipment_status") == "pending":
+        if ss == "pending":
             chua_giao += 1
             if o.get("shipment_category") == "express":
                 express_pending += 1
-    # Đơn HỦY SAU GÓI cần lấy lại = hủy hôm nay + đã đóng gói (packed)
-    cancel_retrieve = 0
+        # Đã gói + đang HOÀN (returning/returned) + chưa nhập kho → cần lấy lại
+        if (f.get("packed_status") == "packed" and ss in ("returning", "returned")
+                and o.get("restock_status") == "no_restock"):
+            retrieve += 1
+    # + đơn HỦY đã gói, chưa nhập lại kho (status=cancelled — không nằm trong open scan)
     try:
         canc = get_cancelled(fetch_json)
-        cancel_retrieve = sum(1 for o in canc.get("packed", [])
-                              if _vn_date_of(o.get("cancelled_on")) == today)
+        retrieve += sum(1 for o in canc.get("packed", [])
+                        if o.get("restock_status") == "no_restock")
     except Exception:
         pass
     return {"conf_after18": conf_after18, "late_confirm": late_confirm,
             "chua_giao": chua_giao, "express_pending": express_pending,
-            "cancel_retrieve": cancel_retrieve}
+            "cancel_retrieve": retrieve}
 
 
 def get_handover_pending(fetch_json, days: int = 10) -> dict:
