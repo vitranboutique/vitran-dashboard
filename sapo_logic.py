@@ -526,7 +526,8 @@ def get_overview(fetch_json, days: int = 7) -> dict:
 
     # Phễu "Đơn cần giao hôm nay": Tổng = Mới + Sót = Đã giao shipper + Còn chưa giao
     cg = {"tong": 0, "moi": 0, "sot": 0, "da_xac_nhan": 0, "da_dong": 0,
-          "shipper_nhan": 0, "chua_giao": 0, "hoa_toc": 0}
+          "shipper_nhan": 0, "chua_giao": 0, "hoa_toc": 0, "cho_xac_nhan": 0}
+    cg_tracks = []
     dvvc = {}
     al = {"conf_after18": 0, "late_confirm": 0, "express_pending": 0}
     sot_list = []
@@ -548,12 +549,17 @@ def get_overview(fetch_json, days: int = 7) -> dict:
             if _cre and _cre.date() == today and _cre.hour < 18:
                 al["late_confirm"] += 1
 
+        # Đơn CHỜ XÁC NHẬN = đơn mở CHƯA tạo vận đơn (chưa xử lý)
+        if not f.get("shipment_created_on"):
+            cg["cho_xac_nhan"] += 1
+
         # ĐƠN CẦN GIAO HÔM NAY = đang chờ giao (pending) HOẶC đã giao shipper HÔM NAY
         if not (xuly_vn and (ss == "pending"
                              or (ss in ("delivering", "delivered") and issued_today))):
             continue
         handed = ss != "pending"
         cg["tong"] += 1
+        cg_tracks.append(f.get("tracking_number") or (f.get("tracking_numbers") or [None])[0])
         cg["moi" if xuly_d == today else "sot"] += 1
         cg["shipper_nhan" if handed else "chua_giao"] += 1
         if o.get("confirmed_on"):
@@ -582,6 +588,7 @@ def get_overview(fetch_json, days: int = 7) -> dict:
         e["hoatoc" if is_express else "thuong"] += 1
         e["da_giao" if handed else "chua_giao"] += 1
     cg["sot_list"] = sorted(sot_list, key=lambda x: x["Ngày xử lý"])
+    cg["tracks"] = [t for t in cg_tracks if t]
 
     # ---- Đơn hủy sau đẩy VC (dùng get_cancelled) ----
     try:
