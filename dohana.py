@@ -43,7 +43,7 @@ def today_package_videos(max_pages: int = 10):
     today = (datetime.now(timezone.utc) + timedelta(hours=7)).date()
     headers = {"x-api-key": key}
     vids = []
-    for p in range(1, max_pages + 1):
+    for p in range(0, max_pages):        # ⚠️ API phân trang 0-INDEXED: page=0 = MỚI NHẤT
         try:
             r = requests.get(_BASE, params={"page": p, "limit": 100, "type": "package"},
                              headers=headers, timeout=20)
@@ -56,6 +56,8 @@ def today_package_videos(max_pages: int = 10):
         last = _vnd(rows[-1].get("createdAt"))     # đã sort giảm dần theo createdAt
         if last and last < today:
             break
+    # khử trùng id (phòng phân trang chồng lấn)
+    vids = list({v.get("id"): v for v in vids}.values())
     today_vids = [v for v in vids if _vnd(v.get("createdAt")) == today]
     codes = Counter(v.get("orderCode") for v in today_vids if v.get("orderCode"))
     return {
