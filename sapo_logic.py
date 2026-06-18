@@ -402,6 +402,46 @@ def _vn_date_of(iso):
     return d.date() if d else None
 
 
+def get_alerts(fetch_json) -> dict:
+    """Số liệu CẢNH BÁO cho popup (mọi trang): xác nhận trễ, chưa giao, hỏa tốc,
+    đơn HỦY SAU GÓI cần lấy lại. Quét đơn open + get_cancelled (nhẹ, cache)."""
+    today = (_now_utc() + timedelta(hours=7)).date()
+
+    def f0(o):
+        return (o.get("fulfillments") or [{}])[0]
+
+    open_orders = []
+    for p in range(1, 30):
+        rows = fetch_json("/admin/orders.json", limit=250, page=p, status="open").get("orders", [])
+        if not rows:
+            break
+        open_orders += rows
+    conf_after18 = late_confirm = chua_giao = express_pending = 0
+    for o in open_orders:
+        f = f0(o)
+        xuly = _parse_vn(f.get("shipment_created_on") or f.get("created_on"))
+        if xuly and xuly.date() == today and xuly.hour >= 18:
+            conf_after18 += 1
+            cre = _parse_vn(o.get("created_on"))
+            if cre and cre.date() == today and cre.hour < 18:
+                late_confirm += 1
+        if f.get("shipment_status") == "pending":
+            chua_giao += 1
+            if o.get("shipment_category") == "express":
+                express_pending += 1
+    # Đơn HỦY SAU GÓI cần lấy lại = hủy hôm nay + đã đóng gói (packed)
+    cancel_retrieve = 0
+    try:
+        canc = get_cancelled(fetch_json)
+        cancel_retrieve = sum(1 for o in canc.get("packed", [])
+                              if _vn_date_of(o.get("cancelled_on")) == today)
+    except Exception:
+        pass
+    return {"conf_after18": conf_after18, "late_confirm": late_confirm,
+            "chua_giao": chua_giao, "express_pending": express_pending,
+            "cancel_retrieve": cancel_retrieve}
+
+
 def get_overview(fetch_json, days: int = 7) -> dict:
     """6 thẻ tổng + dữ liệu 3 biểu đồ (theo ngày / sàn / gian hàng) cho trang Tổng quan.
     Dùng count.json (nhanh) cho các con số tổng; tải đơn tuần để tính breakdown."""

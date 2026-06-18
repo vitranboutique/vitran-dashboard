@@ -145,6 +145,25 @@ st.markdown(
       .ctab tbody tr:hover { background: #fafbfc; }
       .ctab tr.hl td { background: #fdecea; color: #b3261e; font-weight: 700; }
       .ctab td.num { text-align: right; white-space: nowrap; }
+
+      /* ====== POPUP CẢNH BÁO cố định (mọi trang, trượt không mất) ====== */
+      .alert-pop { position: fixed; right: 14px; bottom: 14px; z-index: 99999;
+        width: 250px; max-width: 70vw; background: #fff5f5; border: 2px solid #e24b4a;
+        border-radius: 12px; box-shadow: 0 6px 22px rgba(180,30,30,.28); overflow: hidden;
+        font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; }
+      .alert-pop summary { list-style: none; cursor: pointer; padding: 8px 12px;
+        background: #e24b4a; color: #fff; font-weight: 800; font-size: .9rem;
+        display: flex; align-items: center; justify-content: space-between; }
+      .alert-pop summary::-webkit-details-marker { display: none; }
+      .alert-pop .body { padding: 8px 12px 10px; font-size: .82rem; }
+      .alert-pop .row { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0;
+        border-bottom: 1px dashed #f1c9c7; }
+      .alert-pop .row:last-child { border-bottom: 0; }
+      .alert-pop .v { font-weight: 800; color: #9aa0a6; }
+      .alert-pop .v.hot { color: #b3261e; }
+      .alert-pop .ok { color: #1e7d3c; font-weight: 700; padding: 6px 2px; }
+      @media (max-width: 640px) { .alert-pop { width: 200px; right: 8px; bottom: 8px; } }
+      @media print { .alert-pop { display: none !important; } }
     </style>
     """,
     unsafe_allow_html=True,
@@ -319,9 +338,46 @@ def load_dohana():
     return dohana.today_package_videos()
 
 
+@st.cache_data(ttl=180, show_spinner=False)
+def load_alerts():
+    return L.get_alerts(make_fetch_json(build_session()))
+
+
+def render_alert_popup():
+    """Popup CẢNH BÁO cố định, hiện ở MỌI trang (position:fixed)."""
+    if not credential_present():
+        return
+    try:
+        a = load_alerts()
+    except Exception:
+        return
+    items = [
+        ("🕒 Xác nhận sau 18h", a["conf_after18"]),
+        ("📌 Đặt &lt;18h, xác nhận &gt;18h", a["late_confirm"]),
+        ("📦 Còn chưa giao (chờ shipper)", a["chua_giao"]),
+        ("🔴 Hỏa tốc chưa giao", a["express_pending"]),
+        ("↩️ Hủy sau gói cần LẤY LẠI", a["cancel_retrieve"]),
+    ]
+    n_hot = sum(1 for _, v in items if v)
+    rows = "".join(
+        f'<div class="row"><span>{lbl}</span>'
+        f'<span class="v{" hot" if v else ""}">{v}</span></div>'
+        for lbl, v in items)
+    badge = f'⚠️ Cảnh báo ({n_hot})' if n_hot else '✅ Cảnh báo (0)'
+    body = rows if n_hot else '<div class="ok">✅ Không có cảnh báo</div>' + rows
+    st.markdown(
+        f'<details class="alert-pop" open><summary>{badge}<span>▾</span></summary>'
+        f'<div class="body">{body}</div></details>',
+        unsafe_allow_html=True)
+
+
 @st.cache_data(ttl=900, show_spinner="Đang quét đơn trả cả năm…")
 def load_returns_followup():
     return L.get_returns_followup(make_fetch_json(build_session()))
+
+
+# Popup cảnh báo cố định — hiện ở MỌI trang
+render_alert_popup()
 
 
 # ════════════════ TRANG TỔNG QUAN ĐIỀU HÀNH ════════════════
@@ -411,30 +467,21 @@ if _page == PAGE_OVERVIEW:
             "dvvc": "ĐVVC", "total": "Tổng đơn", "thuong": "Đơn thường", "hoatoc": "Hỏa tốc",
             "da_giao": "Đã giao shipper", "chua_giao": "Còn chưa giao"}))
 
-    # ═══════════ CẢNH BÁO + ĐƠN HỦY ═══════════
-    _w1, _w2 = st.columns(2)
-    with _w1:
-        st.markdown('<div class="sec sec-red">⚠️ Cảnh báo quan trọng</div>', unsafe_allow_html=True)
-        al = ov["alerts"]
-        st.error(
-            f"🕒 Xác nhận sau 18h hôm nay: **{al['conf_after18']}**\n\n"
-            f"📌 Đặt trước 18h, xác nhận sau 18h: **{al['late_confirm']}**\n\n"
-            f"📦 Còn chưa giao (chờ shipper): **{dl['chua_giao']}**\n\n"
-            f"🔴 Hỏa tốc chưa giao: **{al['express_pending']}**"
-        )
-    with _w2:
-        st.markdown('<div class="sec sec-red">Đơn hủy sau đẩy VC</div>', unsafe_allow_html=True)
-        cn = ov["cancel"]
-        _cc = st.columns(3)
-        _cc[0].metric("Hôm nay", cn["today"])
-        _cc[1].metric("Hôm qua", cn["yest"])
-        _cc[2].metric("7 ngày", cn["total7d"])
-        st.metric("💸 Giá trị hàng rủi ro (ước tính)", f"{int(cn['risk_value']):,} đ")
-        if cn["top_sku"]:
-            st.markdown("**Top SKU bị hủy nhiều**")
-            _ts = pd.DataFrame(cn["top_sku"]).rename(
-                columns={"sku": "SKU", "qty": "SL", "value": "Giá trị (đ)"})
-            render_compact_table(_ts)
+    # ═══════════ ĐƠN HỦY (Cảnh báo giờ là popup cố định mọi trang) ═══════════
+    st.markdown('<div class="sec sec-red">Đơn hủy sau đẩy VC</div>', unsafe_allow_html=True)
+    st.caption("💡 Các cảnh báo quan trọng (xác nhận trễ, chưa giao, hủy sau gói cần lấy lại) "
+               "giờ nằm ở **popup góc phải dưới** — hiện trên mọi trang.")
+    cn = ov["cancel"]
+    _cc = st.columns(4)
+    _cc[0].metric("Hủy hôm nay", cn["today"])
+    _cc[1].metric("Hủy hôm qua", cn["yest"])
+    _cc[2].metric("Hủy 7 ngày", cn["total7d"])
+    _cc[3].metric("💸 Giá trị rủi ro", f"{int(cn['risk_value']):,} đ")
+    if cn["top_sku"]:
+        st.markdown("**Top SKU bị hủy nhiều**")
+        _ts = pd.DataFrame(cn["top_sku"]).rename(
+            columns={"sku": "SKU", "qty": "SL", "value": "Giá trị (đ)"})
+        render_compact_table(_ts)
 
     st.caption("Số liệu 7 ngày gần nhất · cache 5 phút · giờ VN (UTC+7). "
                "(Khối Hàng hoàn/Khiếu nại — Phần 3 — cần nhập tay Google Sheet, làm sau.)")
