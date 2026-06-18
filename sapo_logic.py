@@ -382,8 +382,8 @@ def get_picking(fetch_json, max_pages: int = 15) -> dict:
     express = [o for o in pick if o.get("shipment_category") == "express"]
     normal = [o for o in pick if o.get("shipment_category") != "express"]
     today = (_now_utc() + timedelta(hours=7)).date()
-    packed_tracks = [f0(o).get("tracking_number") for o in orders
-                     if _vn_date_of(f0(o).get("packed_on")) == today and f0(o).get("tracking_number")]
+    packed_ids = [[c for c in [f0(o).get("tracking_number"), o.get("name")] if c]
+                  for o in orders if _vn_date_of(f0(o).get("packed_on")) == today]
     return {
         "express": _summarize_picking(express),
         "normal": _summarize_picking(normal),
@@ -391,7 +391,7 @@ def get_picking(fetch_json, max_pages: int = 15) -> dict:
         "history": _packing_history(orders),
         "reconcile": _packing_reconcile(orders),
         "cancel_pick": _cancel_after_pick(orders, fetch_json),
-        "packed_tracks": packed_tracks,
+        "packed_ids": packed_ids,
     }
 
 
@@ -559,7 +559,8 @@ def get_overview(fetch_json, days: int = 7) -> dict:
             continue
         handed = ss != "pending"
         cg["tong"] += 1
-        cg_tracks.append(f.get("tracking_number") or (f.get("tracking_numbers") or [None])[0])
+        cg_tracks.append([f.get("tracking_number") or (f.get("tracking_numbers") or [None])[0],
+                          o.get("name")])
         cg["moi" if xuly_d == today else "sot"] += 1
         cg["shipper_nhan" if handed else "chua_giao"] += 1
         if o.get("confirmed_on"):
@@ -588,7 +589,7 @@ def get_overview(fetch_json, days: int = 7) -> dict:
         e["hoatoc" if is_express else "thuong"] += 1
         e["da_giao" if handed else "chua_giao"] += 1
     cg["sot_list"] = sorted(sot_list, key=lambda x: x["Ngày xử lý"])
-    cg["tracks"] = [t for t in cg_tracks if t]
+    cg["order_ids"] = [[c for c in ids if c] for ids in cg_tracks]
 
     # ---- Đơn hủy sau đẩy VC (dùng get_cancelled) ----
     try:

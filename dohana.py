@@ -35,12 +35,14 @@ def _vnd(iso):
         return None
 
 
-def today_package_videos(max_pages: int = 10):
-    """Video ĐÓNG HÀNG (type=package) tạo HÔM NAY. Trả {total, codes:dict, dup:dict} hoặc None."""
+def today_package_videos(days_match: int = 3, max_pages: int = 12):
+    """Video ĐÓNG HÀNG (type=package). Trả {total(hôm nay), codes(hôm nay), dup, match(set mã 3 ngày)}.
+    'match' gồm mã video nhiều ngày để khớp cả đơn SÓT (quay hôm trước)."""
     key = _key()
     if not key:
         return None
     today = (datetime.now(timezone.utc) + timedelta(hours=7)).date()
+    cutoff = today - timedelta(days=days_match - 1)
     headers = {"x-api-key": key}
     vids = []
     for p in range(0, max_pages):        # ⚠️ API phân trang 0-INDEXED: page=0 = MỚI NHẤT
@@ -54,14 +56,14 @@ def today_package_videos(max_pages: int = 10):
             break
         vids += rows
         last = _vnd(rows[-1].get("createdAt"))     # đã sort giảm dần theo createdAt
-        if last and last < today:
+        if last and last < cutoff:
             break
-    # khử trùng id (phòng phân trang chồng lấn)
-    vids = list({v.get("id"): v for v in vids}.values())
+    vids = list({v.get("id"): v for v in vids}.values())   # khử trùng id
     today_vids = [v for v in vids if _vnd(v.get("createdAt")) == today]
     codes = Counter(v.get("orderCode") for v in today_vids if v.get("orderCode"))
     return {
         "total": len(today_vids),
         "codes": dict(codes),
         "dup": {k: v for k, v in codes.items() if v >= 2},
+        "match": {v.get("orderCode") for v in vids if v.get("orderCode")},
     }

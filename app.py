@@ -449,7 +449,8 @@ if _page == PAGE_OVERVIEW:
     if dohana.configured():
         _dvh = load_dohana()
         if _dvh:
-            _video_done = len(set(dl.get("tracks", [])) & set(_dvh["codes"]))
+            _mset = _dvh.get("match", set())
+            _video_done = sum(1 for ids in dl.get("order_ids", []) if set(ids) & _mset)
     # Hàng 2 — phễu: chờ xác nhận → đã xác nhận → đã đóng
     _e = st.columns(3)
     _e[0].metric("📥 Đơn chờ xác nhận", f"{dl['cho_xac_nhan']:,}",
@@ -584,27 +585,28 @@ if _page == PAGE_PICK:
         with st.expander("⚙️ Cách bật (dán 1 dòng vào Secrets)"):
             st.markdown(_DOHANA_SETUP)
     else:
-        _dv = load_dohana() or {"total": 0, "codes": {}, "dup": {}}
-        _packed = set(pdata.get("packed_tracks", []))
-        _missing = _packed - set(_dv["codes"])
+        _dv = load_dohana() or {"total": 0, "codes": {}, "dup": {}, "match": set()}
+        _packed_ids = pdata.get("packed_ids", [])
+        _mset = _dv.get("match", set())
+        _missing = [ids for ids in _packed_ids if not (set(ids) & _mset)]
         _dup = _dv["dup"]
         _vc = st.columns(3)
         _vc[0].metric("🎥 Video đóng hàng hôm nay", _dv["total"],
                       help="Số video type=package tạo hôm nay trên Dohana.")
-        _vc[1].metric("📦 Đơn đã đóng (Sapo)", len(_packed))
+        _vc[1].metric("📦 Đơn đã đóng (Sapo)", len(_packed_ids))
         _vc[2].metric("⚠️ Đơn THIẾU video", len(_missing),
-                      help="Đơn đã đóng gói (Sapo) nhưng chưa tìm thấy video đóng hàng.")
-        if not _missing and not _dup and _packed:
+                      help="Đơn đã đóng gói (Sapo) nhưng chưa tìm thấy video (khớp cả mã vận đơn + mã đơn, 3 ngày).")
+        if not _missing and not _dup and _packed_ids:
             st.success("✅ KHỚP — mọi đơn đã đóng đều có video, không trùng.")
         if _dup:
             st.warning(f"⚠️ **{len(_dup)} mã có VIDEO TRÙNG** (quay ≥2 lần):")
             render_compact_table(pd.DataFrame(
-                [{"Mã vận đơn": k, "Số video": v} for k, v in sorted(_dup.items(), key=lambda x: -x[1])]))
+                [{"Mã đơn": k, "Số video": v} for k, v in sorted(_dup.items(), key=lambda x: -x[1])]))
         if _missing:
             st.warning(f"⚠️ **{len(_missing)} đơn đã đóng nhưng THIẾU video** (chưa quay):")
-            render_compact_table(pd.DataFrame([{"Mã vận đơn": t} for t in sorted(_missing)]))
-        st.caption("Đối chiếu mã vận đơn (Sapo, đóng hôm nay) ↔ orderCode video Dohana (type=package). "
-                   "Trùng = 1 mã có ≥2 video. Thiếu = đơn đã đóng mà chưa có video.")
+            render_compact_table(pd.DataFrame([{"Mã đơn": (ids[0] if ids else "")} for ids in _missing]))
+        st.caption("Đối chiếu Sapo (đóng hôm nay) ↔ video Dohana — khớp theo **mã vận đơn + mã đơn**, "
+                   "video **3 ngày** (bắt cả đơn sót). Trùng = 1 mã có ≥2 video. Thiếu = đã đóng mà chưa quay.")
 
     # ── Phiếu in (trái) + Lịch sử in & nút Lưu (phải, KẾ BÊN phiếu) ──
     _cslip, _clog = st.columns([3, 2])
