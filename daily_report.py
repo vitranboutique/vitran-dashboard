@@ -107,6 +107,9 @@ def report_html(rep, dv, now_str):
     # Mục video khui hàng (đối chiếu Dohana inbound)
     nk_detail = nk.get("detail") or []
     clip_co = nk.get("clip_co", 0)
+    clip_total = nk.get("clip_total", 0)
+    unmatched = nk.get("clip_unmatched") or []
+    clip_total_line = ""
     if not nk.get("clip_available", False):
         clip_summary = ''
         clip_note = ('<div style="font-size:11px;color:#dc2626;margin-top:4px">'
@@ -116,6 +119,18 @@ def report_html(rep, dv, now_str):
         col = "#15803d" if ok else "#dc2626"
         clip_summary = (f' <span style="font-size:11px;color:{col}">'
                         f'({clip_co}/{len(nk_detail)} có clip)</span>')
+        # Dòng tổng: tổng clip khui hàng hôm nay vs khớp đơn hoàn
+        u = len(unmatched)
+        clip_total_line = (
+            f'<div style="font-size:11px;color:#374151;margin:2px 0 6px">'
+            f'📹 Tổng clip khui hàng hôm nay: <b>{clip_total}</b> · '
+            f'khớp đơn hoàn nhập kho: <b style="color:#15803d">{clip_co}</b>'
+            + (f' · <b style="color:#b45309">{u} clip KHÔNG khớp đơn hoàn</b>' if u else '')
+            + '</div>'
+            + (f'<div style="font-size:10px;color:#b45309;margin:-2px 0 6px;line-height:1.4">'
+               f'⚠️ {u} clip không ứng với đơn hoàn nào — nghi <b>quay nhầm chế độ</b> '
+               f'(đóng hàng ↔ khui hàng) hoặc hàng <b>chưa bấm nhập kho</b>. '
+               f'Mã: {_e(", ".join(map(str, unmatched)))}</div>' if u else ''))
         clip_note = ('' if ok else
                      f'<div style="font-size:11px;color:#dc2626;margin-top:4px">'
                      f'⚠️ Có {len(nk_detail) - clip_co} đơn THIẾU clip khui hàng — cần kiểm tra/khiếu nại.</div>')
@@ -178,6 +193,7 @@ def report_html(rep, dv, now_str):
   </div>
 
   <div class="sec">V. Video khui hàng — đơn hàng hoàn nhận hôm nay{clip_summary}</div>
+  {clip_total_line}
   <table>
     <thead><tr><th>#</th><th class="l">Mã vận đơn</th><th>ĐVVC</th>
       <th class="l">Sản phẩm (SKU × SL)</th><th class="l">Lý do trả</th>

@@ -68,10 +68,13 @@ def inbound_videos(days_match: int = 3, max_pages: int = 12):
         return None
     today = (datetime.now(timezone.utc) + timedelta(hours=7)).date()
     cnt = Counter(v.get("orderCode") for v in vids if v.get("orderCode"))
+    today_codes = {v.get("orderCode") for v in vids
+                   if v.get("orderCode") and _vnd(v.get("createdAt")) == today}
     return {
         "total": sum(1 for v in vids if _vnd(v.get("createdAt")) == today),
         "count": dict(cnt),
         "match": set(cnt),
+        "today_codes": today_codes,
         "dup": {k: v for k, v in cnt.items() if v >= 2},
     }
 

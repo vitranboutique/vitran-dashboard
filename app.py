@@ -700,12 +700,18 @@ if _page == PAGE_DAILY:
     _inb = load_dohana_inbound() if dohana.configured() else None
     if _inb is not None:
         _mset, _cnt = _inb.get("match", set()), _inb.get("count", {})
+        _consumed = set()
         for _d in _nk.get("detail", []):
             _hit = next((c for c in _d.get("codes", []) if c in _mset), None)
             _d["clip"] = bool(_hit)
             _d["clip_count"] = _cnt.get(_hit, 0) if _hit else 0
+            if _hit:
+                _consumed.add(_hit)
         _nk["clip_available"] = True
         _nk["clip_co"] = sum(1 for _d in _nk.get("detail", []) if _d.get("clip"))
+        _nk["clip_total"] = _inb.get("total", 0)
+        # Clip khui hàng hôm nay KHÔNG ứng với đơn hoàn nào (nghi quay nhầm chế độ)
+        _nk["clip_unmatched"] = sorted(_inb.get("today_codes", set()) - _consumed)
     else:
         _nk["clip_available"] = False
     _nrep = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%H:%M %d/%m/%Y")
