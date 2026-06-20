@@ -368,6 +368,11 @@ def render_alert_popup():
         f'<div class="row"><span>{lbl}</span>'
         f'<span class="v{" hot" if v else ""}">{v}</span></div>'
         for lbl, v in items)
+    # dòng phụ: trong đó HỎA TỐC (thuộc "hủy sau gói")
+    _ce = a.get("cancel_retrieve_express", 0)
+    rows += (f'<div class="row" style="padding-left:16px;font-size:.76rem;border-bottom:0">'
+             f'<span>↳ trong đó 🔴 hỏa tốc</span>'
+             f'<span class="v{" hot" if _ce else ""}">{_ce}</span></div>')
     badge = f'⚠️ Cảnh báo ({n_hot})' if n_hot else '✅ Cảnh báo (0)'
     body = rows if n_hot else '<div class="ok">✅ Không có cảnh báo</div>' + rows
     st.markdown(

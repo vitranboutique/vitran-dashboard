@@ -431,16 +431,20 @@ def get_alerts(fetch_json) -> dict:
             if o.get("shipment_category") == "express":
                 express_pending += 1
     # Đơn HỦY SAU GÓI cần lấy lại = đã đóng gói + HỦY HÔM NAY (khớp Sapo "Hủy hôm nay")
-    cancel_retrieve = 0
+    cancel_retrieve = cancel_retrieve_express = 0
     try:
         canc = get_cancelled(fetch_json)
-        cancel_retrieve = sum(1 for o in canc.get("packed", [])
-                              if _vn_date_of(o.get("cancelled_on")) == today)
+        for o in canc.get("packed", []):
+            if _vn_date_of(o.get("cancelled_on")) == today:
+                cancel_retrieve += 1
+                if o.get("shipment_category") == "express":
+                    cancel_retrieve_express += 1
     except Exception:
         pass
     return {"conf_after18": conf_after18, "late_confirm": late_confirm,
             "chua_giao": chua_giao, "express_pending": express_pending,
-            "cancel_retrieve": cancel_retrieve}
+            "cancel_retrieve": cancel_retrieve,
+            "cancel_retrieve_express": cancel_retrieve_express}
 
 
 def get_handover_pending(fetch_json, days: int = 10) -> dict:
