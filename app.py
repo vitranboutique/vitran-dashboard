@@ -723,13 +723,15 @@ if _page == PAGE_DAILY:
         _m_canc = sum(1 for c in _vset if c not in _dgc and c in _hgc)
         _done = sum(1 for c in _vset if c not in _dgc and c not in _hgc)
         _dgo = _rep.get("dong_goi_order_codes") or []
-        _open_with_vid = sum(1 for _codes in _dgo if any(c in _vset for c in _codes))
+        _open_with_vid = sum(1 for d in _dgo if any(c in _vset for c in d.get("codes", [])))
+        _missing = [d.get("track") for d in _dgo
+                    if not any(c in _vset for c in d.get("codes", []))]
         _rep["video_recon"] = {
             "available": True, "total": _dvr.get("total", 0),
             "match_open": _m_open, "match_canc": _m_canc, "done_express": _done,
             "dup": _dvr.get("dup", {}),
             "open_with_video": _open_with_vid,
-            "missing_video": max(0, _rep["totals"]["dong_goi"] - _open_with_vid),
+            "missing_video": len(_missing), "missing_codes": _missing,
         }
     else:
         _rep["video_recon"] = {"available": False}

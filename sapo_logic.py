@@ -581,6 +581,25 @@ def get_daily_report(fetch_json) -> dict:
             break
         open_orders += rows
 
+    # Gộp đơn ĐÃ ĐÓNG (status=closed) đóng gói / xuất HÔM NAY — vd hỏa tốc SPX Instant
+    # giao xong ngay trong ngày → rớt khỏi scan "open". Phải kéo riêng để KHÔNG bỏ sót
+    # đơn đóng gói (nếu không "Đơn đóng gói" bị thiếu, lệch với video). Lọc created_on_min cho nhẹ.
+    cmin = (today - timedelta(days=3)).isoformat() + "T00:00:00+07:00"
+    n_closed = 0
+    for p in range(1, 12):
+        rows = fetch_json("/admin/orders.json", limit=250, page=p,
+                          status="closed", created_on_min=cmin).get("orders", [])
+        if not rows:
+            break
+        for o in rows:
+            ff = (o.get("fulfillments") or [{}])[0]
+            if _vn_date_of(ff.get("packed_on")) == today or _vn_date_of(ff.get("issued_on")) == today:
+                open_orders.append(o)
+                n_closed += 1
+        last = _vn_date_of(rows[-1].get("created_on"))
+        if last and last < (today - timedelta(days=3)):
+            break
+
     cr = {}
 
     def ce(c):
@@ -595,7 +614,9 @@ def get_daily_report(fetch_json) -> dict:
             ce(c)["dong_goi"] += 1
             cc = _order_codes(o)
             dong_goi_codes |= cc
-            dong_goi_order_codes.append(sorted(cc))
+            dong_goi_order_codes.append({
+                "track": f.get("tracking_number") or o.get("name") or "?",
+                "codes": sorted(cc)})
         if _vn_date_of(f.get("issued_on")) == today:
             ce(c)["shipper_nhan"] += 1
         if f.get("shipment_status") == "pending":
