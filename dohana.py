@@ -35,6 +35,47 @@ def _vnd(iso):
         return None
 
 
+def _fetch_videos(typ: str, days_match: int, max_pages: int):
+    """Lấy video theo type, lùi tới khi createdAt < cutoff. Trả list (đã khử trùng id)."""
+    key = _key()
+    if not key:
+        return None
+    today = (datetime.now(timezone.utc) + timedelta(hours=7)).date()
+    cutoff = today - timedelta(days=days_match - 1)
+    headers = {"x-api-key": key}
+    vids = []
+    for p in range(0, max_pages):        # ⚠️ 0-INDEXED: page=0 = MỚI NHẤT
+        try:
+            r = requests.get(_BASE, params={"page": p, "limit": 100, "type": typ},
+                             headers=headers, timeout=20)
+            rows = r.json().get("data", []) if r.status_code == 200 else []
+        except Exception:
+            break
+        if not rows:
+            break
+        vids += rows
+        last = _vnd(rows[-1].get("createdAt"))
+        if last and last < cutoff:
+            break
+    return list({v.get("id"): v for v in vids}.values())
+
+
+def inbound_videos(days_match: int = 3, max_pages: int = 12):
+    """Video KHUI HÀNG (type=inbound — quay khi nhận hàng hoàn về).
+    Trả {total(hôm nay), count(Counter mã trong cửa sổ), match(set mã), dup}."""
+    vids = _fetch_videos("inbound", days_match, max_pages)
+    if vids is None:
+        return None
+    today = (datetime.now(timezone.utc) + timedelta(hours=7)).date()
+    cnt = Counter(v.get("orderCode") for v in vids if v.get("orderCode"))
+    return {
+        "total": sum(1 for v in vids if _vnd(v.get("createdAt")) == today),
+        "count": dict(cnt),
+        "match": set(cnt),
+        "dup": {k: v for k, v in cnt.items() if v >= 2},
+    }
+
+
 def today_package_videos(days_match: int = 3, max_pages: int = 12):
     """Video ĐÓNG HÀNG (type=package). Trả {total(hôm nay), codes(hôm nay), dup, match(set mã 3 ngày)}.
     'match' gồm mã video nhiều ngày để khớp cả đơn SÓT (quay hôm trước)."""

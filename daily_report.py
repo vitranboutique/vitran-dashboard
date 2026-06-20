@@ -75,6 +75,26 @@ _SRC = {"tiktokshop": "TikTok", "shopee": "Shopee", "lazada": "Lazada",
         "website": "Website", "pos": "Tại quầy"}
 
 
+def _returns_clip_rows(detail):
+    body = ""
+    for i, d in enumerate(detail, 1):
+        cnt = d.get("clip_count", 0) or 0
+        if d.get("clip"):
+            cell = (f'<span style="color:#15803d;font-weight:800">✓ Có'
+                    f'{" ×" + str(cnt) if cnt > 1 else ""}</span>')
+            tdcls = ""
+        else:
+            cell = '<span style="color:#dc2626;font-weight:800">✗ Thiếu clip</span>'
+            tdcls = ' style="background:#fef2f2"'
+        body += (f'<tr><td>{i}</td>'
+                 f'<td class="l">{_e(str(d.get("tracking", "")))}</td>'
+                 f'<td>{_e(str(d.get("carrier", "")))}</td>'
+                 f'<td class="l">{_e(str(d.get("sku", "")))}</td>'
+                 f'<td class="l">{_e(str(d.get("ly_do", "")))}</td>'
+                 f'<td{tdcls}>{cell}</td></tr>')
+    return body or '<tr><td colspan="6">Hôm nay không có đơn hoàn nhập kho.</td></tr>'
+
+
 def report_html(rep, dv, now_str):
     t = rep["totals"]
     video_total = (dv or {}).get("total", "—")
@@ -84,6 +104,24 @@ def report_html(rep, dv, now_str):
     nk_sub = (f'<div style="font-size:10px;color:#9aa3af;font-weight:400">'
               f'{nk.get("so_sp", 0)} SP{" · " + nk_src if nk_src else ""}</div>'
               if nk.get("so_phieu") else "")
+    # Mục video khui hàng (đối chiếu Dohana inbound)
+    nk_detail = nk.get("detail") or []
+    clip_co = nk.get("clip_co", 0)
+    if not nk.get("clip_available", False):
+        clip_summary = ''
+        clip_note = ('<div style="font-size:11px;color:#dc2626;margin-top:4px">'
+                     '⚠️ Chưa kết nối Dohana — không kiểm tra được clip khui hàng.</div>')
+    elif nk_detail:
+        ok = clip_co == len(nk_detail)
+        col = "#15803d" if ok else "#dc2626"
+        clip_summary = (f' <span style="font-size:11px;color:{col}">'
+                        f'({clip_co}/{len(nk_detail)} có clip)</span>')
+        clip_note = ('' if ok else
+                     f'<div style="font-size:11px;color:#dc2626;margin-top:4px">'
+                     f'⚠️ Có {len(nk_detail) - clip_co} đơn THIẾU clip khui hàng — cần kiểm tra/khiếu nại.</div>')
+    else:
+        clip_summary = ''
+        clip_note = ''
     kpis = [
         ("📦 Đơn đóng gói", t["dong_goi"], False),
         ("🚚 Đã bàn giao ĐVVC", t["shipper_nhan"], False),
@@ -139,7 +177,16 @@ def report_html(rep, dv, now_str):
     </div>
   </div>
 
-  <div class="sec">V. Ghi chú / Sự cố trong ngày</div>
+  <div class="sec">V. Video khui hàng — đơn hàng hoàn nhận hôm nay{clip_summary}</div>
+  <table>
+    <thead><tr><th>#</th><th class="l">Mã vận đơn</th><th>ĐVVC</th>
+      <th class="l">Sản phẩm (SKU × SL)</th><th class="l">Lý do trả</th>
+      <th>🎥 Clip khui hàng</th></tr></thead>
+    <tbody>{_returns_clip_rows(nk_detail)}</tbody>
+  </table>
+  {clip_note}
+
+  <div class="sec">VI. Ghi chú / Sự cố trong ngày</div>
   <div class="note"><span style="color:#9aa3af;font-size:11px">(Ghi tay: đơn GHN còn lại, hỏa tốc tìm tài xế, đơn lỗi…)</span>
     <div class="lines"><div></div><div></div></div></div>
 

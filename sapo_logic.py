@@ -497,12 +497,43 @@ def get_returns_received_today(fetch_json, scan_days: int = 60, max_pages: int =
         if last and last < cutoff:
             break
 
+    _reason_vn = {
+        "unwanted": "Không còn nhu cầu", "delivery_failed": "Giao thất bại",
+        "defective": "Lỗi/hư hỏng", "wrong_item": "Giao sai hàng",
+        "not_as_described": "Khác mô tả", "damaged": "Hư hỏng",
+        "size": "Không vừa size", "change_of_mind": "Đổi ý",
+        "wrong_size": "Sai size", "quality": "Chất lượng", "other": "Khác",
+    }
+
     recv = [x for x in rows if _restocked_today(x)]
-    by_source, so_sp = {}, 0
+    by_source, so_sp, detail = {}, 0, []
     for x in recv:
         s = x.get("order_source") or "Khác"
         by_source[s] = by_source.get(s, 0) + 1
         so_sp += int(round(x.get("total_quantity") or 0))
+        si = x.get("shipping_info") or {}
+        track = si.get("tracking_number")
+        order_name = (x.get("order") or {}).get("name")
+        # Mã ứng viên để khớp video khui hàng (NV có thể quét VĐ hoặc mã đơn)
+        codes = set()
+        for c in (track, order_name, x.get("name")):
+            if c:
+                codes.add(str(c))
+        for t in (si.get("fulfillment_tracking_numbers") or []):
+            codes.add(str(t))
+        lis = x.get("line_items") or []
+        sku = "; ".join(f"{(li.get('sku') or 'N/A')}×{int(round(li.get('quantity') or 0))}"
+                        for li in lis)
+        rsn = lis[0].get("return_reason") if lis else None
+        detail.append({
+            "tracking": track or order_name or x.get("name") or "?",
+            "carrier": si.get("carrier_name") or "?",
+            "order_name": order_name,
+            "sku": sku,
+            "sp": int(round(x.get("total_quantity") or 0)),
+            "ly_do": _reason_vn.get(rsn, rsn or "—"),
+            "codes": sorted(codes),
+        })
     cho_xu_ly = sum(1 for x in rows
                     if x.get("status") != "canceled"
                     and x.get("restock_status") == "unrestock"
@@ -512,6 +543,7 @@ def get_returns_received_today(fetch_json, scan_days: int = 60, max_pages: int =
         "so_sp": so_sp,
         "by_source": dict(sorted(by_source.items(), key=lambda x: -x[1])),
         "cho_xu_ly": cho_xu_ly,
+        "detail": detail,
     }
 
 

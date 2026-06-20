@@ -340,6 +340,11 @@ def load_dohana():
     return dohana.today_package_videos()
 
 
+@st.cache_data(ttl=300, show_spinner=False)
+def load_dohana_inbound():
+    return dohana.inbound_videos()
+
+
 @st.cache_data(ttl=180, show_spinner=False)
 def load_handover():
     return L.get_handover_pending(make_fetch_json(build_session()))
@@ -690,8 +695,21 @@ if _page == PAGE_DAILY:
         st.error(f"❌ Lỗi tổng hợp báo cáo: `{e}`")
         st.stop()
     _dvr = load_dohana() if dohana.configured() else None
+    # Đối chiếu CLIP KHUI HÀNG (Dohana inbound) cho từng đơn hoàn nhận hôm nay
+    _nk = _rep.get("nhap_kho") or {}
+    _inb = load_dohana_inbound() if dohana.configured() else None
+    if _inb is not None:
+        _mset, _cnt = _inb.get("match", set()), _inb.get("count", {})
+        for _d in _nk.get("detail", []):
+            _hit = next((c for c in _d.get("codes", []) if c in _mset), None)
+            _d["clip"] = bool(_hit)
+            _d["clip_count"] = _cnt.get(_hit, 0) if _hit else 0
+        _nk["clip_available"] = True
+        _nk["clip_co"] = sum(1 for _d in _nk.get("detail", []) if _d.get("clip"))
+    else:
+        _nk["clip_available"] = False
     _nrep = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%H:%M %d/%m/%Y")
-    components.html(daily_report.report_html(_rep, _dvr, _nrep), height=1500, scrolling=True)
+    components.html(daily_report.report_html(_rep, _dvr, _nrep), height=1700, scrolling=True)
     st.stop()
 
 
