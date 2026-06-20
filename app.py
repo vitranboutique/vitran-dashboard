@@ -714,6 +714,24 @@ if _page == PAGE_DAILY:
         _nk["clip_unmatched"] = sorted(_inb.get("today_codes", set()) - _consumed)
     else:
         _nk["clip_available"] = False
+    # Đối chiếu VIDEO ĐÓNG GÓI (Dohana package) vs đơn — giải thích lệch + báo thiếu video
+    if _dvr is not None:
+        _vset = set((_dvr.get("codes") or {}).keys())
+        _dgc = _rep.get("dong_goi_codes") or set()
+        _hgc = _rep.get("huy_goi_codes") or set()
+        _m_open = sum(1 for c in _vset if c in _dgc)
+        _m_canc = sum(1 for c in _vset if c not in _dgc and c in _hgc)
+        _done = sum(1 for c in _vset if c not in _dgc and c not in _hgc)
+        _dgo = _rep.get("dong_goi_order_codes") or []
+        _open_with_vid = sum(1 for _codes in _dgo if any(c in _vset for c in _codes))
+        _rep["video_recon"] = {
+            "available": True, "total": _dvr.get("total", 0),
+            "match_open": _m_open, "match_canc": _m_canc, "done_express": _done,
+            "dup": _dvr.get("dup", {}),
+            "missing_video": max(0, _rep["totals"]["dong_goi"] - _open_with_vid),
+        }
+    else:
+        _rep["video_recon"] = {"available": False}
     _nrep = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%H:%M %d/%m/%Y")
     components.html(daily_report.report_html(_rep, _dvr, _nrep), height=2480, scrolling=True)
     st.stop()

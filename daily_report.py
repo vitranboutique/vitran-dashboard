@@ -105,6 +105,34 @@ def _returns_clip_rows(detail):
 def report_html(rep, dv, now_str):
     t = rep["totals"]
     video_total = (dv or {}).get("total", "—")
+    # ---- Đối chiếu VIDEO ĐÓNG GÓI (giải thích vì sao video ≠ đơn) ----
+    vr = rep.get("video_recon") or {}
+    if vr.get("available"):
+        iii_rows = (
+            f'<tr><td class="l">🎥 Tổng video đóng gói</td><td class="num">{vr["total"]}</td></tr>'
+            f'<tr><td class="l">✅ Khớp đơn đang xử lý</td><td class="num">{vr["match_open"]}</td></tr>'
+            f'<tr><td class="l">⚡ Hỏa tốc đã giao xong</td><td class="num">{vr["done_express"] or ""}</td></tr>'
+            f'<tr><td class="l">↩️ Đơn đã hủy (đã gói)</td><td class="num">{vr["match_canc"] or ""}</td></tr>')
+        _mv = vr.get("missing_video", 0)
+        _dup = vr.get("dup") or {}
+        vid_note = ('<div style="font-size:10px;color:#6b7280;margin:8px 0 0;line-height:1.5">'
+                    f'ℹ️ Video ({vr["total"]}) nhiều hơn đơn đang mở vì gồm <b>đơn hỏa tốc đã giao xong</b> '
+                    f'({vr["done_express"]}) &amp; <b>đơn đã hủy đã gói</b> ({vr["match_canc"]}) — '
+                    'vẫn quay lúc đóng gói nên hợp lệ.</div>')
+        _w = []
+        if _mv:
+            _w.append(f'<b>{_mv} đơn đã đóng gói nhưng CHƯA có video</b> — nhân viên cần quay bổ sung '
+                      '(đủ bằng chứng khi khiếu nại).')
+        if _dup:
+            _dl = ", ".join(f'{_e(str(k))}×{v}' for k, v in _dup.items())
+            _w.append(f'<b>{len(_dup)} đơn quay TRÙNG (≥2 lần)</b>: {_dl}.')
+        vid_warn = ('<div class="warn" style="margin-top:12px">'
+                    '<div class="wh">⚠️ Cảnh báo video đóng gói</div>'
+                    + "".join(f'<div class="wb">• {w}</div>' for w in _w) + '</div>') if _w else ''
+    else:
+        iii_rows = (f'<tr><td class="l">🎥 Tổng video đóng hàng hôm nay</td><td class="num">{video_total}</td></tr>'
+                    f'<tr><td class="l">📦 Đơn đã đóng gói</td><td class="num">{t["dong_goi"]}</td></tr>')
+        vid_note = vid_warn = ''
     nk = rep.get("nhap_kho") or {}
     nk_src = " · ".join(f"{_e(_SRC.get(k, str(k)))} {v}"
                         for k, v in (nk.get("by_source") or {}).items())
@@ -196,11 +224,8 @@ def report_html(rep, dv, now_str):
 
   <div class="two" style="margin-top:16px">
     <div>
-      <div class="sec" style="margin-top:0">III. Video đóng hàng (Dohana)</div>
-      <table><tbody>
-        <tr><td class="l">🎥 Tổng video đóng hàng hôm nay</td><td class="num">{video_total}</td></tr>
-        <tr><td class="l">📦 Đơn đã đóng gói</td><td class="num">{t["dong_goi"]}</td></tr>
-      </tbody></table>
+      <div class="sec" style="margin-top:0">III. Đối chiếu video đóng gói (Dohana)</div>
+      <table><tbody>{iii_rows}</tbody></table>
     </div>
     <div>
       <div class="sec" style="margin-top:0">IV. Xuất kho hôm nay</div>
@@ -211,6 +236,8 @@ def report_html(rep, dv, now_str):
       </tbody></table>
     </div>
   </div>
+  {vid_note}
+  {vid_warn}
 
   <div class="sec">V. Ghi chú / Sự cố trong ngày</div>
   <div class="note"><span style="color:#9aa3af;font-size:11px">(Ghi tay: đơn GHN còn lại, hỏa tốc tìm tài xế, đơn lỗi…)</span>

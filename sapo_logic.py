@@ -402,6 +402,19 @@ def _vn_date_of(iso):
     return d.date() if d else None
 
 
+def _order_codes(o) -> set:
+    """Mã định danh để khớp video Dohana: mã vận đơn + mã đơn (name)."""
+    f = (o.get("fulfillments") or [{}])[0]
+    c = set()
+    if f.get("tracking_number"):
+        c.add(str(f["tracking_number"]))
+    for t in (f.get("tracking_numbers") or []):
+        c.add(str(t))
+    if o.get("name"):
+        c.add(str(o["name"]))
+    return c
+
+
 def get_alerts(fetch_json) -> dict:
     """Số liệu CẢNH BÁO cho popup (mọi trang): xác nhận trễ, chưa giao, hỏa tốc,
     đơn HỦY SAU GÓI cần lấy lại. Quét đơn open + get_cancelled (nhẹ, cache)."""
@@ -574,11 +587,15 @@ def get_daily_report(fetch_json) -> dict:
         return cr.setdefault(c, {"carrier": c, "dong_goi": 0, "huy": 0,
                                  "shipper_nhan": 0, "con_lai": 0})
 
+    dong_goi_codes, huy_goi_codes, dong_goi_order_codes = set(), set(), []
     for o in open_orders:
         f = f0(o)
         c = carrier(o)
         if _vn_date_of(f.get("packed_on")) == today:
             ce(c)["dong_goi"] += 1
+            cc = _order_codes(o)
+            dong_goi_codes |= cc
+            dong_goi_order_codes.append(sorted(cc))
         if _vn_date_of(f.get("issued_on")) == today:
             ce(c)["shipper_nhan"] += 1
         if f.get("shipment_status") == "pending":
@@ -587,6 +604,8 @@ def get_daily_report(fetch_json) -> dict:
     try:
         canc = get_cancelled(fetch_json)
         for o in (canc.get("packed", []) + canc.get("not_packed", [])):
+            if _vn_date_of(f0(o).get("packed_on")) == today:   # gói hôm nay → có video
+                huy_goi_codes |= _order_codes(o)
             if _vn_date_of(o.get("cancelled_on")) == today:
                 ce(carrier(o))["huy"] += 1
                 if f0(o).get("packed_status") == "packed":
@@ -610,6 +629,9 @@ def get_daily_report(fetch_json) -> dict:
         "tong_sp_soan": hist["tong_sp"],
         "huy_da_goi": huy_total,
         "nhap_kho": nhap_kho,
+        "dong_goi_codes": dong_goi_codes,
+        "huy_goi_codes": huy_goi_codes,
+        "dong_goi_order_codes": dong_goi_order_codes,
     }
 
 
