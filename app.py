@@ -728,6 +728,7 @@ if _page == PAGE_DAILY:
             "available": True, "total": _dvr.get("total", 0),
             "match_open": _m_open, "match_canc": _m_canc, "done_express": _done,
             "dup": _dvr.get("dup", {}),
+            "open_with_video": _open_with_vid,
             "missing_video": max(0, _rep["totals"]["dong_goi"] - _open_with_vid),
         }
     else:

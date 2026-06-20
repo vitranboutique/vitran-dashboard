@@ -108,26 +108,34 @@ def report_html(rep, dv, now_str):
     # ---- Đối chiếu VIDEO ĐÓNG GÓI (giải thích vì sao video ≠ đơn) ----
     vr = rep.get("video_recon") or {}
     if vr.get("available"):
-        iii_rows = (
-            f'<tr><td class="l">🎥 Tổng video đóng gói</td><td class="num">{vr["total"]}</td></tr>'
-            f'<tr><td class="l">✅ Khớp đơn đang xử lý</td><td class="num">{vr["match_open"]}</td></tr>'
-            f'<tr><td class="l">⚡ Hỏa tốc đã giao xong</td><td class="num">{vr["done_express"] or ""}</td></tr>'
-            f'<tr><td class="l">↩️ Đơn đã hủy (đã gói)</td><td class="num">{vr["match_canc"] or ""}</td></tr>')
+        _have = vr.get("open_with_video", 0)
         _mv = vr.get("missing_video", 0)
-        _dup = vr.get("dup") or {}
-        vid_note = ('<div style="font-size:10px;color:#6b7280;margin:8px 0 0;line-height:1.5">'
-                    f'ℹ️ Video ({vr["total"]}) nhiều hơn đơn đang mở vì gồm <b>đơn hỏa tốc đã giao xong</b> '
-                    f'({vr["done_express"]}) &amp; <b>đơn đã hủy đã gói</b> ({vr["match_canc"]}) — '
-                    'vẫn quay lúc đóng gói nên hợp lệ.</div>')
+        _miss_row = (f'<tr><td class="l" style="padding-left:20px;color:#b45309">⤷ ⚠️ chưa quay video</td>'
+                     f'<td class="num" style="color:#b45309;font-weight:900">{_mv}</td></tr>'
+                     if _mv else
+                     '<tr><td class="l" style="padding-left:20px;color:#15803d">⤷ ✅ đã đủ video</td>'
+                     '<td class="num" style="color:#15803d;font-weight:800">✓</td></tr>')
+        iii_rows = (
+            f'<tr><td class="l">🎥 Video đóng gói đã quay</td>'
+            f'<td class="num" style="font-weight:900">{vr["total"]}</td></tr>'
+            f'<tr><td class="l">📦 Đơn đóng gói (đang xử lý)</td><td class="num">{t["dong_goi"]}</td></tr>'
+            f'<tr><td class="l" style="padding-left:20px">⤷ ✅ đã có video</td>'
+            f'<td class="num">{_have}</td></tr>'
+            + _miss_row)
+        vid_note = ('<div style="font-size:10.5px;color:#374151;margin:8px 0 0;line-height:1.55">'
+                    f'ℹ️ <b>{vr["total"]} video</b> = {vr["match_open"]} đơn đang xử lý '
+                    f'+ {vr["done_express"]} đơn hỏa tốc đã giao xong + {vr["match_canc"]} đơn đã hủy '
+                    f'(tất cả đều đã đóng gói). Vì vậy video nhiều hơn “{t["dong_goi"]} đơn đang xử lý” '
+                    'là <b>bình thường</b> — không phải lỗi.</div>')
         _w = []
         if _mv:
-            _w.append(f'<b>{_mv} đơn đã đóng gói nhưng CHƯA có video</b> — nhân viên cần quay bổ sung '
-                      '(đủ bằng chứng khi khiếu nại).')
-        if _dup:
-            _dl = ", ".join(f'{_e(str(k))}×{v}' for k, v in _dup.items())
-            _w.append(f'<b>{len(_dup)} đơn quay TRÙNG (≥2 lần)</b>: {_dl}.')
+            _w.append(f'<b>{_mv} đơn đã đóng gói nhưng CHƯA quay video đóng gói</b> — nhân viên cần quay bổ sung '
+                      'để đủ bằng chứng khi khiếu nại.')
+        if vr.get("dup"):
+            _dl = ", ".join(f'{_e(str(k))}×{v}' for k, v in vr["dup"].items())
+            _w.append(f'<b>{len(vr["dup"])} đơn quay TRÙNG (≥2 lần)</b>: {_dl}.')
         vid_warn = ('<div class="warn" style="margin-top:12px">'
-                    '<div class="wh">⚠️ Cảnh báo video đóng gói</div>'
+                    '<div class="wh">⚠️ Cảnh báo video đóng gói — cần xử lý</div>'
                     + "".join(f'<div class="wb">• {w}</div>' for w in _w) + '</div>') if _w else ''
     else:
         iii_rows = (f'<tr><td class="l">🎥 Tổng video đóng hàng hôm nay</td><td class="num">{video_total}</td></tr>'
