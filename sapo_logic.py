@@ -581,30 +581,30 @@ def get_daily_report(fetch_json) -> dict:
             break
         open_orders += rows
 
-    # Gộp đơn ĐÃ ĐÓNG (status=closed) đóng gói / xuất HÔM NAY — vd hỏa tốc SPX Instant
-    # giao xong ngay trong ngày → rớt khỏi scan "open". Phải kéo riêng để KHÔNG bỏ sót
-    # đơn đóng gói (nếu không "Đơn đóng gói" bị thiếu, lệch với video). Lọc created_on_min cho nhẹ.
-    cmin = (today - timedelta(days=3)).isoformat() + "T00:00:00+07:00"
-    n_closed = 0
-    for p in range(1, 12):
+    # Gộp đơn ĐÃ ĐÓNG (status=closed) đóng gói / xuất / GIAO KHÁCH HÔM NAY — vd hỏa tốc
+    # SPX Instant giao xong ngay trong ngày → rớt khỏi scan "open". Kéo riêng để KHÔNG bỏ sót
+    # đơn đóng gói + đếm được đơn đã giao đến khách. Lọc created_on_min cho nhẹ.
+    cmin = (today - timedelta(days=5)).isoformat() + "T00:00:00+07:00"
+    for p in range(1, 15):
         rows = fetch_json("/admin/orders.json", limit=250, page=p,
                           status="closed", created_on_min=cmin).get("orders", [])
         if not rows:
             break
         for o in rows:
             ff = (o.get("fulfillments") or [{}])[0]
-            if _vn_date_of(ff.get("packed_on")) == today or _vn_date_of(ff.get("issued_on")) == today:
+            if (_vn_date_of(ff.get("packed_on")) == today
+                    or _vn_date_of(ff.get("issued_on")) == today
+                    or _vn_date_of(ff.get("delivered_on")) == today):
                 open_orders.append(o)
-                n_closed += 1
         last = _vn_date_of(rows[-1].get("created_on"))
-        if last and last < (today - timedelta(days=3)):
+        if last and last < (today - timedelta(days=5)):
             break
 
     cr = {}
 
     def ce(c):
-        return cr.setdefault(c, {"carrier": c, "dong_goi": 0, "huy": 0,
-                                 "shipper_nhan": 0, "con_lai": 0})
+        return cr.setdefault(c, {"carrier": c, "dong_goi": 0, "huy": 0, "shipper_nhan": 0,
+                                 "giao_khach": 0, "con_lai": 0})
 
     dong_goi_codes, huy_goi_codes, dong_goi_order_codes = set(), set(), []
     for o in open_orders:
@@ -619,24 +619,44 @@ def get_daily_report(fetch_json) -> dict:
                 "codes": sorted(cc)})
         if _vn_date_of(f.get("issued_on")) == today:
             ce(c)["shipper_nhan"] += 1
+        if _vn_date_of(f.get("delivered_on")) == today:   # đã giao đến KHÁCH hôm nay
+            ce(c)["giao_khach"] += 1
         if f.get("shipment_status") == "pending":
             ce(c)["con_lai"] += 1
     huy_total = 0
+    huy_goi_orders, huy_detail = [], []
     try:
         canc = get_cancelled(fetch_json)
         for o in (canc.get("packed", []) + canc.get("not_packed", [])):
-            if _vn_date_of(f0(o).get("packed_on")) == today:   # gói hôm nay → có video
+            ff = f0(o)
+            if _vn_date_of(ff.get("packed_on")) == today:   # gói hôm nay → có soạn + video
                 huy_goi_codes |= _order_codes(o)
             if _vn_date_of(o.get("cancelled_on")) == today:
                 ce(carrier(o))["huy"] += 1
-                if f0(o).get("packed_status") == "packed":
+                if ff.get("packed_status") == "packed":
                     huy_total += 1
+                    huy_goi_orders.append(o)        # đã soạn → tính vào đợt soạn
+                    huy_detail.append({
+                        "tracking": ff.get("tracking_number") or o.get("name") or "?",
+                        "carrier": ((ff.get("tracking_info") or {}).get("carrier_name")
+                                    or (o.get("shipping_lines") or [{}])[0].get("carrier_name") or "?"),
+                        "sku": "; ".join(f"{li.get('sku') or 'N/A'}×{int(round(li.get('quantity') or 0))}"
+                                         for li in (o.get("line_items") or [])),
+                        "ten": " · ".join(dict.fromkeys(
+                            (li.get("product_title") or li.get("title") or "").strip()
+                            for li in (o.get("line_items") or []) if (li.get("product_title") or li.get("title")))),
+                        "sp": sum(int(round(li.get("quantity") or 0)) for li in (o.get("line_items") or [])),
+                    })
     except Exception:
         pass
 
-    rows = sorted(cr.values(), key=lambda x: -x["dong_goi"])
-    tot = {k: sum(r[k] for r in rows) for k in ("dong_goi", "huy", "shipper_nhan", "con_lai")}
-    hist = _packing_history(open_orders)
+    # ĐVVC: dòng HỎA TỐC lên ĐẦU, còn lại theo số đóng gói giảm dần
+    rows = sorted(cr.values(),
+                  key=lambda x: (0 if "Hỏa tốc" in str(x["carrier"]) else 1, -x["dong_goi"]))
+    tot = {k: sum(r[k] for r in rows)
+           for k in ("dong_goi", "huy", "shipper_nhan", "giao_khach", "con_lai")}
+    # Đợt soạn GỒM cả đơn đã hủy đã gói (vì đã soạn rồi mới hủy) → tổng soạn = đóng gói + hủy đã gói
+    hist = _packing_history(open_orders + huy_goi_orders)
     try:
         nhap_kho = get_returns_received_today(fetch_json)
     except Exception:
@@ -649,6 +669,7 @@ def get_daily_report(fetch_json) -> dict:
         "tong_don_soan": hist["tong_don"],
         "tong_sp_soan": hist["tong_sp"],
         "huy_da_goi": huy_total,
+        "huy_detail": huy_detail,
         "nhap_kho": nhap_kho,
         "dong_goi_codes": dong_goi_codes,
         "huy_goi_codes": huy_goi_codes,

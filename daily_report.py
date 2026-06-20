@@ -57,15 +57,33 @@ _CSS = """
 
 
 def _carrier_rows(rows, tot):
-    body = "".join(
-        f'<tr><td class="l">{_e(str(r["carrier"]))}</td>'
-        f'<td class="num">{r["dong_goi"]}</td><td class="num">{r["huy"] or ""}</td>'
-        f'<td class="num">{r["shipper_nhan"]}</td><td class="num">{r["con_lai"] or ""}</td></tr>'
-        for r in rows) or '<tr><td class="l" colspan="5">—</td></tr>'
+    body = ""
+    for r in rows:
+        hot = "Hỏa tốc" in str(r["carrier"])
+        cls = ' style="background:#fff3ed"' if hot else ''
+        body += (f'<tr{cls}><td class="l">{"⚡ " if hot else ""}{_e(str(r["carrier"]))}</td>'
+                 f'<td class="num">{r["dong_goi"]}</td><td class="num">{r["huy"] or ""}</td>'
+                 f'<td class="num">{r["shipper_nhan"]}</td>'
+                 f'<td class="num">{r.get("giao_khach") or ""}</td>'
+                 f'<td class="num">{r["con_lai"] or ""}</td></tr>')
+    body = body or '<tr><td class="l" colspan="6">—</td></tr>'
     body += (f'<tr class="total"><td class="l">TỔNG CỘNG</td>'
              f'<td class="num">{tot["dong_goi"]}</td><td class="num accent">{tot["huy"] or ""}</td>'
-             f'<td class="num">{tot["shipper_nhan"]}</td><td class="num">{tot["con_lai"]}</td></tr>')
+             f'<td class="num">{tot["shipper_nhan"]}</td>'
+             f'<td class="num">{tot.get("giao_khach", 0)}</td>'
+             f'<td class="num">{tot["con_lai"]}</td></tr>')
     return body
+
+
+def _huy_rows(detail):
+    body = ""
+    for i, d in enumerate(detail, 1):
+        ten = f' — {_e(str(d["ten"]))}' if d.get("ten") else ""
+        body += (f'<tr><td>{i}</td><td class="l">{_e(str(d.get("tracking", "")))}</td>'
+                 f'<td>{_e(str(d.get("carrier", "")))}</td>'
+                 f'<td class="l">{_e(str(d.get("sku", "")))}{ten}</td>'
+                 f'<td class="num" style="font-weight:800">{d.get("sp", 0)}</td></tr>')
+    return body or '<tr><td colspan="5">Không có đơn hủy đã đóng gói.</td></tr>'
 
 
 def _batch_rows(batches, tong_don, tong_sp):
@@ -147,9 +165,27 @@ def report_html(rep, dv, now_str):
                     f'<tr><td class="l">📦 Đơn đã đóng gói</td><td class="num">{t["dong_goi"]}</td></tr>')
         vid_note = vid_warn = ''
     _exp_done = next((r for r in rep.get("by_carrier", []) if "Hỏa tốc" in str(r.get("carrier"))), None)
-    sec1_note = (f'<div style="font-size:10px;color:#6b7280;margin:5px 0 0">ℹ️ Tổng đã gồm '
-                 f'<b>{_exp_done["dong_goi"]} đơn hỏa tốc (SPX Instant) đã giao xong trong ngày</b> '
-                 '— đơn đã hoàn tất vẫn được tính vào đóng gói.</div>') if _exp_done else ''
+    sec1_note = ('<div style="font-size:10px;color:#6b7280;margin:5px 0 0;line-height:1.5">'
+                 + (f'ℹ️ Tổng đóng gói đã gồm <b>{_exp_done["dong_goi"]} đơn hỏa tốc (SPX Instant) '
+                    'giao xong trong ngày</b> (dòng đầu, bôi cam). ' if _exp_done else '')
+                 + 'Cột <b>“Giao tới khách”</b> = đơn đến tay khách trong hôm nay '
+                 '(gồm cả đơn gửi hôm trước nên có thể nhiều hơn đơn đóng gói).</div>')
+    # Đợt soạn GỒM cả đơn đã hủy đã gói (đã soạn rồi mới hủy)
+    _soan = rep.get("tong_don_soan", 0)
+    _hdg = rep.get("huy_da_goi", 0)
+    sec2_note = (f'<div style="font-size:10px;color:#6b7280;margin:5px 0 0">'
+                 f'ℹ️ Tổng soạn ({_soan}) = {t["dong_goi"]} đơn đóng gói + '
+                 f'<b>{_hdg} đơn đã hủy sau khi soạn</b> (vẫn tính vì kho đã lấy hàng).</div>'
+                 if _hdg else '')
+    # Đơn hủy đã đóng gói — cần lấy lại hàng
+    _huy = rep.get("huy_detail") or []
+    _huy_sp = sum(d.get("sp", 0) for d in _huy)
+    huy_section = (
+        f'<div class="sec" style="background:#7c2d12">❌ Đơn hủy đã đóng gói — CẦN LẤY LẠI HÀNG '
+        f'({len(_huy)} đơn · {_huy_sp} SP)</div>'
+        '<table><thead><tr><th>#</th><th class="l">Mã vận đơn</th><th>ĐVVC</th>'
+        '<th class="l">Sản phẩm (SKU × SL)</th><th>SL lấy lại</th></tr></thead>'
+        f'<tbody>{_huy_rows(_huy)}</tbody></table>') if _huy else ''
     nk = rep.get("nhap_kho") or {}
     nk_src = " · ".join(f"{_e(_SRC.get(k, str(k)))} {v}"
                         for k, v in (nk.get("by_source") or {}).items())
@@ -229,7 +265,7 @@ def report_html(rep, dv, now_str):
   <div class="sec">I. Số lượng đơn theo đơn vị vận chuyển</div>
   <table>
     <thead><tr><th class="l">Đơn vị vận chuyển</th><th>Đơn đóng gói</th><th>Đơn hủy</th>
-      <th>Shipper thực nhận</th><th>Còn lại</th></tr></thead>
+      <th>Shipper nhận</th><th>Giao tới khách</th><th>Còn lại</th></tr></thead>
     <tbody>{_carrier_rows(rep["by_carrier"], t)}</tbody>
   </table>
   {sec1_note}
@@ -239,6 +275,7 @@ def report_html(rep, dv, now_str):
     <thead><tr><th class="l">Đợt lấy hàng</th><th>Giờ</th><th>Số đơn</th><th>Số SP</th></tr></thead>
     <tbody>{_batch_rows(rep["batches"], rep["tong_don_soan"], rep["tong_sp_soan"])}</tbody>
   </table>
+  {sec2_note}
 
   <div class="two" style="margin-top:16px">
     <div>
@@ -256,6 +293,8 @@ def report_html(rep, dv, now_str):
   </div>
   {vid_note}
   {vid_warn}
+
+  {huy_section}
 
   <div class="sec">V. Ghi chú / Sự cố trong ngày</div>
   <div class="note"><span style="color:#9aa3af;font-size:11px">(Ghi tay: đơn GHN còn lại, hỏa tốc tìm tài xế, đơn lỗi…)</span>
