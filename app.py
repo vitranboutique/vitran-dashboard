@@ -361,7 +361,7 @@ def render_alert_popup():
         ("📌 Đặt &lt;18h, xác nhận &gt;18h", a["late_confirm"]),
         ("📦 Còn chưa giao (chờ shipper)", a["chua_giao"]),
         ("🔴 Hỏa tốc chưa giao", a["express_pending"]),
-        ("↩️ Hủy/hoàn sau gói cần LẤY LẠI", a["cancel_retrieve"]),
+        ("↩️ Hủy sau gói cần LẤY LẠI", a["cancel_retrieve"]),
     ]
     n_hot = sum(1 for _, v in items if v)
     rows = "".join(
