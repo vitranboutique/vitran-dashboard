@@ -18,6 +18,7 @@ import streamlit_authenticator as stauth
 import sapo_logic as L
 import picklog
 import dohana
+import daily_report
 from sapo_client import SapoAuthError, build_session, credential_present, make_fetch_json
 from picking_render import picking_html
 
@@ -288,7 +289,8 @@ CUR_NAME, CUR_USER, CUR_ROLE = require_login()
 PAGE_OVERVIEW = "📊 Tổng quan điều hành"
 PAGE_REPORT = "📋 Báo cáo sáng"
 PAGE_PICK = "🧾 Phiếu nhặt hàng"
-_page = st.sidebar.radio("Trang", [PAGE_OVERVIEW, PAGE_REPORT, PAGE_PICK], index=0)
+PAGE_DAILY = "📄 Báo cáo cuối ngày"
+_page = st.sidebar.radio("Trang", [PAGE_OVERVIEW, PAGE_REPORT, PAGE_PICK, PAGE_DAILY], index=0)
 st.sidebar.divider()
 
 
@@ -341,6 +343,11 @@ def load_dohana():
 @st.cache_data(ttl=180, show_spinner=False)
 def load_handover():
     return L.get_handover_pending(make_fetch_json(build_session()))
+
+
+@st.cache_data(ttl=180, show_spinner="Đang tổng hợp báo cáo cuối ngày…")
+def load_daily_report():
+    return L.get_daily_report(make_fetch_json(build_session()))
 
 
 @st.cache_data(ttl=180, show_spinner=False)
@@ -664,6 +671,27 @@ if _page == PAGE_PICK:
         _html_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "picking_slip.html")
         with open(_html_path, encoding="utf-8") as _f:
             components.html(_f.read(), height=1300, scrolling=True)
+    st.stop()
+
+
+# ════════════════ TRANG BÁO CÁO CUỐI NGÀY (A4) ════════════════
+if _page == PAGE_DAILY:
+    st.title("📄 Báo cáo vận hành cuối ngày")
+    st.caption("Tổng hợp tự động từ Sapo + Dohana — bấm **In báo cáo A4** trong khung để in/lưu PDF.")
+    if not credential_present():
+        st.warning("⚠️ Cần kết nối Sapo (API LIVE).")
+        st.stop()
+    if st.button("🔄 Tải lại số liệu"):
+        st.cache_data.clear()
+        st.rerun()
+    try:
+        _rep = load_daily_report()
+    except Exception as e:
+        st.error(f"❌ Lỗi tổng hợp báo cáo: `{e}`")
+        st.stop()
+    _dvr = load_dohana() if dohana.configured() else None
+    _nrep = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%H:%M %d/%m/%Y")
+    components.html(daily_report.report_html(_rep, _dvr, _nrep), height=1500, scrolling=True)
     st.stop()
 
 

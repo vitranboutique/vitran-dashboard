@@ -469,6 +469,67 @@ def get_handover_pending(fetch_json, days: int = 10) -> dict:
             "by_carrier": dict(sorted(by_carrier.items(), key=lambda x: -x[1]))}
 
 
+def get_daily_report(fetch_json) -> dict:
+    """Tổng hợp BÁO CÁO CUỐI NGÀY: số đơn theo ĐVVC (đóng gói/hủy/shipper nhận/còn lại),
+    các đợt soạn hàng, tổng nhập–xuất."""
+    today = (_now_utc() + timedelta(hours=7)).date()
+
+    def f0(o):
+        return (o.get("fulfillments") or [{}])[0]
+
+    def carrier(o):
+        f = f0(o)
+        c = ((f.get("tracking_info") or {}).get("carrier_name")
+             or (o.get("shipping_lines") or [{}])[0].get("carrier_name") or "Khác")
+        return "Hỏa tốc (SPX Instant)" if c == "SPX Instant" else c
+
+    open_orders = []
+    for p in range(1, 30):
+        rows = fetch_json("/admin/orders.json", limit=250, page=p, status="open").get("orders", [])
+        if not rows:
+            break
+        open_orders += rows
+
+    cr = {}
+
+    def ce(c):
+        return cr.setdefault(c, {"carrier": c, "dong_goi": 0, "huy": 0,
+                                 "shipper_nhan": 0, "con_lai": 0})
+
+    for o in open_orders:
+        f = f0(o)
+        c = carrier(o)
+        if _vn_date_of(f.get("packed_on")) == today:
+            ce(c)["dong_goi"] += 1
+        if _vn_date_of(f.get("issued_on")) == today:
+            ce(c)["shipper_nhan"] += 1
+        if f.get("shipment_status") == "pending":
+            ce(c)["con_lai"] += 1
+    huy_total = 0
+    try:
+        canc = get_cancelled(fetch_json)
+        for o in (canc.get("packed", []) + canc.get("not_packed", [])):
+            if _vn_date_of(o.get("cancelled_on")) == today:
+                ce(carrier(o))["huy"] += 1
+                if f0(o).get("packed_status") == "packed":
+                    huy_total += 1
+    except Exception:
+        pass
+
+    rows = sorted(cr.values(), key=lambda x: -x["dong_goi"])
+    tot = {k: sum(r[k] for r in rows) for k in ("dong_goi", "huy", "shipper_nhan", "con_lai")}
+    hist = _packing_history(open_orders)
+    return {
+        "date": today.strftime("%d/%m/%Y"),
+        "by_carrier": rows,
+        "totals": tot,
+        "batches": hist["batches"],
+        "tong_don_soan": hist["tong_don"],
+        "tong_sp_soan": hist["tong_sp"],
+        "huy_da_goi": huy_total,
+    }
+
+
 def get_overview(fetch_json, days: int = 7) -> dict:
     """6 thẻ tổng + dữ liệu 3 biểu đồ (theo ngày / sàn / gian hàng) cho trang Tổng quan.
     Dùng count.json (nhanh) cho các con số tổng; tải đơn tuần để tính breakdown."""
