@@ -40,6 +40,13 @@ _CSS = """
   .sign .hint{color:#9aa3af;font-size:10px;}
   .sign .space{height:54px;}
   .foot{margin-top:14px;text-align:center;font-size:10px;color:#9aa3af;border-top:1px solid var(--line);padding-top:6px;}
+  .page2{page-break-before:always;}
+  .kpis.k3{grid-template-columns:repeat(3,1fr);}
+  .warn{border:1px solid #f0b86e;border-left:5px solid #d97706;background:#fff8ec;border-radius:8px;padding:10px 12px;margin:12px 0 14px;}
+  .warn .wh{font-size:13px;font-weight:900;color:#b45309;}
+  .warn .wb{font-size:11px;color:#7c4a13;margin-top:3px;line-height:1.5;}
+  .warn .wc{font-size:12px;font-weight:900;color:#b45309;margin-top:5px;letter-spacing:.3px;}
+  .sign.s2{grid-template-columns:repeat(2,1fr);max-width:70%;margin-left:auto;margin-right:auto;}
   @page{size:A4 portrait;margin:0;}
   @media print{
     body{background:#fff;} .toolbar{display:none;}
@@ -101,42 +108,56 @@ def report_html(rep, dv, now_str):
     nk = rep.get("nhap_kho") or {}
     nk_src = " · ".join(f"{_e(_SRC.get(k, str(k)))} {v}"
                         for k, v in (nk.get("by_source") or {}).items())
-    nk_sub = (f'<div style="font-size:10px;color:#9aa3af;font-weight:400">'
-              f'{nk.get("so_sp", 0)} SP{" · " + nk_src if nk_src else ""}</div>'
-              if nk.get("so_phieu") else "")
-    # Mục video khui hàng (đối chiếu Dohana inbound)
+
+    # ---- Phần ĐƠN HOÀN (render ở TRANG 2) ----
     nk_detail = nk.get("detail") or []
     clip_co = nk.get("clip_co", 0)
     clip_total = nk.get("clip_total", 0)
     unmatched = nk.get("clip_unmatched") or []
-    clip_total_line = ""
-    if not nk.get("clip_available", False):
+    clip_on = nk.get("clip_available", False)
+    n_ret = len(nk_detail)
+    if not clip_on:
         clip_summary = ''
-        clip_note = ('<div style="font-size:11px;color:#dc2626;margin-top:4px">'
+        clip_note = ('<div style="font-size:11px;color:#dc2626;margin-top:6px">'
                      '⚠️ Chưa kết nối Dohana — không kiểm tra được clip khui hàng.</div>')
-    elif nk_detail:
-        ok = clip_co == len(nk_detail)
-        col = "#15803d" if ok else "#dc2626"
-        clip_summary = (f' <span style="font-size:11px;color:{col}">'
-                        f'({clip_co}/{len(nk_detail)} có clip)</span>')
-        # Dòng tổng: tổng clip khui hàng hôm nay vs khớp đơn hoàn
-        u = len(unmatched)
-        clip_total_line = (
-            f'<div style="font-size:11px;color:#374151;margin:2px 0 6px">'
-            f'📹 Tổng clip khui hàng hôm nay: <b>{clip_total}</b> · '
-            f'khớp đơn hoàn nhập kho: <b style="color:#15803d">{clip_co}</b>'
-            + (f' · <b style="color:#b45309">{u} clip KHÔNG khớp đơn hoàn</b>' if u else '')
-            + '</div>'
-            + (f'<div style="font-size:10px;color:#b45309;margin:-2px 0 6px;line-height:1.4">'
-               f'⚠️ {u} clip không ứng với đơn hoàn nào — nghi <b>quay nhầm chế độ</b> '
-               f'(đóng hàng ↔ khui hàng) hoặc hàng <b>chưa bấm nhập kho</b>. '
-               f'Mã: {_e(", ".join(map(str, unmatched)))}</div>' if u else ''))
-        clip_note = ('' if ok else
-                     f'<div style="font-size:11px;color:#dc2626;margin-top:4px">'
-                     f'⚠️ Có {len(nk_detail) - clip_co} đơn THIẾU clip khui hàng — cần kiểm tra/khiếu nại.</div>')
+        warn_box = ''
     else:
-        clip_summary = ''
-        clip_note = ''
+        ok = clip_co == n_ret
+        col = "#15803d" if ok else "#dc2626"
+        clip_summary = (f' <span style="font-size:11px;color:{col}">({clip_co}/{n_ret} có clip)</span>'
+                        if n_ret else '')
+        clip_note = ('' if ok or not n_ret else
+                     f'<div style="font-size:11px;color:#dc2626;margin-top:6px;font-weight:700">'
+                     f'⚠️ Có {n_ret - clip_co} đơn hoàn THIẾU clip khui hàng — cần kiểm tra/khiếu nại ngay.</div>')
+        if unmatched:
+            warn_box = (
+                '<div class="warn">'
+                f'<div class="wh">⚠️ CẢNH BÁO: {len(unmatched)} clip khui hàng KHÔNG khớp đơn hoàn nào — cần sửa</div>'
+                '<div class="wb">Các đơn này thực tế đang <b>giao đi cho khách</b> (không có phiếu hoàn) '
+                'nhưng clip lại lưu ở mục “khui hàng” và <b>thiếu video đóng hàng</b> → nghi '
+                '<b>quay nhầm chế độ</b> (đóng hàng ↔ khui hàng). Hoặc hàng hoàn <b>chưa bấm nhập kho</b>.</div>'
+                '<div class="wb">→ <b>Nhân viên kiểm tra & quay lại clip đúng mục “đóng hàng”</b> cho các mã '
+                'dưới đây (để đủ bằng chứng khi khiếu nại):</div>'
+                f'<div class="wc">{_e(", ".join(map(str, unmatched)))}</div>'
+                '</div>')
+        else:
+            warn_box = ''
+
+    clip_kpi_v = clip_total if clip_on else "—"
+    clip_kpi_sub = (f"khớp {clip_co} · lệch {len(unmatched)}" if clip_on else "chưa kết nối Dohana")
+    r_kpis_html = (
+        f'<div class="kpi"><div class="l">📥 Hoàn nhập kho hôm nay</div>'
+        f'<div class="v">{nk.get("so_phieu", 0)}</div>'
+        f'<div class="l" style="margin-top:3px;font-weight:700">{nk.get("so_sp", 0)} SP'
+        f'{(" · " + nk_src) if nk_src else ""}</div></div>'
+        f'<div class="kpi"><div class="l">↩️ Đang hoàn về (chờ nhận)</div>'
+        f'<div class="v">{nk.get("cho_xu_ly", 0)}</div>'
+        f'<div class="l" style="margin-top:3px">đang trên đường về kho</div></div>'
+        f'<div class="kpi{" hot" if (clip_on and unmatched) else ""}">'
+        f'<div class="l">📹 Clip khui hàng hôm nay</div>'
+        f'<div class="v">{clip_kpi_v}</div>'
+        f'<div class="l" style="margin-top:3px;font-weight:700">{clip_kpi_sub}</div></div>'
+    )
     kpis = [
         ("📦 Đơn đóng gói", t["dong_goi"], False),
         ("🚚 Đã bàn giao ĐVVC", t["shipper_nhan"], False),
@@ -147,7 +168,7 @@ def report_html(rep, dv, now_str):
         f'<div class="kpi{" hot" if hot and v else ""}"><div class="l">{l}</div>'
         f'<div class="v">{v}</div></div>' for l, v, hot in kpis)
 
-    body = f"""<div class="page">
+    page1 = f"""<div class="page">
   <div class="hd">
     <div><div class="brand">VITRAN BOUTIQUE</div>
       <div class="sub">Hệ thống vận hành đơn hàng</div></div>
@@ -156,7 +177,7 @@ def report_html(rep, dv, now_str):
   </div>
 
   <div class="title">Báo cáo vận hành cuối ngày</div>
-  <div class="title-sub">Tổng hợp đóng gói · bàn giao · soạn hàng · video — dữ liệu Sapo (giờ VN)</div>
+  <div class="title-sub">Phần 1 — Đơn giao đi · đóng gói · soạn hàng · video (dữ liệu Sapo, giờ VN)</div>
 
   <div class="kpis">{kpi_html}</div>
 
@@ -179,30 +200,19 @@ def report_html(rep, dv, now_str):
       <table><tbody>
         <tr><td class="l">🎥 Tổng video đóng hàng hôm nay</td><td class="num">{video_total}</td></tr>
         <tr><td class="l">📦 Đơn đã đóng gói</td><td class="num">{t["dong_goi"]}</td></tr>
-        <tr><td class="l">❌ Đơn hủy đã gói (cần lấy lại)</td><td class="num">{rep["huy_da_goi"]}</td></tr>
       </tbody></table>
     </div>
     <div>
-      <div class="sec" style="margin-top:0">IV. Nhập – Xuất kho</div>
+      <div class="sec" style="margin-top:0">IV. Xuất kho hôm nay</div>
       <table><tbody>
-        <tr><td class="l">📤 Xuất kho (đã gửi đi)</td><td class="num">{t["shipper_nhan"]}</td></tr>
-        <tr><td class="l">📥 Nhập kho (hàng hoàn nhận lại){nk_sub}</td><td class="num">{nk.get("so_phieu", 0)}</td></tr>
-        <tr><td class="l">↩️ Đơn hoàn đang về (chờ nhận)</td><td class="num">{nk.get("cho_xu_ly", 0) or "—"}</td></tr>
+        <tr><td class="l">📤 Đã giao ĐVVC (shipper nhận)</td><td class="num">{t["shipper_nhan"]}</td></tr>
+        <tr><td class="l">⏳ Còn lại chờ giao</td><td class="num">{t["con_lai"]}</td></tr>
+        <tr><td class="l">❌ Hủy đã gói (cần lấy lại)</td><td class="num">{rep["huy_da_goi"]}</td></tr>
       </tbody></table>
     </div>
   </div>
 
-  <div class="sec">V. Video khui hàng — đơn hàng hoàn nhận hôm nay{clip_summary}</div>
-  {clip_total_line}
-  <table>
-    <thead><tr><th>#</th><th class="l">Mã vận đơn</th><th>ĐVVC</th>
-      <th class="l">Sản phẩm (SKU × SL)</th><th class="l">Lý do trả</th>
-      <th>🎥 Clip khui hàng</th></tr></thead>
-    <tbody>{_returns_clip_rows(nk_detail)}</tbody>
-  </table>
-  {clip_note}
-
-  <div class="sec">VI. Ghi chú / Sự cố trong ngày</div>
+  <div class="sec">V. Ghi chú / Sự cố trong ngày</div>
   <div class="note"><span style="color:#9aa3af;font-size:11px">(Ghi tay: đơn GHN còn lại, hỏa tốc tìm tài xế, đơn lỗi…)</span>
     <div class="lines"><div></div><div></div></div></div>
 
@@ -212,8 +222,46 @@ def report_html(rep, dv, now_str):
     <div><div class="role">Quản lý</div><div class="space"></div><div class="hint">(Ký, ghi rõ họ tên)</div></div>
   </div>
 
-  <div class="foot">VITRAN BOUTIQUE · Báo cáo tạo tự động từ dashboard vận hành · {_e(rep["date"])}</div>
+  <div class="foot">VITRAN BOUTIQUE · Trang 1/2 — Vận hành đơn giao đi · {_e(rep["date"])}</div>
 </div>"""
+
+    page2 = f"""<div class="page page2">
+  <div class="hd">
+    <div><div class="brand">VITRAN BOUTIQUE</div>
+      <div class="sub">Báo cáo đơn hàng hoàn trả</div></div>
+    <div class="meta">Ngày báo cáo<br><b>{_e(rep["date"])}</b><br>
+      <span style="font-size:10px">Trang 2 / 2</span></div>
+  </div>
+
+  <div class="title">Báo cáo đơn hàng hoàn trả</div>
+  <div class="title-sub">Phần 2 — Hàng hoàn nhận về · nhập kho · video khui hàng (Sapo + Dohana)</div>
+
+  <div class="kpis k3">{r_kpis_html}</div>
+
+  {warn_box}
+
+  <div class="sec">A. Chi tiết đơn hàng hoàn nhận hôm nay{clip_summary}</div>
+  <table>
+    <thead><tr><th>#</th><th class="l">Mã vận đơn</th><th>ĐVVC</th>
+      <th class="l">Sản phẩm (SKU × SL)</th><th class="l">Lý do trả</th>
+      <th>🎥 Clip khui hàng</th></tr></thead>
+    <tbody>{_returns_clip_rows(nk_detail)}</tbody>
+  </table>
+  {clip_note}
+
+  <div class="sec">B. Ghi chú đơn hoàn / khiếu nại</div>
+  <div class="note"><span style="color:#9aa3af;font-size:11px">(Ghi tay: tình trạng hàng hoàn, đơn cần khiếu nại sàn, thiếu/sai SP…)</span>
+    <div class="lines"><div></div><div></div></div></div>
+
+  <div class="sign s2">
+    <div><div class="role">NV kho nhận hàng hoàn</div><div class="space"></div><div class="hint">(Ký, ghi rõ họ tên)</div></div>
+    <div><div class="role">Quản lý</div><div class="space"></div><div class="hint">(Ký, ghi rõ họ tên)</div></div>
+  </div>
+
+  <div class="foot">VITRAN BOUTIQUE · Trang 2/2 — Đơn hàng hoàn trả · {_e(rep["date"])}</div>
+</div>"""
+
+    body = page1 + page2
 
     js = (
         "function printA4(){"

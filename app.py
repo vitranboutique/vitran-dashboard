@@ -715,7 +715,7 @@ if _page == PAGE_DAILY:
     else:
         _nk["clip_available"] = False
     _nrep = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%H:%M %d/%m/%Y")
-    components.html(daily_report.report_html(_rep, _dvr, _nrep), height=1700, scrolling=True)
+    components.html(daily_report.report_html(_rep, _dvr, _nrep), height=2480, scrolling=True)
     st.stop()
 
 
