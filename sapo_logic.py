@@ -469,6 +469,52 @@ def get_handover_pending(fetch_json, days: int = 10) -> dict:
             "by_carrier": dict(sorted(by_carrier.items(), key=lambda x: -x[1]))}
 
 
+def get_returns_received_today(fetch_json, scan_days: int = 60, max_pages: int = 12) -> dict:
+    """ĐƠN HÀNG HOÀN ĐÃ NHẬN VỀ KHO HÔM NAY (giờ VN).
+    = phiếu trả có restock_status='restocked' VÀ mốc nhập kho (restocked_ons) rơi vào hôm nay.
+    Phiếu trả sắp xếp created_on giảm dần → quét lùi tối đa scan_days ngày (đủ phủ phiếu tạo
+    từ trước nhưng mới nhập kho hôm nay; API bỏ qua modified_on_min nên không lọc nhanh được).
+    Kèm số phiếu ĐANG HOÀN VỀ chưa nhập kho (cần theo dõi nhận hàng)."""
+    now_vn = _now_utc() + timedelta(hours=7)
+    today = now_vn.date()
+    cutoff = (now_vn - timedelta(days=scan_days)).date()
+
+    def _restocked_today(x):
+        if x.get("restock_status") != "restocked":
+            return False
+        ons = x.get("restocked_ons") or []
+        if isinstance(ons, str):
+            ons = [ons]
+        return any(_vn_date_of(o) == today for o in ons)
+
+    rows = []
+    for p in range(1, max_pages + 1):
+        chunk = fetch_json("/admin/order_returns.json", limit=250, page=p).get("order_returns", [])
+        if not chunk:
+            break
+        rows += chunk
+        last = _vn_date_of(chunk[-1].get("created_on"))
+        if last and last < cutoff:
+            break
+
+    recv = [x for x in rows if _restocked_today(x)]
+    by_source, so_sp = {}, 0
+    for x in recv:
+        s = x.get("order_source") or "Khác"
+        by_source[s] = by_source.get(s, 0) + 1
+        so_sp += int(round(x.get("total_quantity") or 0))
+    cho_xu_ly = sum(1 for x in rows
+                    if x.get("status") != "canceled"
+                    and x.get("restock_status") == "unrestock"
+                    and x.get("shipment_status") == "returning")
+    return {
+        "so_phieu": len(recv),
+        "so_sp": so_sp,
+        "by_source": dict(sorted(by_source.items(), key=lambda x: -x[1])),
+        "cho_xu_ly": cho_xu_ly,
+    }
+
+
 def get_daily_report(fetch_json) -> dict:
     """Tổng hợp BÁO CÁO CUỐI NGÀY: số đơn theo ĐVVC (đóng gói/hủy/shipper nhận/còn lại),
     các đợt soạn hàng, tổng nhập–xuất."""
@@ -519,6 +565,10 @@ def get_daily_report(fetch_json) -> dict:
     rows = sorted(cr.values(), key=lambda x: -x["dong_goi"])
     tot = {k: sum(r[k] for r in rows) for k in ("dong_goi", "huy", "shipper_nhan", "con_lai")}
     hist = _packing_history(open_orders)
+    try:
+        nhap_kho = get_returns_received_today(fetch_json)
+    except Exception:
+        nhap_kho = {"so_phieu": 0, "so_sp": 0, "by_source": {}, "cho_xu_ly": 0}
     return {
         "date": today.strftime("%d/%m/%Y"),
         "by_carrier": rows,
@@ -527,6 +577,7 @@ def get_daily_report(fetch_json) -> dict:
         "tong_don_soan": hist["tong_don"],
         "tong_sp_soan": hist["tong_sp"],
         "huy_da_goi": huy_total,
+        "nhap_kho": nhap_kho,
     }
 
 

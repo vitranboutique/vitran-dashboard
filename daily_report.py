@@ -71,9 +71,19 @@ def _batch_rows(batches, tong_don, tong_sp):
     return body
 
 
+_SRC = {"tiktokshop": "TikTok", "shopee": "Shopee", "lazada": "Lazada",
+        "website": "Website", "pos": "Tại quầy"}
+
+
 def report_html(rep, dv, now_str):
     t = rep["totals"]
     video_total = (dv or {}).get("total", "—")
+    nk = rep.get("nhap_kho") or {}
+    nk_src = " · ".join(f"{_e(_SRC.get(k, str(k)))} {v}"
+                        for k, v in (nk.get("by_source") or {}).items())
+    nk_sub = (f'<div style="font-size:10px;color:#9aa3af;font-weight:400">'
+              f'{nk.get("so_sp", 0)} SP{" · " + nk_src if nk_src else ""}</div>'
+              if nk.get("so_phieu") else "")
     kpis = [
         ("📦 Đơn đóng gói", t["dong_goi"], False),
         ("🚚 Đã bàn giao ĐVVC", t["shipper_nhan"], False),
@@ -123,8 +133,8 @@ def report_html(rep, dv, now_str):
       <div class="sec" style="margin-top:0">IV. Nhập – Xuất kho</div>
       <table><tbody>
         <tr><td class="l">📤 Xuất kho (đã gửi đi)</td><td class="num">{t["shipper_nhan"]}</td></tr>
-        <tr><td class="l">📥 Nhập kho (hàng hoàn nhận lại)</td><td class="num">&nbsp;</td></tr>
-        <tr><td class="l">↩️ Đơn hoàn trả cần xử lý</td><td class="num">&nbsp;</td></tr>
+        <tr><td class="l">📥 Nhập kho (hàng hoàn nhận lại){nk_sub}</td><td class="num">{nk.get("so_phieu", 0)}</td></tr>
+        <tr><td class="l">↩️ Đơn hoàn đang về (chờ nhận)</td><td class="num">{nk.get("cho_xu_ly", 0) or "—"}</td></tr>
       </tbody></table>
     </div>
   </div>
