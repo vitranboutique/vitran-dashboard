@@ -19,7 +19,6 @@ import sapo_logic as L
 import picklog
 import dohana
 import daily_report
-import report_store
 from sapo_client import SapoAuthError, build_session, credential_present, make_fetch_json
 from picking_render import picking_html
 
@@ -170,6 +169,37 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+
+def _week_table_html(wk):
+    """Bảng tổng hợp 7 ngày qua (đóng gói/hủy/soạn/shipper/giao khách), tô dòng hôm nay."""
+    cols = [("ngay", "Ngày"), ("thu", "Thứ"), ("dong_goi", "Đóng gói"), ("huy", "Hủy"),
+            ("soan", "Soạn"), ("shipper_nhan", "Shipper nhận"), ("giao_khach", "Giao khách")]
+    head = "".join(
+        f'<th style="text-align:{"left" if k in ("ngay", "thu") else "right"};'
+        f'padding:6px 10px;border-bottom:2px solid #16233f;color:#16233f">{lbl}</th>'
+        for k, lbl in cols)
+    body = ""
+    for r in wk:
+        hot = r.get("is_today")
+        bg = "background:#fff7ed;" if hot else ""
+        cells = ""
+        for k, _ in cols:
+            al = "left" if k in ("ngay", "thu") else "right"
+            tag = (' <span style="color:#E24B4A;font-size:11px">• đang chạy</span>'
+                   if hot and k == "ngay" else "")
+            wt = "font-weight:700;" if hot else ""
+            cells += (f'<td style="text-align:{al};padding:5px 10px;{wt}'
+                      f'border-bottom:1px solid #eee">{r.get(k, "")}{tag}</td>')
+        body += f'<tr style="{bg}">{cells}</tr>'
+    keys = ("dong_goi", "huy", "soan", "shipper_nhan", "giao_khach")
+    tot = {k: sum(r.get(k, 0) for r in wk) for k in keys}
+    totc = ('<td colspan="2" style="text-align:left;padding:6px 10px">TỔNG 7 ngày</td>'
+            + "".join(f'<td style="text-align:right;padding:6px 10px">{tot[k]}</td>' for k in keys))
+    return (f'<table style="width:100%;border-collapse:collapse;font-size:13px">'
+            f'<thead><tr>{head}</tr></thead><tbody>{body}'
+            f'<tr style="font-weight:800;border-top:2px solid #16233f;color:#16233f">{totc}</tr>'
+            f'</tbody></table>')
 
 
 def render_compact_table(df, red_mask=None):
@@ -352,13 +382,15 @@ def load_handover():
 
 
 @st.cache_data(ttl=180, show_spinner="Đang tổng hợp báo cáo cuối ngày…")
-def load_daily_report():
-    return L.get_daily_report(make_fetch_json(build_session()))
+def load_daily_report(date_iso=None):
+    from datetime import date as _date
+    td = _date.fromisoformat(date_iso) if date_iso else None
+    return L.get_daily_report(make_fetch_json(build_session()), target_date=td)
 
 
-@st.cache_data(ttl=120, show_spinner=False)
-def load_report_dates():
-    return report_store.list_dates()
+@st.cache_data(ttl=600, show_spinner="Đang tổng hợp 7 ngày qua…")
+def load_week_summary():
+    return L.get_week_summary(make_fetch_json(build_session()), days=7)
 
 
 @st.cache_data(ttl=180, show_spinner=False)
@@ -693,22 +725,35 @@ if _page == PAGE_DAILY:
         st.warning("⚠️ Cần kết nối Sapo (API LIVE).")
         st.stop()
 
-    # Chọn ngày xem: Hôm nay (trực tiếp) + lịch sử đã lưu (tối đa 30 ngày)
-    _saved = load_report_dates() if report_store.configured() else []
-    _disp = {datetime.strptime(d, "%Y-%m-%d").strftime("%d/%m/%Y"): d for d in _saved}
-    _LIVE = "📅 Hôm nay (trực tiếp)"
-    _pick = st.selectbox("Xem báo cáo ngày", [_LIVE] + [f"🗂️ {k}" for k in _disp])
+    # ===== Tổng hợp 7 NGÀY QUA (số cố định sau ngày — query lại là ra số cuối) =====
+    with st.expander("📅 Tổng hợp 7 ngày qua", expanded=True):
+        try:
+            _wk = load_week_summary()
+            st.markdown(_week_table_html(_wk), unsafe_allow_html=True)
+        except Exception as e:
+            st.warning(f"Chưa lấy được tổng hợp tuần: `{e}`")
 
-    # ---- Xem báo cáo ĐÃ LƯU (lịch sử) ----
+    # ===== Chọn ngày xem báo cáo A4 chi tiết =====
+    _vn_today = (datetime.now(timezone.utc) + timedelta(hours=7)).date()
+    _LIVE = f"📅 Hôm nay ({_vn_today.strftime('%d/%m')})"
+    _past = {(_vn_today - timedelta(days=i)).strftime("%d/%m/%Y"):
+             (_vn_today - timedelta(days=i)).isoformat() for i in range(1, 7)}
+    _pick = st.selectbox("Xem báo cáo chi tiết (A4) ngày", [_LIVE] + [f"🗂️ {k}" for k in _past])
+
+    # ---- Xem báo cáo NGÀY CŨ (query lại Sapo, số đã cố định) ----
     if _pick != _LIVE:
-        _iso = _disp[_pick[3:]]
-        _snap = report_store.load_report(_iso)
-        if not _snap:
-            st.error("❌ Không đọc được báo cáo đã lưu.")
+        _iso = _past[_pick[3:]]
+        try:
+            _rep = load_daily_report(_iso)
+        except Exception as e:
+            st.error(f"❌ Lỗi tổng hợp báo cáo ngày {_pick[3:]}: `{e}`")
             st.stop()
-        st.info(f"🗂️ Báo cáo đã lưu ngày **{_pick[3:]}** — chốt lúc {_snap.get('now', '')}.")
-        components.html(daily_report.report_html(_snap["rep"], _snap.get("dv"), _snap.get("now", "")),
-                        height=2480, scrolling=True)
+        _rep["video_recon"] = {"available": False}   # Dohana chỉ giữ video ~3 ngày → ngày cũ bỏ qua
+        (_rep.get("nhap_kho") or {})["clip_available"] = False
+        st.info(f"🗂️ Báo cáo ngày **{_pick[3:]}** (query lại từ Sapo — số đã cố định). "
+                "Ngày cũ không có dữ liệu video Dohana nên mục video để trống.")
+        _nrep = f"{_pick[3:]} (xem lại)"
+        components.html(daily_report.report_html(_rep, None, _nrep), height=2480, scrolling=True)
         st.stop()
 
     # ---- Hôm nay (trực tiếp) ----
@@ -762,29 +807,6 @@ if _page == PAGE_DAILY:
     else:
         _rep["video_recon"] = {"available": False}
     _nrep = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%H:%M %d/%m/%Y")
-
-    # ---- LƯU LỊCH SỬ BÁO CÁO (giữ 30 ngày) ----
-    if report_store.configured():
-        _tiso = report_store.today_iso()
-        _c1, _c2 = st.columns([1, 2])
-        if _c1.button("💾 Lưu báo cáo hôm nay (chốt số cuối ngày)"):
-            _ok, _msg = report_store.save_report(_tiso, _rep, _dvr, _nrep)
-            if _ok:
-                st.session_state["_rpt_saved_date"] = _tiso
-                load_report_dates.clear()
-            (st.success if _ok else st.error)(_msg)
-        # Tự lưu 1 lần mỗi phiên (chốt số liệu mới nhất mỗi khi mở xem)
-        if st.session_state.get("_rpt_saved_date") != _tiso:
-            _ok, _ = report_store.save_report(_tiso, _rep, _dvr, _nrep)
-            if _ok:
-                st.session_state["_rpt_saved_date"] = _tiso
-                load_report_dates.clear()
-        _c2.caption(f"📦 Đã lưu **{len(_saved)}** ngày (giữ tối đa 30). Tự lưu khi mở; "
-                    "cuối ngày bấm **Lưu** để chốt số cuối cùng.")
-    else:
-        st.info("💡 Thêm khối `[report_store]` (url jsonblob) vào **Secrets** để tự lưu & xem lại "
-                "báo cáo 30 ngày gần nhất.")
-
     components.html(daily_report.report_html(_rep, _dvr, _nrep), height=2480, scrolling=True)
     st.stop()
 

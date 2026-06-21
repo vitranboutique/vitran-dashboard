@@ -198,10 +198,10 @@ def _summarize_picking(orders):
     }
 
 
-def _packing_history(orders, gap_min: int = 20) -> dict:
-    """Suy ra các ĐỢT SOẠN HÀNG hôm nay từ mốc đóng gói (packed_on).
-    Gom các đơn đóng gói cách nhau <= gap_min phút thành 1 đợt."""
-    today = (_now_utc() + timedelta(hours=7)).date()
+def _packing_history(orders, gap_min: int = 20, ref_date=None) -> dict:
+    """Suy ra các ĐỢT SOẠN HÀNG trong ngày từ mốc đóng gói (packed_on).
+    Gom các đơn đóng gói cách nhau <= gap_min phút thành 1 đợt. ref_date=None → hôm nay."""
+    today = ref_date or (_now_utc() + timedelta(hours=7)).date()
     rows = []
     for o in orders:
         f = (o.get("fulfillments") or [{}])[0]
@@ -482,14 +482,83 @@ def get_handover_pending(fetch_json, days: int = 10) -> dict:
             "by_carrier": dict(sorted(by_carrier.items(), key=lambda x: -x[1]))}
 
 
-def get_returns_received_today(fetch_json, scan_days: int = 60, max_pages: int = 12) -> dict:
-    """ĐƠN HÀNG HOÀN ĐÃ NHẬN VỀ KHO HÔM NAY (giờ VN).
-    = phiếu trả có restock_status='restocked' VÀ mốc nhập kho (restocked_ons) rơi vào hôm nay.
-    Phiếu trả sắp xếp created_on giảm dần → quét lùi tối đa scan_days ngày (đủ phủ phiếu tạo
-    từ trước nhưng mới nhập kho hôm nay; API bỏ qua modified_on_min nên không lọc nhanh được).
-    Kèm số phiếu ĐANG HOÀN VỀ chưa nhập kho (cần theo dõi nhận hàng)."""
+def get_week_summary(fetch_json, days: int = 7) -> list:
+    """Tổng hợp NHIỀU NGÀY (mặc định 7) — mỗi ngày: đóng gói / hủy đã gói / shipper nhận /
+    giao khách / soạn. Số liệu cố định sau ngày (mốc packed_on/issued_on/delivered_on/cancelled_on
+    không đổi) nên query lại là ra số cuối, KHÔNG cần lưu. Quét đơn open + closed(theo created_on)
+    + cancelled, gom theo từng ngày."""
     now_vn = _now_utc() + timedelta(hours=7)
     today = now_vn.date()
+    day_list = [today - timedelta(days=i) for i in range(days)]   # mới → cũ
+    day_set = set(day_list)
+    agg = {d: {"dong_goi": 0, "huy": 0, "shipper_nhan": 0, "giao_khach": 0} for d in day_set}
+
+    def f0(o):
+        return (o.get("fulfillments") or [{}])[0]
+
+    # Đơn open + closed (created_on lùi ~ days+10 ngày để phủ packed/issued/delivered trong tuần)
+    orders = []
+    for p in range(1, 30):
+        rows = fetch_json("/admin/orders.json", limit=250, page=p, status="open").get("orders", [])
+        if not rows:
+            break
+        orders += rows
+    back = days + 10
+    cmin = (today - timedelta(days=back)).isoformat() + "T00:00:00+07:00"
+    for p in range(1, 25):
+        rows = fetch_json("/admin/orders.json", limit=250, page=p,
+                          status="closed", created_on_min=cmin).get("orders", [])
+        if not rows:
+            break
+        orders += rows
+        last = _vn_date_of(rows[-1].get("created_on"))
+        if last and last < (today - timedelta(days=back)):
+            break
+
+    for o in orders:
+        f = f0(o)
+        for fld, key in (("packed_on", "dong_goi"), ("issued_on", "shipper_nhan"),
+                         ("delivered_on", "giao_khach")):
+            d = _vn_date_of(f.get(fld))
+            if d in agg:
+                agg[d][key] += 1
+    # Hủy đã gói theo cancelled_on (đơn đã đóng gói)
+    try:
+        canc = get_cancelled(fetch_json, days=days)
+        for o in canc.get("packed", []):
+            d = _vn_date_of(o.get("cancelled_on"))
+            if d in agg:
+                agg[d]["huy"] += 1
+    except Exception:
+        pass
+
+    _wd = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"]
+    out = []
+    for d in day_list:
+        a = agg[d]
+        out.append({
+            "ngay": d.strftime("%d/%m"),
+            "thu": _wd[d.weekday()],
+            "iso": d.isoformat(),
+            "dong_goi": a["dong_goi"],
+            "huy": a["huy"],
+            "soan": a["dong_goi"] + a["huy"],     # đã soạn = đóng gói + hủy đã gói
+            "shipper_nhan": a["shipper_nhan"],
+            "giao_khach": a["giao_khach"],
+            "is_today": d == today,
+        })
+    return out
+
+
+def get_returns_received_today(fetch_json, scan_days: int = 60, max_pages: int = 12,
+                               target_date=None) -> dict:
+    """ĐƠN HÀNG HOÀN ĐÃ NHẬN VỀ KHO (giờ VN; mặc định hôm nay, hoặc target_date cho ngày cũ).
+    = phiếu trả có restock_status='restocked' VÀ mốc nhập kho (restocked_ons) rơi vào ngày đó.
+    Phiếu trả sắp xếp created_on giảm dần → quét lùi tối đa scan_days ngày (đủ phủ phiếu tạo
+    từ trước nhưng mới nhập kho ngày đó; API bỏ qua modified_on_min nên không lọc nhanh được).
+    Kèm số phiếu ĐANG HOÀN VỀ chưa nhập kho (cần theo dõi nhận hàng)."""
+    now_vn = _now_utc() + timedelta(hours=7)
+    today = target_date or now_vn.date()
     cutoff = (now_vn - timedelta(days=scan_days)).date()
 
     def _restocked_today(x):
@@ -560,10 +629,13 @@ def get_returns_received_today(fetch_json, scan_days: int = 60, max_pages: int =
     }
 
 
-def get_daily_report(fetch_json) -> dict:
+def get_daily_report(fetch_json, target_date=None) -> dict:
     """Tổng hợp BÁO CÁO CUỐI NGÀY: số đơn theo ĐVVC (đóng gói/hủy/shipper nhận/còn lại),
-    các đợt soạn hàng, tổng nhập–xuất."""
-    today = (_now_utc() + timedelta(hours=7)).date()
+    các đợt soạn hàng, tổng nhập–xuất. target_date=None → hôm nay; truyền ngày cũ để
+    XEM LẠI (số liệu cố định sau ngày vì mốc packed_on/issued_on/... không đổi)."""
+    real_today = (_now_utc() + timedelta(hours=7)).date()
+    today = target_date or real_today
+    is_past = today < real_today
 
     def f0(o):
         return (o.get("fulfillments") or [{}])[0]
@@ -584,10 +656,12 @@ def get_daily_report(fetch_json) -> dict:
     # Gộp đơn ĐÃ ĐÓNG (status=closed) đóng gói / xuất / GIAO KHÁCH HÔM NAY — vd hỏa tốc
     # SPX Instant giao xong ngay trong ngày → rớt khỏi scan "open". Kéo riêng để KHÔNG bỏ sót
     # đơn đóng gói + đếm được đơn đã giao đến khách. Lọc created_on_min cho nhẹ.
-    cmin = (today - timedelta(days=5)).isoformat() + "T00:00:00+07:00"
-    for p in range(1, 15):
-        rows = fetch_json("/admin/orders.json", limit=250, page=p,
-                          status="closed", created_on_min=cmin).get("orders", [])
+    cmin = (today - timedelta(days=7)).isoformat() + "T00:00:00+07:00"
+    cparams = {"status": "closed", "created_on_min": cmin}
+    if is_past:   # xem ngày cũ → chặn trên để khỏi kéo cả đống đơn closed về sau
+        cparams["created_on_max"] = (today + timedelta(days=2)).isoformat() + "T23:59:59+07:00"
+    for p in range(1, 20):
+        rows = fetch_json("/admin/orders.json", limit=250, page=p, **cparams).get("orders", [])
         if not rows:
             break
         for o in rows:
@@ -597,7 +671,7 @@ def get_daily_report(fetch_json) -> dict:
                     or _vn_date_of(ff.get("delivered_on")) == today):
                 open_orders.append(o)
         last = _vn_date_of(rows[-1].get("created_on"))
-        if last and last < (today - timedelta(days=5)):
+        if last and last < (today - timedelta(days=7)):
             break
 
     cr = {}
@@ -656,9 +730,9 @@ def get_daily_report(fetch_json) -> dict:
     tot = {k: sum(r[k] for r in rows)
            for k in ("dong_goi", "huy", "shipper_nhan", "giao_khach", "con_lai")}
     # Đợt soạn GỒM cả đơn đã hủy đã gói (vì đã soạn rồi mới hủy) → tổng soạn = đóng gói + hủy đã gói
-    hist = _packing_history(open_orders + huy_goi_orders)
+    hist = _packing_history(open_orders + huy_goi_orders, ref_date=today)
     try:
-        nhap_kho = get_returns_received_today(fetch_json)
+        nhap_kho = get_returns_received_today(fetch_json, target_date=today)
     except Exception:
         nhap_kho = {"so_phieu": 0, "so_sp": 0, "by_source": {}, "cho_xu_ly": 0}
     return {
