@@ -119,17 +119,37 @@ def _returns_clip_rows(detail):
         if d.get("clip"):
             cell = (f'<span style="color:#15803d;font-weight:800">✓ Có'
                     f'{" ×" + str(cnt) if cnt > 1 else ""}</span>')
+            sub = []
+            if d.get("clip_dur"):
+                sub.append(f'{d["clip_dur"]}s')
+            if d.get("clip_time"):
+                sub.append(str(d["clip_time"]))
+            if sub:
+                cell += (f'<div style="font-size:9px;color:#6b7280;font-weight:600">'
+                         f'⏱ {_e(" · ".join(sub))}</div>')
             tdcls = ""
         else:
             cell = '<span style="color:#dc2626;font-weight:800">✗ Thiếu clip</span>'
             tdcls = ' style="background:#fef2f2"'
+        # Loại trả hàng — giao hàng thất bại tô cam để nhân viên lưu ý (hàng chưa tới khách)
+        lt = d.get("loai_tra", "—")
+        lt_style = ("color:#c2410c;font-weight:800"
+                    if d.get("loai_tra_code") == "delivery_failed" else "color:#374151")
+        # Tag app đóng hàng (tráo hàng / mất hàng…) — tô tím nổi bật để cảnh báo
+        tag = d.get("clip_tag") or ""
+        if tag:
+            tag_cell = (f'<span style="color:#6d28d9;font-weight:800;background:#f3e8ff;'
+                        f'padding:1px 5px;border-radius:4px">🏷️ {_e(str(tag))}</span>')
+        else:
+            tag_cell = '<span style="color:#cbd5e1">—</span>'
         body += (f'<tr><td>{i}</td>'
                  f'<td class="l">{_e(str(d.get("tracking", "")))}</td>'
                  f'<td>{_e(str(d.get("carrier", "")))}</td>'
                  f'<td class="l">{_e(str(d.get("sku", "")))}</td>'
-                 f'<td class="l">{_e(str(d.get("ly_do", "")))}</td>'
+                 f'<td class="l" style="{lt_style}">{_e(str(lt))}</td>'
+                 f'<td class="l">{tag_cell}</td>'
                  f'<td{tdcls}>{cell}</td></tr>')
-    return body or '<tr><td colspan="6">Hôm nay không có đơn hoàn nhập kho.</td></tr>'
+    return body or '<tr><td colspan="7">Hôm nay không có đơn hoàn nhập kho.</td></tr>'
 
 
 def report_html(rep, dv, now_str):
@@ -348,8 +368,9 @@ def report_html(rep, dv, now_str):
   <div class="sec">A. Chi tiết đơn hàng hoàn nhận hôm nay{clip_summary}</div>
   <table>
     <thead><tr><th>#</th><th class="l">Mã vận đơn</th><th>ĐVVC</th>
-      <th class="l">Sản phẩm (SKU × SL)</th><th class="l">Lý do trả</th>
-      <th>🎥 Clip khui hàng</th></tr></thead>
+      <th class="l">Sản phẩm (SKU × SL)</th><th class="l">Loại trả hàng</th>
+      <th class="l">🏷️ Tag app đóng hàng</th>
+      <th>🎥 Clip khui hàng (thời lượng · giờ quay)</th></tr></thead>
     <tbody>{_returns_clip_rows(nk_detail)}</tbody>
   </table>
   {clip_note}

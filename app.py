@@ -210,11 +210,16 @@ def _enrich_daily(rep, dvr, inb):
     nk = rep.get("nhap_kho") or {}
     if inb is not None:
         mset, cnt = inb.get("match", set()), inb.get("count", {})
+        meta = inb.get("meta", {})
         consumed = set()
         for d in nk.get("detail", []):
             hit = next((c for c in d.get("codes", []) if c in mset), None)
             d["clip"] = bool(hit)
             d["clip_count"] = cnt.get(hit, 0) if hit else 0
+            m = meta.get(hit) if hit else None
+            d["clip_dur"] = m.get("dur") if m else None
+            d["clip_time"] = m.get("recorded") if m else ""
+            d["clip_tag"] = m.get("tag") if m else ""
             if hit:
                 consumed.add(hit)
         nk["clip_available"] = True

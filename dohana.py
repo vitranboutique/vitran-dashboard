@@ -35,6 +35,37 @@ def _vnd(iso):
         return None
 
 
+def _vn_dt(iso):
+    """createdAt -> giờ VN 'HH:MM:SS DD/MM' (KHỚP cột thời gian hiển thị trên app Dohana)."""
+    s = str(iso).replace("Z", "").split(".")[0]
+    try:
+        return (datetime.fromisoformat(s) + timedelta(hours=7)).strftime("%H:%M:%S %d/%m")
+    except Exception:
+        return ""
+
+
+# tagId (UUID) -> TÊN TAG trên app đóng hàng. Partner API CHỈ trả tagId, KHÔNG trả tên tag,
+# nên phải map thủ công. Bổ sung/sửa tên trong Streamlit secrets (không cần đổi code):
+#   [dohana.tags]
+#   "2380d014-46be-4a1b-a549-a6dac57904d8" = "Khách tráo!"
+_TAG_NAMES = {
+    "2380d014-46be-4a1b-a549-a6dac57904d8": "Khách tráo!",
+}
+
+
+def _tag_name(tag_id):
+    """Trả tên tag để hiển thị. Chưa map được tagId -> '⚠️ Có tag' (nhân viên mở app xem)."""
+    if not tag_id:
+        return ""
+    try:
+        ov = dict(st.secrets["dohana"]["tags"])
+        if tag_id in ov and ov[tag_id]:
+            return ov[tag_id]
+    except Exception:
+        pass
+    return _TAG_NAMES.get(tag_id) or "⚠️ Có tag"
+
+
 def _fetch_videos(typ: str, cutoff_date, max_pages: int):
     """Lấy video theo type, lùi (page 0 = MỚI NHẤT) tới khi createdAt < cutoff_date. Khử trùng id."""
     key = _key()
@@ -76,12 +107,27 @@ def inbound_videos(days_match: int = 3, max_pages: int = 25, target_date=None):
     cnt = Counter(v.get("orderCode") for v in win if v.get("orderCode"))
     today_codes = {v.get("orderCode") for v in vids
                    if v.get("orderCode") and _vnd(v.get("createdAt")) == tdate}
+    # meta theo mã đơn: thời lượng clip, giờ quay (createdAt), tag app đóng hàng.
+    # Giữ video MỚI NHẤT cho mỗi mã (sort createdAt giảm dần → lần gặp đầu = mới nhất).
+    meta = {}
+    for v in sorted(win, key=lambda x: str(x.get("createdAt") or ""), reverse=True):
+        oc = v.get("orderCode")
+        if not oc or oc in meta:
+            continue
+        dur = v.get("duration")
+        meta[oc] = {
+            "dur": int(dur) if isinstance(dur, (int, float)) else None,
+            "recorded": _vn_dt(v.get("createdAt")),
+            "tag_id": v.get("tagId"),
+            "tag": _tag_name(v.get("tagId")),
+        }
     return {
         "total": sum(1 for v in vids if _vnd(v.get("createdAt")) == tdate),
         "count": dict(cnt),
         "match": set(cnt),
         "today_codes": today_codes,
         "dup": {k: v for k, v in cnt.items() if v >= 2},
+        "meta": meta,
     }
 
 

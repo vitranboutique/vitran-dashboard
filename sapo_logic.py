@@ -589,6 +589,12 @@ def get_returns_received_today(fetch_json, scan_days: int = 60, max_pages: int =
         "size": "Không vừa size", "change_of_mind": "Đổi ý",
         "wrong_size": "Sai size", "quality": "Chất lượng", "other": "Khác",
     }
+    # LOẠI TRẢ HÀNG (Sapo return_type): khách trả hoàn tiền vs giao thất bại (hoàn về)
+    _type_vn = {
+        "return_and_refund": "Trả hàng hoàn tiền",
+        "delivery_failed": "Giao hàng thất bại",
+        "refund": "Hoàn tiền (không trả hàng)",
+    }
 
     recv = [x for x in rows if _restocked_today(x)]
     by_source, so_sp, detail = {}, 0, []
@@ -610,6 +616,7 @@ def get_returns_received_today(fetch_json, scan_days: int = 60, max_pages: int =
         sku = "; ".join(f"{(li.get('sku') or 'N/A')}×{int(round(li.get('quantity') or 0))}"
                         for li in lis)
         rsn = lis[0].get("return_reason") if lis else None
+        rtype = x.get("return_type")
         detail.append({
             "tracking": track or order_name or x.get("name") or "?",
             "carrier": si.get("carrier_name") or "?",
@@ -617,6 +624,8 @@ def get_returns_received_today(fetch_json, scan_days: int = 60, max_pages: int =
             "sku": sku,
             "sp": int(round(x.get("total_quantity") or 0)),
             "ly_do": _reason_vn.get(rsn, rsn or "—"),
+            "loai_tra": _type_vn.get(rtype, rtype or "—"),
+            "loai_tra_code": rtype,
             "codes": sorted(codes),
         })
     cho_xu_ly = sum(1 for x in rows
