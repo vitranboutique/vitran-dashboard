@@ -123,37 +123,33 @@ def _returns_clip_rows(detail):
 def report_html(rep, dv, now_str):
     t = rep["totals"]
     video_total = (dv or {}).get("total", "—")
-    # ---- Đối chiếu VIDEO ĐÓNG GÓI (giải thích vì sao video ≠ đơn) ----
+    # ---- VIDEO ĐÓNG GÓI: trình bày theo góc ĐƠN (đơn đóng gói có / thiếu video) ----
     vr = rep.get("video_recon") or {}
     if vr.get("available"):
         _have = vr.get("open_with_video", 0)
         _mv = vr.get("missing_video", 0)
         _miss_codes = vr.get("missing_codes") or []
-        _canc = vr.get("match_canc", 0)
-        _miss_row = (f'<tr><td class="l" style="padding-left:20px;color:#b45309">⤷ ⚠️ chưa quay video</td>'
+        _miss_row = (f'<tr><td class="l" style="padding-left:20px;color:#b45309">⤷ ⚠️ Thiếu video</td>'
                      f'<td class="num" style="color:#b45309;font-weight:900">{_mv}</td></tr>'
                      if _mv else
-                     '<tr><td class="l" style="padding-left:20px;color:#15803d">⤷ ✅ đã đủ video</td>'
+                     '<tr><td class="l" style="padding-left:20px;color:#15803d">⤷ ✅ Đủ video (100%)</td>'
                      '<td class="num" style="color:#15803d;font-weight:800">✓</td></tr>')
         iii_rows = (
-            f'<tr><td class="l">🎥 Video đóng gói đã quay</td>'
-            f'<td class="num" style="font-weight:900">{vr["total"]}</td></tr>'
             f'<tr><td class="l">📦 Đơn đóng gói hôm nay</td>'
             f'<td class="num" style="font-weight:900">{t["dong_goi"]}</td></tr>'
-            f'<tr><td class="l" style="padding-left:20px">⤷ ✅ đã có video</td>'
+            f'<tr><td class="l" style="padding-left:20px">⤷ ✅ Đã có video đóng gói</td>'
             f'<td class="num">{_have}</td></tr>'
             + _miss_row)
         vid_note = ('<div style="font-size:10.5px;color:#374151;margin:8px 0 0;line-height:1.55">'
-                    f'ℹ️ <b>Đơn đóng gói ({t["dong_goi"]})</b> đã gồm cả <b>đơn hỏa tốc giao xong trong ngày</b> '
-                    '(dòng “Hỏa tốc” ở bảng ĐVVC). '
-                    + (f'{vr["total"]} video = {_have} đơn đóng gói có video + {_canc} đơn đã hủy (đã đóng gói).'
-                       if _canc else f'{vr["total"]} video khớp {_have} đơn đóng gói.')
+                    'ℹ️ Đơn đóng gói đã gồm cả <b>đơn hỏa tốc giao xong trong ngày</b> (dòng “Hỏa tốc” bảng ĐVVC). '
+                    + (f'<b>{_mv} đơn thiếu video</b> do clip bị <b>quay nhầm sang mục “khui hàng”</b> — xem cảnh báo.'
+                       if _mv else 'Tất cả đơn đóng gói đều có video.')
                     + '</div>')
         _w = []
         if _mv:
             _ml = ", ".join(_e(str(c)) for c in _miss_codes[:8]) + (f" …(+{_mv - 8})" if _mv > 8 else "")
-            _w.append(f'<b>{_mv} đơn đã đóng gói nhưng CHƯA quay video</b> — cần quay bổ sung '
-                      f'(bằng chứng khi khiếu nại). Mã: {_ml}')
+            _w.append(f'<b>{_mv} đơn đã đóng gói nhưng THIẾU video đóng gói</b> '
+                      f'(clip bị quay nhầm sang mục “khui hàng”) — cần quay/chuyển lại đúng. Mã: {_ml}')
         if vr.get("dup"):
             _dl = ", ".join(f'{_e(str(k))}×{v}' for k, v in vr["dup"].items())
             _w.append(f'<b>{len(vr["dup"])} đơn quay TRÙNG (≥2 lần)</b>: {_dl}.')
@@ -280,7 +276,7 @@ def report_html(rep, dv, now_str):
 
   <div class="two" style="margin-top:16px">
     <div>
-      <div class="sec" style="margin-top:0">III. Đối chiếu video đóng gói (Dohana)</div>
+      <div class="sec" style="margin-top:0">III. Đơn đóng gói — đã có video chưa?</div>
       <table><tbody>{iii_rows}</tbody></table>
     </div>
     <div>
