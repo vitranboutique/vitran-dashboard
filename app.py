@@ -731,7 +731,28 @@ if _page == PAGE_PICK:
     # ── Phiếu in (trái) + Lịch sử in & nút Lưu (phải, KẾ BÊN phiếu) ──
     _cslip, _clog = st.columns([3, 2])
     with _cslip:
-        components.html(picking_html(pdata, now_str), height=820, scrolling=True)
+        # Nút IN + TỰ LƯU ĐỢT: lưu picklog phía server (không vướng CORS) → rerun tự bung hộp in.
+        if pdata["total"] > 0 and picklog.configured():
+            if st.button("🖨️ In phiếu nhặt + tự lưu đợt", type="primary", width="stretch"):
+                _allsku = {s for s, _ in exp["skus"]} | {s for s, _ in nor["skus"]}
+                _ok, _msg = picklog.log_batch({
+                    "ngay": (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%Y-%m-%d"),
+                    "gio": now_str[:5],
+                    "so_don": exp["total_orders"] + nor["total_orders"],
+                    "so_sp": exp["total_qty"] + nor["total_qty"], "so_sku": len(_allsku),
+                    "ht_don": exp["total_orders"], "th_don": nor["total_orders"],
+                })
+                if _ok:
+                    st.session_state["_pick_autoprint"] = True
+                    st.rerun()
+                else:
+                    st.error(_msg)
+        elif pdata["total"] > 0 and not picklog.configured():
+            st.caption("⚙️ Bật kho lưu (mục bên phải) để dùng **In + tự lưu đợt**.")
+        _auto = st.session_state.pop("_pick_autoprint", False)
+        if _auto:
+            st.success("✅ Đã lưu đợt — đang bung hộp in (cho phép cửa sổ in).")
+        components.html(picking_html(pdata, now_str, auto_print=_auto), height=860, scrolling=True)
     with _clog:
         st.markdown("#### 📋 Lịch sử in phiếu hôm nay")
         if not picklog.configured():
@@ -751,8 +772,8 @@ if _page == PAGE_PICK:
             else:
                 st.caption("Chưa lưu lượt nào hôm nay.")
         if pdata["total"] > 0:
-            st.caption("➡️ In K80 xong thì bấm:")
-            if st.button("💾 Lưu đợt vừa in", type="primary", disabled=not picklog.configured()):
+            st.caption("✅ Bấm **🖨️ In K80 + tự lưu đợt** ở phiếu là TỰ LƯU. Nút dưới chỉ để lưu THỦ CÔNG (nếu cần):")
+            if st.button("💾 Lưu đợt thủ công", disabled=not picklog.configured()):
                 _now_vn = datetime.now(timezone.utc) + timedelta(hours=7)
                 _allsku = {s for s, _ in exp["skus"]} | {s for s, _ in nor["skus"]}
                 ok, msg = picklog.log_batch({

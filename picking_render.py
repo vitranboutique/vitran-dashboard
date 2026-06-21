@@ -128,7 +128,8 @@ def history_slips_html(batches, now_str):
     )
 
 
-def picking_html(data, now_str):
+def picking_html(data, now_str, auto_print=False):
+    """auto_print=True → tự bung hộp in khi tải (dùng sau khi bấm nút Streamlit 'In + lưu đợt')."""
     parts = []
     if data["express"]["total_orders"] > 0:
         parts.append(_slip("PHIẾU NHẶT — HỎA TỐC", "#E24B4A", data["express"], now_str))
@@ -151,10 +152,11 @@ def picking_html(data, now_str):
         "d.close();"
         "f.onload=function(){f.contentWindow.focus();f.contentWindow.print();setTimeout(function(){document.body.removeChild(f);},600);};"
         "}"
+        + ("setTimeout(printK80,500);" if auto_print else "")
     )
     return (
         "<style>" + RECEIPT_CSS + "</style>"
-        "<div class='toolbar'><button class='printbtn' onclick='printK80()'>🖨️ In K80 (hỏa tốc trên, in liền khối)</button></div>"
+        "<div class='toolbar'><button class='printbtn' onclick='printK80()'>🖨️ In lại (in liền khối, hỏa tốc trên)</button></div>"
         "<div id='slips'>" + blocks + "</div>"
         "<script>" + js + "</script>"
     )
