@@ -42,10 +42,10 @@ _CSS = """
   .foot{margin-top:7px;text-align:center;font-size:9.5px;color:#9aa3af;border-top:1px solid var(--line);padding-top:4px;}
   .page2{page-break-before:always;}
   .kpis.k3{grid-template-columns:repeat(3,1fr);}
-  .kpis.k7{grid-template-columns:repeat(7,1fr);gap:5px;}
-  .k7 .kpi{padding:4px 6px;text-align:center;}
-  .k7 .kpi .l{font-size:9px;line-height:1.2;}
-  .k7 .kpi .v{font-size:17px;}
+  .kpis.kf{grid-template-columns:repeat(6,1fr);gap:5px;}
+  .kf .kpi{padding:4px 7px;text-align:center;}
+  .kf .kpi .l{font-size:9.5px;line-height:1.2;}
+  .kf .kpi .v{font-size:18px;}
   .kpi.bad{border-color:#dc2626;background:#fdeeee;}
   .kpi .lech{font-size:8.5px;color:#dc2626;font-weight:800;margin-top:1px;}
   .warn{border:1px solid #e0a155;border-left:5px solid #d97706;background:#fff8ec;border-radius:6px;padding:6px 10px;margin:8px 0 9px;}
@@ -262,8 +262,7 @@ def report_html(rep, dv, now_str):
         _fbox("✅", "Đã xác nhận", fn.get("xac_nhan")),
         _fbox("📦", "Đã soạn hàng", _soan, baseline=True),
         _fbox("🎥", "Đã có video", fn.get("video")),
-        _fbox("📋", "Đã quét B.bản", fn.get("quet_bien_ban")),
-        _fbox("🚚", "Đã bàn giao ĐVVC", fn.get("ban_giao")),
+        _fbox("🚚", "Bàn giao ĐVVC (biên bản)", fn.get("ban_giao")),
         _fbox("❌", "Hủy hôm nay", fn.get("huy"), outcome=True, hot=True),
         _fbox("⏳", "Còn xót lại", fn.get("con_xot"), outcome=True),
     ])
@@ -279,7 +278,7 @@ def report_html(rep, dv, now_str):
   <div class="title">Báo cáo vận hành cuối ngày</div>
   <div class="title-sub">Phần 1 — Đơn giao đi · đóng gói · soạn hàng · video (dữ liệu Sapo, giờ VN)</div>
 
-  <div class="kpis k7">{kpi_html}</div>
+  <div class="kpis kf">{kpi_html}</div>
 
   {vid_warn}
 
