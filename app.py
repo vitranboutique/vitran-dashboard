@@ -239,6 +239,8 @@ def _enrich_daily(rep, dvr, inb):
             "dup": dvr.get("dup", {}), "open_with_video": owv,
             "missing_video": len(missing), "missing_codes": missing,
         }
+        if isinstance(rep.get("funnel"), dict):
+            rep["funnel"]["video"] = owv
     else:
         rep["video_recon"] = {"available": False}
 

@@ -42,6 +42,12 @@ _CSS = """
   .foot{margin-top:7px;text-align:center;font-size:9.5px;color:#9aa3af;border-top:1px solid var(--line);padding-top:4px;}
   .page2{page-break-before:always;}
   .kpis.k3{grid-template-columns:repeat(3,1fr);}
+  .kpis.k7{grid-template-columns:repeat(7,1fr);gap:5px;}
+  .k7 .kpi{padding:4px 6px;text-align:center;}
+  .k7 .kpi .l{font-size:9px;line-height:1.2;}
+  .k7 .kpi .v{font-size:17px;}
+  .kpi.bad{border-color:#dc2626;background:#fdeeee;}
+  .kpi .lech{font-size:8.5px;color:#dc2626;font-weight:800;margin-top:1px;}
   .warn{border:1px solid #e0a155;border-left:5px solid #d97706;background:#fff8ec;border-radius:6px;padding:6px 10px;margin:8px 0 9px;}
   .warn .wh{font-size:11.5px;font-weight:900;color:#b45309;}
   .warn .wb{font-size:10px;color:#7c4a13;margin-top:2px;line-height:1.4;}
@@ -237,15 +243,30 @@ def report_html(rep, dv, now_str):
         f'<div class="v">{clip_kpi_v}</div>'
         f'<div class="l" style="margin-top:3px;font-weight:700">{clip_kpi_sub}</div></div>'
     )
-    kpis = [
-        ("📦 Đơn đóng gói", t["dong_goi"], False),
-        ("🚚 Đã bàn giao ĐVVC", t["shipper_nhan"], False),
-        ("⏳ Còn lại (chờ giao)", t["con_lai"], False),
-        ("❌ Hủy hôm nay", t["huy"], True),
-    ]
-    kpi_html = "".join(
-        f'<div class="kpi{" hot" if hot and v else ""}"><div class="l">{l}</div>'
-        f'<div class="v">{v}</div></div>' for l, v, hot in kpis)
+    # ── PHỄU 7 BƯỚC (KPI hàng đầu): đánh dấu ▼ chỗ LỆCH so với "đã soạn hàng" ──
+    fn = rep.get("funnel") or {}
+    _soan = fn.get("soan") or 0
+
+    def _fbox(icon, label, val, baseline=False, outcome=False, hot=False):
+        disp = "—" if val is None else val
+        cls, mark = "kpi", ""
+        if hot and val:
+            cls = "kpi hot"
+        if (not baseline and not outcome and isinstance(val, int) and _soan and val < _soan):
+            cls = "kpi bad"
+            mark = f'<div class="lech">▼ lệch {_soan - val}</div>'
+        return (f'<div class="{cls}"><div class="l">{icon} {label}</div>'
+                f'<div class="v">{disp}</div>{mark}</div>')
+
+    kpi_html = "".join([
+        _fbox("✅", "Đã xác nhận", fn.get("xac_nhan")),
+        _fbox("📦", "Đã soạn hàng", _soan, baseline=True),
+        _fbox("🎥", "Đã có video", fn.get("video")),
+        _fbox("📋", "Đã quét B.bản", fn.get("quet_bien_ban")),
+        _fbox("🚚", "Đã bàn giao ĐVVC", fn.get("ban_giao")),
+        _fbox("❌", "Hủy hôm nay", fn.get("huy"), outcome=True, hot=True),
+        _fbox("⏳", "Còn xót lại", fn.get("con_xot"), outcome=True),
+    ])
 
     page1 = f"""<div class="page">
   <div class="hd">
@@ -258,7 +279,7 @@ def report_html(rep, dv, now_str):
   <div class="title">Báo cáo vận hành cuối ngày</div>
   <div class="title-sub">Phần 1 — Đơn giao đi · đóng gói · soạn hàng · video (dữ liệu Sapo, giờ VN)</div>
 
-  <div class="kpis">{kpi_html}</div>
+  <div class="kpis k7">{kpi_html}</div>
 
   {vid_warn}
 

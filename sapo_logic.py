@@ -738,10 +738,35 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
         nhap_kho = get_returns_received_today(fetch_json, target_date=today)
     except Exception:
         nhap_kho = {"so_phieu": 0, "so_sp": 0, "by_source": {}, "cho_xu_ly": 0}
+
+    # ── PHỄU 7 BƯỚC: xác nhận → soạn → video → quét biên bản → bàn giao → hủy/xót ──
+    xac_nhan = sum(1 for o in open_orders if _vn_date_of(f0(o).get("shipment_created_on")) == today)
+    quet_bien_ban = 0   # đơn đã quét vào biên bản bàn giao (shipments tạo hôm nay, trừ hủy)
+    try:
+        scmin = (today - timedelta(days=2)).isoformat() + "T00:00:00+07:00"
+        for p in range(1, 20):
+            srows = fetch_json("/admin/shipments.json", limit=250, page=p,
+                               created_on_min=scmin).get("shipments", [])
+            if not srows:
+                break
+            for s in srows:
+                if _vn_date_of(s.get("created_on")) == today and s.get("delivery_status") != "cancelled":
+                    quet_bien_ban += 1
+            slast = _vn_date_of(srows[-1].get("created_on"))
+            if slast and slast < today - timedelta(days=2):
+                break
+    except Exception:
+        quet_bien_ban = None
+    funnel = {
+        "xac_nhan": xac_nhan, "soan": tot["dong_goi"], "video": None,  # video gắn ở app.py
+        "quet_bien_ban": quet_bien_ban, "ban_giao": tot["shipper_nhan"],
+        "huy": tot["huy"], "con_xot": tot["con_lai"],
+    }
     return {
         "date": today.strftime("%d/%m/%Y"),
         "by_carrier": rows,
         "totals": tot,
+        "funnel": funnel,
         "batches": hist["batches"],
         "tong_don_soan": hist["tong_don"],
         "tong_sp_soan": hist["tong_sp"],
