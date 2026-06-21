@@ -260,6 +260,8 @@ def report_html(rep, dv, now_str):
 
   <div class="kpis">{kpi_html}</div>
 
+  {vid_warn}
+
   <div class="sec">I. Số lượng đơn theo đơn vị vận chuyển</div>
   <table>
     <thead><tr><th class="l">Đơn vị vận chuyển</th><th>Đơn đóng gói</th><th>Đơn hủy</th>
@@ -290,7 +292,6 @@ def report_html(rep, dv, now_str):
     </div>
   </div>
   {vid_note}
-  {vid_warn}
 
   {huy_section}
 
