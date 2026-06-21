@@ -712,6 +712,7 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
                 ce(carrier(o))["huy"] += 1
                 if ff.get("packed_status") == "packed":
                     huy_total += 1
+                    ce(carrier(o))["dong_goi"] += 1  # hủy đã gói VẪN tính vào đóng gói (khớp NV)
                     huy_goi_orders.append(o)        # đã soạn → tính vào đợt soạn
                     huy_detail.append({
                         "tracking": ff.get("tracking_number") or o.get("name") or "?",
@@ -727,6 +728,9 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
     except Exception:
         pass
 
+    # Còn lại = đóng gói − hủy − shipper nhận (đơn đã gói chưa giao shipper) — khớp cách NV tính
+    for r in cr.values():
+        r["con_lai"] = max(0, r["dong_goi"] - r["huy"] - r["shipper_nhan"])
     # ĐVVC: dòng HỎA TỐC lên ĐẦU, còn lại theo số đóng gói giảm dần
     rows = sorted(cr.values(),
                   key=lambda x: (0 if "Hỏa tốc" in str(x["carrier"]) else 1, -x["dong_goi"]))
@@ -739,42 +743,22 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
     except Exception:
         nhap_kho = {"so_phieu": 0, "so_sp": 0, "by_source": {}, "cho_xu_ly": 0}
 
-    # ── PHỄU: xác nhận → đóng gói → video → quét biên bản (xuất kho) → ĐVVC đã nhận → hủy/còn xót ──
-    # TÁCH "quét biên bản" (shop xuất kho/issued) vs "ĐVVC đã nhận" (vận đơn đã rời pending) để
-    # cảnh báo khi NV bàn giao mà quên quét biên bản / hoặc ngược lại. (Endpoint biên bản 403 →
-    # 'quét biên bản' dùng issued; 'ĐVVC đã nhận' dùng delivery_status từ shipments.)
-    # Đã xác nhận = đơn TẠO VẬN ĐƠN hôm nay, GỒM CẢ đơn đã hủy (3 đơn hủy cũng được xác nhận/
-    # soạn/đóng gói/quay video trong ngày, chỉ hủy sau) → khớp tổng đợt soạn.
+    # ── PHỄU: xác nhận → soạn → video → quét biên bản → ĐVVC đã nhận → hủy / còn xót ──
+    # Đã xác nhận = đơn TẠO VẬN ĐƠN hôm nay, GỒM CẢ đơn đã hủy (3 đơn hủy cũng xác nhận/soạn/
+    # đóng gói/quay video trong ngày, chỉ hủy sau) → khớp tổng đợt soạn (89).
+    # "ĐVVC đã nhận" = "shipper thực nhận" = đã bàn giao (issued) = 86 (khớp số NV báo;
+    # KHÔNG dùng delivery_status vì NV tính shipper-thực-nhận = lúc bàn giao, không chờ ĐVVC quét).
     xac_nhan = sum(1 for o in open_orders if _vn_date_of(f0(o).get("shipment_created_on")) == today)
     xac_nhan += sum(1 for o in huy_goi_orders if _vn_date_of(f0(o).get("shipment_created_on")) == today)
-    dvvc_nhan = None   # ĐVVC đã thực nhận = shipments tạo hôm nay, delivery đã rời pending/cancelled
-    try:
-        scmin = (today - timedelta(days=2)).isoformat() + "T00:00:00+07:00"
-        n = 0
-        for p in range(1, 20):
-            srows = fetch_json("/admin/shipments.json", limit=250, page=p,
-                               created_on_min=scmin).get("shipments", [])
-            if not srows:
-                break
-            for s in srows:
-                if (_vn_date_of(s.get("created_on")) == today
-                        and s.get("delivery_status") in ("delivering", "delivered", "returning", "returned")):
-                    n += 1
-            slast = _vn_date_of(srows[-1].get("created_on"))
-            if slast and slast < today - timedelta(days=2):
-                break
-        dvvc_nhan = n
-    except Exception:
-        dvvc_nhan = None
     funnel = {
         "xac_nhan": xac_nhan,
         "soan": None,                            # đã in phiếu nhặt qua dashboard (picklog, gắn ở app.py)
-        "dong_goi": tot["dong_goi"],             # đóng gói còn hiệu lực (86)
-        "base": hist["tong_don"],                # đóng gói GỒM hủy = đợt soạn (89) — baseline lệch video
-        "video": None,                           # đóng gói (gồm hủy) có video (gắn ở app.py)
-        "quet_bien_ban": tot["shipper_nhan"],    # shop đã xuất kho / quét vào biên bản
-        "dvvc_nhan": dvvc_nhan,                  # ĐVVC đã tới lấy (delivery đã rời pending)
-        "huy": tot["huy"], "con_xot": tot["con_lai"],
+        "dong_goi": tot["dong_goi"],             # đóng gói (gồm hủy) = 89
+        "base": hist["tong_don"],                # đợt soạn (89) — baseline so lệch video
+        "video": None,                           # đóng gói có video (gắn ở app.py)
+        "quet_bien_ban": tot["shipper_nhan"],    # đã xuất kho / quét vào biên bản = 86
+        "dvvc_nhan": tot["shipper_nhan"],        # shipper thực nhận = đã bàn giao ĐVVC = 86
+        "huy": tot["huy"], "con_xot": tot["con_lai"],   # con_lai = đóng gói − hủy − shipper nhận = 0
     }
     return {
         "date": today.strftime("%d/%m/%Y"),
