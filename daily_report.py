@@ -42,10 +42,10 @@ _CSS = """
   .foot{margin-top:7px;text-align:center;font-size:9.5px;color:#9aa3af;border-top:1px solid var(--line);padding-top:4px;}
   .page2{page-break-before:always;}
   .kpis.k3{grid-template-columns:repeat(3,1fr);}
-  .kpis.kf{grid-template-columns:repeat(6,1fr);gap:5px;}
-  .kf .kpi{padding:4px 7px;text-align:center;}
-  .kf .kpi .l{font-size:9.5px;line-height:1.2;}
-  .kf .kpi .v{font-size:18px;}
+  .kpis.kf{grid-template-columns:repeat(7,1fr);gap:4px;}
+  .kf .kpi{padding:4px 6px;text-align:center;}
+  .kf .kpi .l{font-size:9px;line-height:1.2;}
+  .kf .kpi .v{font-size:17px;}
   .kpi.bad{border-color:#dc2626;background:#fdeeee;}
   .kpi .lech{font-size:8.5px;color:#dc2626;font-weight:800;margin-top:1px;}
   .warn{border:1px solid #e0a155;border-left:5px solid #d97706;background:#fff8ec;border-radius:6px;padding:6px 10px;margin:8px 0 9px;}
@@ -243,28 +243,37 @@ def report_html(rep, dv, now_str):
         f'<div class="v">{clip_kpi_v}</div>'
         f'<div class="l" style="margin-top:3px;font-weight:700">{clip_kpi_sub}</div></div>'
     )
-    # ── PHỄU 7 BƯỚC (KPI hàng đầu): đánh dấu ▼ chỗ LỆCH so với "đã soạn hàng" ──
+    # ── PHỄU (KPI hàng đầu): xác nhận → đóng gói → video → quét biên bản → ĐVVC nhận → hủy/xót ──
+    # ▼ LỆCH: thiếu video / quên quét biên bản / quên bàn giao ĐVVC (số không khớp).
     fn = rep.get("funnel") or {}
-    _soan = fn.get("soan") or 0
+    _dg = fn.get("dong_goi") or 0
+    _quet, _dvvc = fn.get("quet_bien_ban"), fn.get("dvvc_nhan")
+    _conxot = fn.get("con_xot") or 0
+    _video = fn.get("video")
 
-    def _fbox(icon, label, val, baseline=False, outcome=False, hot=False):
+    def _fbox(icon, label, val, lech=0, outcome=False, hot=False):
         disp = "—" if val is None else val
         cls, mark = "kpi", ""
         if hot and val:
             cls = "kpi hot"
-        if (not baseline and not outcome and isinstance(val, int) and _soan and val < _soan):
+        if lech and lech > 0:
             cls = "kpi bad"
-            mark = f'<div class="lech">▼ lệch {_soan - val}</div>'
+            mark = f'<div class="lech">▼ lệch {lech}</div>'
         return (f'<div class="{cls}"><div class="l">{icon} {label}</div>'
                 f'<div class="v">{disp}</div>{mark}</div>')
 
+    _lv = (_dg - _video) if (isinstance(_video, int) and _dg and _video < _dg) else 0
+    _lq = (_dg - _quet) if (isinstance(_quet, int) and _dg and _quet < _dg) else 0
+    # ĐVVC nhận > quét biên bản = ĐVVC đã lấy mà QUÊN QUÉT BIÊN BẢN (bất thường) → cảnh báo
+    _ld = (_dvvc - _quet) if (isinstance(_quet, int) and isinstance(_dvvc, int) and _dvvc > _quet) else 0
     kpi_html = "".join([
         _fbox("✅", "Đã xác nhận", fn.get("xac_nhan")),
-        _fbox("📦", "Đã soạn hàng", _soan, baseline=True),
-        _fbox("🎥", "Đã có video", fn.get("video")),
-        _fbox("🚚", "Bàn giao ĐVVC (biên bản)", fn.get("ban_giao")),
+        _fbox("📦", "Đã đóng gói", _dg),
+        _fbox("🎥", "Đã có video", _video, lech=_lv),
+        _fbox("📋", "Đã quét biên bản", _quet, lech=_lq),
+        _fbox("🚚", "ĐVVC đã nhận", _dvvc, lech=_ld),
         _fbox("❌", "Hủy hôm nay", fn.get("huy"), outcome=True, hot=True),
-        _fbox("⏳", "Còn xót lại", fn.get("con_xot"), outcome=True),
+        _fbox("⏳", "Còn xót lại", _conxot, outcome=True),
     ])
 
     page1 = f"""<div class="page">
@@ -281,6 +290,7 @@ def report_html(rep, dv, now_str):
   <div class="kpis kf">{kpi_html}</div>
 
   {vid_warn}
+  {vid_note}
 
   <div class="sec">I. Số lượng đơn theo đơn vị vận chuyển</div>
   <table>
@@ -297,25 +307,9 @@ def report_html(rep, dv, now_str):
   </table>
   {sec2_note}
 
-  <div class="two" style="margin-top:9px">
-    <div>
-      <div class="sec" style="margin-top:0">III. Đơn đóng gói — đã có video chưa?</div>
-      <table><tbody>{iii_rows}</tbody></table>
-    </div>
-    <div>
-      <div class="sec" style="margin-top:0">IV. Xuất kho hôm nay</div>
-      <table><tbody>
-        <tr><td class="l">📤 Đã giao ĐVVC (shipper nhận)</td><td class="num">{t["shipper_nhan"]}</td></tr>
-        <tr><td class="l">⏳ Còn lại chờ giao</td><td class="num">{t["con_lai"]}</td></tr>
-        <tr><td class="l">❌ Hủy đã gói (cần lấy lại)</td><td class="num">{rep["huy_da_goi"]}</td></tr>
-      </tbody></table>
-    </div>
-  </div>
-  {vid_note}
-
   {huy_section}
 
-  <div class="sec">V. Ghi chú / Sự cố trong ngày</div>
+  <div class="sec">III. Ghi chú / Sự cố trong ngày</div>
   <div class="note"><span style="color:#9aa3af;font-size:10px">(Ghi tay: đơn GHN còn lại, hỏa tốc tìm tài xế, đơn lỗi…)</span>
     <div class="lines"><div></div></div></div>
 
