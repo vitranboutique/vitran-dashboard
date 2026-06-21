@@ -806,6 +806,8 @@ if _page == PAGE_DAILY:
         _dvr = load_dohana_date(_iso) if dohana.configured() else None
         _inb = load_dohana_inbound_date(_iso) if dohana.configured() else None
         _enrich_daily(_rep, _dvr, _inb)
+        if picklog.configured() and isinstance(_rep.get("funnel"), dict):
+            _rep["funnel"]["soan"] = sum(r.get("so_don", 0) or 0 for r in picklog.read_date(_iso)) or None
         st.info(f"🗂️ Báo cáo ngày **{_pick[3:]}** — query lại từ Sapo + Dohana (số đã cố định). "
                 "Video chỉ còn cho ~vài ngày gần nhất; ngày quá cũ mục video có thể trống.")
         _nrep = f"{_pick[3:]} (xem lại)"
@@ -824,6 +826,8 @@ if _page == PAGE_DAILY:
     _dvr = load_dohana() if dohana.configured() else None
     _inb = load_dohana_inbound() if dohana.configured() else None
     _enrich_daily(_rep, _dvr, _inb)   # gắn clip khui hàng + đối chiếu video đóng gói
+    if picklog.configured() and isinstance(_rep.get("funnel"), dict):
+        _rep["funnel"]["soan"] = sum(r.get("so_don", 0) or 0 for r in picklog.read_today()) or None
     _nrep = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%H:%M %d/%m/%Y")
     components.html(daily_report.report_html(_rep, _dvr, _nrep), height=2480, scrolling=True)
     st.stop()

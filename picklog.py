@@ -65,8 +65,12 @@ def log_batch(payload: dict):
 
 def read_today() -> list:
     """Các lượt in phiếu HÔM NAY."""
+    return read_date(_today_vn())
+
+
+def read_date(day_iso: str) -> list:
+    """Các lượt in phiếu của 1 NGÀY (yyyy-mm-dd)."""
     data = _read_all()
     if not data:
         return []
-    today = _today_vn()
-    return [r for r in data.get("logs", []) if r.get("ngay") == today]
+    return [r for r in data.get("logs", []) if r.get("ngay") == day_iso]

@@ -764,8 +764,11 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
     except Exception:
         dvvc_nhan = None
     funnel = {
-        "xac_nhan": xac_nhan, "dong_goi": tot["dong_goi"], "video": None,  # video gắn ở app.py
-        "quet_bien_ban": tot["shipper_nhan"],   # shop đã xuất kho / quét vào biên bản
+        "xac_nhan": xac_nhan,
+        "soan": None,                            # đã in phiếu nhặt qua dashboard (picklog, gắn ở app.py)
+        "dong_goi": tot["dong_goi"],             # baseline cho "đã có video"
+        "video": None,                           # đóng gói có video (gắn ở app.py)
+        "quet_bien_ban": tot["shipper_nhan"],    # shop đã xuất kho / quét vào biên bản
         "dvvc_nhan": dvvc_nhan,                  # ĐVVC đã tới lấy (delivery đã rời pending)
         "huy": tot["huy"], "con_xot": tot["con_lai"],
     }

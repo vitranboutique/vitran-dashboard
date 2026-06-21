@@ -42,12 +42,14 @@ _CSS = """
   .foot{margin-top:7px;text-align:center;font-size:9.5px;color:#9aa3af;border-top:1px solid var(--line);padding-top:4px;}
   .page2{page-break-before:always;}
   .kpis.k3{grid-template-columns:repeat(3,1fr);}
-  .kpis.kf{grid-template-columns:repeat(7,1fr);gap:4px;}
-  .kf .kpi{padding:4px 6px;text-align:center;}
-  .kf .kpi .l{font-size:9px;line-height:1.2;}
-  .kf .kpi .v{font-size:17px;}
+  .kpis.kf5{grid-template-columns:repeat(5,1fr);gap:5px;margin:6px 0 5px;}
+  .kf5 .kpi{padding:4px 6px;text-align:center;}
+  .kf5 .kpi .l{font-size:9px;line-height:1.2;}
+  .kf5 .kpi .v{font-size:17px;}
   .kpi.bad{border-color:#dc2626;background:#fdeeee;}
   .kpi .lech{font-size:8.5px;color:#dc2626;font-weight:800;margin-top:1px;}
+  .kpi .tick{font-size:8px;color:#6b7280;margin-top:3px;border-top:1px dashed #c0c8d4;padding-top:2px;}
+  .kpi .cbox{display:inline-block;width:10px;height:10px;border:1.2px solid #6b7280;vertical-align:-1px;margin-right:2px;border-radius:2px;}
   .warn{border:1px solid #e0a155;border-left:5px solid #d97706;background:#fff8ec;border-radius:6px;padding:6px 10px;margin:8px 0 9px;}
   .warn .wh{font-size:11.5px;font-weight:900;color:#b45309;}
   .warn .wb{font-size:10px;color:#7c4a13;margin-top:2px;line-height:1.4;}
@@ -243,15 +245,15 @@ def report_html(rep, dv, now_str):
         f'<div class="v">{clip_kpi_v}</div>'
         f'<div class="l" style="margin-top:3px;font-weight:700">{clip_kpi_sub}</div></div>'
     )
-    # ── PHỄU (KPI hàng đầu): xác nhận → đóng gói → video → quét biên bản → ĐVVC nhận → hủy/xót ──
-    # ▼ LỆCH: thiếu video / quên quét biên bản / quên bàn giao ĐVVC (số không khớp).
+    # ── PHỄU: xác nhận → soạn(in phiếu) → video(đóng gói) → quét biên bản → ĐVVC nhận | hủy · còn xót ──
+    # 5 ô dòng 1 + 2 ô dòng 2. Mỗi ô có ô ☐ để NV KHO TICK xác nhận trước khi ký cuối.
+    # Soạn hàng = đã in phiếu nhặt (dashboard/picklog); Có video = đơn đóng gói đã quay video.
     fn = rep.get("funnel") or {}
     _dg = fn.get("dong_goi") or 0
-    _quet, _dvvc = fn.get("quet_bien_ban"), fn.get("dvvc_nhan")
-    _conxot = fn.get("con_xot") or 0
-    _video = fn.get("video")
+    _quet, _dvvc, _video, _soan = (fn.get("quet_bien_ban"), fn.get("dvvc_nhan"),
+                                   fn.get("video"), fn.get("soan"))
 
-    def _fbox(icon, label, val, lech=0, outcome=False, hot=False):
+    def _fbox(icon, label, val, lech=0, hot=False):
         disp = "—" if val is None else val
         cls, mark = "kpi", ""
         if hot and val:
@@ -260,21 +262,26 @@ def report_html(rep, dv, now_str):
             cls = "kpi bad"
             mark = f'<div class="lech">▼ lệch {lech}</div>'
         return (f'<div class="{cls}"><div class="l">{icon} {label}</div>'
-                f'<div class="v">{disp}</div>{mark}</div>')
+                f'<div class="v">{disp}</div>{mark}'
+                f'<div class="tick"><span class="cbox"></span> đã kiểm</div></div>')
 
     _lv = (_dg - _video) if (isinstance(_video, int) and _dg and _video < _dg) else 0
     _lq = (_dg - _quet) if (isinstance(_quet, int) and _dg and _quet < _dg) else 0
     # ĐVVC nhận > quét biên bản = ĐVVC đã lấy mà QUÊN QUÉT BIÊN BẢN (bất thường) → cảnh báo
     _ld = (_dvvc - _quet) if (isinstance(_quet, int) and isinstance(_dvvc, int) and _dvvc > _quet) else 0
-    kpi_html = "".join([
+    _row1 = "".join([
         _fbox("✅", "Đã xác nhận", fn.get("xac_nhan")),
-        _fbox("📦", "Đã đóng gói", _dg),
+        _fbox("🖨️", "Đã soạn hàng", _soan),
         _fbox("🎥", "Đã có video", _video, lech=_lv),
         _fbox("📋", "Đã quét biên bản", _quet, lech=_lq),
         _fbox("🚚", "ĐVVC đã nhận", _dvvc, lech=_ld),
-        _fbox("❌", "Hủy hôm nay", fn.get("huy"), outcome=True, hot=True),
-        _fbox("⏳", "Còn xót lại", _conxot, outcome=True),
     ])
+    _row2 = "".join([
+        _fbox("❌", "Hủy hôm nay", fn.get("huy"), hot=True),
+        _fbox("⏳", "Còn xót lại", fn.get("con_xot")),
+    ])
+    kpi_html = (f'<div class="kpis kf5">{_row1}</div>'
+                f'<div class="kpis kf5">{_row2}</div>')
 
     page1 = f"""<div class="page">
   <div class="hd">
@@ -287,7 +294,7 @@ def report_html(rep, dv, now_str):
   <div class="title">Báo cáo vận hành cuối ngày</div>
   <div class="title-sub">Phần 1 — Đơn giao đi · đóng gói · soạn hàng · video (dữ liệu Sapo, giờ VN)</div>
 
-  <div class="kpis kf">{kpi_html}</div>
+  {kpi_html}
 
   {vid_warn}
   {vid_note}
