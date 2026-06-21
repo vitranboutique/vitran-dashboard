@@ -179,7 +179,7 @@ def report_html(rep, dv, now_str):
     _huy = rep.get("huy_detail") or []
     _huy_sp = sum(d.get("sp", 0) for d in _huy)
     huy_section = (
-        f'<div class="sec" style="background:#7c2d12">B. ❌ Đơn hủy đã đóng gói — CẦN LẤY LẠI HÀNG '
+        f'<div class="sec" style="background:#7c2d12">❌ Đơn hủy đã đóng gói — CẦN LẤY LẠI HÀNG '
         f'({len(_huy)} đơn · {_huy_sp} SP)</div>'
         '<table><thead><tr><th>#</th><th class="l">Mã vận đơn</th><th>ĐVVC</th>'
         '<th class="l">Sản phẩm (SKU × SL)</th><th>SL lấy lại</th></tr></thead>'
@@ -292,6 +292,8 @@ def report_html(rep, dv, now_str):
   {vid_note}
   {vid_warn}
 
+  {huy_section}
+
   <div class="sec">V. Ghi chú / Sự cố trong ngày</div>
   <div class="note"><span style="color:#9aa3af;font-size:10px">(Ghi tay: đơn GHN còn lại, hỏa tốc tìm tài xế, đơn lỗi…)</span>
     <div class="lines"><div></div></div></div>
@@ -323,9 +325,7 @@ def report_html(rep, dv, now_str):
   </table>
   {clip_note}
 
-  {huy_section}
-
-  <div class="sec">C. Ghi chú đơn hoàn / khiếu nại</div>
+  <div class="sec">B. Ghi chú đơn hoàn / khiếu nại</div>
   <div class="note"><span style="color:#9aa3af;font-size:10px">(Ghi tay: tình trạng hàng hoàn, đơn cần khiếu nại sàn, thiếu/sai SP…)</span>
     <div class="lines"><div></div></div></div>
 
@@ -335,7 +335,7 @@ def report_html(rep, dv, now_str):
     <div><div class="role">Quản lý</div><div class="space"></div><div class="hint">(Ký, ghi rõ họ tên)</div></div>
   </div>
 
-  <div class="foot">VITRAN BOUTIQUE · Trang 2/2 — Đơn hoàn trả & hủy cần lấy lại · {_e(rep["date"])}</div>
+  <div class="foot">VITRAN BOUTIQUE · Trang 2/2 — Đơn hàng hoàn trả · {_e(rep["date"])}</div>
 </div>"""
 
     body = page1 + page2
