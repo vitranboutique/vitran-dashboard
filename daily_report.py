@@ -73,18 +73,48 @@ def _carrier_rows(rows, tot):
         _cl = r["con_lai"]
         _clc = (f'<td class="num" style="color:#dc2626;font-weight:800">{_cl}</td>'
                 if _cl else '<td class="num"></td>')
+        # Đã giao khách — quan trọng với hỏa tốc: shipper nhận > giao khách = đơn đang giao / BỊ TRẢ VỀ
+        _gk = r.get("giao_khach", 0)
+        _gk_warn = hot and r["shipper_nhan"] > _gk
+        _gkc = (f'<td class="num" style="color:#c2410c;font-weight:800">{_gk}</td>'
+                if _gk_warn else f'<td class="num">{_gk or ""}</td>')
         body += (f'<tr{cls}><td class="l">{"⚡ " if hot else ""}{_e(str(r["carrier"]))}</td>'
                  f'<td class="num">{r["dong_goi"]}</td><td class="num">{r["huy"] or ""}</td>'
                  f'<td class="num">{r.get("xuat_kho", 0)}</td>'
-                 f'<td class="num">{r["shipper_nhan"]}</td>' + _clc + '</tr>')
-    body = body or '<tr><td class="l" colspan="6">—</td></tr>'
+                 f'<td class="num">{r["shipper_nhan"]}</td>' + _gkc + _clc + '</tr>')
+    body = body or '<tr><td class="l" colspan="7">—</td></tr>'
     _tcl = tot["con_lai"]
     body += (f'<tr class="total"><td class="l">TỔNG CỘNG</td>'
              f'<td class="num">{tot["dong_goi"]}</td><td class="num accent">{tot["huy"] or ""}</td>'
              f'<td class="num">{tot.get("xuat_kho", 0)}</td>'
              f'<td class="num">{tot["shipper_nhan"]}</td>'
+             f'<td class="num">{tot.get("giao_khach", 0) or ""}</td>'
              f'<td class="num{" accent" if _tcl else ""}">{_tcl or ""}</td></tr>')
     return body
+
+
+def _carrier_lech_notes(rows):
+    """Tự sinh LÝ DO chênh lệch khi các cột cộng/trừ không khớp — để NV biết đường kiểm tra."""
+    notes = []
+    for r in rows:
+        c = str(r["carrier"])
+        hot = "Hỏa tốc" in c
+        dg, x = r.get("dong_goi", 0), r.get("xuat_kho", 0)
+        s, g, hu = r.get("shipper_nhan", 0), r.get("giao_khach", 0), r.get("huy", 0)
+        if x > s:   # xuất kho mà shipper chưa xác nhận = NGHI MẤT ĐƠN
+            notes.append(f'⚠️ <b>{_e(c)}</b>: đã xuất kho <b>{x}</b> đơn nhưng ĐVVC mới xác nhận lấy '
+                         f'<b>{s}</b> → <b style="color:#dc2626">thiếu {x - s} đơn</b> (shipper chưa quét '
+                         'biên bản hoặc chưa lấy). Đối chiếu biên bản bàn giao ngay — tránh MẤT ĐƠN.')
+        if hot and s > g:   # hỏa tốc: shipper nhận nhưng chưa tới khách = đang giao / bị trả về
+            notes.append(f'⚠️ <b>{_e(c)}</b>: shipper đã nhận <b>{s}</b> nhưng mới giao tới khách '
+                         f'<b>{g}</b> → <b style="color:#c2410c">{s - g} đơn chưa tới khách</b> '
+                         '(đang giao hoặc GIAO THẤT BẠI bị trả về). Kiểm tra tình trạng giao từng đơn.')
+        # đóng gói (trừ hủy đã gói) nhiều hơn xuất kho = còn đơn đã gói chưa xuất kho
+        if dg - hu > x:
+            notes.append(f'⚠️ <b>{_e(c)}</b>: đóng gói <b>{dg}</b> (gồm {hu} hủy) nhưng mới xuất kho '
+                         f'<b>{x}</b> → còn <b>{dg - hu - x} đơn đã gói CHƯA xuất kho</b>. '
+                         'Kiểm tra xem có sót đơn chưa bàn giao ĐVVC không.')
+    return notes
 
 
 def _huy_rows(detail):
@@ -196,11 +226,20 @@ def report_html(rep, dv, now_str):
     _tcl = (rep.get("totals") or {}).get("con_lai", 0)
     sec1_note = ('<div style="font-size:10px;color:#6b7280;margin:5px 0 0;line-height:1.5">'
                  + (f'ℹ️ Đóng gói đã gồm <b>{_exp_done["dong_goi"]} đơn hỏa tốc</b> (dòng đầu). ' if _exp_done else 'ℹ️ ')
-                 + '<b>Đã xuất kho</b> = shop đã bàn giao; <b>Shipper thực nhận</b> = ĐVVC đã XÁC NHẬN lấy '
-                 '(theo trạng thái vận đơn). '
-                 + (f'<b style="color:#dc2626">⚠️ Chưa x.nhận = {_tcl}</b>: đã xuất kho nhưng shipper CHƯA xác '
-                    'nhận — KIỂM TRA tránh mất đơn.' if _tcl else '“Chưa x.nhận” = 0 → shipper đã nhận đủ.')
+                 + '<b>Đã xuất kho</b> = số ĐƠN đã bàn giao khỏi kho (= mục “Xuất kho đơn hàng” trong '
+                   '<b>Báo cáo sổ kho</b>, tính theo đơn — báo cáo sổ kho đếm theo SỐ LƯỢNG sản phẩm). '
+                   '<b>Shipper thực nhận</b> = ĐVVC đã XÁC NHẬN lấy; '
+                   '<b>Đã giao khách</b> = đã giao tới tay khách (đơn hỏa tốc nên giao trong ngày). '
+                   '<b>Chưa x.nhận</b> = Đã xuất kho − Shipper thực nhận.'
                  + '</div>')
+    # Auto-sinh lý do chênh lệch các cột để NV kiểm tra (yêu cầu user)
+    _lech = _carrier_lech_notes(rep.get("by_carrier", []))
+    if _lech:
+        lech_html = ('<div class="warn"><div class="wh">⚠️ CHÊNH LỆCH GIỮA CÁC CỘT — NHÂN VIÊN KIỂM TRA</div>'
+                     + ''.join(f'<div class="wb">• {n}</div>' for n in _lech) + '</div>')
+    else:
+        lech_html = ('<div style="font-size:10px;color:#15803d;margin:6px 0 0;font-weight:700">'
+                     '✅ Các cột khớp nhau (xuất kho = shipper nhận = giao khách) — không có chênh lệch.</div>')
     # Đợt soạn GỒM cả đơn đã hủy đã gói (đã soạn rồi mới hủy)
     _soan = rep.get("tong_don_soan", 0)
     _hdg = rep.get("huy_da_goi", 0)
@@ -329,10 +368,11 @@ def report_html(rep, dv, now_str):
   <div class="sec">I. Số lượng đơn theo đơn vị vận chuyển</div>
   <table>
     <thead><tr><th class="l">Đơn vị vận chuyển</th><th>Đóng gói</th><th>Hủy</th>
-      <th>Đã xuất kho</th><th>Shipper thực nhận</th><th>Chưa x.nhận</th></tr></thead>
+      <th>Đã xuất kho</th><th>Shipper thực nhận</th><th>Đã giao khách</th><th>Chưa x.nhận</th></tr></thead>
     <tbody>{_carrier_rows(rep["by_carrier"], t)}</tbody>
   </table>
   {sec1_note}
+  {lech_html}
 
   <div class="sec">II. Số lượng hàng theo đợt soạn</div>
   <table>
