@@ -175,9 +175,10 @@ def _week_table_html(wk):
     """Bảng tổng hợp 7 ngày qua (đóng gói/hủy/soạn/shipper/giao khách), tô dòng hôm nay."""
     cols = [("ngay", "Ngày"), ("thu", "Thứ"), ("dong_goi", "Đóng gói"), ("huy", "Hủy"),
             ("soan", "Soạn"), ("shipper_nhan", "Shipper nhận"), ("giao_khach", "Giao khách")]
+    _bd = "border:1px solid #aab2c2;"
     head = "".join(
         f'<th style="text-align:{"left" if k in ("ngay", "thu") else "right"};'
-        f'padding:6px 10px;border-bottom:2px solid #16233f;color:#16233f">{lbl}</th>'
+        f'padding:6px 10px;{_bd}background:#dfe4ec;color:#16233f">{lbl}</th>'
         for k, lbl in cols)
     body = ""
     for r in wk:
@@ -189,16 +190,17 @@ def _week_table_html(wk):
             tag = (' <span style="color:#E24B4A;font-size:11px">• đang chạy</span>'
                    if hot and k == "ngay" else "")
             wt = "font-weight:700;" if hot else ""
-            cells += (f'<td style="text-align:{al};padding:5px 10px;{wt}'
-                      f'border-bottom:1px solid #eee">{r.get(k, "")}{tag}</td>')
+            cells += (f'<td style="text-align:{al};padding:5px 10px;{wt}{_bd}">'
+                      f'{r.get(k, "")}{tag}</td>')
         body += f'<tr style="{bg}">{cells}</tr>'
     keys = ("dong_goi", "huy", "soan", "shipper_nhan", "giao_khach")
     tot = {k: sum(r.get(k, 0) for r in wk) for k in keys}
-    totc = ('<td colspan="2" style="text-align:left;padding:6px 10px">TỔNG 7 ngày</td>'
-            + "".join(f'<td style="text-align:right;padding:6px 10px">{tot[k]}</td>' for k in keys))
+    totc = (f'<td colspan="2" style="text-align:left;padding:6px 10px;{_bd}">TỔNG 7 ngày</td>'
+            + "".join(f'<td style="text-align:right;padding:6px 10px;{_bd}">{tot[k]}</td>'
+                      for k in keys))
     return (f'<table style="width:100%;border-collapse:collapse;font-size:13px">'
             f'<thead><tr>{head}</tr></thead><tbody>{body}'
-            f'<tr style="font-weight:800;border-top:2px solid #16233f;color:#16233f">{totc}</tr>'
+            f'<tr style="font-weight:800;background:#eef1f6;color:#16233f">{totc}</tr>'
             f'</tbody></table>')
 
 

@@ -6,51 +6,52 @@ import json
 from html import escape as _e
 
 _CSS = """
-  --navy:#16233f; --accent:#E24B4A; --line:#d8dde6; --soft:#f4f6f8; --ink:#1f2733;
+  --navy:#16233f; --accent:#E24B4A; --line:#cfd6e0; --grid:#8c98ab; --soft:#eef1f6; --ink:#1f2733;
   body{font-family:'Segoe UI',system-ui,-apple-system,Roboto,Arial,sans-serif;margin:0;background:#e9edf2;color:var(--ink);}
-  .toolbar{position:sticky;top:0;background:#e9edf2;padding:10px;text-align:center;z-index:5;}
-  .printbtn{background:var(--accent);color:#fff;border:0;border-radius:10px;padding:11px 22px;font-size:15px;font-weight:800;cursor:pointer;box-shadow:0 2px 8px rgba(226,75,74,.4);}
-  .page{width:210mm;min-height:296mm;margin:0 auto 16px;background:#fff;padding:14mm 14mm 12mm;box-sizing:border-box;box-shadow:0 2px 14px rgba(0,0,0,.12);}
-  .hd{display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid var(--navy);padding-bottom:10px;}
-  .hd .brand{font-size:22px;font-weight:900;color:var(--navy);letter-spacing:.5px;}
-  .hd .sub{font-size:12px;color:#6b7280;margin-top:2px;}
-  .hd .meta{text-align:right;font-size:12px;color:#374151;}
-  .hd .meta b{font-size:15px;color:var(--accent);}
-  .title{text-align:center;font-size:18px;font-weight:900;color:var(--navy);margin:14px 0 4px;text-transform:uppercase;letter-spacing:.5px;}
-  .title-sub{text-align:center;font-size:11px;color:#6b7280;margin-bottom:12px;}
-  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0 16px;}
-  .kpi{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--soft);}
-  .kpi .l{font-size:11px;color:#6b7280;font-weight:600;}
-  .kpi .v{font-size:24px;font-weight:900;color:var(--navy);line-height:1.1;}
+  .toolbar{position:sticky;top:0;background:#e9edf2;padding:8px;text-align:center;z-index:5;}
+  .printbtn{background:var(--accent);color:#fff;border:0;border-radius:9px;padding:10px 20px;font-size:14px;font-weight:800;cursor:pointer;box-shadow:0 2px 8px rgba(226,75,74,.4);}
+  .page{width:210mm;min-height:295mm;margin:0 auto 14px;background:#fff;padding:9mm 11mm 8mm;box-sizing:border-box;box-shadow:0 2px 14px rgba(0,0,0,.12);}
+  .hd{display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid var(--navy);padding-bottom:6px;}
+  .hd .brand{font-size:18px;font-weight:900;color:var(--navy);letter-spacing:.5px;}
+  .hd .sub{font-size:10.5px;color:#6b7280;margin-top:1px;}
+  .hd .meta{text-align:right;font-size:10.5px;color:#374151;}
+  .hd .meta b{font-size:13px;color:var(--accent);}
+  .title{text-align:center;font-size:15px;font-weight:900;color:var(--navy);margin:8px 0 2px;text-transform:uppercase;letter-spacing:.5px;}
+  .title-sub{text-align:center;font-size:10px;color:#6b7280;margin-bottom:7px;}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:6px 0 9px;}
+  .kpi{border:1px solid var(--grid);border-radius:7px;padding:5px 9px;background:var(--soft);}
+  .kpi .l{font-size:10px;color:#6b7280;font-weight:600;}
+  .kpi .v{font-size:19px;font-weight:900;color:var(--navy);line-height:1.15;}
   .kpi.hot .v{color:var(--accent);}
-  .sec{font-size:13px;font-weight:800;color:#fff;background:var(--navy);padding:5px 10px;border-radius:6px;margin:16px 0 8px;}
-  table{width:100%;border-collapse:collapse;font-size:12px;}
-  th,td{border:1px solid var(--line);padding:5px 8px;text-align:center;}
-  th{background:var(--soft);font-weight:800;color:#374151;}
+  .sec{font-size:11.5px;font-weight:800;color:#fff;background:var(--navy);padding:3px 8px;border-radius:4px;margin:9px 0 4px;}
+  table{width:100%;border-collapse:collapse;font-size:11px;}
+  th,td{border:1px solid var(--grid);padding:3px 7px;text-align:center;}
+  th{background:#dfe4ec;font-weight:800;color:#2c3a52;}
   td.l,th.l{text-align:left;}
   td.num{text-align:right;font-variant-numeric:tabular-nums;}
-  tr.total td{background:#fff7ed;font-weight:900;color:var(--navy);}
+  tr.total td{background:#fff2dd;font-weight:900;color:var(--navy);}
   tr.total td.accent{color:var(--accent);}
-  .two{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
-  .note{border:1px solid var(--line);border-radius:8px;min-height:64px;padding:8px 10px;font-size:12px;color:#374151;}
-  .note .lines{margin-top:6px;}
-  .note .lines div{border-bottom:1px dashed #cbd2dc;height:20px;}
-  .sign{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:22px;text-align:center;font-size:12px;}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:11px;}
+  .note{border:1px solid var(--grid);border-radius:5px;min-height:30px;padding:5px 8px;font-size:10.5px;color:#374151;}
+  .note .lines{margin-top:4px;}
+  .note .lines div{border-bottom:1px dashed #c0c8d4;height:15px;}
+  .sign{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:12px;text-align:center;font-size:11px;}
   .sign .role{font-weight:800;color:var(--navy);}
-  .sign .hint{color:#9aa3af;font-size:10px;}
-  .sign .space{height:54px;}
-  .foot{margin-top:14px;text-align:center;font-size:10px;color:#9aa3af;border-top:1px solid var(--line);padding-top:6px;}
+  .sign .hint{color:#9aa3af;font-size:9.5px;}
+  .sign .space{height:42px;}
+  .foot{margin-top:7px;text-align:center;font-size:9.5px;color:#9aa3af;border-top:1px solid var(--line);padding-top:4px;}
   .page2{page-break-before:always;}
   .kpis.k3{grid-template-columns:repeat(3,1fr);}
-  .warn{border:1px solid #f0b86e;border-left:5px solid #d97706;background:#fff8ec;border-radius:8px;padding:10px 12px;margin:12px 0 14px;}
-  .warn .wh{font-size:13px;font-weight:900;color:#b45309;}
-  .warn .wb{font-size:11px;color:#7c4a13;margin-top:3px;line-height:1.5;}
-  .warn .wc{font-size:12px;font-weight:900;color:#b45309;margin-top:5px;letter-spacing:.3px;}
+  .warn{border:1px solid #e0a155;border-left:5px solid #d97706;background:#fff8ec;border-radius:6px;padding:6px 10px;margin:8px 0 9px;}
+  .warn .wh{font-size:11.5px;font-weight:900;color:#b45309;}
+  .warn .wb{font-size:10px;color:#7c4a13;margin-top:2px;line-height:1.4;}
+  .warn .wc{font-size:11px;font-weight:900;color:#b45309;margin-top:3px;letter-spacing:.3px;}
   .sign.s2{grid-template-columns:repeat(2,1fr);max-width:70%;margin-left:auto;margin-right:auto;}
   @page{size:A4 portrait;margin:0;}
   @media print{
     body{background:#fff;} .toolbar{display:none;}
     .page{box-shadow:none;margin:0;width:auto;min-height:auto;}
+    table,tr,td,th{page-break-inside:avoid;}
     *{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   }
 """
@@ -178,7 +179,7 @@ def report_html(rep, dv, now_str):
     _huy = rep.get("huy_detail") or []
     _huy_sp = sum(d.get("sp", 0) for d in _huy)
     huy_section = (
-        f'<div class="sec" style="background:#7c2d12">❌ Đơn hủy đã đóng gói — CẦN LẤY LẠI HÀNG '
+        f'<div class="sec" style="background:#7c2d12">B. ❌ Đơn hủy đã đóng gói — CẦN LẤY LẠI HÀNG '
         f'({len(_huy)} đơn · {_huy_sp} SP)</div>'
         '<table><thead><tr><th>#</th><th class="l">Mã vận đơn</th><th>ĐVVC</th>'
         '<th class="l">Sản phẩm (SKU × SL)</th><th>SL lấy lại</th></tr></thead>'
@@ -274,7 +275,7 @@ def report_html(rep, dv, now_str):
   </table>
   {sec2_note}
 
-  <div class="two" style="margin-top:16px">
+  <div class="two" style="margin-top:9px">
     <div>
       <div class="sec" style="margin-top:0">III. Đơn đóng gói — đã có video chưa?</div>
       <table><tbody>{iii_rows}</tbody></table>
@@ -291,19 +292,11 @@ def report_html(rep, dv, now_str):
   {vid_note}
   {vid_warn}
 
-  {huy_section}
-
   <div class="sec">V. Ghi chú / Sự cố trong ngày</div>
-  <div class="note"><span style="color:#9aa3af;font-size:11px">(Ghi tay: đơn GHN còn lại, hỏa tốc tìm tài xế, đơn lỗi…)</span>
-    <div class="lines"><div></div><div></div></div></div>
+  <div class="note"><span style="color:#9aa3af;font-size:10px">(Ghi tay: đơn GHN còn lại, hỏa tốc tìm tài xế, đơn lỗi…)</span>
+    <div class="lines"><div></div></div></div>
 
-  <div class="sign">
-    <div><div class="role">NV soạn hàng</div><div class="space"></div><div class="hint">(Ký, ghi rõ họ tên)</div></div>
-    <div><div class="role">NV kho</div><div class="space"></div><div class="hint">(Ký, ghi rõ họ tên)</div></div>
-    <div><div class="role">Quản lý</div><div class="space"></div><div class="hint">(Ký, ghi rõ họ tên)</div></div>
-  </div>
-
-  <div class="foot">VITRAN BOUTIQUE · Trang 1/2 — Vận hành đơn giao đi · {_e(rep["date"])}</div>
+  <div class="foot">VITRAN BOUTIQUE · Trang 1/2 — Vận hành đơn giao đi · (ký xác nhận ở mặt sau) · {_e(rep["date"])}</div>
 </div>"""
 
     page2 = f"""<div class="page page2">
@@ -330,16 +323,19 @@ def report_html(rep, dv, now_str):
   </table>
   {clip_note}
 
-  <div class="sec">B. Ghi chú đơn hoàn / khiếu nại</div>
-  <div class="note"><span style="color:#9aa3af;font-size:11px">(Ghi tay: tình trạng hàng hoàn, đơn cần khiếu nại sàn, thiếu/sai SP…)</span>
-    <div class="lines"><div></div><div></div></div></div>
+  {huy_section}
 
-  <div class="sign s2">
-    <div><div class="role">NV kho nhận hàng hoàn</div><div class="space"></div><div class="hint">(Ký, ghi rõ họ tên)</div></div>
+  <div class="sec">C. Ghi chú đơn hoàn / khiếu nại</div>
+  <div class="note"><span style="color:#9aa3af;font-size:10px">(Ghi tay: tình trạng hàng hoàn, đơn cần khiếu nại sàn, thiếu/sai SP…)</span>
+    <div class="lines"><div></div></div></div>
+
+  <div class="sign">
+    <div><div class="role">NV soạn hàng</div><div class="space"></div><div class="hint">(Ký, ghi rõ họ tên)</div></div>
+    <div><div class="role">NV kho</div><div class="space"></div><div class="hint">(Ký, ghi rõ họ tên)</div></div>
     <div><div class="role">Quản lý</div><div class="space"></div><div class="hint">(Ký, ghi rõ họ tên)</div></div>
   </div>
 
-  <div class="foot">VITRAN BOUTIQUE · Trang 2/2 — Đơn hàng hoàn trả · {_e(rep["date"])}</div>
+  <div class="foot">VITRAN BOUTIQUE · Trang 2/2 — Đơn hoàn trả & hủy cần lấy lại · {_e(rep["date"])}</div>
 </div>"""
 
     body = page1 + page2
