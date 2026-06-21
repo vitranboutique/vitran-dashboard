@@ -19,6 +19,7 @@ import sapo_logic as L
 import picklog
 import dohana
 import daily_report
+import report_store
 from sapo_client import SapoAuthError, build_session, credential_present, make_fetch_json
 from picking_render import picking_html
 
@@ -355,6 +356,11 @@ def load_daily_report():
     return L.get_daily_report(make_fetch_json(build_session()))
 
 
+@st.cache_data(ttl=120, show_spinner=False)
+def load_report_dates():
+    return report_store.list_dates()
+
+
 @st.cache_data(ttl=180, show_spinner=False)
 def load_alerts():
     return L.get_alerts(make_fetch_json(build_session()))
@@ -686,6 +692,26 @@ if _page == PAGE_DAILY:
     if not credential_present():
         st.warning("⚠️ Cần kết nối Sapo (API LIVE).")
         st.stop()
+
+    # Chọn ngày xem: Hôm nay (trực tiếp) + lịch sử đã lưu (tối đa 30 ngày)
+    _saved = load_report_dates() if report_store.configured() else []
+    _disp = {datetime.strptime(d, "%Y-%m-%d").strftime("%d/%m/%Y"): d for d in _saved}
+    _LIVE = "📅 Hôm nay (trực tiếp)"
+    _pick = st.selectbox("Xem báo cáo ngày", [_LIVE] + [f"🗂️ {k}" for k in _disp])
+
+    # ---- Xem báo cáo ĐÃ LƯU (lịch sử) ----
+    if _pick != _LIVE:
+        _iso = _disp[_pick[3:]]
+        _snap = report_store.load_report(_iso)
+        if not _snap:
+            st.error("❌ Không đọc được báo cáo đã lưu.")
+            st.stop()
+        st.info(f"🗂️ Báo cáo đã lưu ngày **{_pick[3:]}** — chốt lúc {_snap.get('now', '')}.")
+        components.html(daily_report.report_html(_snap["rep"], _snap.get("dv"), _snap.get("now", "")),
+                        height=2480, scrolling=True)
+        st.stop()
+
+    # ---- Hôm nay (trực tiếp) ----
     if st.button("🔄 Tải lại số liệu"):
         st.cache_data.clear()
         st.rerun()
@@ -736,6 +762,29 @@ if _page == PAGE_DAILY:
     else:
         _rep["video_recon"] = {"available": False}
     _nrep = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%H:%M %d/%m/%Y")
+
+    # ---- LƯU LỊCH SỬ BÁO CÁO (giữ 30 ngày) ----
+    if report_store.configured():
+        _tiso = report_store.today_iso()
+        _c1, _c2 = st.columns([1, 2])
+        if _c1.button("💾 Lưu báo cáo hôm nay (chốt số cuối ngày)"):
+            _ok, _msg = report_store.save_report(_tiso, _rep, _dvr, _nrep)
+            if _ok:
+                st.session_state["_rpt_saved_date"] = _tiso
+                load_report_dates.clear()
+            (st.success if _ok else st.error)(_msg)
+        # Tự lưu 1 lần mỗi phiên (chốt số liệu mới nhất mỗi khi mở xem)
+        if st.session_state.get("_rpt_saved_date") != _tiso:
+            _ok, _ = report_store.save_report(_tiso, _rep, _dvr, _nrep)
+            if _ok:
+                st.session_state["_rpt_saved_date"] = _tiso
+                load_report_dates.clear()
+        _c2.caption(f"📦 Đã lưu **{len(_saved)}** ngày (giữ tối đa 30). Tự lưu khi mở; "
+                    "cuối ngày bấm **Lưu** để chốt số cuối cùng.")
+    else:
+        st.info("💡 Thêm khối `[report_store]` (url jsonblob) vào **Secrets** để tự lưu & xem lại "
+                "báo cáo 30 ngày gần nhất.")
+
     components.html(daily_report.report_html(_rep, _dvr, _nrep), height=2480, scrolling=True)
     st.stop()
 
