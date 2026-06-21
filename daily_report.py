@@ -249,7 +249,8 @@ def report_html(rep, dv, now_str):
     # 5 ô dòng 1 + 2 ô dòng 2. Mỗi ô có ô ☐ để NV KHO TICK xác nhận trước khi ký cuối.
     # Soạn hàng = đã in phiếu nhặt (dashboard/picklog); Có video = đơn đóng gói đã quay video.
     fn = rep.get("funnel") or {}
-    _dg = fn.get("dong_goi") or 0
+    _base = fn.get("base") or fn.get("dong_goi") or 0   # đóng gói GỒM hủy (89) = chuẩn so lệch
+    _huy = fn.get("huy") or 0
     _quet, _dvvc, _video, _soan = (fn.get("quet_bien_ban"), fn.get("dvvc_nhan"),
                                    fn.get("video"), fn.get("soan"))
 
@@ -265,8 +266,9 @@ def report_html(rep, dv, now_str):
         return (f'<div class="{cls}"><div class="l">{icon} {label}</div>'
                 f'<div class="v">{disp}</div>{mark}{tk}</div>')
 
-    _lv = (_dg - _video) if (isinstance(_video, int) and _dg and _video < _dg) else 0
-    _lq = (_dg - _quet) if (isinstance(_quet, int) and _dg and _quet < _dg) else 0
+    # Thiếu video = đóng gói (gồm hủy) chưa quay. Quét biên bản nên = đóng gói − hủy (hủy không xuất).
+    _lv = max(0, _base - _video) if (isinstance(_video, int) and _base) else 0
+    _lq = max(0, (_base - _huy) - _quet) if (isinstance(_quet, int) and _base) else 0
     # ĐVVC nhận > quét biên bản = ĐVVC đã lấy mà QUÊN QUÉT BIÊN BẢN (bất thường) → cảnh báo
     _ld = (_dvvc - _quet) if (isinstance(_quet, int) and isinstance(_dvvc, int) and _dvvc > _quet) else 0
     _row1 = "".join([

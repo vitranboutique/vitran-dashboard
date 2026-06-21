@@ -229,18 +229,19 @@ def _enrich_daily(rep, dvr, inb):
         hgc = rep.get("huy_goi_codes") or set()
         dgo = rep.get("dong_goi_order_codes") or []
         owv = sum(1 for d in dgo if any(c in vset for c in d.get("codes", [])))
+        _mcanc = sum(1 for c in vset if c not in dgc and c in hgc)
         missing = [d.get("track") for d in dgo
                    if not any(c in vset for c in d.get("codes", []))]
         rep["video_recon"] = {
             "available": True, "total": dvr.get("total", 0),
-            "match_open": sum(1 for c in vset if c in dgc),
-            "match_canc": sum(1 for c in vset if c not in dgc and c in hgc),
+            "match_open": sum(1 for c in vset if c in dgc), "match_canc": _mcanc,
             "done_express": sum(1 for c in vset if c not in dgc and c not in hgc),
             "dup": dvr.get("dup", {}), "open_with_video": owv,
             "missing_video": len(missing), "missing_codes": missing,
         }
         if isinstance(rep.get("funnel"), dict):
-            rep["funnel"]["video"] = owv
+            # Đã có video = đóng gói còn hiệu lực có video + đơn HỦY đã gói có video (gồm cả hủy)
+            rep["funnel"]["video"] = owv + _mcanc
     else:
         rep["video_recon"] = {"available": False}
 

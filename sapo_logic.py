@@ -743,7 +743,10 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
     # TÁCH "quét biên bản" (shop xuất kho/issued) vs "ĐVVC đã nhận" (vận đơn đã rời pending) để
     # cảnh báo khi NV bàn giao mà quên quét biên bản / hoặc ngược lại. (Endpoint biên bản 403 →
     # 'quét biên bản' dùng issued; 'ĐVVC đã nhận' dùng delivery_status từ shipments.)
+    # Đã xác nhận = đơn TẠO VẬN ĐƠN hôm nay, GỒM CẢ đơn đã hủy (3 đơn hủy cũng được xác nhận/
+    # soạn/đóng gói/quay video trong ngày, chỉ hủy sau) → khớp tổng đợt soạn.
     xac_nhan = sum(1 for o in open_orders if _vn_date_of(f0(o).get("shipment_created_on")) == today)
+    xac_nhan += sum(1 for o in huy_goi_orders if _vn_date_of(f0(o).get("shipment_created_on")) == today)
     dvvc_nhan = None   # ĐVVC đã thực nhận = shipments tạo hôm nay, delivery đã rời pending/cancelled
     try:
         scmin = (today - timedelta(days=2)).isoformat() + "T00:00:00+07:00"
@@ -766,8 +769,9 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
     funnel = {
         "xac_nhan": xac_nhan,
         "soan": None,                            # đã in phiếu nhặt qua dashboard (picklog, gắn ở app.py)
-        "dong_goi": tot["dong_goi"],             # baseline cho "đã có video"
-        "video": None,                           # đóng gói có video (gắn ở app.py)
+        "dong_goi": tot["dong_goi"],             # đóng gói còn hiệu lực (86)
+        "base": hist["tong_don"],                # đóng gói GỒM hủy = đợt soạn (89) — baseline lệch video
+        "video": None,                           # đóng gói (gồm hủy) có video (gắn ở app.py)
         "quet_bien_ban": tot["shipper_nhan"],    # shop đã xuất kho / quét vào biên bản
         "dvvc_nhan": dvvc_nhan,                  # ĐVVC đã tới lấy (delivery đã rời pending)
         "huy": tot["huy"], "con_xot": tot["con_lai"],
