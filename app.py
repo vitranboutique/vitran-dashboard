@@ -202,6 +202,45 @@ def _week_table_html(wk):
             f'</tbody></table>')
 
 
+def _enrich_daily(rep, dvr, inb):
+    """Gắn đối chiếu CLIP KHUI HÀNG (inbound) + VIDEO ĐÓNG GÓI (package) vào rep.
+    Dùng chung cho cả báo cáo hôm nay và xem lại ngày cũ."""
+    nk = rep.get("nhap_kho") or {}
+    if inb is not None:
+        mset, cnt = inb.get("match", set()), inb.get("count", {})
+        consumed = set()
+        for d in nk.get("detail", []):
+            hit = next((c for c in d.get("codes", []) if c in mset), None)
+            d["clip"] = bool(hit)
+            d["clip_count"] = cnt.get(hit, 0) if hit else 0
+            if hit:
+                consumed.add(hit)
+        nk["clip_available"] = True
+        nk["clip_co"] = sum(1 for d in nk.get("detail", []) if d.get("clip"))
+        nk["clip_total"] = inb.get("total", 0)
+        nk["clip_unmatched"] = sorted(inb.get("today_codes", set()) - consumed)
+    else:
+        nk["clip_available"] = False
+    if dvr is not None:
+        vset = set((dvr.get("codes") or {}).keys())
+        dgc = rep.get("dong_goi_codes") or set()
+        hgc = rep.get("huy_goi_codes") or set()
+        dgo = rep.get("dong_goi_order_codes") or []
+        owv = sum(1 for d in dgo if any(c in vset for c in d.get("codes", [])))
+        missing = [d.get("track") for d in dgo
+                   if not any(c in vset for c in d.get("codes", []))]
+        rep["video_recon"] = {
+            "available": True, "total": dvr.get("total", 0),
+            "match_open": sum(1 for c in vset if c in dgc),
+            "match_canc": sum(1 for c in vset if c not in dgc and c in hgc),
+            "done_express": sum(1 for c in vset if c not in dgc and c not in hgc),
+            "dup": dvr.get("dup", {}), "open_with_video": owv,
+            "missing_video": len(missing), "missing_codes": missing,
+        }
+    else:
+        rep["video_recon"] = {"available": False}
+
+
 def render_compact_table(df, red_mask=None):
     """Bảng HTML gọn (nhỏ, ít khoảng trắng); red_mask=list bool để tô đỏ dòng lệch."""
     cols = list(df.columns)
@@ -374,6 +413,18 @@ def load_dohana():
 @st.cache_data(ttl=300, show_spinner=False)
 def load_dohana_inbound():
     return dohana.inbound_videos()
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def load_dohana_date(date_iso):
+    from datetime import date as _date
+    return dohana.today_package_videos(target_date=_date.fromisoformat(date_iso))
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def load_dohana_inbound_date(date_iso):
+    from datetime import date as _date
+    return dohana.inbound_videos(target_date=_date.fromisoformat(date_iso))
 
 
 @st.cache_data(ttl=180, show_spinner=False)
@@ -740,7 +791,7 @@ if _page == PAGE_DAILY:
              (_vn_today - timedelta(days=i)).isoformat() for i in range(1, 7)}
     _pick = st.selectbox("Xem báo cáo chi tiết (A4) ngày", [_LIVE] + [f"🗂️ {k}" for k in _past])
 
-    # ---- Xem báo cáo NGÀY CŨ (query lại Sapo, số đã cố định) ----
+    # ---- Xem báo cáo NGÀY CŨ (query lại Sapo + Dohana theo ngày, số đã cố định) ----
     if _pick != _LIVE:
         _iso = _past[_pick[3:]]
         try:
@@ -748,12 +799,13 @@ if _page == PAGE_DAILY:
         except Exception as e:
             st.error(f"❌ Lỗi tổng hợp báo cáo ngày {_pick[3:]}: `{e}`")
             st.stop()
-        _rep["video_recon"] = {"available": False}   # Dohana chỉ giữ video ~3 ngày → ngày cũ bỏ qua
-        (_rep.get("nhap_kho") or {})["clip_available"] = False
-        st.info(f"🗂️ Báo cáo ngày **{_pick[3:]}** (query lại từ Sapo — số đã cố định). "
-                "Ngày cũ không có dữ liệu video Dohana nên mục video để trống.")
+        _dvr = load_dohana_date(_iso) if dohana.configured() else None
+        _inb = load_dohana_inbound_date(_iso) if dohana.configured() else None
+        _enrich_daily(_rep, _dvr, _inb)
+        st.info(f"🗂️ Báo cáo ngày **{_pick[3:]}** — query lại từ Sapo + Dohana (số đã cố định). "
+                "Video chỉ còn cho ~vài ngày gần nhất; ngày quá cũ mục video có thể trống.")
         _nrep = f"{_pick[3:]} (xem lại)"
-        components.html(daily_report.report_html(_rep, None, _nrep), height=2480, scrolling=True)
+        components.html(daily_report.report_html(_rep, _dvr, _nrep), height=2480, scrolling=True)
         st.stop()
 
     # ---- Hôm nay (trực tiếp) ----
@@ -766,46 +818,8 @@ if _page == PAGE_DAILY:
         st.error(f"❌ Lỗi tổng hợp báo cáo: `{e}`")
         st.stop()
     _dvr = load_dohana() if dohana.configured() else None
-    # Đối chiếu CLIP KHUI HÀNG (Dohana inbound) cho từng đơn hoàn nhận hôm nay
-    _nk = _rep.get("nhap_kho") or {}
     _inb = load_dohana_inbound() if dohana.configured() else None
-    if _inb is not None:
-        _mset, _cnt = _inb.get("match", set()), _inb.get("count", {})
-        _consumed = set()
-        for _d in _nk.get("detail", []):
-            _hit = next((c for c in _d.get("codes", []) if c in _mset), None)
-            _d["clip"] = bool(_hit)
-            _d["clip_count"] = _cnt.get(_hit, 0) if _hit else 0
-            if _hit:
-                _consumed.add(_hit)
-        _nk["clip_available"] = True
-        _nk["clip_co"] = sum(1 for _d in _nk.get("detail", []) if _d.get("clip"))
-        _nk["clip_total"] = _inb.get("total", 0)
-        # Clip khui hàng hôm nay KHÔNG ứng với đơn hoàn nào (nghi quay nhầm chế độ)
-        _nk["clip_unmatched"] = sorted(_inb.get("today_codes", set()) - _consumed)
-    else:
-        _nk["clip_available"] = False
-    # Đối chiếu VIDEO ĐÓNG GÓI (Dohana package) vs đơn — giải thích lệch + báo thiếu video
-    if _dvr is not None:
-        _vset = set((_dvr.get("codes") or {}).keys())
-        _dgc = _rep.get("dong_goi_codes") or set()
-        _hgc = _rep.get("huy_goi_codes") or set()
-        _m_open = sum(1 for c in _vset if c in _dgc)
-        _m_canc = sum(1 for c in _vset if c not in _dgc and c in _hgc)
-        _done = sum(1 for c in _vset if c not in _dgc and c not in _hgc)
-        _dgo = _rep.get("dong_goi_order_codes") or []
-        _open_with_vid = sum(1 for d in _dgo if any(c in _vset for c in d.get("codes", [])))
-        _missing = [d.get("track") for d in _dgo
-                    if not any(c in _vset for c in d.get("codes", []))]
-        _rep["video_recon"] = {
-            "available": True, "total": _dvr.get("total", 0),
-            "match_open": _m_open, "match_canc": _m_canc, "done_express": _done,
-            "dup": _dvr.get("dup", {}),
-            "open_with_video": _open_with_vid,
-            "missing_video": len(_missing), "missing_codes": _missing,
-        }
-    else:
-        _rep["video_recon"] = {"available": False}
+    _enrich_daily(_rep, _dvr, _inb)   # gắn clip khui hàng + đối chiếu video đóng gói
     _nrep = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%H:%M %d/%m/%Y")
     components.html(daily_report.report_html(_rep, _dvr, _nrep), height=2480, scrolling=True)
     st.stop()

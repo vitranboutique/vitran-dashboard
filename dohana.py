@@ -35,13 +35,11 @@ def _vnd(iso):
         return None
 
 
-def _fetch_videos(typ: str, days_match: int, max_pages: int):
-    """Lấy video theo type, lùi tới khi createdAt < cutoff. Trả list (đã khử trùng id)."""
+def _fetch_videos(typ: str, cutoff_date, max_pages: int):
+    """Lấy video theo type, lùi (page 0 = MỚI NHẤT) tới khi createdAt < cutoff_date. Khử trùng id."""
     key = _key()
     if not key:
         return None
-    today = (datetime.now(timezone.utc) + timedelta(hours=7)).date()
-    cutoff = today - timedelta(days=days_match - 1)
     headers = {"x-api-key": key}
     vids = []
     for p in range(0, max_pages):        # ⚠️ 0-INDEXED: page=0 = MỚI NHẤT
@@ -55,23 +53,31 @@ def _fetch_videos(typ: str, days_match: int, max_pages: int):
             break
         vids += rows
         last = _vnd(rows[-1].get("createdAt"))
-        if last and last < cutoff:
+        if last and last < cutoff_date:
             break
     return list({v.get("id"): v for v in vids}.values())
 
 
-def inbound_videos(days_match: int = 3, max_pages: int = 12):
-    """Video KHUI HÀNG (type=inbound — quay khi nhận hàng hoàn về).
-    Trả {total(hôm nay), count(Counter mã trong cửa sổ), match(set mã), dup}."""
-    vids = _fetch_videos("inbound", days_match, max_pages)
+def _in_window(v, lo, hi):
+    d = _vnd(v.get("createdAt"))
+    return d is not None and lo <= d <= hi
+
+
+def inbound_videos(days_match: int = 3, max_pages: int = 25, target_date=None):
+    """Video KHUI HÀNG (type=inbound). target_date=None → hôm nay; truyền ngày cũ để xem lại.
+    Trả {total(ngày đó), count(Counter mã cửa sổ), match(set mã), today_codes(mã ngày đó), dup}."""
+    today = (datetime.now(timezone.utc) + timedelta(hours=7)).date()
+    tdate = target_date or today
+    cutoff = tdate - timedelta(days=days_match - 1)
+    vids = _fetch_videos("inbound", cutoff, max_pages)
     if vids is None:
         return None
-    today = (datetime.now(timezone.utc) + timedelta(hours=7)).date()
-    cnt = Counter(v.get("orderCode") for v in vids if v.get("orderCode"))
+    win = [v for v in vids if _in_window(v, cutoff, tdate)]
+    cnt = Counter(v.get("orderCode") for v in win if v.get("orderCode"))
     today_codes = {v.get("orderCode") for v in vids
-                   if v.get("orderCode") and _vnd(v.get("createdAt")) == today}
+                   if v.get("orderCode") and _vnd(v.get("createdAt")) == tdate}
     return {
-        "total": sum(1 for v in vids if _vnd(v.get("createdAt")) == today),
+        "total": sum(1 for v in vids if _vnd(v.get("createdAt")) == tdate),
         "count": dict(cnt),
         "match": set(cnt),
         "today_codes": today_codes,
@@ -79,35 +85,21 @@ def inbound_videos(days_match: int = 3, max_pages: int = 12):
     }
 
 
-def today_package_videos(days_match: int = 3, max_pages: int = 12):
-    """Video ĐÓNG HÀNG (type=package). Trả {total(hôm nay), codes(hôm nay), dup, match(set mã 3 ngày)}.
-    'match' gồm mã video nhiều ngày để khớp cả đơn SÓT (quay hôm trước)."""
-    key = _key()
-    if not key:
-        return None
+def today_package_videos(days_match: int = 3, max_pages: int = 25, target_date=None):
+    """Video ĐÓNG HÀNG (type=package). target_date=None → hôm nay; truyền ngày cũ để xem lại.
+    'match' gồm mã video cửa sổ [tdate-days_match+1 .. tdate] để khớp cả đơn SÓT (quay hôm trước)."""
     today = (datetime.now(timezone.utc) + timedelta(hours=7)).date()
-    cutoff = today - timedelta(days=days_match - 1)
-    headers = {"x-api-key": key}
-    vids = []
-    for p in range(0, max_pages):        # ⚠️ API phân trang 0-INDEXED: page=0 = MỚI NHẤT
-        try:
-            r = requests.get(_BASE, params={"page": p, "limit": 100, "type": "package"},
-                             headers=headers, timeout=20)
-            rows = r.json().get("data", []) if r.status_code == 200 else []
-        except Exception:
-            break
-        if not rows:
-            break
-        vids += rows
-        last = _vnd(rows[-1].get("createdAt"))     # đã sort giảm dần theo createdAt
-        if last and last < cutoff:
-            break
-    vids = list({v.get("id"): v for v in vids}.values())   # khử trùng id
-    today_vids = [v for v in vids if _vnd(v.get("createdAt")) == today]
-    codes = Counter(v.get("orderCode") for v in today_vids if v.get("orderCode"))
+    tdate = target_date or today
+    cutoff = tdate - timedelta(days=days_match - 1)
+    vids = _fetch_videos("package", cutoff, max_pages)
+    if vids is None:
+        return None
+    day_vids = [v for v in vids if _vnd(v.get("createdAt")) == tdate]
+    codes = Counter(v.get("orderCode") for v in day_vids if v.get("orderCode"))
     return {
-        "total": len(today_vids),
+        "total": len(day_vids),
         "codes": dict(codes),
         "dup": {k: v for k, v in codes.items() if v >= 2},
-        "match": {v.get("orderCode") for v in vids if v.get("orderCode")},
+        "match": {v.get("orderCode") for v in vids
+                  if v.get("orderCode") and _in_window(v, cutoff, tdate)},
     }
