@@ -168,8 +168,9 @@ def report_html(rep, dv, now_str):
     sec1_note = ('<div style="font-size:10px;color:#6b7280;margin:5px 0 0;line-height:1.5">'
                  + (f'ℹ️ Tổng đóng gói đã gồm <b>{_exp_done["dong_goi"]} đơn hỏa tốc (SPX Instant) '
                     'giao xong trong ngày</b> (dòng đầu, bôi cam). ' if _exp_done else '')
-                 + 'Cột <b>“Giao tới khách”</b> = đơn đến tay khách trong hôm nay '
-                 '(gồm cả đơn gửi hôm trước nên có thể nhiều hơn đơn đóng gói).</div>')
+                 + 'Cột <b>“Giao tới khách”</b> = trong số đơn đóng gói, số đã giao đến tay khách '
+                 '(luôn ≤ đóng gói). Hỏa tốc giao ngay trong ngày; đơn thường giao sau 1–3 ngày → '
+                 'xem lại báo cáo ngày cũ con số này sẽ tăng dần.</div>')
     # Đợt soạn GỒM cả đơn đã hủy đã gói (đã soạn rồi mới hủy)
     _soan = rep.get("tong_don_soan", 0)
     _hdg = rep.get("huy_da_goi", 0)

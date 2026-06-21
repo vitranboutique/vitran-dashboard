@@ -517,11 +517,14 @@ def get_week_summary(fetch_json, days: int = 7) -> list:
 
     for o in orders:
         f = f0(o)
-        for fld, key in (("packed_on", "dong_goi"), ("issued_on", "shipper_nhan"),
-                         ("delivered_on", "giao_khach")):
+        for fld, key in (("packed_on", "dong_goi"), ("issued_on", "shipper_nhan")):
             d = _vn_date_of(f.get(fld))
             if d in agg:
                 agg[d][key] += 1
+        # Giao khách = trong số đơn đóng gói ngày đó, đã giao đến tay khách (status delivered)
+        pd = _vn_date_of(f.get("packed_on"))
+        if pd in agg and f.get("shipment_status") == "delivered":
+            agg[pd]["giao_khach"] += 1
     # Hủy đã gói theo cancelled_on (đơn đã đóng gói)
     try:
         canc = get_cancelled(fetch_json, days=days)
@@ -667,8 +670,7 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
         for o in rows:
             ff = (o.get("fulfillments") or [{}])[0]
             if (_vn_date_of(ff.get("packed_on")) == today
-                    or _vn_date_of(ff.get("issued_on")) == today
-                    or _vn_date_of(ff.get("delivered_on")) == today):
+                    or _vn_date_of(ff.get("issued_on")) == today):
                 open_orders.append(o)
         last = _vn_date_of(rows[-1].get("created_on"))
         if last and last < (today - timedelta(days=7)):
@@ -693,7 +695,8 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
                 "codes": sorted(cc)})
         if _vn_date_of(f.get("issued_on")) == today:
             ce(c)["shipper_nhan"] += 1
-        if _vn_date_of(f.get("delivered_on")) == today:   # đã giao đến KHÁCH hôm nay
+        # Giao tới khách = TRONG SỐ đơn đóng gói hôm nay, đã giao đến tay khách (tới hiện tại)
+        if _vn_date_of(f.get("packed_on")) == today and f.get("shipment_status") == "delivered":
             ce(c)["giao_khach"] += 1
         if f.get("shipment_status") == "pending":
             ce(c)["con_lai"] += 1
