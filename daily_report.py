@@ -253,7 +253,7 @@ def report_html(rep, dv, now_str):
     _quet, _dvvc, _video, _soan = (fn.get("quet_bien_ban"), fn.get("dvvc_nhan"),
                                    fn.get("video"), fn.get("soan"))
 
-    def _fbox(icon, label, val, lech=0, hot=False):
+    def _fbox(icon, label, val, lech=0, hot=False, tick=False):
         disp = "—" if val is None else val
         cls, mark = "kpi", ""
         if hot and val:
@@ -261,9 +261,9 @@ def report_html(rep, dv, now_str):
         if lech and lech > 0:
             cls = "kpi bad"
             mark = f'<div class="lech">▼ lệch {lech}</div>'
+        tk = '<div class="tick"><span class="cbox"></span> đã nhận</div>' if tick else ''
         return (f'<div class="{cls}"><div class="l">{icon} {label}</div>'
-                f'<div class="v">{disp}</div>{mark}'
-                f'<div class="tick"><span class="cbox"></span> đã kiểm</div></div>')
+                f'<div class="v">{disp}</div>{mark}{tk}</div>')
 
     _lv = (_dg - _video) if (isinstance(_video, int) and _dg and _video < _dg) else 0
     _lq = (_dg - _quet) if (isinstance(_quet, int) and _dg and _quet < _dg) else 0
@@ -277,8 +277,8 @@ def report_html(rep, dv, now_str):
         _fbox("🚚", "ĐVVC đã nhận", _dvvc, lech=_ld),
     ])
     _row2 = "".join([
-        _fbox("❌", "Hủy hôm nay", fn.get("huy"), hot=True),
-        _fbox("⏳", "Còn xót lại", fn.get("con_xot")),
+        _fbox("❌", "Hủy hôm nay", fn.get("huy"), hot=True, tick=True),
+        _fbox("⏳", "Còn xót lại", fn.get("con_xot"), tick=True),
     ])
     kpi_html = (f'<div class="kpis kf5">{_row1}</div>'
                 f'<div class="kpis kf5">{_row2}</div>')
