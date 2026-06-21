@@ -679,8 +679,8 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
     cr = {}
 
     def ce(c):
-        return cr.setdefault(c, {"carrier": c, "dong_goi": 0, "huy": 0, "shipper_nhan": 0,
-                                 "giao_khach": 0, "con_lai": 0})
+        return cr.setdefault(c, {"carrier": c, "dong_goi": 0, "huy": 0, "xuat_kho": 0,
+                                 "shipper_nhan": 0, "giao_khach": 0, "con_lai": 0})
 
     dong_goi_codes, huy_goi_codes, dong_goi_order_codes = set(), set(), []
     for o in open_orders:
@@ -694,7 +694,7 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
                 "track": f.get("tracking_number") or o.get("name") or "?",
                 "codes": sorted(cc)})
         if _vn_date_of(f.get("issued_on")) == today:
-            ce(c)["shipper_nhan"] += 1
+            ce(c)["xuat_kho"] += 1        # shop ĐÃ XUẤT KHO (issued) — chưa chắc shipper đã nhận
         # Giao tới khách = TRONG SỐ đơn đóng gói hôm nay, đã giao đến tay khách (tới hiện tại)
         if _vn_date_of(f.get("packed_on")) == today and f.get("shipment_status") == "delivered":
             ce(c)["giao_khach"] += 1
@@ -728,14 +728,36 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
     except Exception:
         pass
 
-    # Còn lại = đóng gói − hủy − shipper nhận (đơn đã gói chưa giao shipper) — khớp cách NV tính
-    for r in cr.values():
-        r["con_lai"] = max(0, r["dong_goi"] - r["huy"] - r["shipper_nhan"])
+    # SHIPPER THỰC NHẬN = ĐVVC ĐÃ XÁC NHẬN LẤY (đã bàn giao) = shipments delivery ≠ pending/cancelled.
+    # KHÁC "đã xuất kho" (issued): xuất kho mà shipper chưa xác nhận = NGHI MẤT ĐƠN → cột "Chưa x.nhận".
+    confirmed = {}
+    try:
+        scmin = (today - timedelta(days=2)).isoformat() + "T00:00:00+07:00"
+        for p in range(1, 20):
+            srows = fetch_json("/admin/shipments.json", limit=250, page=p,
+                               created_on_min=scmin).get("shipments", [])
+            if not srows:
+                break
+            for s in srows:
+                if (_vn_date_of(s.get("created_on")) == today
+                        and s.get("delivery_status") not in ("pending", "cancelled", None)):
+                    cn = (s.get("tracking_info") or {}).get("carrier_name") or "Khác"
+                    cn = "Hỏa tốc (SPX Instant)" if cn == "SPX Instant" else cn
+                    confirmed[cn] = confirmed.get(cn, 0) + 1
+            slast = _vn_date_of(srows[-1].get("created_on"))
+            if slast and slast < today - timedelta(days=2):
+                break
+    except Exception:
+        confirmed = None
+    for c, r in cr.items():
+        # Nếu lấy được shipments → shipper nhận = đã bàn giao; nếu lỗi → fallback = đã xuất kho.
+        r["shipper_nhan"] = confirmed.get(c, 0) if confirmed is not None else r["xuat_kho"]
+        r["con_lai"] = max(0, r["xuat_kho"] - r["shipper_nhan"])   # xuất kho mà shipper CHƯA xác nhận
     # ĐVVC: dòng HỎA TỐC lên ĐẦU, còn lại theo số đóng gói giảm dần
     rows = sorted(cr.values(),
                   key=lambda x: (0 if "Hỏa tốc" in str(x["carrier"]) else 1, -x["dong_goi"]))
     tot = {k: sum(r[k] for r in rows)
-           for k in ("dong_goi", "huy", "shipper_nhan", "giao_khach", "con_lai")}
+           for k in ("dong_goi", "huy", "xuat_kho", "shipper_nhan", "giao_khach", "con_lai")}
     # Đợt soạn GỒM cả đơn đã hủy đã gói (vì đã soạn rồi mới hủy) → tổng soạn = đóng gói + hủy đã gói
     hist = _packing_history(open_orders + huy_goi_orders, ref_date=today)
     try:
@@ -756,9 +778,9 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
         "dong_goi": tot["dong_goi"],             # đóng gói (gồm hủy) = 89
         "base": hist["tong_don"],                # đợt soạn (89) — baseline so lệch video
         "video": None,                           # đóng gói có video (gắn ở app.py)
-        "quet_bien_ban": tot["shipper_nhan"],    # đã xuất kho / quét vào biên bản = 86
-        "dvvc_nhan": tot["shipper_nhan"],        # shipper thực nhận = đã bàn giao ĐVVC = 86
-        "huy": tot["huy"], "con_xot": tot["con_lai"],   # con_lai = đóng gói − hủy − shipper nhận = 0
+        "quet_bien_ban": tot["xuat_kho"],        # đã xuất kho / quét vào biên bản (issued) = 86
+        "dvvc_nhan": tot["shipper_nhan"],        # shipper THỰC NHẬN = ĐVVC đã xác nhận lấy = 84
+        "huy": tot["huy"], "con_xot": tot["con_lai"],   # xuất kho mà shipper chưa xác nhận = 2
     }
     return {
         "date": today.strftime("%d/%m/%Y"),

@@ -70,17 +70,20 @@ def _carrier_rows(rows, tot):
     for r in rows:
         hot = "Hỏa tốc" in str(r["carrier"])
         cls = ' style="background:#fff3ed"' if hot else ''
+        _cl = r["con_lai"]
+        _clc = (f'<td class="num" style="color:#dc2626;font-weight:800">{_cl}</td>'
+                if _cl else '<td class="num"></td>')
         body += (f'<tr{cls}><td class="l">{"⚡ " if hot else ""}{_e(str(r["carrier"]))}</td>'
                  f'<td class="num">{r["dong_goi"]}</td><td class="num">{r["huy"] or ""}</td>'
-                 f'<td class="num">{r["shipper_nhan"]}</td>'
-                 f'<td class="num">{r.get("giao_khach") or ""}</td>'
-                 f'<td class="num">{r["con_lai"] or ""}</td></tr>')
+                 f'<td class="num">{r.get("xuat_kho", 0)}</td>'
+                 f'<td class="num">{r["shipper_nhan"]}</td>' + _clc + '</tr>')
     body = body or '<tr><td class="l" colspan="6">—</td></tr>'
+    _tcl = tot["con_lai"]
     body += (f'<tr class="total"><td class="l">TỔNG CỘNG</td>'
              f'<td class="num">{tot["dong_goi"]}</td><td class="num accent">{tot["huy"] or ""}</td>'
+             f'<td class="num">{tot.get("xuat_kho", 0)}</td>'
              f'<td class="num">{tot["shipper_nhan"]}</td>'
-             f'<td class="num">{tot.get("giao_khach", 0)}</td>'
-             f'<td class="num">{tot["con_lai"]}</td></tr>')
+             f'<td class="num{" accent" if _tcl else ""}">{_tcl or ""}</td></tr>')
     return body
 
 
@@ -170,12 +173,14 @@ def report_html(rep, dv, now_str):
                     f'<tr><td class="l">📦 Đơn đã đóng gói</td><td class="num">{t["dong_goi"]}</td></tr>')
         vid_note = vid_warn = ''
     _exp_done = next((r for r in rep.get("by_carrier", []) if "Hỏa tốc" in str(r.get("carrier"))), None)
+    _tcl = (rep.get("totals") or {}).get("con_lai", 0)
     sec1_note = ('<div style="font-size:10px;color:#6b7280;margin:5px 0 0;line-height:1.5">'
-                 + (f'ℹ️ Tổng đóng gói đã gồm <b>{_exp_done["dong_goi"]} đơn hỏa tốc (SPX Instant) '
-                    'giao xong trong ngày</b> (dòng đầu, bôi cam). ' if _exp_done else '')
-                 + 'Cột <b>“Giao tới khách”</b> = trong số đơn đóng gói, số đã giao đến tay khách '
-                 '(luôn ≤ đóng gói). Hỏa tốc giao ngay trong ngày; đơn thường giao sau 1–3 ngày → '
-                 'xem lại báo cáo ngày cũ con số này sẽ tăng dần.</div>')
+                 + (f'ℹ️ Đóng gói đã gồm <b>{_exp_done["dong_goi"]} đơn hỏa tốc</b> (dòng đầu). ' if _exp_done else 'ℹ️ ')
+                 + '<b>Đã xuất kho</b> = shop đã bàn giao; <b>Shipper thực nhận</b> = ĐVVC đã XÁC NHẬN lấy '
+                 '(theo trạng thái vận đơn). '
+                 + (f'<b style="color:#dc2626">⚠️ Chưa x.nhận = {_tcl}</b>: đã xuất kho nhưng shipper CHƯA xác '
+                    'nhận — KIỂM TRA tránh mất đơn.' if _tcl else '“Chưa x.nhận” = 0 → shipper đã nhận đủ.')
+                 + '</div>')
     # Đợt soạn GỒM cả đơn đã hủy đã gói (đã soạn rồi mới hủy)
     _soan = rep.get("tong_don_soan", 0)
     _hdg = rep.get("huy_da_goi", 0)
@@ -269,8 +274,8 @@ def report_html(rep, dv, now_str):
     # Thiếu video = đóng gói (gồm hủy) chưa quay. Quét biên bản nên = đóng gói − hủy (hủy không xuất).
     _lv = max(0, _base - _video) if (isinstance(_video, int) and _base) else 0
     _lq = max(0, (_base - _huy) - _quet) if (isinstance(_quet, int) and _base) else 0
-    # ĐVVC nhận > quét biên bản = ĐVVC đã lấy mà QUÊN QUÉT BIÊN BẢN (bất thường) → cảnh báo
-    _ld = (_dvvc - _quet) if (isinstance(_quet, int) and isinstance(_dvvc, int) and _dvvc > _quet) else 0
+    # ĐVVC đã nhận < đã quét biên bản (xuất kho) = đơn xuất kho mà shipper CHƯA xác nhận → NGHI MẤT ĐƠN
+    _ld = (_quet - _dvvc) if (isinstance(_quet, int) and isinstance(_dvvc, int) and _quet > _dvvc) else 0
     _row1 = "".join([
         _fbox("✅", "Đã xác nhận", fn.get("xac_nhan")),
         _fbox("🖨️", "Đã soạn hàng", _soan),
@@ -303,8 +308,8 @@ def report_html(rep, dv, now_str):
 
   <div class="sec">I. Số lượng đơn theo đơn vị vận chuyển</div>
   <table>
-    <thead><tr><th class="l">Đơn vị vận chuyển</th><th>Đơn đóng gói</th><th>Đơn hủy</th>
-      <th>Shipper nhận</th><th>Giao tới khách</th><th>Còn lại</th></tr></thead>
+    <thead><tr><th class="l">Đơn vị vận chuyển</th><th>Đóng gói</th><th>Hủy</th>
+      <th>Đã xuất kho</th><th>Shipper thực nhận</th><th>Chưa x.nhận</th></tr></thead>
     <tbody>{_carrier_rows(rep["by_carrier"], t)}</tbody>
   </table>
   {sec1_note}
