@@ -3,6 +3,7 @@ daily_report.py — Render BÁO CÁO VẬN HÀNH CUỐI NGÀY (khổ A4) từ ge
 Trả 1 chuỗi HTML (nhúng bằng components.html) gồm nút In A4 + báo cáo bố cục chuyên nghiệp.
 """
 import json
+from collections import OrderedDict
 from html import escape as _e
 
 _CSS = """
@@ -54,6 +55,16 @@ _CSS = """
   .warn .wh{font-size:11.5px;font-weight:900;color:#b45309;}
   .warn .wb{font-size:10px;color:#7c4a13;margin-top:2px;line-height:1.4;}
   .warn .wc{font-size:11px;font-weight:900;color:#b45309;margin-top:3px;letter-spacing:.3px;}
+  .fdetail{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:7px 0 9px;}
+  .fdcol{border:1px solid #d6dbe6;border-radius:6px;padding:5px 8px 6px;}
+  .fdcol-huy{background:#fdf3f2;border-color:#eec2bc;}
+  .fdcol-xot{background:#fff8ec;border-color:#e9cf9b;}
+  .fdhead{font-size:10px;font-weight:900;margin-bottom:2px;line-height:1.3;}
+  .dvgrp{font-size:9.5px;font-weight:800;color:#475569;margin:3px 0 0;}
+  .dline{font-size:10px;color:#1f2937;padding:1px 0 1px 3px;line-height:1.5;}
+  .dline .vd{color:#6b7280;font-size:9px;}
+  .dline .pk{color:#b91c1c;font-size:8.5px;font-weight:800;}
+  .cbox2{display:inline-block;width:10px;height:10px;border:1.3px solid #475569;border-radius:2px;vertical-align:-1px;margin-right:2px;}
   .sign.s2{grid-template-columns:repeat(2,1fr);max-width:70%;margin-left:auto;margin-right:auto;}
   @page{size:A4 portrait;margin:0;}
   @media print{
@@ -126,6 +137,26 @@ def _huy_rows(detail):
                  f'<td class="l">{_e(str(d.get("sku", "")))}{ten}</td>'
                  f'<td class="num" style="font-weight:800">{d.get("sp", 0)}</td></tr>')
     return body or '<tr><td colspan="5">Không có đơn hủy đã đóng gói.</td></tr>'
+
+
+def _grouped_tick_rows(detail, mark_packed=False):
+    """Liệt kê đơn GOM THEO ĐVVC, mỗi đơn 1 ô tick + mã đơn + mã VĐ + SKU×SL."""
+    if not detail:
+        return '<div class="dline" style="color:#9aa3af">— Không có đơn —</div>'
+    groups = OrderedDict()
+    for d in detail:
+        groups.setdefault(str(d.get("carrier") or "?"), []).append(d)
+    html = ""
+    for cr, items in groups.items():
+        html += f'<div class="dvgrp">▸ {_e(cr)} ({len(items)})</div>'
+        for d in items:
+            nm = _e(str(d.get("name") or "?"))
+            tk = str(d.get("tracking") or "")
+            tk_html = f' · <span class="vd">{_e(tk)}</span>' if tk and tk != d.get("name") else ""
+            pk = ' <span class="pk">📦 cần lấy lại</span>' if (mark_packed and d.get("packed")) else ""
+            html += (f'<div class="dline"><span class="cbox2"></span> '
+                     f'<b>{nm}</b>{tk_html} · {_e(str(d.get("sku", "")))}{pk}</div>')
+    return html
 
 
 def _batch_rows(batches, tong_don, tong_sp):
@@ -247,15 +278,7 @@ def report_html(rep, dv, now_str):
                  f'ℹ️ Tổng soạn ({_soan}) = {t["dong_goi"]} đơn đóng gói + '
                  f'<b>{_hdg} đơn đã hủy sau khi soạn</b> (vẫn tính vì kho đã lấy hàng).</div>'
                  if _hdg else '')
-    # Đơn hủy đã đóng gói — cần lấy lại hàng
-    _huy = rep.get("huy_detail") or []
-    _huy_sp = sum(d.get("sp", 0) for d in _huy)
-    huy_section = (
-        f'<div class="sec" style="background:#7c2d12">❌ Đơn hủy đã đóng gói — CẦN LẤY LẠI HÀNG '
-        f'({len(_huy)} đơn · {_huy_sp} SP)</div>'
-        '<table><thead><tr><th>#</th><th class="l">Mã vận đơn</th><th>ĐVVC</th>'
-        '<th class="l">Sản phẩm (SKU × SL)</th><th>SL lấy lại</th></tr></thead>'
-        f'<tbody>{_huy_rows(_huy)}</tbody></table>') if _huy else ''
+    # (Đơn hủy đã chuyển lên block chi tiết ngay dưới phễu — gom theo ĐVVC + ô tick)
     nk = rep.get("nhap_kho") or {}
     nk_src = " · ".join(f"{_e(_SRC.get(k, str(k)))} {v}"
                         for k, v in (nk.get("by_source") or {}).items())
@@ -349,6 +372,23 @@ def report_html(rep, dv, now_str):
     kpi_html = (f'<div class="kpis kf5">{_row1}</div>'
                 f'<div class="kpis kf5">{_row2}</div>')
 
+    # Chi tiết đơn HỦY + CÒN XÓT ngay dưới 2 ô phễu — gom theo ĐVVC, mỗi đơn 1 ô tick xác nhận
+    _huy_all = rep.get("huy_all_detail") or []
+    _conxot = rep.get("con_xot_detail") or []
+    detail_block = ''
+    if _huy_all or _conxot:
+        detail_block = (
+            '<div class="fdetail">'
+            '<div class="fdcol fdcol-huy">'
+            f'<div class="fdhead" style="color:#b91c1c">❌ ĐƠN HỦY HÔM NAY ({len(_huy_all)}) '
+            '— tick khi đã nhận lại hàng</div>'
+            f'{_grouped_tick_rows(_huy_all, mark_packed=True)}</div>'
+            '<div class="fdcol fdcol-xot">'
+            f'<div class="fdhead" style="color:#b45309">⏳ CÒN XÓT LẠI ({len(_conxot)}) '
+            '— đã xuất kho, shipper CHƯA xác nhận</div>'
+            f'{_grouped_tick_rows(_conxot)}</div>'
+            '</div>')
+
     page1 = f"""<div class="page">
   <div class="hd">
     <div><div class="brand">VITRAN BOUTIQUE</div>
@@ -361,6 +401,7 @@ def report_html(rep, dv, now_str):
   <div class="title-sub">Phần 1 — Đơn giao đi · đóng gói · soạn hàng · video (dữ liệu Sapo, giờ VN)</div>
 
   {kpi_html}
+  {detail_block}
 
   {vid_warn}
   {vid_note}
@@ -380,8 +421,6 @@ def report_html(rep, dv, now_str):
     <tbody>{_batch_rows(rep["batches"], rep["tong_don_soan"], rep["tong_sp_soan"])}</tbody>
   </table>
   {sec2_note}
-
-  {huy_section}
 
   <div class="sec">III. Ghi chú / Sự cố trong ngày</div>
   <div class="note"><span style="color:#9aa3af;font-size:10px">(Ghi tay: đơn GHN còn lại, hỏa tốc tìm tài xế, đơn lỗi…)</span>

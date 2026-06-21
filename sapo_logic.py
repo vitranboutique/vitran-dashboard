@@ -691,7 +691,21 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
         return cr.setdefault(c, {"carrier": c, "dong_goi": 0, "huy": 0, "xuat_kho": 0,
                                  "shipper_nhan": 0, "giao_khach": 0, "con_lai": 0})
 
+    def _odet(o):
+        """Mô tả 1 đơn để liệt kê chi tiết (mã đơn, mã VĐ, ĐVVC, SKU×SL, tổng SP)."""
+        f = f0(o)
+        lis = o.get("line_items") or []
+        return {
+            "name": o.get("name") or "?",
+            "tracking": f.get("tracking_number") or o.get("name") or "?",
+            "carrier": carrier(o),
+            "sku": "; ".join(f"{li.get('sku') or 'N/A'}×{int(round(li.get('quantity') or 0))}"
+                             for li in lis),
+            "sp": sum(int(round(li.get("quantity") or 0)) for li in lis),
+        }
+
     dong_goi_codes, huy_goi_codes, dong_goi_order_codes = set(), set(), []
+    issued_orders = []
     for o in open_orders:
         f = f0(o)
         c = carrier(o)
@@ -704,13 +718,14 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
                 "codes": sorted(cc)})
         if _vn_date_of(f.get("issued_on")) == today:
             ce(c)["xuat_kho"] += 1        # shop ĐÃ XUẤT KHO (issued) — chưa chắc shipper đã nhận
+            issued_orders.append(o)
         # Giao tới khách = TRONG SỐ đơn đóng gói hôm nay, đã giao đến tay khách (tới hiện tại)
         if _vn_date_of(f.get("packed_on")) == today and f.get("shipment_status") == "delivered":
             ce(c)["giao_khach"] += 1
         if f.get("shipment_status") == "pending":
             ce(c)["con_lai"] += 1
     huy_total = 0
-    huy_goi_orders, huy_detail = [], []
+    huy_goi_orders, huy_detail, huy_all_detail = [], [], []
     try:
         canc = get_cancelled(fetch_json)
         for o in (canc.get("packed", []) + canc.get("not_packed", [])):
@@ -719,6 +734,9 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
                 huy_goi_codes |= _order_codes(o)
             if _vn_date_of(o.get("cancelled_on")) == today:
                 ce(carrier(o))["huy"] += 1
+                _hd = _odet(o)
+                _hd["packed"] = (ff.get("packed_status") == "packed")  # đã gói → cần lấy lại hàng
+                huy_all_detail.append(_hd)
                 if ff.get("packed_status") == "packed":
                     huy_total += 1
                     ce(carrier(o))["dong_goi"] += 1  # hủy đã gói VẪN tính vào đóng gói (khớp NV)
@@ -739,7 +757,7 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
 
     # SHIPPER THỰC NHẬN = ĐVVC ĐÃ XÁC NHẬN LẤY (đã bàn giao) = shipments delivery ≠ pending/cancelled.
     # KHÁC "đã xuất kho" (issued): xuất kho mà shipper chưa xác nhận = NGHI MẤT ĐƠN → cột "Chưa x.nhận".
-    confirmed = {}
+    confirmed, confirmed_tracks = {}, set()
     try:
         scmin = (today - timedelta(days=2)).isoformat() + "T00:00:00+07:00"
         for p in range(1, 20):
@@ -753,6 +771,10 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
                     cn = (s.get("tracking_info") or {}).get("carrier_name") or "Khác"
                     cn = "Hỏa tốc (SPX Instant)" if cn == "SPX Instant" else cn
                     confirmed[cn] = confirmed.get(cn, 0) + 1
+                    tn = (s.get("tracking_number")
+                          or (s.get("tracking_info") or {}).get("tracking_number"))
+                    if tn:
+                        confirmed_tracks.add(str(tn))
             slast = _vn_date_of(srows[-1].get("created_on"))
             if slast and slast < today - timedelta(days=2):
                 break
@@ -762,6 +784,14 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
         # Nếu lấy được shipments → shipper nhận = đã bàn giao; nếu lỗi → fallback = đã xuất kho.
         r["shipper_nhan"] = confirmed.get(c, 0) if confirmed is not None else r["xuat_kho"]
         r["con_lai"] = max(0, r["xuat_kho"] - r["shipper_nhan"])   # xuất kho mà shipper CHƯA xác nhận
+    # CÒN XÓT LẠI = đã xuất kho nhưng mã VĐ KHÔNG nằm trong shipments đã xác nhận (= "Chưa x.nhận").
+    # Liệt kê đúng đơn để NV kho dò (số lượng khớp tổng con_lai).
+    con_xot_detail = []
+    if confirmed is not None:
+        for o in issued_orders:
+            tn = f0(o).get("tracking_number")
+            if not tn or str(tn) not in confirmed_tracks:
+                con_xot_detail.append(_odet(o))
     # ĐVVC: dòng HỎA TỐC lên ĐẦU, còn lại theo số đóng gói giảm dần
     rows = sorted(cr.values(),
                   key=lambda x: (0 if "Hỏa tốc" in str(x["carrier"]) else 1, -x["dong_goi"]))
@@ -801,6 +831,8 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
         "tong_sp_soan": hist["tong_sp"],
         "huy_da_goi": huy_total,
         "huy_detail": huy_detail,
+        "huy_all_detail": huy_all_detail,
+        "con_xot_detail": con_xot_detail,
         "nhap_kho": nhap_kho,
         "dong_goi_codes": dong_goi_codes,
         "huy_goi_codes": huy_goi_codes,
