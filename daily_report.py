@@ -607,7 +607,7 @@ def report_html(rep, dv, now_str):
       <th class="l">🏷️ Tag app đóng hàng</th></tr></thead>
     <tbody>{_recon_rows(recon)}</tbody>
   </table>
-  <div style="font-size:.72em;color:#6b7280;margin:.25em 0 0">🔎 <b>Mã clip</b> = tra trên <b>app đóng hàng (Dohana)</b>. <b>Mã đơn</b> = tra trên <b>Sapo</b> và <b>sàn TMĐT</b>. Ô <span style="color:#dc2626;font-weight:700">đỏ</span> = thiếu/chưa làm, đã ghi rõ lý do trong ô.</div>
+  <div style="font-size:.72em;color:#6b7280;margin:.25em 0 0">🔎 <b>Mã clip</b> = tra trên <b>app đóng hàng (Dohana)</b>. <b>Mã đơn</b> = tra trên <b>Sapo</b> và <b>sàn TMĐT</b>. Ô <span style="color:#dc2626;font-weight:700">đỏ</span> = thiếu/chưa làm, đã ghi rõ lý do trong ô. <b style="color:#b45309">“mã khác”</b> = clip có nhưng lưu dưới <b>mã vận đơn KHÁC</b> với đơn (SPX đổi mã nhiều lần) — máy ghép theo ĐVVC + ngày, nên KIỂM TRA lại cho chắc.</div>
 
   <div class="sec">B. Ghi chú đơn hoàn / khiếu nại</div>
   <div class="note"><span style="color:#9aa3af;font-size:.95em">(Ghi tay: tình trạng hàng hoàn, đơn cần khiếu nại sàn, thiếu/sai SP…)</span>
