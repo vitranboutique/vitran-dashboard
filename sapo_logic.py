@@ -729,8 +729,16 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
     cr = {}
 
     def ce(c):
-        return cr.setdefault(c, {"carrier": c, "dong_goi": 0, "huy": 0, "xuat_kho": 0,
-                                 "shipper_nhan": 0, "giao_khach": 0, "con_lai": 0})
+        return cr.setdefault(c, {"carrier": c, "dong_goi": 0, "dg_cu": 0, "huy": 0, "xuat_kho": 0,
+                                 "shipper_nhan": 0, "giao_khach": 0, "con_lai": 0,
+                                 "cx_packed": 0, "cx_unpacked": 0})
+
+    def _today_pipeline(o):
+        """Đơn ĐANG xử lý hôm nay = tạo vận đơn HOẶC đóng gói HOẶC xuất kho == hôm nay."""
+        f = f0(o)
+        return (_vn_date_of(f.get("shipment_created_on")) == today
+                or _vn_date_of(f.get("packed_on")) == today
+                or _vn_date_of(f.get("issued_on")) == today)
 
     def _odet(o):
         """Mô tả 1 đơn để liệt kê chi tiết (mã đơn, mã VĐ, ĐVVC, SKU×SL, tổng SP, ngày tạo)."""
@@ -753,13 +761,16 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
     for o in open_orders:
         f = f0(o)
         c = carrier(o)
-        if _vn_date_of(f.get("packed_on")) == today:
-            ce(c)["dong_goi"] += 1
+        _pd = _vn_date_of(f.get("packed_on"))
+        if _pd == today:
+            ce(c)["dong_goi"] += 1        # đóng gói HÔM NAY
             cc = _order_codes(o)
             dong_goi_codes |= cc
             dong_goi_order_codes.append({
                 "track": f.get("tracking_number") or o.get("name") or "?",
                 "codes": sorted(cc)})
+        elif _pd and _pd < today and _today_pipeline(o):
+            ce(c)["dg_cu"] += 1           # đóng gói CŨ: gói hôm trước, hôm nay mới xuất/xử lý
         if _vn_date_of(f.get("issued_on")) == today:
             ce(c)["xuat_kho"] += 1        # shop ĐÃ XUẤT KHO (issued) — chưa chắc shipper đã nhận
             issued_orders.append(o)
@@ -816,15 +827,19 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
         if (_vn_date_of(f.get("shipment_created_on")) == today
                 and f.get("shipment_status") == "pending"):
             d = _odet(o)
+            _cc = carrier(o)
             if f.get("packed_status") == "packed" or _vn_date_of(f.get("packed_on")) == today:
                 con_xot_packed.append(d)
+                ce(_cc)["cx_packed"] += 1
             else:
                 con_xot_unpacked.append(d)
+                ce(_cc)["cx_unpacked"] += 1
     # ĐVVC: dòng HỎA TỐC lên ĐẦU, còn lại theo số đóng gói giảm dần
     rows = sorted(cr.values(),
                   key=lambda x: (0 if "Hỏa tốc" in str(x["carrier"]) else 1, -x["dong_goi"]))
     tot = {k: sum(r[k] for r in rows)
-           for k in ("dong_goi", "huy", "xuat_kho", "shipper_nhan", "giao_khach", "con_lai")}
+           for k in ("dong_goi", "dg_cu", "huy", "xuat_kho", "shipper_nhan", "giao_khach",
+                     "con_lai", "cx_packed", "cx_unpacked")}
     # Đợt soạn GỒM cả đơn đã hủy đã gói (vì đã soạn rồi mới hủy) → tổng soạn = đóng gói + hủy đã gói
     hist = _packing_history(open_orders + huy_goi_orders, ref_date=today)
     try:
@@ -840,11 +855,6 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
     # Đã xác nhận = baseline phễu, phải ≥ mọi bước sau. = đơn xác nhận HÔM NAY (tạo vận đơn)
     # HỢP đơn SÓT (xác nhận hôm trước, hôm nay mới đóng gói/xuất kho). Nếu chỉ đếm shipment_created
     # ==today thì đơn sót có video/đóng gói hôm nay bị bỏ → "video > đã xác nhận" (vô lý).
-    def _today_pipeline(o):
-        f = f0(o)
-        return (_vn_date_of(f.get("shipment_created_on")) == today
-                or _vn_date_of(f.get("packed_on")) == today
-                or _vn_date_of(f.get("issued_on")) == today)
     xac_nhan = sum(1 for o in open_orders if _today_pipeline(o))
     xac_nhan += sum(1 for o in huy_goi_orders if _today_pipeline(o))
     # Tách: xác nhận HÔM NAY (tạo vận đơn hôm nay) vs đơn SÓT hôm trước (xử lý hôm nay nhưng

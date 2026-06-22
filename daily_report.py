@@ -95,18 +95,30 @@ def _carrier_rows(rows, tot):
         _gk_warn = hot and r["shipper_nhan"] > _gk
         _gkc = (f'<td class="num" style="color:#c2410c;font-weight:800">{_gk}</td>'
                 if _gk_warn else f'<td class="num">{_gk or ""}</td>')
+        _dgcu = r.get("dg_cu", 0)
+        _cxp, _cxu = r.get("cx_packed", 0), r.get("cx_unpacked", 0)
+        _cxpc = (f'<td class="num" style="color:#c2410c;font-weight:800">{_cxp}</td>'
+                 if _cxp else '<td class="num"></td>')
+        _cxuc = (f'<td class="num" style="color:#b45309;font-weight:800">{_cxu}</td>'
+                 if _cxu else '<td class="num"></td>')
         body += (f'<tr{cls}><td class="l">{"⚡ " if hot else ""}{_e(str(r["carrier"]))}</td>'
-                 f'<td class="num">{r["dong_goi"]}</td><td class="num">{r["huy"] or ""}</td>'
+                 f'<td class="num">{_dgcu or ""}</td>'
+                 f'<td class="num">{r["dong_goi"]}</td>'
+                 f'<td class="num">{r["huy"] or ""}</td>'
                  f'<td class="num">{r.get("xuat_kho", 0)}</td>'
-                 f'<td class="num">{r["shipper_nhan"]}</td>' + _gkc + _clc + '</tr>')
-    body = body or '<tr><td class="l" colspan="7">—</td></tr>'
+                 f'<td class="num">{r["shipper_nhan"]}</td>' + _gkc + _clc + _cxpc + _cxuc + '</tr>')
+    body = body or '<tr><td class="l" colspan="10">—</td></tr>'
     _tcl = tot["con_lai"]
     body += (f'<tr class="total"><td class="l">TỔNG CỘNG</td>'
-             f'<td class="num">{tot["dong_goi"]}</td><td class="num accent">{tot["huy"] or ""}</td>'
+             f'<td class="num">{tot.get("dg_cu", 0) or ""}</td>'
+             f'<td class="num">{tot["dong_goi"]}</td>'
+             f'<td class="num accent">{tot["huy"] or ""}</td>'
              f'<td class="num">{tot.get("xuat_kho", 0)}</td>'
              f'<td class="num">{tot["shipper_nhan"]}</td>'
              f'<td class="num">{tot.get("giao_khach", 0) or ""}</td>'
-             f'<td class="num{" accent" if _tcl else ""}">{_tcl or ""}</td></tr>')
+             f'<td class="num{" accent" if _tcl else ""}">{_tcl or ""}</td>'
+             f'<td class="num">{tot.get("cx_packed", 0) or ""}</td>'
+             f'<td class="num">{tot.get("cx_unpacked", 0) or ""}</td></tr>')
     return body
 
 
@@ -116,7 +128,8 @@ def _carrier_lech_notes(rows):
     for r in rows:
         c = str(r["carrier"])
         hot = "Hỏa tốc" in c
-        dg, x = r.get("dong_goi", 0), r.get("xuat_kho", 0)
+        dg = r.get("dg_cu", 0) + r.get("dong_goi", 0)   # tổng đã đóng gói (cũ + hôm nay)
+        x = r.get("xuat_kho", 0)
         s, g, hu = r.get("shipper_nhan", 0), r.get("giao_khach", 0), r.get("huy", 0)
         if x > s:   # xuất kho mà shipper chưa xác nhận = NGHI MẤT ĐƠN
             notes.append(f'⚠️ <b>{_e(c)}</b>: đã xuất kho <b>{x}</b> đơn nhưng ĐVVC mới xác nhận lấy '
@@ -357,12 +370,14 @@ def report_html(rep, dv, now_str):
     _exp_done = next((r for r in rep.get("by_carrier", []) if "Hỏa tốc" in str(r.get("carrier"))), None)
     _tcl = (rep.get("totals") or {}).get("con_lai", 0)
     sec1_note = _info_tip(
-        (f'Đóng gói đã gồm <b>{_exp_done["dong_goi"]} đơn hỏa tốc</b> (dòng đầu). ' if _exp_done else '')
-        + '<b>Đã xuất kho</b> = số ĐƠN đã bàn giao khỏi kho (= mục “Xuất kho đơn hàng” trong '
-          '<b>Báo cáo sổ kho</b>, tính theo đơn — báo cáo sổ kho đếm theo SỐ LƯỢNG sản phẩm). '
-          '<b>Shipper thực nhận</b> = ĐVVC đã XÁC NHẬN lấy; '
-          '<b>Đã giao khách</b> = đã giao tới tay khách (đơn hỏa tốc nên giao trong ngày). '
-          '<b>Chưa x.nhận</b> = Đã xuất kho − Shipper thực nhận.')
+        '<b>Đóng gói · Cũ</b> = đơn gói từ hôm trước, hôm nay mới xuất/xử lý; <b>· Hôm nay</b> = gói hôm nay. '
+        '<b>Đã xuất kho</b> = số ĐƠN đã bàn giao khỏi kho (= mục “Xuất kho đơn hàng” trong '
+        '<b>Báo cáo sổ kho</b>, tính theo đơn). '
+        '<b>Shipper thực nhận</b> = ĐVVC đã XÁC NHẬN lấy; '
+        '<b>Đã giao khách</b> = đã giao tới tay khách (đơn hỏa tốc giao trong ngày). '
+        '<b>Chưa x.nhận</b> = Đã xuất kho − Shipper thực nhận (nghi mất đơn). '
+        '<b>Còn xót lại</b> = đơn đã xác nhận nhưng CHƯA giao shipper: <b>Đã gói</b> (gói rồi, '
+        'chờ giao — cần lấy lại nếu hủy) / <b>Chưa gói</b> (chưa đóng gói).')
     # Auto-sinh lý do chênh lệch các cột để NV kiểm tra (yêu cầu user)
     _lech = _carrier_lech_notes(rep.get("by_carrier", []))
     if _lech:
@@ -538,8 +553,14 @@ def report_html(rep, dv, now_str):
 
   <div class="sec">I. Số lượng đơn theo đơn vị vận chuyển</div>
   <table>
-    <thead><tr><th class="l">Đơn vị vận chuyển</th><th>Đóng gói</th><th>Hủy</th>
-      <th>Đã xuất kho</th><th>Shipper thực nhận</th><th>Đã giao khách</th><th>Chưa x.nhận</th></tr></thead>
+    <thead>
+      <tr><th rowspan="2" class="l">Đơn vị vận chuyển</th>
+        <th colspan="2">Đóng gói</th><th rowspan="2">Hủy</th>
+        <th rowspan="2">Đã xuất kho</th><th rowspan="2">Shipper thực nhận</th>
+        <th rowspan="2">Đã giao khách</th><th rowspan="2">Chưa x.nhận</th>
+        <th colspan="2">Còn xót lại (chưa giao)</th></tr>
+      <tr><th>Cũ</th><th>Hôm nay</th><th>Đã gói</th><th>Chưa gói</th></tr>
+    </thead>
     <tbody>{_carrier_rows(rep["by_carrier"], t)}</tbody>
   </table>
   {sec1_note}
