@@ -762,15 +762,22 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
         f = f0(o)
         c = carrier(o)
         _pd = _vn_date_of(f.get("packed_on"))
+        # Khớp video: đơn ĐÓNG GÓI HÔM NAY (packed_on==today)
         if _pd == today:
-            ce(c)["dong_goi"] += 1        # đóng gói HÔM NAY
             cc = _order_codes(o)
             dong_goi_codes |= cc
             dong_goi_order_codes.append({
                 "track": f.get("tracking_number") or o.get("name") or "?",
                 "codes": sorted(cc)})
-        elif _pd and _pd < today and _today_pipeline(o):
-            ce(c)["dg_cu"] += 1           # đóng gói CŨ: gói hôm trước, hôm nay mới xuất/xử lý
+        # Cột "Đóng gói" = đơn pipeline ĐÃ GÓI, tách theo NGÀY XÁC NHẬN (KHÔNG theo ngày gói):
+        # CŨ = xác nhận hôm TRƯỚC (đơn sót, đã gói) · HÔM NAY = xác nhận hôm nay + đã gói.
+        # Nhờ vậy "đóng gói hôm nay" ≤ "xác nhận hôm nay", và đơn sót đã gói nằm ở "cũ".
+        _packed = (_pd is not None) or f.get("packed_status") == "packed"
+        if _today_pipeline(o) and _packed:
+            if _vn_date_of(f.get("shipment_created_on")) == today:
+                ce(c)["dong_goi"] += 1    # đóng gói HÔM NAY (xác nhận hôm nay + đã gói)
+            else:
+                ce(c)["dg_cu"] += 1       # đóng gói CŨ (xác nhận hôm trước + đã gói = đơn sót)
         if _vn_date_of(f.get("issued_on")) == today:
             ce(c)["xuat_kho"] += 1        # shop ĐÃ XUẤT KHO (issued) — chưa chắc shipper đã nhận
             issued_orders.append(o)
