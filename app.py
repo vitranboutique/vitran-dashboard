@@ -216,6 +216,7 @@ def _enrich_daily(rep, dvr, inb):
             hit = next((c for c in d.get("codes", []) if c in mset), None)
             d["clip"] = bool(hit)
             d["clip_count"] = cnt.get(hit, 0) if hit else 0
+            d["clip_code"] = hit            # MÃ tra clip trên app đóng hàng (Dohana)
             m = meta.get(hit) if hit else None
             d["clip_dur"] = m.get("dur") if m else None
             d["clip_time"] = m.get("recorded") if m else ""
@@ -243,6 +244,7 @@ def _enrich_daily(rep, dvr, inb):
                 consumed.add(pick)
                 d["clip"] = True
                 d["clip_altcode"] = True   # khớp theo ĐVVC + ngày, KHÔNG khớp chính xác mã
+                d["clip_code"] = pick      # mã clip trên Dohana (ghép mềm)
                 m = meta.get(pick)
                 if m:
                     d["clip_dur"] = m.get("dur")

@@ -208,9 +208,8 @@ def _returns_clip_rows(detail):
     for i, d in enumerate(detail, 1):
         cnt = d.get("clip_count", 0) or 0
         if d.get("clip"):
-            _alt = ' <span style="color:#b45309;font-weight:700">(mã khác)</span>' if d.get("clip_altcode") else ""
             cell = (f'<span style="color:#15803d;font-weight:800">✓ Có'
-                    f'{" ×" + str(cnt) if cnt > 1 else ""}</span>{_alt}')
+                    f'{" ×" + str(cnt) if cnt > 1 else ""}</span>')
             sub = []
             if d.get("clip_dur"):
                 sub.append(f'{d["clip_dur"]}s')
@@ -234,20 +233,19 @@ def _returns_clip_rows(detail):
                         f'padding:1px 5px;border-radius:4px">🏷️ {_e(str(tag))}</span>')
         else:
             tag_cell = '<span style="color:#cbd5e1">—</span>'
-        # Liệt kê ĐỦ mã liên quan để tra Sapo: Mã đơn (đậm, tra được) + VĐ giao đi (tra được)
-        # + VĐ hoàn về (mã in trên kiện hàng trả — KHÔNG tra được ở Sapo, chỉ để đối chiếu kiện).
+        # 2 MÃ TRA CỨU: (1) Mã đơn = tra Sapo + SÀN; (2) Mã clip = tra APP ĐÓNG HÀNG (Dohana)
         _oc = str(d.get("order_code") or d.get("tracking") or "?")
-        _go = str(d.get("tracking") or "")            # VĐ giao đi
-        _hv = str(d.get("track_return") or "")        # VĐ hoàn về (trên kiện)
-        _lines = ""
-        if _go and _go != _oc:
-            _lines += (f'<div style="font-size:.82em;color:#15803d">→ giao đi: {_e(_go)} '
-                       '<span style="color:#9ca3af">(tra được)</span></div>')
-        if _hv and _hv != _go and _hv != _oc:
-            _lines += (f'<div style="font-size:.82em;color:#9ca3af">← hoàn về: {_e(_hv)} '
-                       '<span style="color:#cbd5e1">(mã trên kiện)</span></div>')
+        _cc = str(d.get("clip_code") or "")
+        _ma = (f'<div><b>{_e(_oc)}</b> '
+               f'<span style="font-size:.72em;color:#9ca3af">Sapo · sàn</span></div>')
+        if _cc:
+            _altc = " · mã khác" if d.get("clip_altcode") else ""
+            _ma += (f'<div style="font-size:.86em;color:#6d28d9">🎥 {_e(_cc)} '
+                    f'<span style="font-size:.85em;color:#9ca3af">app đóng hàng{_altc}</span></div>')
+        else:
+            _ma += '<div style="font-size:.82em;color:#cbd5e1">🎥 — chưa có clip Dohana</div>'
         body += (f'<tr><td>{i}</td>'
-                 f'<td class="l"><b>{_e(_oc)}</b>{_lines}</td>'
+                 f'<td class="l">{_ma}</td>'
                  f'<td>{_e(str(d.get("carrier", "")))}</td>'
                  f'<td class="l">{_e(str(d.get("sku", "")))}</td>'
                  f'<td class="l" style="{lt_style}">{_e(str(lt))}</td>'
@@ -489,13 +487,13 @@ def report_html(rep, dv, now_str):
 
   <div class="sec">A. Chi tiết đơn hàng hoàn nhận hôm nay{clip_summary}</div>
   <table>
-    <thead><tr><th>#</th><th class="l">Mã đơn · Vận đơn (giao / hoàn)</th><th>ĐVVC</th>
+    <thead><tr><th>#</th><th class="l">Mã đơn (Sapo·sàn) · Mã clip (Dohana)</th><th>ĐVVC</th>
       <th class="l">Sản phẩm (SKU × SL)</th><th class="l">Loại trả hàng</th>
       <th class="l">🏷️ Tag app đóng hàng</th>
       <th>🎥 Clip khui hàng (thời lượng · giờ quay)</th></tr></thead>
     <tbody>{_returns_clip_rows(nk_detail)}</tbody>
   </table>
-  <div style="font-size:.72em;color:#6b7280;margin:.25em 0 0">🔎 Tra Sapo bằng <b>Mã đơn</b> (in đậm) hoặc <b>VĐ giao đi</b>. <b>VĐ hoàn về</b> = mã in trên kiện hàng khách gửi trả (đối chiếu kiện, KHÔNG tra ra ở Sapo).</div>
+  <div style="font-size:.72em;color:#6b7280;margin:.25em 0 0">🔎 <b>Mã đơn</b> (in đậm) = tra được trên <b>Sapo</b> và <b>sàn TMĐT</b> (Shopee/TikTok). 🎥 <b>Mã clip</b> = tra clip khui hàng trên <b>app đóng hàng (Dohana)</b>. "mã khác" = clip có nhưng ghi mã vận đơn khác.</div>
   {clip_note}
 
   <div class="sec">B. Ghi chú đơn hoàn / khiếu nại</div>
