@@ -17,7 +17,11 @@ from __future__ import annotations
 import io
 import json
 import os
+import re
 from datetime import datetime, timedelta, timezone
+
+# Mẫu mã vận đơn để bóc từ note (SPXVN.../VTPVN... hoặc mã số 11–14 chữ số như J&T 861...)
+_TRACK_RE = re.compile(r'[A-Z]{2,}VN\d+|\b\d{11,14}\b')
 
 SNAPSHOT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "snapshot.json")
 
@@ -639,6 +643,10 @@ def get_returns_received_today(fetch_json, scan_days: int = 60, max_pages: int =
                 codes.add(str(c))
         for t in fft:
             codes.add(str(t))
+        # ⚠️ VĐ HOÀN VỀ THẬT (Sapo UI "Vận chuyển hàng hoàn") thường KHÔNG ở field cấu trúc mà
+        # nằm trong NOTE (vd "🚚 Hoàn: SPXVN061695285316"). Bóc mã từ note để KHỚP CHÍNH XÁC clip
+        # (NV quét clip theo đúng mã hoàn-về này) → khỏi phải đoán theo ĐVVC.
+        codes.update(_TRACK_RE.findall(str(x.get("note") or "")))
         lis = x.get("line_items") or []
         sku = "; ".join(f"{(li.get('sku') or 'N/A')}×{int(round(li.get('quantity') or 0))}"
                         for li in lis)
