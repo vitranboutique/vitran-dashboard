@@ -66,6 +66,9 @@ _CSS = """
   .dline .vd{color:#6b7280;font-size:.9em;}
   .dline .pk{color:#b91c1c;font-size:.85em;font-weight:800;}
   .cbox2{display:inline-block;width:.8em;height:.8em;border:1.3px solid #475569;border-radius:2px;vertical-align:-1px;margin-right:2px;}
+  .itip{position:relative;display:inline-block;font-size:.7em;font-weight:800;color:#2563eb;cursor:help;margin:.3em 0 0;}
+  .ipop{display:none;position:absolute;left:0;top:1.5em;z-index:30;width:80mm;background:#fff;border:1px solid #b9c2d0;border-radius:6px;padding:7px 9px;box-shadow:0 5px 16px rgba(0,0,0,.22);font-size:1.12em;font-weight:400;color:#374151;line-height:1.5;}
+  .itip:hover .ipop{display:block;}
   .sign.s2{grid-template-columns:repeat(2,1fr);max-width:70%;margin-left:auto;margin-right:auto;}
   @page{size:A4 portrait;margin:0;}
   @media print{
@@ -181,6 +184,11 @@ def _conxot_rows(today_list, old_list):
             + _lines(old_list, True))
 
 
+def _info_tip(content):
+    """Ghi chú ẩn cho gọn trang: chỉ hiện 'ℹ️ Giải thích', RÊ CHUỘT mới bung nội dung."""
+    return f'<span class="itip">ℹ️ Giải thích<span class="ipop">{content}</span></span>'
+
+
 def _batch_rows(batches, tong_don, tong_sp):
     body = "".join(
         f'<tr><td class="l">Đợt {b["dot"]}{" (hỏa tốc)" if b.get("hoatoc") else ""}</td>'
@@ -255,11 +263,10 @@ def report_html(rep, dv, now_str):
             f'<tr><td class="l" style="padding-left:20px">⤷ ✅ Đã có video đóng gói</td>'
             f'<td class="num">{_have}</td></tr>'
             + _miss_row)
-        vid_note = ('<div style="font-size:.81em;color:#374151;margin:.6em 0 0;line-height:1.55">'
-                    'ℹ️ Đơn đóng gói đã gồm cả <b>đơn hỏa tốc giao xong trong ngày</b> (dòng “Hỏa tốc” bảng ĐVVC). '
-                    + (f'<b>{_mv} đơn thiếu video</b> do clip bị <b>quay nhầm sang mục “khui hàng”</b> — xem cảnh báo.'
-                       if _mv else 'Tất cả đơn đóng gói đều có video.')
-                    + '</div>')
+        vid_note = _info_tip(
+            'Đơn đóng gói đã gồm cả <b>đơn hỏa tốc giao xong trong ngày</b> (dòng “Hỏa tốc” bảng ĐVVC). '
+            + (f'<b>{_mv} đơn thiếu video</b> do clip bị <b>quay nhầm sang mục “khui hàng”</b> — xem cảnh báo.'
+               if _mv else 'Tất cả đơn đóng gói đều có video.'))
         _w = []
         if _mv:
             _ml = ", ".join(_e(str(c)) for c in _miss_codes[:8]) + (f" …(+{_mv - 8})" if _mv > 8 else "")
@@ -277,14 +284,13 @@ def report_html(rep, dv, now_str):
         vid_note = vid_warn = ''
     _exp_done = next((r for r in rep.get("by_carrier", []) if "Hỏa tốc" in str(r.get("carrier"))), None)
     _tcl = (rep.get("totals") or {}).get("con_lai", 0)
-    sec1_note = ('<div style="font-size:.77em;color:#6b7280;margin:.4em 0 0;line-height:1.5">'
-                 + (f'ℹ️ Đóng gói đã gồm <b>{_exp_done["dong_goi"]} đơn hỏa tốc</b> (dòng đầu). ' if _exp_done else 'ℹ️ ')
-                 + '<b>Đã xuất kho</b> = số ĐƠN đã bàn giao khỏi kho (= mục “Xuất kho đơn hàng” trong '
-                   '<b>Báo cáo sổ kho</b>, tính theo đơn — báo cáo sổ kho đếm theo SỐ LƯỢNG sản phẩm). '
-                   '<b>Shipper thực nhận</b> = ĐVVC đã XÁC NHẬN lấy; '
-                   '<b>Đã giao khách</b> = đã giao tới tay khách (đơn hỏa tốc nên giao trong ngày). '
-                   '<b>Chưa x.nhận</b> = Đã xuất kho − Shipper thực nhận.'
-                 + '</div>')
+    sec1_note = _info_tip(
+        (f'Đóng gói đã gồm <b>{_exp_done["dong_goi"]} đơn hỏa tốc</b> (dòng đầu). ' if _exp_done else '')
+        + '<b>Đã xuất kho</b> = số ĐƠN đã bàn giao khỏi kho (= mục “Xuất kho đơn hàng” trong '
+          '<b>Báo cáo sổ kho</b>, tính theo đơn — báo cáo sổ kho đếm theo SỐ LƯỢNG sản phẩm). '
+          '<b>Shipper thực nhận</b> = ĐVVC đã XÁC NHẬN lấy; '
+          '<b>Đã giao khách</b> = đã giao tới tay khách (đơn hỏa tốc nên giao trong ngày). '
+          '<b>Chưa x.nhận</b> = Đã xuất kho − Shipper thực nhận.')
     # Auto-sinh lý do chênh lệch các cột để NV kiểm tra (yêu cầu user)
     _lech = _carrier_lech_notes(rep.get("by_carrier", []))
     if _lech:
