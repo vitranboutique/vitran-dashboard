@@ -234,13 +234,20 @@ def _returns_clip_rows(detail):
                         f'padding:1px 5px;border-radius:4px">🏷️ {_e(str(tag))}</span>')
         else:
             tag_cell = '<span style="color:#cbd5e1">—</span>'
-        # Mã đơn (tra được ở Sapo) đậm + VĐ giao đi nhỏ bên dưới
-        _oc = _e(str(d.get("order_code") or d.get("tracking") or "?"))
-        _vd = str(d.get("tracking") or "")
-        _vd_html = (f'<div style="font-size:.82em;color:#6b7280">VĐ: {_e(_vd)}</div>'
-                    if _vd and _vd != d.get("order_code") else "")
+        # Liệt kê ĐỦ mã liên quan để tra Sapo: Mã đơn (đậm, tra được) + VĐ giao đi (tra được)
+        # + VĐ hoàn về (mã in trên kiện hàng trả — KHÔNG tra được ở Sapo, chỉ để đối chiếu kiện).
+        _oc = str(d.get("order_code") or d.get("tracking") or "?")
+        _go = str(d.get("tracking") or "")            # VĐ giao đi
+        _hv = str(d.get("track_return") or "")        # VĐ hoàn về (trên kiện)
+        _lines = ""
+        if _go and _go != _oc:
+            _lines += (f'<div style="font-size:.82em;color:#15803d">→ giao đi: {_e(_go)} '
+                       '<span style="color:#9ca3af">(tra được)</span></div>')
+        if _hv and _hv != _go and _hv != _oc:
+            _lines += (f'<div style="font-size:.82em;color:#9ca3af">← hoàn về: {_e(_hv)} '
+                       '<span style="color:#cbd5e1">(mã trên kiện)</span></div>')
         body += (f'<tr><td>{i}</td>'
-                 f'<td class="l"><b>{_oc}</b>{_vd_html}</td>'
+                 f'<td class="l"><b>{_e(_oc)}</b>{_lines}</td>'
                  f'<td>{_e(str(d.get("carrier", "")))}</td>'
                  f'<td class="l">{_e(str(d.get("sku", "")))}</td>'
                  f'<td class="l" style="{lt_style}">{_e(str(lt))}</td>'
@@ -482,12 +489,13 @@ def report_html(rep, dv, now_str):
 
   <div class="sec">A. Chi tiết đơn hàng hoàn nhận hôm nay{clip_summary}</div>
   <table>
-    <thead><tr><th>#</th><th class="l">Mã đơn · VĐ giao đi</th><th>ĐVVC</th>
+    <thead><tr><th>#</th><th class="l">Mã đơn · Vận đơn (giao / hoàn)</th><th>ĐVVC</th>
       <th class="l">Sản phẩm (SKU × SL)</th><th class="l">Loại trả hàng</th>
       <th class="l">🏷️ Tag app đóng hàng</th>
       <th>🎥 Clip khui hàng (thời lượng · giờ quay)</th></tr></thead>
     <tbody>{_returns_clip_rows(nk_detail)}</tbody>
   </table>
+  <div style="font-size:.72em;color:#6b7280;margin:.25em 0 0">🔎 Tra Sapo bằng <b>Mã đơn</b> (in đậm) hoặc <b>VĐ giao đi</b>. <b>VĐ hoàn về</b> = mã in trên kiện hàng khách gửi trả (đối chiếu kiện, KHÔNG tra ra ở Sapo).</div>
   {clip_note}
 
   <div class="sec">B. Ghi chú đơn hoàn / khiếu nại</div>
