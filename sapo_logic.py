@@ -681,12 +681,34 @@ def get_returns_received_today(fetch_json, scan_days: int = 60, max_pages: int =
                     if x.get("status") != "canceled"
                     and x.get("restock_status") == "unrestock"
                     and x.get("shipment_status") == "returning")
+    # Map mã VĐ/đơn -> info cho MỌI đơn hoàn (kể cả CHƯA nhập kho) → để điền mã đơn/VĐ gửi đi/
+    # SKU/loại trả cho clip dư (vd đơn TRÁO HÀNG giữ tranh chấp, chưa nhập kho).
+    all_by_code = {}
+    for x in rows:
+        si = x.get("shipping_info") or {}
+        fft = si.get("fulfillment_tracking_numbers") or []
+        on = (x.get("order") or {}).get("name")
+        lis = x.get("line_items") or []
+        info = {
+            "order_code": on or x.get("name"),
+            "vd_gui": (fft[0] if fft else None),
+            "sku": "; ".join(f"{(li.get('sku') or 'N/A')}×{int(round(li.get('quantity') or 0))}"
+                             for li in lis),
+            "loai_tra": _type_vn.get(x.get("return_type"), x.get("return_type") or "—"),
+            "loai_tra_code": x.get("return_type"),
+        }
+        cset = {str(c) for c in (si.get("tracking_number"), info["vd_gui"], on, x.get("name")) if c}
+        cset.update(str(t) for t in fft)
+        cset.update(_TRACK_RE.findall(str(x.get("note") or "")))
+        for c in cset:
+            all_by_code.setdefault(c, info)
     return {
         "so_phieu": len(recv),
         "so_sp": so_sp,
         "by_source": dict(sorted(by_source.items(), key=lambda x: -x[1])),
         "cho_xu_ly": cho_xu_ly,
         "detail": detail,
+        "all_by_code": all_by_code,
     }
 
 

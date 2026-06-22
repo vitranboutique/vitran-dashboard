@@ -280,13 +280,17 @@ def _enrich_daily(rep, dvr, inb):
                 "sku": d.get("sku"), "loai_tra": d.get("loai_tra"),
                 "loai_tra_code": d.get("loai_tra_code"), "has_sapo": True,
             })
+        _abc = nk.get("all_by_code") or {}
         for u in nk.get("clip_unmatched_detail", []):
+            info = _abc.get(u.get("code")) or {}   # đơn hoàn CHƯA nhập kho (vd tráo hàng giữ tranh chấp)
             recon.append({
                 "clip_code": u.get("code"), "clip_time": u.get("recorded"),
                 "clip_dur": u.get("dur"), "clip_tag": u.get("tag"),
                 "clip_alt": False, "has_clip": True,
-                "order_code": "", "recv_time": "", "vd_gui": "", "nhan_vien": u.get("staff") or "",
-                "sku": "", "loai_tra": "", "loai_tra_code": "", "has_sapo": False,
+                "order_code": info.get("order_code") or "", "recv_time": "", "vd_gui": info.get("vd_gui") or "",
+                "nhan_vien": u.get("staff") or "",
+                "sku": info.get("sku") or "", "loai_tra": info.get("loai_tra") or "",
+                "loai_tra_code": info.get("loai_tra_code") or "", "has_sapo": False,
             })
         nk["recon_rows"] = recon
     else:

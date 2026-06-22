@@ -308,11 +308,13 @@ def _recon_rows(rows):
                             if _ss else ''))
             sapo_td = ""
         else:
+            _oc = r.get("order_code") or ""
             _tag = r.get("clip_tag") or ""
             _rsn = (f'✗ CHƯA nhập kho — đơn gắn tag “{_e(str(_tag))}”, giữ xử lý tranh chấp (theo dõi/khiếu nại sàn)'
                     if _tag else
                     '✗ CHƯA bấm nhập kho trên Sapo — kiểm tra: quên nhập kho / quay nhầm mục / quay trùng')
-            sapo_cell = f'<span style="color:#dc2626;font-weight:800">{_rsn}</span>'
+            _ocb = f'<b>{_e(str(_oc))}</b><br>' if _oc else ''
+            sapo_cell = f'{_ocb}<span style="color:#dc2626;font-weight:800">{_rsn}</span>'
             sapo_td = ' style="background:#fef2f2"'
         # ── SKU · Loại trả · Tag ──
         sku = _e(str(r.get("sku") or "—"))
