@@ -338,7 +338,7 @@ def _recon_rows(rows):
     return body or '<tr><td colspan="7">Hôm nay không có đơn hoàn / clip khui hàng.</td></tr>'
 
 
-def report_html(rep, dv, now_str):
+def report_html(rep, dv, now_str, sign_on="2"):
     t = rep["totals"]
     video_total = (dv or {}).get("total", "—")
     # ---- VIDEO ĐÓNG GÓI: trình bày theo góc ĐƠN (đơn đóng gói có / thiếu video) ----
@@ -546,6 +546,17 @@ def report_html(rep, dv, now_str):
             f'{_conxot_rows(_cx_pk, _cx_upk)}</div>'
             '</div>')
 
+    # Phần KÝ TÊN — đặt ở Trang 1, Trang 2, hoặc cả 2 (tùy chọn sign_on). Mặc định Trang 2.
+    _sign_block = (
+        '<div class="sign">'
+        '<div><div class="role">NV soạn hàng</div><div class="space"></div><div class="hint">(Ký, ghi rõ họ tên)</div></div>'
+        '<div><div class="role">NV kho</div><div class="space"></div><div class="hint">(Ký, ghi rõ họ tên)</div></div>'
+        '<div><div class="role">Quản lý</div><div class="space"></div><div class="hint">(Ký, ghi rõ họ tên)</div></div>'
+        '</div>')
+    sign1 = _sign_block if sign_on in ("1", "both") else ""
+    sign2 = _sign_block if sign_on in ("2", "both") else ""
+    _p1note = " · (ký xác nhận ở mặt sau)" if sign_on == "2" else ""
+
     page1 = f"""<div class="page"><div class="pfit">
   <div class="hd">
     <div><div class="brand">VITRAN BOUTIQUE</div>
@@ -589,7 +600,8 @@ def report_html(rep, dv, now_str):
   <div class="note"><span style="color:#9aa3af;font-size:.95em">(Ghi tay: đơn GHN còn lại, hỏa tốc tìm tài xế, đơn lỗi…)</span>
     <div class="lines"><div></div></div></div>
 
-  <div class="foot">VITRAN BOUTIQUE · Trang 1/2 — Vận hành đơn giao đi · (ký xác nhận ở mặt sau) · {_e(rep["date"])}</div>
+  {sign1}
+  <div class="foot">VITRAN BOUTIQUE · Trang 1/2 — Vận hành đơn giao đi{_p1note} · {_e(rep["date"])}</div>
 </div></div>"""
 
     page2 = f"""<div class="page page2"><div class="pfit">
@@ -620,12 +632,7 @@ def report_html(rep, dv, now_str):
   <div class="note"><span style="color:#9aa3af;font-size:.95em">(Ghi tay: tình trạng hàng hoàn, đơn cần khiếu nại sàn, thiếu/sai SP…)</span>
     <div class="lines"><div></div></div></div>
 
-  <div class="sign">
-    <div><div class="role">NV soạn hàng</div><div class="space"></div><div class="hint">(Ký, ghi rõ họ tên)</div></div>
-    <div><div class="role">NV kho</div><div class="space"></div><div class="hint">(Ký, ghi rõ họ tên)</div></div>
-    <div><div class="role">Quản lý</div><div class="space"></div><div class="hint">(Ký, ghi rõ họ tên)</div></div>
-  </div>
-
+  {sign2}
   <div class="foot">VITRAN BOUTIQUE · Trang 2/2 — Đơn hàng hoàn trả · {_e(rep["date"])}</div>
 </div></div>"""
 
