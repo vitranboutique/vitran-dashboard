@@ -837,8 +837,16 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
     # đóng gói/quay video trong ngày, chỉ hủy sau) → khớp tổng đợt soạn (89).
     # "ĐVVC đã nhận" = "shipper thực nhận" = đã bàn giao (issued) = 86 (khớp số NV báo;
     # KHÔNG dùng delivery_status vì NV tính shipper-thực-nhận = lúc bàn giao, không chờ ĐVVC quét).
-    xac_nhan = sum(1 for o in open_orders if _vn_date_of(f0(o).get("shipment_created_on")) == today)
-    xac_nhan += sum(1 for o in huy_goi_orders if _vn_date_of(f0(o).get("shipment_created_on")) == today)
+    # Đã xác nhận = baseline phễu, phải ≥ mọi bước sau. = đơn xác nhận HÔM NAY (tạo vận đơn)
+    # HỢP đơn SÓT (xác nhận hôm trước, hôm nay mới đóng gói/xuất kho). Nếu chỉ đếm shipment_created
+    # ==today thì đơn sót có video/đóng gói hôm nay bị bỏ → "video > đã xác nhận" (vô lý).
+    def _today_pipeline(o):
+        f = f0(o)
+        return (_vn_date_of(f.get("shipment_created_on")) == today
+                or _vn_date_of(f.get("packed_on")) == today
+                or _vn_date_of(f.get("issued_on")) == today)
+    xac_nhan = sum(1 for o in open_orders if _today_pipeline(o))
+    xac_nhan += sum(1 for o in huy_goi_orders if _today_pipeline(o))
     funnel = {
         "xac_nhan": xac_nhan,
         "soan": None,                            # đã in phiếu nhặt qua dashboard (picklog, gắn ở app.py)
