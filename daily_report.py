@@ -27,7 +27,8 @@ _CSS = """
   .kpi.hot .v{color:var(--accent);}
   .sec{font-size:.88em;font-weight:800;color:#fff;background:var(--navy);padding:.23em .6em;border-radius:4px;margin:.7em 0 .3em;}
   table{width:100%;border-collapse:collapse;font-size:.85em;}
-  th,td{border:1px solid var(--grid);padding:.23em .54em;text-align:center;}
+  th,td{border:1px solid #5b6878;padding:.23em .54em;text-align:center;}
+  table{border:2px solid #3f4a5a;}
   th{background:#dfe4ec;font-weight:800;color:#2c3a52;}
   td.l,th.l{text-align:left;}
   td.num{text-align:right;font-variant-numeric:tabular-nums;}
