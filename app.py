@@ -529,23 +529,27 @@ def render_alert_popup():
         a = load_alerts()
     except Exception:
         return
+    # (label, value, [danh sách dòng phụ con])
     items = [
-        ("🕒 Xác nhận sau 18h", a["conf_after18"]),
-        ("📌 Đặt &lt;18h, xác nhận &gt;18h", a["late_confirm"]),
-        ("📦 Còn chưa giao (chờ shipper)", a["chua_giao"]),
-        ("🔴 Hỏa tốc chưa giao", a["express_pending"]),
-        ("↩️ Hủy sau gói cần LẤY LẠI", a["cancel_retrieve"]),
+        ("🕒 Xác nhận sau 18h", a["conf_after18"], None),
+        ("📌 Đặt &lt;18h, xác nhận &gt;18h", a["late_confirm"], None),
+        ("📦 Đơn xót lại (chờ shipper)", a["chua_giao"], [
+            ("↳ Đã xác nhận, CHƯA đóng hàng", a.get("xot_chua_dong", 0)),
+            ("↳ Đã xác nhận, ĐÃ đóng hàng", a.get("xot_da_dong", 0)),
+        ]),
+        ("🔴 Hỏa tốc chưa giao", a["express_pending"], None),
+        ("↩️ Hủy sau gói cần LẤY LẠI", a["cancel_retrieve"], [
+            ("↳ trong đó 🔴 hỏa tốc", a.get("cancel_retrieve_express", 0)),
+        ]),
     ]
-    n_hot = sum(1 for _, v in items if v)
-    rows = "".join(
-        f'<div class="row"><span>{lbl}</span>'
-        f'<span class="v{" hot" if v else ""}">{v}</span></div>'
-        for lbl, v in items)
-    # dòng phụ: trong đó HỎA TỐC (thuộc "hủy sau gói")
-    _ce = a.get("cancel_retrieve_express", 0)
-    rows += (f'<div class="row" style="padding-left:16px;font-size:.76rem;border-bottom:0">'
-             f'<span>↳ trong đó 🔴 hỏa tốc</span>'
-             f'<span class="v{" hot" if _ce else ""}">{_ce}</span></div>')
+    n_hot = sum(1 for _, v, _s in items if v)
+    rows = ""
+    for lbl, v, subs in items:
+        rows += (f'<div class="row"><span>{lbl}</span>'
+                 f'<span class="v{" hot" if v else ""}">{v}</span></div>')
+        for slbl, sv in (subs or []):
+            rows += (f'<div class="row" style="padding-left:16px;font-size:.76rem;border-bottom:0">'
+                     f'<span>{slbl}</span><span class="v{" hot" if sv else ""}">{sv}</span></div>')
     badge = f'⚠️ Cảnh báo ({n_hot})' if n_hot else '✅ Cảnh báo (0)'
     body = rows if n_hot else '<div class="ok">✅ Không có cảnh báo</div>' + rows
     st.markdown(

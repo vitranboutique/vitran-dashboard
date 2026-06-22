@@ -436,6 +436,7 @@ def get_alerts(fetch_json) -> dict:
             break
         open_orders += rows
     conf_after18 = late_confirm = chua_giao = express_pending = 0
+    xot_chua_dong = xot_da_dong = 0   # đơn xót lại (chưa giao) chia theo ĐÃ/CHƯA đóng gói
     for o in open_orders:
         f = f0(o)
         ss = f.get("shipment_status")
@@ -447,6 +448,10 @@ def get_alerts(fetch_json) -> dict:
                 late_confirm += 1
         if ss == "pending":
             chua_giao += 1
+            if f.get("packed_status") == "packed":
+                xot_da_dong += 1
+            else:
+                xot_chua_dong += 1
             if o.get("shipment_category") == "express":
                 express_pending += 1
     # Đơn HỦY SAU GÓI cần lấy lại = đã đóng gói + HỦY HÔM NAY (khớp Sapo "Hủy hôm nay")
@@ -462,6 +467,7 @@ def get_alerts(fetch_json) -> dict:
         pass
     return {"conf_after18": conf_after18, "late_confirm": late_confirm,
             "chua_giao": chua_giao, "express_pending": express_pending,
+            "xot_chua_dong": xot_chua_dong, "xot_da_dong": xot_da_dong,
             "cancel_retrieve": cancel_retrieve,
             "cancel_retrieve_express": cancel_retrieve_express}
 
