@@ -46,7 +46,10 @@ _CSS = """
   .page2{page-break-before:always;}
   .kpis.k3{grid-template-columns:repeat(3,1fr);}
   .kpis.kf4{grid-template-columns:repeat(4,1fr);gap:.38em;margin:.3em 0 .4em;}
+  .kpis.kf2{grid-template-columns:repeat(2,1fr);gap:.6em;margin:.5em 0 0;}
   .kpi.strong{border:2px solid var(--navy);background:#eaf0fb;}
+  .kpi.huytone{background:#fdf3f2;border-color:#e6b3ab;}
+  .kpi.xottone{background:#fff8ec;border-color:#e3c485;}
   .kpis.kf5{grid-template-columns:repeat(5,1fr);gap:.38em;margin:.46em 0 .4em;}
   .kf5 .kpi{padding:.3em .46em;text-align:center;}
   .kf5 .kpi .l{font-size:.69em;line-height:1.2;}
@@ -59,7 +62,7 @@ _CSS = """
   .warn .wh{font-size:.88em;font-weight:900;color:#b45309;}
   .warn .wb{font-size:.77em;color:#7c4a13;margin-top:2px;line-height:1.4;}
   .warn .wc{font-size:.85em;font-weight:900;color:#b45309;margin-top:.23em;letter-spacing:.3px;}
-  .fdetail{display:grid;grid-template-columns:1fr 1fr;gap:.6em;margin:.55em 0 .7em;}
+  .fdetail{display:grid;grid-template-columns:1fr 1fr;gap:.6em;margin:.2em 0 .7em;}
   .fdcol{border:1px solid #d6dbe6;border-radius:6px;padding:.38em .6em .46em;}
   .fdcol-huy{background:#fdf3f2;border-color:#eec2bc;}
   .fdcol-xot{background:#fff8ec;border-color:#e9cf9b;}
@@ -477,18 +480,19 @@ def report_html(rep, dv, now_str):
     _quet, _dvvc, _video, _soan = (fn.get("quet_bien_ban"), fn.get("dvvc_nhan"),
                                    fn.get("video"), fn.get("soan"))
 
-    def _fbox(icon, label, val, lech=0, hot=False, tick=False, strong=False):
+    def _fbox(icon, label, val, lech=0, hot=False, tick=False, strong=False, tone=""):
         disp = "—" if val is None else val
-        cls, mark = "kpi", ""
+        classes, mark = ["kpi"], ""
         if strong:
-            cls = "kpi strong"
+            classes.append("strong")
         if hot and val:
-            cls = "kpi hot"
+            classes.append("hot")
+        if tone:
+            classes.append(tone)
         if lech and lech > 0:
-            cls = "kpi bad"
-            mark = f'<div class="lech">▼ lệch {lech}</div>'
+            classes, mark = ["kpi", "bad"], f'<div class="lech">▼ lệch {lech}</div>'
         tk = '<div class="tick"><span class="cbox"></span> đã nhận</div>' if tick else ''
-        return (f'<div class="{cls}"><div class="l">{icon} {label}</div>'
+        return (f'<div class="{" ".join(classes)}"><div class="l">{icon} {label}</div>'
                 f'<div class="v">{disp}</div>{mark}{tk}</div>')
 
     # Thiếu video = đóng gói (gồm hủy) chưa quay. Quét biên bản nên = đóng gói − hủy (hủy không xuất).
@@ -508,13 +512,14 @@ def report_html(rep, dv, now_str):
         _fbox("📋", "Đã quét biên bản", _quet, lech=_lq),
         _fbox("🚚", "ĐVVC đã nhận", _dvvc, lech=_ld),
     ])
+    # 2 ô này 50/50, NẰM NGAY TRÊN bảng chi tiết tương ứng (Hủy ↔ bảng Hủy, Xót ↔ bảng Xót)
     _row2 = "".join([
-        _fbox("❌", "Hủy hôm nay", fn.get("huy"), hot=True, tick=True),
-        _fbox("⏳", "Còn xót lại", fn.get("con_xot"), tick=True),
+        _fbox("❌", "Hủy hôm nay", fn.get("huy"), hot=True, tick=True, tone="huytone"),
+        _fbox("⏳", "Còn xót lại", fn.get("con_xot"), tick=True, tone="xottone"),
     ])
     kpi_html = (f'<div class="kpis k3">{_row_in}</div>'
                 f'<div class="kpis kf4">{_row1}</div>'
-                f'<div class="kpis kf5">{_row2}</div>')
+                f'<div class="kpis kf2">{_row2}</div>')
 
     # Chi tiết đơn HỦY + CÒN XÓT ngay dưới 2 ô phễu — gom theo ĐVVC, mỗi đơn 1 ô tick xác nhận
     _huy_all = rep.get("huy_all_detail") or []
