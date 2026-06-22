@@ -603,14 +603,16 @@ def get_returns_received_today(fetch_json, scan_days: int = 60, max_pages: int =
         by_source[s] = by_source.get(s, 0) + 1
         so_sp += int(round(x.get("total_quantity") or 0))
         si = x.get("shipping_info") or {}
-        track = si.get("tracking_number")
-        order_name = (x.get("order") or {}).get("name")
-        # Mã ứng viên để khớp video khui hàng (NV có thể quét VĐ hoặc mã đơn)
+        track = si.get("tracking_number")           # mã vận đơn HOÀN-VỀ (thường KHÔNG tra ra ở Sapo)
+        fft = si.get("fulfillment_tracking_numbers") or []
+        out_track = (fft[0] if fft else None)       # mã vận đơn GIAO ĐI (nằm trên đơn → TRA ĐƯỢC)
+        order_name = (x.get("order") or {}).get("name")   # mã đơn (sàn) → TRA ĐƯỢC ở Sapo
+        # Mã ứng viên để khớp video khui hàng (NV có thể quét VĐ hoàn-về, VĐ giao-đi, hoặc mã đơn)
         codes = set()
-        for c in (track, order_name, x.get("name")):
+        for c in (track, out_track, order_name, x.get("name")):
             if c:
                 codes.add(str(c))
-        for t in (si.get("fulfillment_tracking_numbers") or []):
+        for t in fft:
             codes.add(str(t))
         lis = x.get("line_items") or []
         sku = "; ".join(f"{(li.get('sku') or 'N/A')}×{int(round(li.get('quantity') or 0))}"
@@ -618,7 +620,11 @@ def get_returns_received_today(fetch_json, scan_days: int = 60, max_pages: int =
         rsn = lis[0].get("return_reason") if lis else None
         rtype = x.get("return_type")
         detail.append({
-            "tracking": track or order_name or x.get("name") or "?",
+            # Hiển thị MÃ TRA ĐƯỢC ở Sapo: ưu tiên mã đơn (sàn), kèm VĐ giao đi. KHÔNG show VĐ
+            # hoàn-về (track) làm mã chính vì tra Sapo không ra (chỉ nằm trên phiếu hoàn).
+            "order_code": order_name or x.get("name") or "?",
+            "tracking": out_track or order_name or track or "?",
+            "track_return": track,
             "carrier": si.get("carrier_name") or "?",
             "order_name": order_name,
             "sku": sku,

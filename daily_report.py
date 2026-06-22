@@ -234,8 +234,13 @@ def _returns_clip_rows(detail):
                         f'padding:1px 5px;border-radius:4px">🏷️ {_e(str(tag))}</span>')
         else:
             tag_cell = '<span style="color:#cbd5e1">—</span>'
+        # Mã đơn (tra được ở Sapo) đậm + VĐ giao đi nhỏ bên dưới
+        _oc = _e(str(d.get("order_code") or d.get("tracking") or "?"))
+        _vd = str(d.get("tracking") or "")
+        _vd_html = (f'<div style="font-size:.82em;color:#6b7280">VĐ: {_e(_vd)}</div>'
+                    if _vd and _vd != d.get("order_code") else "")
         body += (f'<tr><td>{i}</td>'
-                 f'<td class="l">{_e(str(d.get("tracking", "")))}</td>'
+                 f'<td class="l"><b>{_oc}</b>{_vd_html}</td>'
                  f'<td>{_e(str(d.get("carrier", "")))}</td>'
                  f'<td class="l">{_e(str(d.get("sku", "")))}</td>'
                  f'<td class="l" style="{lt_style}">{_e(str(lt))}</td>'
@@ -477,7 +482,7 @@ def report_html(rep, dv, now_str):
 
   <div class="sec">A. Chi tiết đơn hàng hoàn nhận hôm nay{clip_summary}</div>
   <table>
-    <thead><tr><th>#</th><th class="l">Mã vận đơn</th><th>ĐVVC</th>
+    <thead><tr><th>#</th><th class="l">Mã đơn · VĐ giao đi</th><th>ĐVVC</th>
       <th class="l">Sản phẩm (SKU × SL)</th><th class="l">Loại trả hàng</th>
       <th class="l">🏷️ Tag app đóng hàng</th>
       <th>🎥 Clip khui hàng (thời lượng · giờ quay)</th></tr></thead>
