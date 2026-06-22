@@ -273,6 +273,7 @@ def _enrich_daily(rep, dvr, inb):
                 "clip_dur": d.get("clip_dur"), "clip_tag": d.get("clip_tag"),
                 "clip_alt": d.get("clip_altcode"), "has_clip": bool(d.get("clip")),
                 "order_code": d.get("order_code"), "recv_time": d.get("recv_time"),
+                "vd_gui": d.get("tracking"),   # mã VĐ GIAO ĐI (tra Sapo/sàn được)
                 # Cột "Đã nhận hàng trả (Sapo)" → CHỈ lấy NV nhận hàng từ Sapo,
                 # KHÔNG fallback sang NV quay clip (Dohana) để tránh hiển thị sai người.
                 "nhan_vien": d.get("nhan_vien") or "",
@@ -284,7 +285,7 @@ def _enrich_daily(rep, dvr, inb):
                 "clip_code": u.get("code"), "clip_time": u.get("recorded"),
                 "clip_dur": u.get("dur"), "clip_tag": u.get("tag"),
                 "clip_alt": False, "has_clip": True,
-                "order_code": "", "recv_time": "", "nhan_vien": u.get("staff") or "",
+                "order_code": "", "recv_time": "", "vd_gui": "", "nhan_vien": u.get("staff") or "",
                 "sku": "", "loai_tra": "", "loai_tra_code": "", "has_sapo": False,
             })
         nk["recon_rows"] = recon

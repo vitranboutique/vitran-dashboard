@@ -323,13 +323,17 @@ def _recon_rows(rows):
         tag_cell = (f'<span style="color:#6d28d9;font-weight:800;background:#f3e8ff;'
                     f'padding:1px 5px;border-radius:4px">🏷️ {_e(str(tag))}</span>'
                     if tag else '<span style="color:#cbd5e1">—</span>')
+        _vdg = str(r.get("vd_gui") or "")
+        vdg_cell = (f'{_e(_vdg)}' if _vdg and _vdg != r.get("order_code")
+                    else '<span style="color:#cbd5e1">—</span>')
         body += (f'<tr><td>{i}</td>'
                  f'<td class="l"{clip_td}>{clip_cell}</td>'
                  f'<td class="l"{sapo_td}>{sapo_cell}</td>'
+                 f'<td class="l">{vdg_cell}</td>'
                  f'<td class="l">{sku}</td>'
                  f'<td class="l" style="{lt_style}">{_e(str(lt))}</td>'
                  f'<td class="l">{tag_cell}</td></tr>')
-    return body or '<tr><td colspan="6">Hôm nay không có đơn hoàn / clip khui hàng.</td></tr>'
+    return body or '<tr><td colspan="7">Hôm nay không có đơn hoàn / clip khui hàng.</td></tr>'
 
 
 def report_html(rep, dv, now_str):
@@ -603,6 +607,7 @@ def report_html(rep, dv, now_str):
   <table>
     <thead><tr><th>#</th><th class="l">🎥 Clip khui hàng (Dohana)<br><span style="font-weight:600;font-size:.85em">mã · thời lượng · giờ quay</span></th>
       <th class="l">📥 Đã nhận hàng trả (Sapo)<br><span style="font-weight:600;font-size:.85em">mã đơn · giờ nhận · NV</span></th>
+      <th class="l">🚚 Mã VĐ gửi đi<br><span style="font-weight:600;font-size:.85em">(tra Sapo/sàn)</span></th>
       <th class="l">Sản phẩm (SKU × SL)</th><th class="l">Loại trả hàng</th>
       <th class="l">🏷️ Tag app đóng hàng</th></tr></thead>
     <tbody>{_recon_rows(recon)}</tbody>
