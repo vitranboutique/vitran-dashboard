@@ -222,6 +222,32 @@ def _enrich_daily(rep, dvr, inb):
             d["clip_tag"] = m.get("tag") if m else ""
             if hit:
                 consumed.add(hit)
+        # GHÉP MỀM: đơn hoàn chưa khớp mã ↔ clip khui hàng còn dư CÙNG ĐVVC. Đơn hoàn (nhất là SPX)
+        # đi qua NHIỀU mã vận đơn (giao đi → hoàn về); Sapo lưu mã này, NV quét clip mã khác →
+        # khớp-theo-mã trượt. Nếu còn clip dư cùng ĐVVC thì coi như ĐÃ CÓ (đánh dấu "mã khác"),
+        # tránh báo "thiếu clip" oan khi thực tế đã quay đủ.
+        def _pfx(code):
+            s = str(code or "")
+            for p in ("SPXVN", "VTPVN", "GHN", "861", "854", "860", "863", "VTP"):
+                if s.startswith(p):
+                    return p
+            return s[:3]
+        leftover = sorted(inb.get("today_codes", set()) - consumed)
+        for d in nk.get("detail", []):
+            if d.get("clip") or not leftover:
+                continue
+            rp = _pfx(d.get("tracking"))
+            pick = next((c for c in leftover if _pfx(c) == rp), None)
+            if pick:
+                leftover.remove(pick)
+                consumed.add(pick)
+                d["clip"] = True
+                d["clip_altcode"] = True   # khớp theo ĐVVC + ngày, KHÔNG khớp chính xác mã
+                m = meta.get(pick)
+                if m:
+                    d["clip_dur"] = m.get("dur")
+                    d["clip_time"] = m.get("recorded")
+                    d["clip_tag"] = m.get("tag")
         nk["clip_available"] = True
         nk["clip_co"] = sum(1 for d in nk.get("detail", []) if d.get("clip"))
         nk["clip_total"] = inb.get("total", 0)

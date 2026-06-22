@@ -208,8 +208,9 @@ def _returns_clip_rows(detail):
     for i, d in enumerate(detail, 1):
         cnt = d.get("clip_count", 0) or 0
         if d.get("clip"):
+            _alt = ' <span style="color:#b45309;font-weight:700">(mã khác)</span>' if d.get("clip_altcode") else ""
             cell = (f'<span style="color:#15803d;font-weight:800">✓ Có'
-                    f'{" ×" + str(cnt) if cnt > 1 else ""}</span>')
+                    f'{" ×" + str(cnt) if cnt > 1 else ""}</span>{_alt}')
             sub = []
             if d.get("clip_dur"):
                 sub.append(f'{d["clip_dur"]}s')
