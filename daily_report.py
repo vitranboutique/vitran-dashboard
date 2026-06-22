@@ -345,12 +345,12 @@ def report_html(rep, dv, now_str):
         if unmatched:
             warn_box = (
                 '<div class="warn">'
-                f'<div class="wh">⚠️ CẢNH BÁO: {len(unmatched)} clip khui hàng KHÔNG khớp đơn hoàn nào — cần sửa</div>'
-                '<div class="wb">Các đơn này thực tế đang <b>giao đi cho khách</b> (không có phiếu hoàn) '
-                'nhưng clip lại lưu ở mục “khui hàng” và <b>thiếu video đóng hàng</b> → nghi '
-                '<b>quay nhầm chế độ</b> (đóng hàng ↔ khui hàng). Hoặc hàng hoàn <b>chưa bấm nhập kho</b>.</div>'
-                '<div class="wb">→ <b>Nhân viên kiểm tra & quay lại clip đúng mục “đóng hàng”</b> cho các mã '
-                'dưới đây (để đủ bằng chứng khi khiếu nại):</div>'
+                f'<div class="wh">⚠️ {len(unmatched)} clip khui hàng CÓ trên Dohana nhưng CHƯA có đơn hoàn nhập kho</div>'
+                '<div class="wb">Các mã clip dưới đây quay rồi nhưng KHÔNG khớp đơn hoàn nào trong báo cáo. '
+                'Kiểm tra theo thứ tự: <b>(1)</b> Hàng hoàn đã khui nhưng <b>CHƯA bấm nhập kho</b> trên Sapo '
+                '→ vào Sapo nhập kho để lên báo cáo. <b>(2)</b> <b>Quay nhầm</b>: clip đóng hàng bị lưu sang '
+                'mục “khui hàng”. <b>(3)</b> Quay <b>trùng</b> (1 kiện quay 2 lần).</div>'
+                '<div class="wb">→ Mã clip cần kiểm tra (tra trên app đóng hàng Dohana):</div>'
                 f'<div class="wc">{_e(", ".join(map(str, unmatched)))}</div>'
                 '</div>')
         else:
