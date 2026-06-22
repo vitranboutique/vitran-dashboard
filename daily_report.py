@@ -8,68 +8,69 @@ from html import escape as _e
 
 _CSS = """
   --navy:#16233f; --accent:#E24B4A; --line:#cfd6e0; --grid:#8c98ab; --soft:#eef1f6; --ink:#1f2733;
-  body{font-family:'Segoe UI',system-ui,-apple-system,Roboto,Arial,sans-serif;margin:0;background:#e9edf2;color:var(--ink);}
+  body{font-family:Tahoma,Verdana,'Segoe UI',system-ui,Roboto,Arial,sans-serif;margin:0;background:#e9edf2;color:var(--ink);}
   .toolbar{position:sticky;top:0;background:#e9edf2;padding:8px;text-align:center;z-index:5;}
   .printbtn{background:var(--accent);color:#fff;border:0;border-radius:9px;padding:10px 20px;font-size:14px;font-weight:800;cursor:pointer;box-shadow:0 2px 8px rgba(226,75,74,.4);}
-  .page{width:210mm;min-height:295mm;margin:0 auto 14px;background:#fff;padding:9mm 11mm 8mm;box-sizing:border-box;box-shadow:0 2px 14px rgba(0,0,0,.12);}
-  .hd{display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid var(--navy);padding-bottom:6px;}
-  .hd .brand{font-size:18px;font-weight:900;color:var(--navy);letter-spacing:.5px;}
-  .hd .sub{font-size:10.5px;color:#6b7280;margin-top:1px;}
-  .hd .meta{text-align:right;font-size:10.5px;color:#374151;}
-  .hd .meta b{font-size:13px;color:var(--accent);}
-  .title{text-align:center;font-size:15px;font-weight:900;color:var(--navy);margin:8px 0 2px;text-transform:uppercase;letter-spacing:.5px;}
-  .title-sub{text-align:center;font-size:10px;color:#6b7280;margin-bottom:7px;}
-  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:6px 0 9px;}
-  .kpi{border:1px solid var(--grid);border-radius:7px;padding:5px 9px;background:var(--soft);}
-  .kpi .l{font-size:10px;color:#6b7280;font-weight:600;}
-  .kpi .v{font-size:19px;font-weight:900;color:var(--navy);line-height:1.15;}
+  .page{width:210mm;height:297mm;margin:0 auto 14px;background:#fff;box-sizing:border-box;box-shadow:0 2px 14px rgba(0,0,0,.12);overflow:hidden;}
+  .pfit{padding:9mm 11mm 8mm;font-size:var(--fs,13px);box-sizing:border-box;}
+  .hd{display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid var(--navy);padding-bottom:.45em;}
+  .hd .brand{font-size:1.38em;font-weight:900;color:var(--navy);letter-spacing:.5px;}
+  .hd .sub{font-size:.81em;color:#6b7280;margin-top:1px;}
+  .hd .meta{text-align:right;font-size:.81em;color:#374151;}
+  .hd .meta b{font-size:1.24em;color:var(--accent);}
+  .title{text-align:center;font-size:1.15em;font-weight:900;color:var(--navy);margin:.6em 0 .15em;text-transform:uppercase;letter-spacing:.5px;}
+  .title-sub{text-align:center;font-size:.77em;color:#6b7280;margin-bottom:.55em;}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:.46em;margin:.46em 0 .7em;}
+  .kpi{border:1px solid var(--grid);border-radius:7px;padding:.38em .7em;background:var(--soft);}
+  .kpi .l{font-size:.77em;color:#6b7280;font-weight:600;}
+  .kpi .v{font-size:1.46em;font-weight:900;color:var(--navy);line-height:1.15;}
   .kpi.hot .v{color:var(--accent);}
-  .sec{font-size:11.5px;font-weight:800;color:#fff;background:var(--navy);padding:3px 8px;border-radius:4px;margin:9px 0 4px;}
-  table{width:100%;border-collapse:collapse;font-size:11px;}
-  th,td{border:1px solid var(--grid);padding:3px 7px;text-align:center;}
+  .sec{font-size:.88em;font-weight:800;color:#fff;background:var(--navy);padding:.23em .6em;border-radius:4px;margin:.7em 0 .3em;}
+  table{width:100%;border-collapse:collapse;font-size:.85em;}
+  th,td{border:1px solid var(--grid);padding:.23em .54em;text-align:center;}
   th{background:#dfe4ec;font-weight:800;color:#2c3a52;}
   td.l,th.l{text-align:left;}
   td.num{text-align:right;font-variant-numeric:tabular-nums;}
   tr.total td{background:#fff2dd;font-weight:900;color:var(--navy);}
   tr.total td.accent{color:var(--accent);}
   .two{display:grid;grid-template-columns:1fr 1fr;gap:11px;}
-  .note{border:1px solid var(--grid);border-radius:5px;min-height:30px;padding:5px 8px;font-size:10.5px;color:#374151;}
-  .note .lines{margin-top:4px;}
-  .note .lines div{border-bottom:1px dashed #c0c8d4;height:15px;}
-  .sign{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:12px;text-align:center;font-size:11px;}
+  .note{border:1px solid var(--grid);border-radius:5px;min-height:2.3em;padding:.38em .6em;font-size:.81em;color:#374151;}
+  .note .lines{margin-top:.3em;}
+  .note .lines div{border-bottom:1px dashed #c0c8d4;height:1.15em;}
+  .sign{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:.9em;text-align:center;font-size:.85em;}
   .sign .role{font-weight:800;color:var(--navy);}
-  .sign .hint{color:#9aa3af;font-size:9.5px;}
-  .sign .space{height:42px;}
-  .foot{margin-top:7px;text-align:center;font-size:9.5px;color:#9aa3af;border-top:1px solid var(--line);padding-top:4px;}
+  .sign .hint{color:#9aa3af;font-size:.86em;}
+  .sign .space{height:3.2em;}
+  .foot{margin-top:.55em;text-align:center;font-size:.73em;color:#9aa3af;border-top:1px solid var(--line);padding-top:.3em;}
   .page2{page-break-before:always;}
   .kpis.k3{grid-template-columns:repeat(3,1fr);}
-  .kpis.kf5{grid-template-columns:repeat(5,1fr);gap:5px;margin:6px 0 5px;}
-  .kf5 .kpi{padding:4px 6px;text-align:center;}
-  .kf5 .kpi .l{font-size:9px;line-height:1.2;}
-  .kf5 .kpi .v{font-size:17px;}
+  .kpis.kf5{grid-template-columns:repeat(5,1fr);gap:.38em;margin:.46em 0 .4em;}
+  .kf5 .kpi{padding:.3em .46em;text-align:center;}
+  .kf5 .kpi .l{font-size:.69em;line-height:1.2;}
+  .kf5 .kpi .v{font-size:1.31em;}
   .kpi.bad{border-color:#dc2626;background:#fdeeee;}
-  .kpi .lech{font-size:8.5px;color:#dc2626;font-weight:800;margin-top:1px;}
-  .kpi .tick{font-size:8px;color:#6b7280;margin-top:3px;border-top:1px dashed #c0c8d4;padding-top:2px;}
-  .kpi .cbox{display:inline-block;width:10px;height:10px;border:1.2px solid #6b7280;vertical-align:-1px;margin-right:2px;border-radius:2px;}
-  .warn{border:1px solid #e0a155;border-left:5px solid #d97706;background:#fff8ec;border-radius:6px;padding:6px 10px;margin:8px 0 9px;}
-  .warn .wh{font-size:11.5px;font-weight:900;color:#b45309;}
-  .warn .wb{font-size:10px;color:#7c4a13;margin-top:2px;line-height:1.4;}
-  .warn .wc{font-size:11px;font-weight:900;color:#b45309;margin-top:3px;letter-spacing:.3px;}
-  .fdetail{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:7px 0 9px;}
-  .fdcol{border:1px solid #d6dbe6;border-radius:6px;padding:5px 8px 6px;}
+  .kpi .lech{font-size:.65em;color:#dc2626;font-weight:800;margin-top:1px;}
+  .kpi .tick{font-size:.62em;color:#6b7280;margin-top:.23em;border-top:1px dashed #c0c8d4;padding-top:.15em;}
+  .kpi .cbox{display:inline-block;width:.8em;height:.8em;border:1.2px solid #6b7280;vertical-align:-1px;margin-right:2px;border-radius:2px;}
+  .warn{border:1px solid #e0a155;border-left:5px solid #d97706;background:#fff8ec;border-radius:6px;padding:.46em .77em;margin:.6em 0 .7em;}
+  .warn .wh{font-size:.88em;font-weight:900;color:#b45309;}
+  .warn .wb{font-size:.77em;color:#7c4a13;margin-top:2px;line-height:1.4;}
+  .warn .wc{font-size:.85em;font-weight:900;color:#b45309;margin-top:.23em;letter-spacing:.3px;}
+  .fdetail{display:grid;grid-template-columns:1fr 1fr;gap:.6em;margin:.55em 0 .7em;}
+  .fdcol{border:1px solid #d6dbe6;border-radius:6px;padding:.38em .6em .46em;}
   .fdcol-huy{background:#fdf3f2;border-color:#eec2bc;}
   .fdcol-xot{background:#fff8ec;border-color:#e9cf9b;}
-  .fdhead{font-size:10px;font-weight:900;margin-bottom:2px;line-height:1.3;}
-  .dvgrp{font-size:9.5px;font-weight:800;color:#475569;margin:3px 0 0;}
-  .dline{font-size:10px;color:#1f2937;padding:1px 0 1px 3px;line-height:1.5;}
-  .dline .vd{color:#6b7280;font-size:9px;}
-  .dline .pk{color:#b91c1c;font-size:8.5px;font-weight:800;}
-  .cbox2{display:inline-block;width:10px;height:10px;border:1.3px solid #475569;border-radius:2px;vertical-align:-1px;margin-right:2px;}
+  .fdhead{font-size:.77em;font-weight:900;margin-bottom:2px;line-height:1.3;}
+  .dvgrp{font-size:.73em;font-weight:800;color:#475569;margin:.23em 0 0;}
+  .dline{font-size:.77em;color:#1f2937;padding:1px 0 1px 3px;line-height:1.5;}
+  .dline .vd{color:#6b7280;font-size:.9em;}
+  .dline .pk{color:#b91c1c;font-size:.85em;font-weight:800;}
+  .cbox2{display:inline-block;width:.8em;height:.8em;border:1.3px solid #475569;border-radius:2px;vertical-align:-1px;margin-right:2px;}
   .sign.s2{grid-template-columns:repeat(2,1fr);max-width:70%;margin-left:auto;margin-right:auto;}
   @page{size:A4 portrait;margin:0;}
   @media print{
     body{background:#fff;} .toolbar{display:none;}
-    .page{box-shadow:none;margin:0;width:auto;min-height:auto;}
+    .page{box-shadow:none;margin:0;}
     table,tr,td,th{page-break-inside:avoid;}
     *{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   }
@@ -159,6 +160,27 @@ def _grouped_tick_rows(detail, mark_packed=False):
     return html
 
 
+def _conxot_rows(today_list, old_list):
+    """Còn xót tách 2 nhóm: xót HÔM NAY vs xót CŨ (tồn từ ngày trước, kèm ngày tạo)."""
+    def _lines(items, show_date):
+        if not items:
+            return '<div class="dline" style="color:#9aa3af">— không có —</div>'
+        h = ""
+        for d in items:
+            tk = str(d.get("tracking") or "")
+            tk_html = f' · <span class="vd">{_e(tk)}</span>' if tk and tk != d.get("name") else ""
+            dt = (f' · <span class="pk">tồn từ {_e(str(d.get("created", "")))}</span>'
+                  if show_date else "")
+            h += (f'<div class="dline"><span class="cbox2"></span> <b>{_e(str(d.get("name", "?")))}</b>'
+                  f'{tk_html} · {_e(str(d.get("carrier", "")))} · {_e(str(d.get("sku", "")))}{dt}</div>')
+        return h
+    return (f'<div class="dvgrp" style="color:#b45309">▸ Xót HÔM NAY ({len(today_list)})</div>'
+            + _lines(today_list, False)
+            + f'<div class="dvgrp" style="color:#dc2626;margin-top:3px">'
+              f'▸ Xót CŨ — tồn từ ngày trước ({len(old_list)})</div>'
+            + _lines(old_list, True))
+
+
 def _batch_rows(batches, tong_don, tong_sp):
     body = "".join(
         f'<tr><td class="l">Đợt {b["dot"]}{" (hỏa tốc)" if b.get("hoatoc") else ""}</td>'
@@ -186,7 +208,7 @@ def _returns_clip_rows(detail):
             if d.get("clip_time"):
                 sub.append(str(d["clip_time"]))
             if sub:
-                cell += (f'<div style="font-size:9px;color:#6b7280;font-weight:600">'
+                cell += (f'<div style="font-size:.82em;color:#6b7280;font-weight:600">'
                          f'⏱ {_e(" · ".join(sub))}</div>')
             tdcls = ""
         else:
@@ -233,7 +255,7 @@ def report_html(rep, dv, now_str):
             f'<tr><td class="l" style="padding-left:20px">⤷ ✅ Đã có video đóng gói</td>'
             f'<td class="num">{_have}</td></tr>'
             + _miss_row)
-        vid_note = ('<div style="font-size:10.5px;color:#374151;margin:8px 0 0;line-height:1.55">'
+        vid_note = ('<div style="font-size:.81em;color:#374151;margin:.6em 0 0;line-height:1.55">'
                     'ℹ️ Đơn đóng gói đã gồm cả <b>đơn hỏa tốc giao xong trong ngày</b> (dòng “Hỏa tốc” bảng ĐVVC). '
                     + (f'<b>{_mv} đơn thiếu video</b> do clip bị <b>quay nhầm sang mục “khui hàng”</b> — xem cảnh báo.'
                        if _mv else 'Tất cả đơn đóng gói đều có video.')
@@ -255,7 +277,7 @@ def report_html(rep, dv, now_str):
         vid_note = vid_warn = ''
     _exp_done = next((r for r in rep.get("by_carrier", []) if "Hỏa tốc" in str(r.get("carrier"))), None)
     _tcl = (rep.get("totals") or {}).get("con_lai", 0)
-    sec1_note = ('<div style="font-size:10px;color:#6b7280;margin:5px 0 0;line-height:1.5">'
+    sec1_note = ('<div style="font-size:.77em;color:#6b7280;margin:.4em 0 0;line-height:1.5">'
                  + (f'ℹ️ Đóng gói đã gồm <b>{_exp_done["dong_goi"]} đơn hỏa tốc</b> (dòng đầu). ' if _exp_done else 'ℹ️ ')
                  + '<b>Đã xuất kho</b> = số ĐƠN đã bàn giao khỏi kho (= mục “Xuất kho đơn hàng” trong '
                    '<b>Báo cáo sổ kho</b>, tính theo đơn — báo cáo sổ kho đếm theo SỐ LƯỢNG sản phẩm). '
@@ -269,12 +291,12 @@ def report_html(rep, dv, now_str):
         lech_html = ('<div class="warn"><div class="wh">⚠️ CHÊNH LỆCH GIỮA CÁC CỘT — NHÂN VIÊN KIỂM TRA</div>'
                      + ''.join(f'<div class="wb">• {n}</div>' for n in _lech) + '</div>')
     else:
-        lech_html = ('<div style="font-size:10px;color:#15803d;margin:6px 0 0;font-weight:700">'
+        lech_html = ('<div style="font-size:.77em;color:#15803d;margin:.46em 0 0;font-weight:700">'
                      '✅ Các cột khớp nhau (xuất kho = shipper nhận = giao khách) — không có chênh lệch.</div>')
     # Đợt soạn GỒM cả đơn đã hủy đã gói (đã soạn rồi mới hủy)
     _soan = rep.get("tong_don_soan", 0)
     _hdg = rep.get("huy_da_goi", 0)
-    sec2_note = (f'<div style="font-size:10px;color:#6b7280;margin:5px 0 0">'
+    sec2_note = (f'<div style="font-size:.77em;color:#6b7280;margin:.4em 0 0">'
                  f'ℹ️ Tổng soạn ({_soan}) = {t["dong_goi"]} đơn đóng gói + '
                  f'<b>{_hdg} đơn đã hủy sau khi soạn</b> (vẫn tính vì kho đã lấy hàng).</div>'
                  if _hdg else '')
@@ -292,16 +314,16 @@ def report_html(rep, dv, now_str):
     n_ret = len(nk_detail)
     if not clip_on:
         clip_summary = ''
-        clip_note = ('<div style="font-size:11px;color:#dc2626;margin-top:6px">'
+        clip_note = ('<div style="font-size:.85em;color:#dc2626;margin-top:.46em">'
                      '⚠️ Chưa kết nối Dohana — không kiểm tra được clip khui hàng.</div>')
         warn_box = ''
     else:
         ok = clip_co == n_ret
         col = "#15803d" if ok else "#dc2626"
-        clip_summary = (f' <span style="font-size:11px;color:{col}">({clip_co}/{n_ret} có clip)</span>'
+        clip_summary = (f' <span style="font-size:.96em;color:{col}">({clip_co}/{n_ret} có clip)</span>'
                         if n_ret else '')
         clip_note = ('' if ok or not n_ret else
-                     f'<div style="font-size:11px;color:#dc2626;margin-top:6px;font-weight:700">'
+                     f'<div style="font-size:.85em;color:#dc2626;margin-top:.46em;font-weight:700">'
                      f'⚠️ Có {n_ret - clip_co} đơn hoàn THIẾU clip khui hàng — cần kiểm tra/khiếu nại ngay.</div>')
         if unmatched:
             warn_box = (
@@ -374,7 +396,9 @@ def report_html(rep, dv, now_str):
 
     # Chi tiết đơn HỦY + CÒN XÓT ngay dưới 2 ô phễu — gom theo ĐVVC, mỗi đơn 1 ô tick xác nhận
     _huy_all = rep.get("huy_all_detail") or []
-    _conxot = rep.get("con_xot_detail") or []
+    _cx_today = rep.get("con_xot_today") or []
+    _cx_old = rep.get("con_xot_old") or []
+    _conxot = _cx_today + _cx_old
     detail_block = ''
     if _huy_all or _conxot:
         detail_block = (
@@ -386,15 +410,15 @@ def report_html(rep, dv, now_str):
             '<div class="fdcol fdcol-xot">'
             f'<div class="fdhead" style="color:#b45309">⏳ CÒN XÓT LẠI ({len(_conxot)}) '
             '— đã xuất kho, shipper CHƯA xác nhận</div>'
-            f'{_grouped_tick_rows(_conxot)}</div>'
+            f'{_conxot_rows(_cx_today, _cx_old)}</div>'
             '</div>')
 
-    page1 = f"""<div class="page">
+    page1 = f"""<div class="page"><div class="pfit">
   <div class="hd">
     <div><div class="brand">VITRAN BOUTIQUE</div>
       <div class="sub">Hệ thống vận hành đơn hàng</div></div>
     <div class="meta">Ngày báo cáo<br><b>{_e(rep["date"])}</b><br>
-      <span style="font-size:10px">In lúc: {_e(now_str)}</span></div>
+      <span style="font-size:.95em">In lúc: {_e(now_str)}</span></div>
   </div>
 
   <div class="title">Báo cáo vận hành cuối ngày</div>
@@ -423,18 +447,18 @@ def report_html(rep, dv, now_str):
   {sec2_note}
 
   <div class="sec">III. Ghi chú / Sự cố trong ngày</div>
-  <div class="note"><span style="color:#9aa3af;font-size:10px">(Ghi tay: đơn GHN còn lại, hỏa tốc tìm tài xế, đơn lỗi…)</span>
+  <div class="note"><span style="color:#9aa3af;font-size:.95em">(Ghi tay: đơn GHN còn lại, hỏa tốc tìm tài xế, đơn lỗi…)</span>
     <div class="lines"><div></div></div></div>
 
   <div class="foot">VITRAN BOUTIQUE · Trang 1/2 — Vận hành đơn giao đi · (ký xác nhận ở mặt sau) · {_e(rep["date"])}</div>
-</div>"""
+</div></div>"""
 
-    page2 = f"""<div class="page page2">
+    page2 = f"""<div class="page page2"><div class="pfit">
   <div class="hd">
     <div><div class="brand">VITRAN BOUTIQUE</div>
       <div class="sub">Báo cáo đơn hàng hoàn trả</div></div>
     <div class="meta">Ngày báo cáo<br><b>{_e(rep["date"])}</b><br>
-      <span style="font-size:10px">Trang 2 / 2</span></div>
+      <span style="font-size:.95em">Trang 2 / 2</span></div>
   </div>
 
   <div class="title">Báo cáo đơn hàng hoàn trả</div>
@@ -455,7 +479,7 @@ def report_html(rep, dv, now_str):
   {clip_note}
 
   <div class="sec">B. Ghi chú đơn hoàn / khiếu nại</div>
-  <div class="note"><span style="color:#9aa3af;font-size:10px">(Ghi tay: tình trạng hàng hoàn, đơn cần khiếu nại sàn, thiếu/sai SP…)</span>
+  <div class="note"><span style="color:#9aa3af;font-size:.95em">(Ghi tay: tình trạng hàng hoàn, đơn cần khiếu nại sàn, thiếu/sai SP…)</span>
     <div class="lines"><div></div></div></div>
 
   <div class="sign">
@@ -465,20 +489,36 @@ def report_html(rep, dv, now_str):
   </div>
 
   <div class="foot">VITRAN BOUTIQUE · Trang 2/2 — Đơn hàng hoàn trả · {_e(rep["date"])}</div>
-</div>"""
+</div></div>"""
 
     body = page1 + page2
 
+    # Auto-fit: tìm cỡ chữ LỚN NHẤT mà mỗi trang vẫn lọt 1 tờ A4 (nhiều đơn → chữ nhỏ lại,
+    # ít đơn → chữ to ra). Dùng nhị phân trên --fs của .pfit so với chiều cao .page (297mm).
+    fitjs = (
+        "function fitPages(doc){doc=doc||document;"
+        "var ps=doc.querySelectorAll('.page');"
+        "for(var i=0;i<ps.length;i++){var pg=ps[i],ft=pg.querySelector('.pfit');if(!ft)continue;"
+        "var t=pg.clientHeight,lo=8,hi=20,b=lo;"
+        "for(var k=0;k<18;k++){var m=(lo+hi)/2;ft.style.fontSize=m+'px';"
+        "if(ft.scrollHeight<=t){b=m;lo=m;}else{hi=m;}}"
+        "ft.style.fontSize=b.toFixed(2)+'px';}}"
+    )
     js = (
+        fitjs +
         "function printA4(){"
         "var html=document.getElementById('rp').innerHTML;"
         "var f=document.createElement('iframe');"
         "f.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0';"
         "document.body.appendChild(f);var d=f.contentWindow.document;d.open();"
         "d.write('<!doctype html><html><head><meta charset=\\\"utf-8\\\"><style>'+"
-        + json.dumps(_CSS) + "+'</style></head><body>'+html+'</body></html>');"
-        "d.close();f.onload=function(){f.contentWindow.focus();f.contentWindow.print();"
+        + json.dumps(_CSS) + "+'</style><scr'+'ipt>'+" + json.dumps(fitjs)
+        + "+'</scr'+'ipt></head><body>'+html+'</body></html>');"
+        "d.close();f.onload=function(){try{f.contentWindow.fitPages();}catch(e){}"
+        "f.contentWindow.focus();f.contentWindow.print();"
         "setTimeout(function(){document.body.removeChild(f);},700);};}"
+        "window.addEventListener('load',function(){fitPages();});"
+        "setTimeout(function(){fitPages();},300);"
     )
     return (
         "<style>" + _CSS + "</style>"

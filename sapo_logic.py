@@ -692,9 +692,10 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
                                  "shipper_nhan": 0, "giao_khach": 0, "con_lai": 0})
 
     def _odet(o):
-        """Mô tả 1 đơn để liệt kê chi tiết (mã đơn, mã VĐ, ĐVVC, SKU×SL, tổng SP)."""
+        """Mô tả 1 đơn để liệt kê chi tiết (mã đơn, mã VĐ, ĐVVC, SKU×SL, tổng SP, ngày tạo)."""
         f = f0(o)
         lis = o.get("line_items") or []
+        cr = _vn_date_of(o.get("created_on"))
         return {
             "name": o.get("name") or "?",
             "tracking": f.get("tracking_number") or o.get("name") or "?",
@@ -702,6 +703,8 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
             "sku": "; ".join(f"{li.get('sku') or 'N/A'}×{int(round(li.get('quantity') or 0))}"
                              for li in lis),
             "sp": sum(int(round(li.get("quantity") or 0)) for li in lis),
+            "created": cr.strftime("%d/%m") if cr else "?",
+            "old": bool(cr and cr < today),   # tạo trước hôm nay = đơn tồn (xót cũ)
         }
 
     dong_goi_codes, huy_goi_codes, dong_goi_order_codes = set(), set(), []
@@ -786,12 +789,14 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
         r["con_lai"] = max(0, r["xuat_kho"] - r["shipper_nhan"])   # xuất kho mà shipper CHƯA xác nhận
     # CÒN XÓT LẠI = đã xuất kho nhưng mã VĐ KHÔNG nằm trong shipments đã xác nhận (= "Chưa x.nhận").
     # Liệt kê đúng đơn để NV kho dò (số lượng khớp tổng con_lai).
-    con_xot_detail = []
+    con_xot_detail, con_xot_today, con_xot_old = [], [], []
     if confirmed is not None:
         for o in issued_orders:
             tn = f0(o).get("tracking_number")
             if not tn or str(tn) not in confirmed_tracks:
-                con_xot_detail.append(_odet(o))
+                d = _odet(o)
+                con_xot_detail.append(d)
+                (con_xot_old if d["old"] else con_xot_today).append(d)
     # ĐVVC: dòng HỎA TỐC lên ĐẦU, còn lại theo số đóng gói giảm dần
     rows = sorted(cr.values(),
                   key=lambda x: (0 if "Hỏa tốc" in str(x["carrier"]) else 1, -x["dong_goi"]))
@@ -833,6 +838,8 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
         "huy_detail": huy_detail,
         "huy_all_detail": huy_all_detail,
         "con_xot_detail": con_xot_detail,
+        "con_xot_today": con_xot_today,
+        "con_xot_old": con_xot_old,
         "nhap_kho": nhap_kho,
         "dong_goi_codes": dong_goi_codes,
         "huy_goi_codes": huy_goi_codes,
