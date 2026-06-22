@@ -588,10 +588,15 @@ def get_returns_received_today(fetch_json, scan_days: int = 60, max_pages: int =
         if last and last < cutoff:
             break
 
-    # NHÂN VIÊN: map user_id -> nhãn (lấy phần trước @ của email). /admin/accounts bị 403,
-    # nhưng /admin/users.json chạy. user_id thường rỗng → app.py fallback sang NV quay clip.
+    # NHÂN VIÊN NHẬN HÀNG: map user_id -> HỌ TÊN (last_name + first_name, đúng như Sapo
+    # hiển thị, vd "Inventory Mun"); fallback phần trước @ của email nếu chưa đặt tên.
+    # /admin/accounts bị 403 nhưng /admin/users.json chạy được.
+    def _uname(u):
+        nm = " ".join(p for p in [(u.get("last_name") or "").strip(),
+                                   (u.get("first_name") or "").strip()] if p)
+        return nm or (u.get("email") or "").split("@")[0]
     try:
-        _users = {u.get("id"): (u.get("email") or "").split("@")[0]
+        _users = {u.get("id"): _uname(u)
                   for u in (fetch_json("/admin/users.json").get("users", []) or [])}
     except Exception:
         _users = {}
@@ -633,11 +638,14 @@ def get_returns_received_today(fetch_json, scan_days: int = 60, max_pages: int =
                         for li in lis)
         rsn = lis[0].get("return_reason") if lis else None
         rtype = x.get("return_type")
-        # Mốc NHẬN hàng trả (restock) rơi vào ngày báo cáo + nhân viên (user_id) nếu có
+        # Mốc NHẬN hàng trả (restock) rơi vào ngày báo cáo + NV NHẬN HÀNG.
+        # NV nhận hàng = người NHẬP KHO đơn trả = restocked_user_ids (KHÔNG phải user_id,
+        # field này thường null). Lấy id đầu tiên có giá trị, fallback user_id.
         _ons = x.get("restocked_ons") or []
         if isinstance(_ons, str):
             _ons = [_ons]
         _recv_on = next((o for o in _ons if _vn_date_of(o) == today), _ons[0] if _ons else None)
+        _recv_uid = next((u for u in (x.get("restocked_user_ids") or []) if u), None) or x.get("user_id")
         detail.append({
             # Hiển thị MÃ TRA ĐƯỢC ở Sapo: ưu tiên mã đơn (sàn), kèm VĐ giao đi. KHÔNG show VĐ
             # hoàn-về (track) làm mã chính vì tra Sapo không ra (chỉ nằm trên phiếu hoàn).
@@ -652,7 +660,7 @@ def get_returns_received_today(fetch_json, scan_days: int = 60, max_pages: int =
             "loai_tra": _type_vn.get(rtype, rtype or "—"),
             "loai_tra_code": rtype,
             "recv_time": _vn_hm(_recv_on),                 # ngày giờ NHẬN hàng trả (Sapo)
-            "nhan_vien": _users.get(x.get("user_id")) or "",  # NV nhận (Sapo); rỗng → fallback ở app.py
+            "nhan_vien": _users.get(_recv_uid) or "",      # NV NHẬN HÀNG (người nhập kho) từ Sapo
             "codes": sorted(codes),
         })
     cho_xu_ly = sum(1 for x in rows
