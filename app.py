@@ -254,6 +254,14 @@ def _enrich_daily(rep, dvr, inb):
         nk["clip_co"] = sum(1 for d in nk.get("detail", []) if d.get("clip"))
         nk["clip_total"] = inb.get("total", 0)
         nk["clip_unmatched"] = sorted(inb.get("today_codes", set()) - consumed)
+        # Kèm TAG (vd Khách tráo!) + thời lượng/giờ cho clip dư — đơn có tag thường bị giữ lại
+        # xử lý tranh chấp nên KHÔNG nhập kho (đúng quy trình) → cần hiện rõ tag để theo dõi.
+        nk["clip_unmatched_detail"] = [
+            {"code": c, "tag": (meta.get(c) or {}).get("tag", ""),
+             "dur": (meta.get(c) or {}).get("dur"),
+             "recorded": (meta.get(c) or {}).get("recorded", "")}
+            for c in nk["clip_unmatched"]
+        ]
     else:
         nk["clip_available"] = False
     if dvr is not None:

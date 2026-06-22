@@ -343,16 +343,30 @@ def report_html(rep, dv, now_str):
                      f'<div style="font-size:.85em;color:#dc2626;margin-top:.46em;font-weight:700">'
                      f'⚠️ Có {n_ret - clip_co} đơn hoàn THIẾU clip khui hàng — cần kiểm tra/khiếu nại ngay.</div>')
         if unmatched:
+            _ud = nk.get("clip_unmatched_detail") or [{"code": c} for c in unmatched]
+            _has_tag = any(u.get("tag") for u in _ud)
+            _lines = ""
+            for u in _ud:
+                _tg = (f' · <span style="background:#fde68a;color:#7c2d12;font-weight:900;'
+                       f'padding:0 4px;border-radius:3px">🏷️ {_e(str(u["tag"]))}</span>'
+                       if u.get("tag") else "")
+                _mt = []
+                if u.get("dur"):
+                    _mt.append(f'{u["dur"]}s')
+                if u.get("recorded"):
+                    _mt.append(str(u["recorded"]))
+                _mts = (' <span style="color:#9a7a3a">· ' + _e(" · ".join(_mt)) + '</span>') if _mt else ""
+                _lines += f'<div class="wc" style="margin-top:2px">{_e(str(u.get("code", "")))}{_tg}{_mts}</div>'
             warn_box = (
                 '<div class="warn">'
-                f'<div class="wh">⚠️ {len(unmatched)} clip khui hàng CÓ trên Dohana nhưng CHƯA có đơn hoàn nhập kho</div>'
-                '<div class="wb">Các mã clip dưới đây quay rồi nhưng KHÔNG khớp đơn hoàn nào trong báo cáo. '
-                'Kiểm tra theo thứ tự: <b>(1)</b> Hàng hoàn đã khui nhưng <b>CHƯA bấm nhập kho</b> trên Sapo '
-                '→ vào Sapo nhập kho để lên báo cáo. <b>(2)</b> <b>Quay nhầm</b>: clip đóng hàng bị lưu sang '
-                'mục “khui hàng”. <b>(3)</b> Quay <b>trùng</b> (1 kiện quay 2 lần).</div>'
-                '<div class="wb">→ Mã clip cần kiểm tra (tra trên app đóng hàng Dohana):</div>'
-                f'<div class="wc">{_e(", ".join(map(str, unmatched)))}</div>'
-                '</div>')
+                f'<div class="wh">⚠️ {len(_ud)} clip khui hàng CÓ trên Dohana nhưng CHƯA có đơn hoàn nhập kho</div>'
+                + ('<div class="wb"><b>Clip có TAG (vd “Khách tráo!”)</b> = đơn CÓ VẤN ĐỀ, nhân viên giữ lại '
+                   'xử lý tranh chấp nên CHƯA bấm nhập kho — đúng quy trình, cần <b>theo dõi & khiếu nại sàn</b> '
+                   '(giữ clip làm bằng chứng).</div>' if _has_tag else '')
+                + '<div class="wb">Clip KHÔNG tag → kiểm tra: <b>(1)</b> hàng hoàn chưa bấm nhập kho (vào Sapo '
+                  'nhập kho để lên bảng), <b>(2)</b> quay nhầm mục (đóng hàng ↔ khui hàng), <b>(3)</b> quay trùng.</div>'
+                + _lines
+                + '</div>')
         else:
             warn_box = ''
 
