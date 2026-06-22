@@ -163,25 +163,28 @@ def _grouped_tick_rows(detail, mark_packed=False):
     return html
 
 
-def _conxot_rows(today_list, old_list):
-    """Còn xót tách 2 nhóm: xót HÔM NAY vs xót CŨ (tồn từ ngày trước, kèm ngày tạo)."""
-    def _lines(items, show_date):
+def _conxot_rows(packed, unpacked):
+    """Còn xót tách 2 nhóm theo TRẠNG THÁI ĐÓNG HÀNG: ĐÃ đóng (cần xác nhận lấy lại hàng — có
+    ô tick) vs CHƯA đóng (chưa gói → không cần lấy lại, không tick)."""
+    def _lines(items, need_tick):
         if not items:
             return '<div class="dline" style="color:#9aa3af">— không có —</div>'
         h = ""
         for d in items:
             tk = str(d.get("tracking") or "")
             tk_html = f' · <span class="vd">{_e(tk)}</span>' if tk and tk != d.get("name") else ""
-            dt = (f' · <span class="pk">tồn từ {_e(str(d.get("created", "")))}</span>'
-                  if show_date else "")
-            h += (f'<div class="dline"><span class="cbox2"></span> <b>{_e(str(d.get("name", "?")))}</b>'
-                  f'{tk_html} · {_e(str(d.get("carrier", "")))} · {_e(str(d.get("sku", "")))}{dt}</div>')
+            box = ('<span class="cbox2"></span> ' if need_tick
+                   else '<span style="display:inline-block;width:.85em;margin-right:2px"></span>')
+            mk = ' <span class="pk">📦 lấy lại</span>' if need_tick else ''
+            h += (f'<div class="dline">{box}<b>{_e(str(d.get("name", "?")))}</b>'
+                  f'{tk_html} · {_e(str(d.get("carrier", "")))} · {_e(str(d.get("sku", "")))}{mk}</div>')
         return h
-    return (f'<div class="dvgrp" style="color:#b45309">▸ Xót HÔM NAY ({len(today_list)})</div>'
-            + _lines(today_list, False)
-            + f'<div class="dvgrp" style="color:#dc2626;margin-top:3px">'
-              f'▸ Xót CŨ — tồn từ ngày trước ({len(old_list)})</div>'
-            + _lines(old_list, True))
+    return (f'<div class="dvgrp" style="color:#b91c1c">▸ ĐÃ đóng hàng ({len(packed)}) '
+            '— ☐ tick khi đã LẤY LẠI hàng</div>'
+            + _lines(packed, True)
+            + f'<div class="dvgrp" style="color:#475569;margin-top:3px">'
+              f'▸ CHƯA đóng hàng ({len(unpacked)}) — không cần lấy lại</div>'
+            + _lines(unpacked, False))
 
 
 def _info_tip(content):
@@ -489,9 +492,9 @@ def report_html(rep, dv, now_str):
 
     # Chi tiết đơn HỦY + CÒN XÓT ngay dưới 2 ô phễu — gom theo ĐVVC, mỗi đơn 1 ô tick xác nhận
     _huy_all = rep.get("huy_all_detail") or []
-    _cx_today = rep.get("con_xot_today") or []
-    _cx_old = rep.get("con_xot_old") or []
-    _conxot = _cx_today + _cx_old
+    _cx_pk = rep.get("con_xot_packed") or []
+    _cx_upk = rep.get("con_xot_unpacked") or []
+    _conxot = _cx_pk + _cx_upk
     detail_block = ''
     if _huy_all or _conxot:
         detail_block = (
@@ -502,8 +505,8 @@ def report_html(rep, dv, now_str):
             f'{_grouped_tick_rows(_huy_all, mark_packed=True)}</div>'
             '<div class="fdcol fdcol-xot">'
             f'<div class="fdhead" style="color:#b45309">⏳ CÒN XÓT LẠI ({len(_conxot)}) '
-            '— đã xuất kho, shipper CHƯA xác nhận</div>'
-            f'{_conxot_rows(_cx_today, _cx_old)}</div>'
+            '— đã xác nhận, CHƯA giao shipper</div>'
+            f'{_conxot_rows(_cx_pk, _cx_upk)}</div>'
             '</div>')
 
     page1 = f"""<div class="page"><div class="pfit">

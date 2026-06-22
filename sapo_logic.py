@@ -801,14 +801,19 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
     # "Chưa x.nhận" = đã xuất kho mà shipment_status CÒN 'pending' = NGHI MẤT ĐƠN.
     for c, r in cr.items():
         r["con_lai"] = max(0, r["xuat_kho"] - r["shipper_nhan"])
-    # CÒN XÓT LẠI = đơn đã xuất kho nhưng shipment_status còn 'pending' (shipper chưa xác nhận).
-    # Tách hôm nay / cũ theo ngày tạo đơn; số lượng khớp tổng con_lai.
-    con_xot_detail, con_xot_today, con_xot_old = [], [], []
-    for o in issued_orders:
-        if f0(o).get("shipment_status") in ("pending", None):
+    # CÒN XÓT LẠI = đơn ĐÃ XÁC NHẬN hôm nay (tạo vận đơn) nhưng CHƯA giao được shipper
+    # (shipment_status='pending'). Tách: ĐÃ đóng hàng (packed → CẦN xác nhận LẤY LẠI HÀNG)
+    # vs CHƯA đóng hàng (chưa gói → KHÔNG cần lấy lại). (Khác cột "Chưa x.nhận"=xuất kho−shipper.)
+    con_xot_packed, con_xot_unpacked = [], []
+    for o in open_orders:
+        f = f0(o)
+        if (_vn_date_of(f.get("shipment_created_on")) == today
+                and f.get("shipment_status") == "pending"):
             d = _odet(o)
-            con_xot_detail.append(d)
-            (con_xot_old if d["old"] else con_xot_today).append(d)
+            if f.get("packed_status") == "packed" or _vn_date_of(f.get("packed_on")) == today:
+                con_xot_packed.append(d)
+            else:
+                con_xot_unpacked.append(d)
     # ĐVVC: dòng HỎA TỐC lên ĐẦU, còn lại theo số đóng gói giảm dần
     rows = sorted(cr.values(),
                   key=lambda x: (0 if "Hỏa tốc" in str(x["carrier"]) else 1, -x["dong_goi"]))
@@ -836,7 +841,8 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
         "video": None,                           # đóng gói có video (gắn ở app.py)
         "quet_bien_ban": tot["xuat_kho"],        # đã xuất kho / quét vào biên bản (issued) = 86
         "dvvc_nhan": tot["shipper_nhan"],        # shipper THỰC NHẬN = ĐVVC đã xác nhận lấy = 84
-        "huy": tot["huy"], "con_xot": tot["con_lai"],   # xuất kho mà shipper chưa xác nhận = 2
+        "huy": tot["huy"],
+        "con_xot": len(con_xot_packed) + len(con_xot_unpacked),  # xác nhận nhưng chưa giao shipper
     }
     return {
         "date": today.strftime("%d/%m/%Y"),
@@ -849,9 +855,8 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
         "huy_da_goi": huy_total,
         "huy_detail": huy_detail,
         "huy_all_detail": huy_all_detail,
-        "con_xot_detail": con_xot_detail,
-        "con_xot_today": con_xot_today,
-        "con_xot_old": con_xot_old,
+        "con_xot_packed": con_xot_packed,
+        "con_xot_unpacked": con_xot_unpacked,
         "nhap_kho": nhap_kho,
         "dong_goi_codes": dong_goi_codes,
         "huy_goi_codes": huy_goi_codes,
