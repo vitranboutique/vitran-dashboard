@@ -254,6 +254,62 @@ def _returns_clip_rows(detail):
     return body or '<tr><td colspan="7">Hôm nay không có đơn hoàn nhập kho.</td></tr>'
 
 
+def _recon_rows(rows):
+    """Đối chiếu mỗi sự kiện hoàn: cột Clip khui hàng (Dohana) vs cột Đã nhận hàng trả (Sapo).
+    Cột nào TRỐNG thì ghi LÝ DO in đỏ ngay dòng đó."""
+    body = ""
+    for i, r in enumerate(rows, 1):
+        # ── Cột 1: CLIP KHUI HÀNG (Dohana) ──
+        if r.get("has_clip"):
+            _alt = ' <span style="color:#b45309;font-weight:700">(mã khác)</span>' if r.get("clip_alt") else ""
+            _cs = []
+            if r.get("clip_dur"):
+                _cs.append(f'{r["clip_dur"]}s')
+            if r.get("clip_time"):
+                _cs.append(str(r["clip_time"]))
+            clip_cell = (f'<b style="color:#6d28d9">🎥 {_e(str(r.get("clip_code") or "?"))}</b>{_alt}'
+                         + (f'<div style="font-size:.82em;color:#6b7280">⏱ {_e(" · ".join(_cs))}</div>'
+                            if _cs else ''))
+            clip_td = ""
+        else:
+            clip_cell = '<span style="color:#dc2626;font-weight:800">✗ CHƯA quay clip khui hàng — kiểm tra Dohana</span>'
+            clip_td = ' style="background:#fef2f2"'
+        # ── Cột 2: ĐÃ NHẬN HÀNG TRẢ (Sapo) ──
+        if r.get("has_sapo"):
+            _ss = []
+            if r.get("recv_time"):
+                _ss.append(f'📥 {_e(str(r["recv_time"]))}')
+            if r.get("nhan_vien"):
+                _ss.append(f'👤 {_e(str(r["nhan_vien"]))}')
+            sapo_cell = (f'<b>{_e(str(r.get("order_code") or "?"))}</b>'
+                         + (f'<div style="font-size:.82em;color:#6b7280">{" · ".join(_ss)}</div>'
+                            if _ss else ''))
+            sapo_td = ""
+        else:
+            _tag = r.get("clip_tag") or ""
+            _rsn = (f'✗ CHƯA nhập kho — đơn gắn tag “{_e(str(_tag))}”, giữ xử lý tranh chấp (theo dõi/khiếu nại sàn)'
+                    if _tag else
+                    '✗ CHƯA bấm nhập kho trên Sapo — kiểm tra: quên nhập kho / quay nhầm mục / quay trùng')
+            sapo_cell = f'<span style="color:#dc2626;font-weight:800">{_rsn}</span>'
+            sapo_td = ' style="background:#fef2f2"'
+        # ── SKU · Loại trả · Tag ──
+        sku = _e(str(r.get("sku") or "—"))
+        lt = r.get("loai_tra") or "—"
+        lt_style = ("color:#c2410c;font-weight:800"
+                    if r.get("loai_tra_code") == "delivery_failed" else "color:#374151")
+        tag = r.get("clip_tag") or ""
+        tag_cell = (f'<span style="color:#6d28d9;font-weight:800;background:#f3e8ff;'
+                    f'padding:1px 5px;border-radius:4px">🏷️ {_e(str(tag))}</span>'
+                    if tag else '<span style="color:#cbd5e1">—</span>')
+        body += (f'<tr><td>{i}</td>'
+                 f'<td class="l"{clip_td}>{clip_cell}</td>'
+                 f'<td class="l"{sapo_td}>{sapo_cell}</td>'
+                 f'<td class="l">{sku}</td>'
+                 f'<td class="l" style="{lt_style}">{_e(str(lt))}</td>'
+                 f'<td class="l">{tag_cell}</td></tr>')
+    return body or '<tr><td colspan="6">Hôm nay không có đơn hoàn / clip khui hàng.</td></tr>'
+
+
 def report_html(rep, dv, now_str):
     t = rep["totals"]
     video_total = (dv or {}).get("total", "—")
@@ -329,6 +385,12 @@ def report_html(rep, dv, now_str):
     unmatched = nk.get("clip_unmatched") or []
     clip_on = nk.get("clip_available", False)
     n_ret = len(nk_detail)
+    # Bảng đối chiếu (clip ↔ nhận hàng trả) + tóm tắt cột trống
+    recon = nk.get("recon_rows") or []
+    _cm = sum(1 for r in recon if not r.get("has_clip"))
+    _sm = sum(1 for r in recon if not r.get("has_sapo"))
+    recon_badge = (f' <span style="font-size:.8em;color:{"#dc2626" if (_cm or _sm) else "#15803d"}">'
+                   f'({len(recon)} dòng · {_cm} thiếu clip · {_sm} chưa nhập kho)</span>')
     if not clip_on:
         clip_summary = ''
         clip_note = ('<div style="font-size:.85em;color:#dc2626;margin-top:.46em">'
@@ -497,18 +559,15 @@ def report_html(rep, dv, now_str):
 
   <div class="kpis k3">{r_kpis_html}</div>
 
-  {warn_box}
-
-  <div class="sec">A. Chi tiết đơn hàng hoàn nhận hôm nay{clip_summary}</div>
+  <div class="sec">A. Đối chiếu Clip khui hàng ↔ Đã nhận hàng trả{recon_badge}</div>
   <table>
-    <thead><tr><th>#</th><th class="l">Mã đơn (Sapo·sàn) · Mã clip (Dohana)</th><th>ĐVVC</th>
+    <thead><tr><th>#</th><th class="l">🎥 Clip khui hàng (Dohana)<br><span style="font-weight:600;font-size:.85em">mã · thời lượng · giờ quay</span></th>
+      <th class="l">📥 Đã nhận hàng trả (Sapo)<br><span style="font-weight:600;font-size:.85em">mã đơn · giờ nhận · NV</span></th>
       <th class="l">Sản phẩm (SKU × SL)</th><th class="l">Loại trả hàng</th>
-      <th class="l">🏷️ Tag app đóng hàng</th>
-      <th>🎥 Clip khui hàng (thời lượng · giờ quay)</th></tr></thead>
-    <tbody>{_returns_clip_rows(nk_detail)}</tbody>
+      <th class="l">🏷️ Tag app đóng hàng</th></tr></thead>
+    <tbody>{_recon_rows(recon)}</tbody>
   </table>
-  <div style="font-size:.72em;color:#6b7280;margin:.25em 0 0">🔎 <b>Mã đơn</b> (in đậm) = tra được trên <b>Sapo</b> và <b>sàn TMĐT</b> (Shopee/TikTok). 🎥 <b>Mã clip</b> = tra clip khui hàng trên <b>app đóng hàng (Dohana)</b>. "mã khác" = clip có nhưng ghi mã vận đơn khác.</div>
-  {clip_note}
+  <div style="font-size:.72em;color:#6b7280;margin:.25em 0 0">🔎 <b>Mã clip</b> = tra trên <b>app đóng hàng (Dohana)</b>. <b>Mã đơn</b> = tra trên <b>Sapo</b> và <b>sàn TMĐT</b>. Ô <span style="color:#dc2626;font-weight:700">đỏ</span> = thiếu/chưa làm, đã ghi rõ lý do trong ô.</div>
 
   <div class="sec">B. Ghi chú đơn hoàn / khiếu nại</div>
   <div class="note"><span style="color:#9aa3af;font-size:.95em">(Ghi tay: tình trạng hàng hoàn, đơn cần khiếu nại sàn, thiếu/sai SP…)</span>

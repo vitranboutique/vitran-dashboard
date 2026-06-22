@@ -120,6 +120,7 @@ def inbound_videos(days_match: int = 3, max_pages: int = 25, target_date=None):
             "recorded": _vn_dt(v.get("createdAt")),
             "tag_id": v.get("tagId"),
             "tag": _tag_name(v.get("tagId")),
+            "staff": ((v.get("user") or {}).get("firstName") or "").strip(),   # NV quay clip
         }
     return {
         "total": sum(1 for v in vids if _vnd(v.get("createdAt")) == tdate),

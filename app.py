@@ -221,6 +221,7 @@ def _enrich_daily(rep, dvr, inb):
             d["clip_dur"] = m.get("dur") if m else None
             d["clip_time"] = m.get("recorded") if m else ""
             d["clip_tag"] = m.get("tag") if m else ""
+            d["clip_staff"] = m.get("staff") if m else ""
             if hit:
                 consumed.add(hit)
         # GHÉP MỀM: đơn hoàn chưa khớp mã ↔ clip khui hàng còn dư CÙNG ĐVVC. Đơn hoàn (nhất là SPX)
@@ -250,6 +251,7 @@ def _enrich_daily(rep, dvr, inb):
                     d["clip_dur"] = m.get("dur")
                     d["clip_time"] = m.get("recorded")
                     d["clip_tag"] = m.get("tag")
+                    d["clip_staff"] = m.get("staff")
         nk["clip_available"] = True
         nk["clip_co"] = sum(1 for d in nk.get("detail", []) if d.get("clip"))
         nk["clip_total"] = inb.get("total", 0)
@@ -259,9 +261,31 @@ def _enrich_daily(rep, dvr, inb):
         nk["clip_unmatched_detail"] = [
             {"code": c, "tag": (meta.get(c) or {}).get("tag", ""),
              "dur": (meta.get(c) or {}).get("dur"),
-             "recorded": (meta.get(c) or {}).get("recorded", "")}
+             "recorded": (meta.get(c) or {}).get("recorded", ""),
+             "staff": (meta.get(c) or {}).get("staff", "")}
             for c in nk["clip_unmatched"]
         ]
+        # BẢNG ĐỐI CHIẾU: mỗi dòng = 1 sự kiện hoàn. Đơn ĐÃ nhập kho (có Sapo) + clip DƯ (chưa nhập kho).
+        recon = []
+        for d in nk.get("detail", []):
+            recon.append({
+                "clip_code": d.get("clip_code"), "clip_time": d.get("clip_time"),
+                "clip_dur": d.get("clip_dur"), "clip_tag": d.get("clip_tag"),
+                "clip_alt": d.get("clip_altcode"), "has_clip": bool(d.get("clip")),
+                "order_code": d.get("order_code"), "recv_time": d.get("recv_time"),
+                "nhan_vien": d.get("nhan_vien") or d.get("clip_staff") or "",
+                "sku": d.get("sku"), "loai_tra": d.get("loai_tra"),
+                "loai_tra_code": d.get("loai_tra_code"), "has_sapo": True,
+            })
+        for u in nk.get("clip_unmatched_detail", []):
+            recon.append({
+                "clip_code": u.get("code"), "clip_time": u.get("recorded"),
+                "clip_dur": u.get("dur"), "clip_tag": u.get("tag"),
+                "clip_alt": False, "has_clip": True,
+                "order_code": "", "recv_time": "", "nhan_vien": u.get("staff") or "",
+                "sku": "", "loai_tra": "", "loai_tra_code": "", "has_sapo": False,
+            })
+        nk["recon_rows"] = recon
     else:
         nk["clip_available"] = False
     if dvr is not None:

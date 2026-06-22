@@ -402,6 +402,12 @@ def _vn_date_of(iso):
     return d.date() if d else None
 
 
+def _vn_hm(iso):
+    """ISO UTC -> 'HH:MM DD/MM' giờ VN (cho mốc nhận hàng trả)."""
+    d = _parse_vn(iso)
+    return d.strftime("%H:%M %d/%m") if d else ""
+
+
 def _order_codes(o) -> set:
     """Mã định danh để khớp video Dohana: mã vận đơn + mã đơn (name)."""
     f = (o.get("fulfillments") or [{}])[0]
@@ -582,6 +588,14 @@ def get_returns_received_today(fetch_json, scan_days: int = 60, max_pages: int =
         if last and last < cutoff:
             break
 
+    # NHÂN VIÊN: map user_id -> nhãn (lấy phần trước @ của email). /admin/accounts bị 403,
+    # nhưng /admin/users.json chạy. user_id thường rỗng → app.py fallback sang NV quay clip.
+    try:
+        _users = {u.get("id"): (u.get("email") or "").split("@")[0]
+                  for u in (fetch_json("/admin/users.json").get("users", []) or [])}
+    except Exception:
+        _users = {}
+
     _reason_vn = {
         "unwanted": "Không còn nhu cầu", "delivery_failed": "Giao thất bại",
         "defective": "Lỗi/hư hỏng", "wrong_item": "Giao sai hàng",
@@ -619,6 +633,11 @@ def get_returns_received_today(fetch_json, scan_days: int = 60, max_pages: int =
                         for li in lis)
         rsn = lis[0].get("return_reason") if lis else None
         rtype = x.get("return_type")
+        # Mốc NHẬN hàng trả (restock) rơi vào ngày báo cáo + nhân viên (user_id) nếu có
+        _ons = x.get("restocked_ons") or []
+        if isinstance(_ons, str):
+            _ons = [_ons]
+        _recv_on = next((o for o in _ons if _vn_date_of(o) == today), _ons[0] if _ons else None)
         detail.append({
             # Hiển thị MÃ TRA ĐƯỢC ở Sapo: ưu tiên mã đơn (sàn), kèm VĐ giao đi. KHÔNG show VĐ
             # hoàn-về (track) làm mã chính vì tra Sapo không ra (chỉ nằm trên phiếu hoàn).
@@ -632,6 +651,8 @@ def get_returns_received_today(fetch_json, scan_days: int = 60, max_pages: int =
             "ly_do": _reason_vn.get(rsn, rsn or "—"),
             "loai_tra": _type_vn.get(rtype, rtype or "—"),
             "loai_tra_code": rtype,
+            "recv_time": _vn_hm(_recv_on),                 # ngày giờ NHẬN hàng trả (Sapo)
+            "nhan_vien": _users.get(x.get("user_id")) or "",  # NV nhận (Sapo); rỗng → fallback ở app.py
             "codes": sorted(codes),
         })
     cho_xu_ly = sum(1 for x in rows
