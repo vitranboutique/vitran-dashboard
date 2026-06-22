@@ -847,8 +847,17 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
                 or _vn_date_of(f.get("issued_on")) == today)
     xac_nhan = sum(1 for o in open_orders if _today_pipeline(o))
     xac_nhan += sum(1 for o in huy_goi_orders if _today_pipeline(o))
+    # Tách: xác nhận HÔM NAY (tạo vận đơn hôm nay) vs đơn SÓT hôm trước (xử lý hôm nay nhưng
+    # tạo vận đơn hôm trước). Tổng = xác nhận hôm nay + sót hôm trước = "tổng đơn cần gửi".
+    xac_nhan_today = sum(1 for o in open_orders
+                         if _vn_date_of(f0(o).get("shipment_created_on")) == today)
+    xac_nhan_today += sum(1 for o in huy_goi_orders
+                          if _vn_date_of(f0(o).get("shipment_created_on")) == today)
+    xot_truoc = max(0, xac_nhan - xac_nhan_today)
     funnel = {
-        "xac_nhan": xac_nhan,
+        "xac_nhan": xac_nhan,                    # = tổng đơn cần gửi hôm nay (baseline phễu)
+        "xac_nhan_today": xac_nhan_today,        # xác nhận HÔM NAY (tạo vận đơn hôm nay)
+        "xot_truoc": xot_truoc,                  # đơn SÓT hôm trước (xử lý hôm nay)
         "soan": None,                            # đã in phiếu nhặt qua dashboard (picklog, gắn ở app.py)
         "dong_goi": tot["dong_goi"],             # đóng gói (gồm hủy) = 89
         "base": hist["tong_don"],                # đợt soạn (89) — baseline so lệch video

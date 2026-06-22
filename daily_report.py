@@ -44,6 +44,8 @@ _CSS = """
   .foot{margin-top:.55em;text-align:center;font-size:.73em;color:#9aa3af;border-top:1px solid var(--line);padding-top:.3em;}
   .page2{page-break-before:always;}
   .kpis.k3{grid-template-columns:repeat(3,1fr);}
+  .kpis.kf4{grid-template-columns:repeat(4,1fr);gap:.38em;margin:.3em 0 .4em;}
+  .kpi.strong{border:2px solid var(--navy);background:#eaf0fb;}
   .kpis.kf5{grid-template-columns:repeat(5,1fr);gap:.38em;margin:.46em 0 .4em;}
   .kf5 .kpi{padding:.3em .46em;text-align:center;}
   .kf5 .kpi .l{font-size:.69em;line-height:1.2;}
@@ -459,9 +461,11 @@ def report_html(rep, dv, now_str):
     _quet, _dvvc, _video, _soan = (fn.get("quet_bien_ban"), fn.get("dvvc_nhan"),
                                    fn.get("video"), fn.get("soan"))
 
-    def _fbox(icon, label, val, lech=0, hot=False, tick=False):
+    def _fbox(icon, label, val, lech=0, hot=False, tick=False, strong=False):
         disp = "—" if val is None else val
         cls, mark = "kpi", ""
+        if strong:
+            cls = "kpi strong"
         if hot and val:
             cls = "kpi hot"
         if lech and lech > 0:
@@ -476,8 +480,13 @@ def report_html(rep, dv, now_str):
     _lq = max(0, (_base - _huy) - _quet) if (isinstance(_quet, int) and _base) else 0
     # ĐVVC đã nhận < đã quét biên bản (xuất kho) = đơn xuất kho mà shipper CHƯA xác nhận → NGHI MẤT ĐƠN
     _ld = (_quet - _dvvc) if (isinstance(_quet, int) and isinstance(_dvvc, int) and _quet > _dvvc) else 0
+    # Hàng ĐẦU: đơn sót hôm trước + xác nhận hôm nay = TỔNG đơn cần gửi hôm nay (baseline phễu)
+    _row_in = "".join([
+        _fbox("📥", "Đơn xót hôm trước", fn.get("xot_truoc")),
+        _fbox("➕✅", "Xác nhận hôm nay", fn.get("xac_nhan_today")),
+        _fbox("🟰📦", "TỔNG đơn cần gửi hôm nay", fn.get("xac_nhan"), strong=True),
+    ])
     _row1 = "".join([
-        _fbox("✅", "Đã xác nhận", fn.get("xac_nhan")),
         _fbox("🖨️", "Đã soạn hàng", _soan),
         _fbox("🎥", "Đã có video", _video, lech=_lv),
         _fbox("📋", "Đã quét biên bản", _quet, lech=_lq),
@@ -487,7 +496,8 @@ def report_html(rep, dv, now_str):
         _fbox("❌", "Hủy hôm nay", fn.get("huy"), hot=True, tick=True),
         _fbox("⏳", "Còn xót lại", fn.get("con_xot"), tick=True),
     ])
-    kpi_html = (f'<div class="kpis kf5">{_row1}</div>'
+    kpi_html = (f'<div class="kpis k3">{_row_in}</div>'
+                f'<div class="kpis kf4">{_row1}</div>'
                 f'<div class="kpis kf5">{_row2}</div>')
 
     # Chi tiết đơn HỦY + CÒN XÓT ngay dưới 2 ô phễu — gom theo ĐVVC, mỗi đơn 1 ô tick xác nhận
