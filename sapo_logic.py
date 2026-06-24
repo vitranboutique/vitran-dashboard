@@ -568,12 +568,17 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
         if not chunk:
             break
         rows += chunk
+        _last = _vn_date_of(chunk[-1].get("created_on"))
+        if _last and _last.year < today.year:   # đã lùi sang NĂM TRƯỚC (sort created giảm dần) → dừng
+            break
         if p == max_pages and len(chunk) == 250:
             capped = True
 
+    # CHỈ tính NĂM NAY (loại hết đơn năm trước)
     inprog = [x for x in rows
               if x.get("status") == "open" and x.get("stock_status") != "stocked"
-              and x.get("shipment_status") in ("returning", "returned")]
+              and x.get("shipment_status") in ("returning", "returned")
+              and _vn_date_of(x.get("created_on")) and _vn_date_of(x.get("created_on")).year == today.year]
 
     cnt, detail, n_complaint = {}, [], 0
     for x in inprog:
