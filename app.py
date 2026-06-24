@@ -953,9 +953,8 @@ if _page == PAGE_DAILY:
     _nrep = _now_vn.strftime("%H:%M %d/%m/%Y")
     _nrec = len((_rep.get("nhap_kho") or {}).get("recon_rows") or [])
     _h = (1 + max(1, (_nrec + 19) // 20)) * 1140 + 120   # 1 trang 1 + N tờ trang 2 (20 đơn/tờ)
-    # Trước 18h30 (shipper chưa lấy xong) → danh sách Còn xót rút gọn 5 đơn/ĐVVC cho gọn
-    _collapse = (_now_vn.hour, _now_vn.minute) < (18, 30)
-    components.html(daily_report.report_html(_rep, _dvr, _nrep, sign_on=_sign_on, collapse_xot=_collapse),
+    # Còn xót lại LUÔN rút gọn 5 đơn/ĐVVC cho dễ đọc (collapse_xot mặc định True)
+    components.html(daily_report.report_html(_rep, _dvr, _nrep, sign_on=_sign_on),
                     height=_h, scrolling=True)
     st.stop()
 

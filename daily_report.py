@@ -206,7 +206,7 @@ def _conxot_rows(packed, unpacked, collapse=False):
                       f'{tk_html} · {_e(str(d.get("carrier", "")))} · {_e(str(d.get("sku", "")))}{mk}</div>')
             if collapse and len(gitems) > 5:
                 h += (f'<div class="dline" style="color:#b45309;font-style:italic">'
-                      f'… còn <b>{len(gitems) - 5} đơn {_e(cr)}</b> (hiện đủ sau 18h30, khi shipper đã tới lấy)</div>')
+                      f'… còn <b>{len(gitems) - 5} đơn {_e(cr)}</b> (rút gọn cho dễ đọc)</div>')
         return h
     return (f'<div class="dvgrp" style="color:#b91c1c">▸ ĐÃ đóng hàng ({len(packed)}) '
             '— ☐ tick khi đã LẤY LẠI hàng</div>'
@@ -348,7 +348,7 @@ def _recon_rows(rows, start=0):
     return body or '<tr><td colspan="7">Hôm nay không có đơn hoàn / clip khui hàng.</td></tr>'
 
 
-def report_html(rep, dv, now_str, sign_on="1", collapse_xot=False):
+def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
     t = rep["totals"]
     video_total = (dv or {}).get("total", "—")
     # ---- VIDEO ĐÓNG GÓI: trình bày theo góc ĐƠN (đơn đóng gói có / thiếu video) ----
