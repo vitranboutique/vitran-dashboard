@@ -1,10 +1,14 @@
 """
-picklog.py — Ghi & đọc LỊCH SỬ IN PHIẾU NHẶT (qua dashboard) vào 1 kho JSON (jsonblob.com).
+picklog.py — Ghi & đọc LỊCH SỬ IN PHIẾU NHẶT (qua dashboard) vào GitHub Gist.
 
-Kho lưu trữ ẩn danh (không cần Google/đăng nhập). URL kho đặt trong Streamlit secrets:
+Gist KHÔNG bao giờ tự xóa (khác jsonblob ẩn danh hay chết) → bền vĩnh viễn.
+Cấu hình trong Streamlit secrets — CHỈ cần 1 token (gist tự tìm/tạo theo tên file):
     [picklog]
-    url = "https://jsonblob.com/api/jsonBlob/XXXX"
-Dữ liệu trong kho: {"logs": [ {ngay, gio, so_don, so_sp, so_sku, ht_don, th_don}, ... ]}
+    github_token = "ghp_xxx"     # Personal Access Token, quyền: gist
+    # gist_id = "..."            # (tuỳ chọn) chỉ định gist cố định; bỏ trống = tự tìm/tạo
+
+Dữ liệu trong gist (file vitran_picklog.json):
+    {"logs": [ {ngay, gio, so_don, so_sp, so_sku, ht_don, th_don}, ... ]}
 """
 import json
 from datetime import datetime, timedelta, timezone
@@ -12,33 +16,100 @@ from datetime import datetime, timedelta, timezone
 import requests
 import streamlit as st
 
-_H = {"Content-Type": "application/json", "Accept": "application/json"}
+_API = "https://api.github.com"
+_FILE = "vitran_picklog.json"      # tên file trong gist (dùng để tự tìm gist)
+_GID_CACHE = None                  # nhớ gist_id trong phiên để khỏi list lại mỗi lần
 
 
-def _url():
+def _token():
     try:
-        u = st.secrets["picklog"]["url"]
-        return u if u and "jsonblob.com" in u else None
+        t = st.secrets["picklog"]["github_token"]
+        return t or None
     except Exception:
         return None
 
 
+def _hdr():
+    return {"Authorization": f"Bearer {_token()}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28"}
+
+
 def configured() -> bool:
-    return bool(_url())
+    return bool(_token())
 
 
 def _today_vn() -> str:
     return (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%Y-%m-%d")
 
 
+def _explicit_gid():
+    try:
+        g = st.secrets["picklog"]["gist_id"]
+        return g or None
+    except Exception:
+        return None
+
+
+def _resolve_gid():
+    """Trả gist_id để dùng. Ưu tiên gist_id khai trong secrets; nếu không, TỰ TÌM
+    gist chứa file _FILE; chưa có thì TẠO mới (secret). Cache trong phiên."""
+    global _GID_CACHE
+    if _GID_CACHE:
+        return _GID_CACHE
+    gid = _explicit_gid()
+    if gid:
+        _GID_CACHE = gid
+        return gid
+    if not _token():
+        return None
+    try:                                   # tìm trong các gist của user theo tên file
+        for page in range(1, 6):
+            r = requests.get(f"{_API}/gists", headers=_hdr(),
+                             params={"per_page": 100, "page": page}, timeout=15)
+            if r.status_code != 200:
+                break
+            rows = r.json()
+            if not rows:
+                break
+            for g in rows:
+                if _FILE in (g.get("files") or {}):
+                    _GID_CACHE = g.get("id")
+                    return _GID_CACHE
+            if len(rows) < 100:
+                break
+    except Exception:
+        pass
+    try:                                   # chưa có → tạo gist mới (secret)
+        body = {"description": "VITRAN dashboard picklog (ĐỪNG XOÁ)",
+                "public": False,
+                "files": {_FILE: {"content": json.dumps({"logs": []}, ensure_ascii=False)}}}
+        r = requests.post(f"{_API}/gists", headers=_hdr(),
+                          data=json.dumps(body), timeout=15)
+        if r.status_code in (200, 201):
+            _GID_CACHE = r.json().get("id")
+            return _GID_CACHE
+    except Exception:
+        pass
+    return None
+
+
 def _read_all():
-    url = _url()
-    if not url:
+    gid = _resolve_gid()
+    if not gid:
         return None
     try:
-        r = requests.get(url, headers=_H, timeout=15)
+        r = requests.get(f"{_API}/gists/{gid}", headers=_hdr(), timeout=15)
         if r.status_code == 200:
-            d = r.json()
+            f = (r.json().get("files") or {}).get(_FILE) or {}
+            content = f.get("content") or ""
+            if f.get("truncated") and f.get("raw_url"):   # file lớn → GitHub cắt, lấy bản đầy đủ
+                rr = requests.get(f["raw_url"], headers=_hdr(), timeout=15)
+                if rr.status_code == 200:
+                    content = rr.text
+            if not content:
+                return {"logs": []}
+            d = json.loads(content)
             return d if isinstance(d, dict) else {"logs": []}
     except Exception:
         pass
@@ -46,19 +117,21 @@ def _read_all():
 
 
 def log_batch(payload: dict):
-    """Ghi 1 lượt in phiếu (đọc kho → thêm dòng → ghi lại). Trả (ok, msg)."""
-    url = _url()
-    if not url:
-        return False, "Chưa cấu hình kho lưu trữ."
+    """Ghi 1 lượt in phiếu (đọc gist → thêm dòng → ghi lại). Trả (ok, msg)."""
+    gid = _resolve_gid()
+    if not gid:
+        return False, "Chưa cấu hình GitHub token (kho lưu)."
     data = _read_all()
     if data is None:
-        return False, "Không đọc được kho lưu trữ (mạng?)."
+        return False, "Không đọc được gist (token/mạng?)."
     data.setdefault("logs", []).append(payload)
     try:
-        r = requests.put(url, data=json.dumps(data, ensure_ascii=False), headers=_H, timeout=15)
+        body = {"files": {_FILE: {"content": json.dumps(data, ensure_ascii=False)}}}
+        r = requests.patch(f"{_API}/gists/{gid}", headers=_hdr(),
+                           data=json.dumps(body), timeout=15)
         if r.status_code == 200:
             return True, "Đã lưu đợt in."
-        return False, f"Lỗi lưu ({r.status_code})."
+        return False, f"Lỗi lưu gist ({r.status_code})."
     except Exception as e:
         return False, f"Lỗi kết nối: {e}"
 

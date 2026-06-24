@@ -428,17 +428,16 @@ def render_compact_table(df, red_mask=None):
 
 
 _PICKLOG_SETUP = """
-**Bật lưu lịch sử in phiếu — chỉ 1 bước (~30 giây), KHÔNG cần Google:**
+**Bật lưu lịch sử in phiếu — lưu trên GitHub Gist (bền, không bao giờ tự xóa):**
 
-Trợ lý đã tạo sẵn kho lưu trữ. Bạn chỉ cần dán URL kho vào Streamlit:
-
-1. Mở **Streamlit Cloud** → app VITRAN → **⋮ Manage app → Settings → Secrets**.
-2. Thêm 2 dòng (URL trợ lý gửi trong khung chat) rồi **Save**:
+1. Tạo **token GitHub**: vào https://github.com/settings/tokens → **Generate new token (classic)**
+   → tick đúng ô **`gist`** → Generate → **copy** token (dạng `ghp_...`).
+2. Mở **Streamlit Cloud** → app VITRAN → **⋮ Manage app → Settings → Secrets**, thêm rồi **Save**:
    ```toml
    [picklog]
-   url = "https://jsonblob.com/api/jsonBlob/XXXX"
+   github_token = "ghp_xxx"
    ```
-3. App tự khởi động lại là dùng được — mỗi lần in bấm **💾 Lưu đợt vừa in**.
+3. App tự khởi động lại. Bấm **🖨️ In phiếu nhặt + tự lưu đợt** là tự lưu (gist tự tạo lần đầu).
 """
 
 _DOHANA_SETUP = """
