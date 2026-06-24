@@ -522,7 +522,28 @@ PAGE_OVERVIEW = "📊 Tổng quan điều hành"
 PAGE_REPORT = "📋 Báo cáo sáng"
 PAGE_PICK = "🧾 Phiếu nhặt hàng"
 PAGE_DAILY = "📄 Báo cáo cuối ngày"
-_page = st.sidebar.radio("Trang", [PAGE_OVERVIEW, PAGE_REPORT, PAGE_PICK, PAGE_DAILY], index=0)
+# Điều hướng = LINK THẬT (chuột phải → "mở tab mới" được), định tuyến qua ?page=<key>.
+_PAGES = [("overview", PAGE_OVERVIEW), ("report", PAGE_REPORT),
+          ("pick", PAGE_PICK), ("daily", PAGE_DAILY)]
+_pkey = st.query_params.get("page", "overview")
+if _pkey not in {k for k, _ in _PAGES}:
+    _pkey = "overview"
+_page = dict(_PAGES)[_pkey]
+_NAV_CSS = (
+    ".navwrap{display:flex;flex-direction:column;gap:3px;margin:.1rem 0 .4rem}"
+    ".navttl{color:#9fb0cc;font-size:.72rem;font-weight:800;letter-spacing:.06em;margin:.1rem 0 .4rem .2rem}"
+    ".navlink{display:block;padding:.55rem .7rem;border-radius:9px;color:#dbe3f0 !important;"
+    "text-decoration:none;font-weight:600;font-size:.96rem;line-height:1.3;"
+    "border:1px solid transparent;transition:background .12s,border-color .12s}"
+    ".navlink:hover{background:#223152;border-color:rgba(255,255,255,.10)}"
+    ".navlink.active{background:#2b62c4;border-color:#2b62c4;color:#fff !important;"
+    "font-weight:800;box-shadow:0 1px 6px rgba(43,98,196,.4)}")
+_nav = f"<style>{_NAV_CSS}</style><div class='navwrap'><div class='navttl'>TRANG</div>"
+for _k, _lbl in _PAGES:
+    _nav += (f"<a class='navlink{' active' if _k == _pkey else ''}' "
+             f"href='?page={_k}' target='_self'>{_lbl}</a>")
+_nav += "</div>"
+st.sidebar.markdown(_nav, unsafe_allow_html=True)
 st.sidebar.divider()
 
 
@@ -967,7 +988,8 @@ if _page == PAGE_DAILY:
         st.stop()
 
     # ===== Tổng hợp 7 NGÀY QUA (số cố định sau ngày — query lại là ra số cuối) =====
-    with st.expander("📅 Tổng hợp 7 ngày qua", expanded=True):
+    # Ẩn mặc định — bấm mới mở (đỡ rối, chỉ xem khi cần).
+    with st.expander("📅 Tổng hợp 7 ngày qua", expanded=False):
         try:
             _wk = load_week_summary()
             st.markdown(_week_table_html(_wk), unsafe_allow_html=True)
@@ -980,11 +1002,7 @@ if _page == PAGE_DAILY:
     _past = {(_vn_today - timedelta(days=i)).strftime("%d/%m/%Y"):
              (_vn_today - timedelta(days=i)).isoformat() for i in range(1, 7)}
     _pick = st.selectbox("Xem báo cáo chi tiết (A4) ngày", [_LIVE] + [f"🗂️ {k}" for k in _past])
-    _sign_lbl = st.radio("✍️ Phần ký tên đặt ở:",
-                         ["Trang 1 (mặt trước)", "Trang 2 (mặt sau)", "Cả 2 trang"],
-                         horizontal=True, index=0,
-                         help="Chọn nơi đặt phần ký tên (NV soạn hàng / NV kho / Quản lý) cho cân đối trang in.")
-    _sign_on = {"Trang 1 (mặt trước)": "1", "Trang 2 (mặt sau)": "2", "Cả 2 trang": "both"}[_sign_lbl]
+    _sign_on = "1"   # phần ký tên LUÔN đặt ở Trang 1 (mặt trước)
 
     # ---- Xem báo cáo NGÀY CŨ (query lại Sapo + Dohana theo ngày, số đã cố định) ----
     if _pick != _LIVE:
