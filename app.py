@@ -567,11 +567,15 @@ def render_alert_popup():
     n_hot = sum(1 for _, v, _s in items if v)
     rows = ""
     for lbl, v, subs in items:
+        if not v:                      # CHỈ hiện dòng có số (>0); dòng = 0 ẩn đi
+            continue
         rows += (f'<div class="row"><span>{lbl}</span>'
-                 f'<span class="v{" hot" if v else ""}">{v}</span></div>')
+                 f'<span class="v hot">{v}</span></div>')
         for slbl, sv in (subs or []):
+            if not sv:                 # dòng phụ = 0 cũng ẩn
+                continue
             rows += (f'<div class="row" style="padding-left:16px;font-size:.76rem;border-bottom:0">'
-                     f'<span>{slbl}</span><span class="v{" hot" if sv else ""}">{sv}</span></div>')
+                     f'<span>{slbl}</span><span class="v hot">{sv}</span></div>')
     badge = f'⚠️ Cảnh báo ({n_hot})' if n_hot else '✅ Cảnh báo (0)'
     body = rows if n_hot else '<div class="ok">✅ Không có cảnh báo</div>' + rows
     st.markdown(
