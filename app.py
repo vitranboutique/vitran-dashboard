@@ -522,28 +522,7 @@ PAGE_OVERVIEW = "📊 Tổng quan điều hành"
 PAGE_REPORT = "📋 Báo cáo sáng"
 PAGE_PICK = "🧾 Phiếu nhặt hàng"
 PAGE_DAILY = "📄 Báo cáo cuối ngày"
-# Điều hướng = LINK THẬT (chuột phải → "mở tab mới" được), định tuyến qua ?page=<key>.
-_PAGES = [("overview", PAGE_OVERVIEW), ("report", PAGE_REPORT),
-          ("pick", PAGE_PICK), ("daily", PAGE_DAILY)]
-_pkey = st.query_params.get("page", "overview")
-if _pkey not in {k for k, _ in _PAGES}:
-    _pkey = "overview"
-_page = dict(_PAGES)[_pkey]
-_NAV_CSS = (
-    ".navwrap{display:flex;flex-direction:column;gap:3px;margin:.1rem 0 .4rem}"
-    ".navttl{color:#9fb0cc;font-size:.72rem;font-weight:800;letter-spacing:.06em;margin:.1rem 0 .4rem .2rem}"
-    ".navlink{display:block;padding:.55rem .7rem;border-radius:9px;color:#dbe3f0 !important;"
-    "text-decoration:none;font-weight:600;font-size:.96rem;line-height:1.3;"
-    "border:1px solid transparent;transition:background .12s,border-color .12s}"
-    ".navlink:hover{background:#223152;border-color:rgba(255,255,255,.10)}"
-    ".navlink.active{background:#2b62c4;border-color:#2b62c4;color:#fff !important;"
-    "font-weight:800;box-shadow:0 1px 6px rgba(43,98,196,.4)}")
-_nav = f"<style>{_NAV_CSS}</style><div class='navwrap'><div class='navttl'>TRANG</div>"
-for _k, _lbl in _PAGES:
-    _nav += (f"<a class='navlink{' active' if _k == _pkey else ''}' "
-             f"href='?page={_k}' target='_self'>{_lbl}</a>")
-_nav += "</div>"
-st.sidebar.markdown(_nav, unsafe_allow_html=True)
+_page = st.sidebar.radio("Trang", [PAGE_OVERVIEW, PAGE_REPORT, PAGE_PICK, PAGE_DAILY], index=0)
 st.sidebar.divider()
 
 
