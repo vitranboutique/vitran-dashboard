@@ -461,13 +461,6 @@ def _auth_configured() -> bool:
         return False
 
 
-@st.cache_resource
-def _get_authenticator(_credentials, name, key, expiry_days):
-    """Tạo authenticator MỘT LẦN rồi cache. Tạo mới mỗi lần chạy sẽ khởi tạo lại CookieManager
-    → cookie 'nhớ đăng nhập' ghi hụt → F5/tab mới mất phiên. Cache giữ nó ổn định nên cookie bền."""
-    return stauth.Authenticate(_credentials, name, key, expiry_days, auto_hash=True)
-
-
 def require_login():
     """Chặn nếu chưa đăng nhập. Trả về (name, username, role).
     Nếu CHƯA cấu hình tài khoản trong secrets -> bỏ qua đăng nhập (mở tự do)."""
@@ -486,11 +479,12 @@ def require_login():
             "roles": [info.get("role", "viewer")],
         }
 
-    authenticator = _get_authenticator(
+    authenticator = stauth.Authenticate(
         credentials,
         ck.get("name", "vitran_dashboard_auth"),
         ck.get("key", "vitran-please-change-this-key"),
         ck.get("expiry_days", 30),
+        auto_hash=True,
     )
     authenticator.login(location="main", fields={
         "Form name": "🔒 Đăng nhập — Báo cáo VITRAN BOUTIQUE",
