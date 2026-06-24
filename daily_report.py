@@ -183,21 +183,30 @@ def _grouped_tick_rows(detail, mark_packed=False):
     return html
 
 
-def _conxot_rows(packed, unpacked):
+def _conxot_rows(packed, unpacked, collapse=False):
     """Còn xót tách 2 nhóm theo TRẠNG THÁI ĐÓNG HÀNG: ĐÃ đóng (cần xác nhận lấy lại hàng — có
-    ô tick) vs CHƯA đóng (chưa gói → không cần lấy lại, không tick)."""
+    ô tick) vs CHƯA đóng (chưa gói → không cần lấy lại, không tick).
+    collapse=True (trước 18h, shipper chưa tới) → mỗi ĐVVC chỉ hiện 5 đơn, còn lại ghi '…'."""
     def _lines(items, need_tick):
         if not items:
             return '<div class="dline" style="color:#9aa3af">— không có —</div>'
-        h = ""
+        groups = OrderedDict()
         for d in items:
-            tk = str(d.get("tracking") or "")
-            tk_html = f' · <span class="vd">{_e(tk)}</span>' if tk and tk != d.get("name") else ""
-            box = ('<span class="cbox2"></span> ' if need_tick
-                   else '<span style="display:inline-block;width:.85em;margin-right:2px"></span>')
-            mk = ' <span class="pk">📦 lấy lại</span>' if need_tick else ''
-            h += (f'<div class="dline">{box}<b>{_e(str(d.get("name", "?")))}</b>'
-                  f'{tk_html} · {_e(str(d.get("carrier", "")))} · {_e(str(d.get("sku", "")))}{mk}</div>')
+            groups.setdefault(str(d.get("carrier") or "?"), []).append(d)
+        h = ""
+        for cr, gitems in groups.items():
+            shown = gitems[:5] if collapse else gitems
+            for d in shown:
+                tk = str(d.get("tracking") or "")
+                tk_html = f' · <span class="vd">{_e(tk)}</span>' if tk and tk != d.get("name") else ""
+                box = ('<span class="cbox2"></span> ' if need_tick
+                       else '<span style="display:inline-block;width:.85em;margin-right:2px"></span>')
+                mk = ' <span class="pk">📦 lấy lại</span>' if need_tick else ''
+                h += (f'<div class="dline">{box}<b>{_e(str(d.get("name", "?")))}</b>'
+                      f'{tk_html} · {_e(str(d.get("carrier", "")))} · {_e(str(d.get("sku", "")))}{mk}</div>')
+            if collapse and len(gitems) > 5:
+                h += (f'<div class="dline" style="color:#b45309;font-style:italic">'
+                      f'… còn <b>{len(gitems) - 5} đơn {_e(cr)}</b> (hiện đủ sau 18h, khi shipper đã tới lấy)</div>')
         return h
     return (f'<div class="dvgrp" style="color:#b91c1c">▸ ĐÃ đóng hàng ({len(packed)}) '
             '— ☐ tick khi đã LẤY LẠI hàng</div>'
@@ -339,7 +348,7 @@ def _recon_rows(rows, start=0):
     return body or '<tr><td colspan="7">Hôm nay không có đơn hoàn / clip khui hàng.</td></tr>'
 
 
-def report_html(rep, dv, now_str, sign_on="1"):
+def report_html(rep, dv, now_str, sign_on="1", collapse_xot=False):
     t = rep["totals"]
     video_total = (dv or {}).get("total", "—")
     # ---- VIDEO ĐÓNG GÓI: trình bày theo góc ĐƠN (đơn đóng gói có / thiếu video) ----
@@ -544,7 +553,7 @@ def report_html(rep, dv, now_str, sign_on="1"):
             '<div class="fdcol fdcol-xot">'
             f'<div class="fdhead" style="color:#b45309">⏳ CÒN XÓT LẠI ({len(_conxot)}) '
             '— đã xác nhận, CHƯA giao shipper</div>'
-            f'{_conxot_rows(_cx_pk, _cx_upk)}</div>'
+            f'{_conxot_rows(_cx_pk, _cx_upk, collapse=collapse_xot)}</div>'
             '</div>')
 
     # Phần KÝ TÊN — đặt ở Trang 1, Trang 2, hoặc cả 2 (tùy chọn sign_on). Mặc định Trang 2.

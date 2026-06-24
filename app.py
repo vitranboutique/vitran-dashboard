@@ -933,10 +933,14 @@ if _page == PAGE_DAILY:
     _enrich_daily(_rep, _dvr, _inb)   # gắn clip khui hàng + đối chiếu video đóng gói
     if picklog.configured() and isinstance(_rep.get("funnel"), dict):
         _rep["funnel"]["soan"] = sum(r.get("so_don", 0) or 0 for r in picklog.read_today()) or None
-    _nrep = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%H:%M %d/%m/%Y")
+    _now_vn = datetime.now(timezone.utc) + timedelta(hours=7)
+    _nrep = _now_vn.strftime("%H:%M %d/%m/%Y")
     _nrec = len((_rep.get("nhap_kho") or {}).get("recon_rows") or [])
     _h = (1 + max(1, (_nrec + 29) // 30)) * 1140 + 120   # 1 trang 1 + N tờ trang 2 (30 đơn/tờ)
-    components.html(daily_report.report_html(_rep, _dvr, _nrep, sign_on=_sign_on), height=_h, scrolling=True)
+    # Trước 18h (shipper chưa tới lấy) → danh sách Còn xót rút gọn 5 đơn/ĐVVC cho gọn
+    _collapse = _now_vn.hour < 18
+    components.html(daily_report.report_html(_rep, _dvr, _nrep, sign_on=_sign_on, collapse_xot=_collapse),
+                    height=_h, scrolling=True)
     st.stop()
 
 
