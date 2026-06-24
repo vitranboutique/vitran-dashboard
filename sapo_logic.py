@@ -476,28 +476,6 @@ def get_alerts(fetch_json) -> dict:
             "cancel_retrieve_express": cancel_retrieve_express}
 
 
-def get_handover_pending(fetch_json, days: int = 10) -> dict:
-    """Đơn ĐÃ QUÉT vào biên bản bàn giao, đang CHỜ BÀN GIAO (ĐVVC chưa lấy).
-    = /admin/shipments.json status=open + delivery_status='pending'
-    (khớp 'Bàn giao kiện hàng' / biên bản bàn giao trên Sapo). Lọc created_on_min cho nhẹ."""
-    day_ago = (_now_utc() + timedelta(hours=7) - timedelta(days=days)).date()
-    cmin = day_ago.isoformat() + "T00:00:00+07:00"
-    pend = 0
-    by_carrier = {}
-    for p in range(1, 25):
-        rows = fetch_json("/admin/shipments.json", limit=250, page=p,
-                          status="open", created_on_min=cmin).get("shipments", [])
-        if not rows:
-            break
-        for x in rows:
-            if x.get("delivery_status") == "pending":
-                pend += 1
-                car = (x.get("tracking_info") or {}).get("carrier_name") or "?"
-                by_carrier[car] = by_carrier.get(car, 0) + 1
-    return {"cho_ban_giao": pend,
-            "by_carrier": dict(sorted(by_carrier.items(), key=lambda x: -x[1]))}
-
-
 def get_week_summary(fetch_json, days: int = 7) -> list:
     """Tổng hợp NHIỀU NGÀY (mặc định 7) — mỗi ngày: đóng gói / hủy đã gói / shipper nhận /
     giao khách / soạn. Số liệu cố định sau ngày (mốc packed_on/issued_on/delivered_on/cancelled_on
@@ -884,7 +862,7 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
     except Exception:
         nhap_kho = {"so_phieu": 0, "so_sp": 0, "by_source": {}, "cho_xu_ly": 0}
 
-    # ── PHỄU: xác nhận → soạn → video → quét biên bản → ĐVVC đã nhận → hủy / còn xót ──
+    # ── PHỄU: xác nhận → soạn → video → ĐVVC đã nhận → hủy / còn xót ──
     # Đã xác nhận = đơn TẠO VẬN ĐƠN hôm nay, GỒM CẢ đơn đã hủy (3 đơn hủy cũng xác nhận/soạn/
     # đóng gói/quay video trong ngày, chỉ hủy sau) → khớp tổng đợt soạn (89).
     # "ĐVVC đã nhận" = "shipper thực nhận" = đã bàn giao (issued) = 86 (khớp số NV báo;
@@ -909,11 +887,6 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
         "dong_goi": tot["dong_goi"],             # đóng gói (gồm hủy) = 89
         "base": hist["tong_don"],                # đợt soạn (89) — baseline so lệch video
         "video": None,                           # đóng gói có video (gắn ở app.py)
-        # ĐÃ QUÉT BIÊN BẢN = đã ĐÓNG GÓI (NV quét hết vào biên bản bàn giao, có NGAY khi gói xong).
-        # KHÔNG dùng issued_on (xuất kho): issued_on TRỄ trong ngày — NV đã quét hết ~155 nhưng Sapo
-        # mới đánh dấu xuất kho 46 → phễu hiện 46 sai. Đóng gói phản ánh đúng "NV đã quét biên bản".
-        "quet_bien_ban": tot["dong_goi"] + tot.get("dg_cu", 0),
-        "xuat_kho": tot["xuat_kho"],             # (giữ riêng) issued_on==hôm nay — cho bảng ĐVVC
         "dvvc_nhan": tot["shipper_nhan"],        # shipper THỰC NHẬN = ĐVVC đã xác nhận lấy = 84
         "huy": tot["huy"],
         "con_xot": len(con_xot_packed) + len(con_xot_unpacked),  # xác nhận nhưng chưa giao shipper

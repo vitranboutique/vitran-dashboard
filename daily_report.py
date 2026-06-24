@@ -47,6 +47,7 @@ _CSS = """
   .page2{page-break-before:always;}
   .kpis.k3{grid-template-columns:repeat(3,1fr);}
   .kpis.kf4{grid-template-columns:repeat(4,1fr);gap:.38em;margin:.3em 0 .4em;}
+  .kpis.kf3{grid-template-columns:repeat(3,1fr);gap:.38em;margin:.3em 0 .4em;}
   .kpis.kf2{grid-template-columns:repeat(2,1fr);gap:.6em;margin:.5em 0 0;}
   .kpi.strong{border:2px solid var(--navy);background:#eaf0fb;}
   .kpi.huytone{background:#fdf3f2;border-color:#e6b3ab;}
@@ -498,14 +499,14 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
         f'<div class="v">{clip_kpi_v}</div>'
         f'<div class="l" style="margin-top:3px;font-weight:700">{clip_kpi_sub}</div></div>'
     )
-    # ── PHỄU: xác nhận → soạn(in phiếu) → video(đóng gói) → quét biên bản → ĐVVC nhận | hủy · còn xót ──
-    # 5 ô dòng 1 + 2 ô dòng 2. Mỗi ô có ô ☐ để NV KHO TICK xác nhận trước khi ký cuối.
+    # ── PHỄU: xác nhận → soạn(in phiếu) → video(đóng gói) → ĐVVC nhận | hủy · còn xót ──
+    # 4 ô dòng 1 + 2 ô dòng 2. Mỗi ô có ô ☐ để NV KHO TICK xác nhận trước khi ký cuối.
     # Soạn hàng = đã in phiếu nhặt (dashboard/picklog); Có video = đơn đóng gói đã quay video.
+    # (Đã bỏ ô "Đã quét biên bản": Sapo KHÔNG mở API biên bản nên không có số THẬT để báo.)
     fn = rep.get("funnel") or {}
     _base = fn.get("base") or fn.get("dong_goi") or 0   # đóng gói GỒM hủy (89) = chuẩn so lệch
     _huy = fn.get("huy") or 0
-    _quet, _dvvc, _video, _soan = (fn.get("quet_bien_ban"), fn.get("dvvc_nhan"),
-                                   fn.get("video"), fn.get("soan"))
+    _dvvc, _video, _soan = (fn.get("dvvc_nhan"), fn.get("video"), fn.get("soan"))
 
     def _fbox(icon, label, val, lech=0, hot=False, tick=False, strong=False, tone="", lech_txt="lệch"):
         disp = "—" if val is None else val
@@ -522,12 +523,8 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
         return (f'<div class="{" ".join(classes)}"><div class="l">{icon} {label}</div>'
                 f'<div class="v">{disp}</div>{mark}{tk}</div>')
 
-    # Thiếu video = đóng gói (gồm hủy) chưa quay. Quét biên bản = đã đóng gói (NV quét hết, có ngay).
+    # Thiếu video = đóng gói (gồm hủy) chưa quay.
     _lv = max(0, _base - _video) if (isinstance(_video, int) and _base) else 0
-    _lq = max(0, (_base - _huy) - _quet) if (isinstance(_quet, int) and _base) else 0
-    # ĐVVC đã nhận < đã quét biên bản (đã đóng gói) = đơn NV đã quét biên bản mà SHIPPER CHƯA xác nhận
-    # lấy. Trong ngày số này lớn (shipper đang tới lấy dần); cuối ngày còn lại = NGHI MẤT ĐƠN.
-    _ld = (_quet - _dvvc) if (isinstance(_quet, int) and isinstance(_dvvc, int) and _quet > _dvvc) else 0
     # Hàng ĐẦU: đơn sót hôm trước + xác nhận hôm nay = TỔNG đơn cần gửi hôm nay (baseline phễu)
     _row_in = "".join([
         _fbox("📥", "Đơn xót hôm trước", fn.get("xot_truoc")),
@@ -537,8 +534,7 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
     _row1 = "".join([
         _fbox("🖨️", "Đã soạn hàng", _soan),
         _fbox("🎥", "Đã có video", _video, lech=_lv),
-        _fbox("📋", "Đã quét biên bản", _quet, lech=_lq, lech_txt="chưa gói"),
-        _fbox("🚚", "ĐVVC đã nhận", _dvvc, lech=_ld, lech_txt="shipper chưa nhận"),
+        _fbox("🚚", "ĐVVC đã nhận", _dvvc),
     ])
     # 2 ô này 50/50, NẰM NGAY TRÊN bảng chi tiết tương ứng (Hủy ↔ bảng Hủy, Xót ↔ bảng Xót)
     _row2 = "".join([
@@ -546,7 +542,7 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
         _fbox("⏳", "Còn xót lại", fn.get("con_xot"), tick=True, tone="xottone"),
     ])
     kpi_html = (f'<div class="kpis k3">{_row_in}</div>'
-                f'<div class="kpis kf4">{_row1}</div>'
+                f'<div class="kpis kf3">{_row1}</div>'
                 f'<div class="kpis kf2">{_row2}</div>')
 
     # Chi tiết đơn HỦY + CÒN XÓT ngay dưới 2 ô phễu — gom theo ĐVVC, mỗi đơn 1 ô tick xác nhận
