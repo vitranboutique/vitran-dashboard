@@ -547,6 +547,80 @@ def get_week_summary(fetch_json, days: int = 7) -> list:
     return out
 
 
+def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
+    """ĐƠN TRẢ HÀNG ĐANG XỬ LÝ — CHƯA nhập kho (bổ sung cho mục 'đã nhận hàng trả').
+    Phạm vi: phiếu trả status='open' & stock_status != 'stocked', shipment_status ∈
+    {returning=Đang hoàn hàng, returned=Đã giao người bán}. Lấy TẤT CẢ đơn đang mở (cap max_pages).
+    Cờ CẦN KHIẾU NẠI:
+      • đã giao người bán (returned) mà chưa nhập kho → khiếu nại
+      • đang hoàn hàng (returning) quá 7 ngày → khiếu nại
+      • NGOẠI LỆ: 'Trả hàng hoàn tiền' chỉ 1 VĐ (người mua chưa giao ĐVVC) → CHƯA khiếu nại
+    (Giao hàng thất bại có 1 VĐ trả là bình thường; Trả hàng hoàn tiền phải có 2 VĐ.)
+    Kèm SKU, SL SP, tổng tiền (total_price) mỗi đơn."""
+    today = (_now_utc() + timedelta(hours=7)).date()
+    _type_vn = {"return_and_refund": "Trả hàng hoàn tiền", "delivery_failed": "Giao hàng thất bại",
+                "refund": "Hoàn tiền (không trả hàng)"}
+    _ship_vn = {"returning": "Đang hoàn hàng", "returned": "Đã giao người bán"}
+
+    rows, capped = [], False
+    for p in range(1, max_pages + 1):
+        chunk = fetch_json("/admin/order_returns.json", limit=250, page=p).get("order_returns", [])
+        if not chunk:
+            break
+        rows += chunk
+        if p == max_pages and len(chunk) == 250:
+            capped = True
+
+    inprog = [x for x in rows
+              if x.get("status") == "open" and x.get("stock_status") != "stocked"
+              and x.get("shipment_status") in ("returning", "returned")]
+
+    cnt, detail, n_complaint = {}, [], 0
+    for x in inprog:
+        rtype = x.get("return_type") or "refund"
+        sstat = x.get("shipment_status")
+        cnt.setdefault(rtype, {"returning": 0, "returned": 0})
+        cnt[rtype][sstat] = cnt[rtype].get(sstat, 0) + 1
+        si = x.get("shipping_info") or {}
+        ucodes = {c for c in ([si.get("tracking_number")] + (si.get("fulfillment_tracking_numbers") or [])) if c}
+        n_track = len(ucodes)
+        cdate = _vn_date_of(x.get("created_on"))
+        age = (today - cdate).days if cdate else None
+        # NGOẠI LỆ chỉ cho ĐANG HOÀN HÀNG: refund mà 1 VĐ = người mua CHƯA giao ĐVVC → chưa cần.
+        # (Đã giao người bán = chắc chắn đã gửi, không áp ngoại lệ này.)
+        if rtype == "return_and_refund" and sstat == "returning" and n_track < 2:
+            complaint, reason = False, "Người mua chưa giao ĐVVC (1 VĐ) — chưa cần khiếu nại"
+        elif sstat == "returned":
+            complaint, reason = True, "Đã giao người bán mà chưa nhập kho — cần khiếu nại"
+        elif sstat == "returning" and age is not None and age >= 7:
+            complaint, reason = True, f"Đang hoàn hàng {age} ngày (quá 1 tuần) — cần khiếu nại"
+        else:
+            complaint, reason = False, ("Đang hoàn hàng — theo dõi" if sstat == "returning" else "")
+        if complaint:
+            n_complaint += 1
+        lis = x.get("line_items") or []
+        sku = "; ".join(f"{(li.get('sku') or 'N/A')}×{int(round(li.get('quantity') or 0))}" for li in lis)
+        detail.append({
+            "order_code": (x.get("order") or {}).get("name") or x.get("name") or "?",
+            "vd_gui": (si.get("fulfillment_tracking_numbers") or [None])[0],
+            "loai_tra": _type_vn.get(rtype, rtype), "loai_tra_code": rtype,
+            "ship_status": _ship_vn.get(sstat, sstat), "ship_code": sstat,
+            "n_track": n_track, "age": age, "complaint": complaint, "reason": reason,
+            "sku": sku, "qty": int(round(x.get("total_quantity") or 0)),
+            "money": int(round(x.get("total_price") or 0)),
+        })
+    detail.sort(key=lambda d: (0 if d["complaint"] else 1, -(d["age"] or 0)))
+    return {
+        "total": len(inprog), "capped": capped, "n_complaint": n_complaint,
+        "refund": cnt.get("return_and_refund", {"returning": 0, "returned": 0}),
+        "fail": cnt.get("delivery_failed", {"returning": 0, "returned": 0}),
+        "refund_only": cnt.get("refund", {"returning": 0, "returned": 0}),
+        "tot_returning": sum(c.get("returning", 0) for c in cnt.values()),
+        "tot_returned": sum(c.get("returned", 0) for c in cnt.values()),
+        "detail": detail,
+    }
+
+
 def get_returns_received_today(fetch_json, scan_days: int = 60, max_pages: int = 12,
                                target_date=None) -> dict:
     """ĐƠN HÀNG HOÀN ĐÃ NHẬN VỀ KHO (giờ VN; mặc định hôm nay, hoặc target_date cho ngày cũ).

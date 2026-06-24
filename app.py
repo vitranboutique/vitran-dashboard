@@ -655,6 +655,11 @@ def load_returns_followup():
     return L.get_returns_followup(make_fetch_json(build_session()))
 
 
+@st.cache_data(ttl=600, show_spinner="Đang quét đơn trả đang xử lý…")
+def load_returns_inprogress():
+    return L.get_returns_in_progress(make_fetch_json(build_session()))
+
+
 # Popup cảnh báo cố định — hiện ở MỌI trang
 render_alert_popup()
 
@@ -1031,6 +1036,45 @@ if _page == PAGE_DAILY:
     # Còn xót lại LUÔN rút gọn 5 đơn/ĐVVC cho dễ đọc (collapse_xot mặc định True)
     components.html(daily_report.report_html(_rep, _dvr, _nrep, sign_on=_sign_on),
                     height=_h, scrolling=True)
+
+    # ── ĐƠN TRẢ HÀNG ĐANG XỬ LÝ (chưa nhập kho) — bổ sung cho mục "đã nhận hàng trả" ──
+    st.divider()
+    st.subheader("📦 Đơn trả hàng đang xử lý (chưa nhập kho)")
+    try:
+        _rip = load_returns_inprogress()
+    except Exception as _e:
+        _rip = None
+        st.warning(f"Chưa lấy được đơn trả đang xử lý: `{_e}`")
+    if _rip:
+        _m = st.columns(4)
+        _m[0].metric("Tổng đang xử lý", f"{_rip['total']:,}")
+        _m[1].metric("🚚 Đang hoàn hàng", f"{_rip['tot_returning']:,}")
+        _m[2].metric("📥 Đã giao người bán", f"{_rip['tot_returned']:,}")
+        _m[3].metric("🚨 Cần khiếu nại", f"{_rip['n_complaint']:,}")
+        _rf, _fl = _rip["refund"], _rip["fail"]
+        st.caption(
+            f"**Trả hàng hoàn tiền:** đang hoàn {_rf['returning']} · đã giao người bán {_rf['returned']}  |  "
+            f"**Giao hàng thất bại:** đang hoàn {_fl['returning']} · đã giao người bán {_fl['returned']}"
+            + ("  ·  ⚠️ đã chạm giới hạn quét — có thể còn đơn cũ hơn" if _rip.get("capped") else ""))
+        st.caption("🚨 **Cần khiếu nại** = *đã giao người bán mà chưa nhập kho*, hoặc *đang hoàn hàng quá 1 tuần*. "
+                   "Đơn *trả hàng hoàn tiền* chỉ có 1 vận đơn (người mua chưa giao ĐVVC) thì CHƯA tính khiếu nại. "
+                   "Giao hàng thất bại có 1 VĐ trả là bình thường; trả hàng hoàn tiền phải có 2 VĐ.")
+        _rows = [{
+            "🚨": "🚨" if d["complaint"] else "",
+            "Mã đơn": d["order_code"],
+            "Loại trả": d["loai_tra"],
+            "Vận chuyển hoàn": d["ship_status"],
+            "Số VĐ": d["n_track"],
+            "Tuổi (ngày)": d["age"] if d["age"] is not None else "",
+            "SKU": d["sku"],
+            "SL": d["qty"],
+            "Tổng tiền": f"{d['money']:,}đ",
+            "Lý do / ghi chú": d["reason"],
+        } for d in _rip["detail"]]
+        if _rows:
+            st.dataframe(pd.DataFrame(_rows), width="stretch", hide_index=True, height=460)
+        else:
+            st.success("✅ Không có đơn trả nào đang xử lý.")
     st.stop()
 
 
