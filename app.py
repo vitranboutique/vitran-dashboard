@@ -620,12 +620,12 @@ def render_alert_popup():
         # Đơn xác nhận trễ = đặt TRƯỚC 18h (trong giờ) nhưng mãi SAU 18h mới xác nhận
         ("📌 Đơn xác nhận trễ", a["late_confirm"], None),
         ("📦 Đơn xót lại (chờ shipper)", a["chua_giao"], [
-            ("↳ Đã xác nhận, CHƯA đóng hàng", a.get("xot_chua_dong", 0)),
-            ("↳ Đã xác nhận, ĐÃ đóng hàng", a.get("xot_da_dong", 0)),
+            ("chưa đóng hàng", a.get("xot_chua_dong", 0)),
+            ("đã đóng hàng", a.get("xot_da_dong", 0)),
         ]),
         ("🔴 Hỏa tốc chưa giao", a["express_pending"], None),
         ("↩️ Hủy sau gói cần LẤY LẠI", a["cancel_retrieve"], [
-            ("↳ trong đó 🔴 hỏa tốc", a.get("cancel_retrieve_express", 0)),
+            ("🔴 hỏa tốc", a.get("cancel_retrieve_express", 0)),
         ]),
     ]
     n_hot = sum(1 for _, v, _s in items if v)
@@ -635,11 +635,13 @@ def render_alert_popup():
             continue
         rows += (f'<div class="row"><span>{lbl}</span>'
                  f'<span class="v hot">{v}</span></div>')
-        for slbl, sv in (subs or []):
-            if not sv:                 # dòng phụ = 0 cũng ẩn
-                continue
-            rows += (f'<div class="row" style="padding-left:16px;font-size:.76rem;border-bottom:0">'
-                     f'<span>{slbl}</span><span class="v hot">{sv}</span></div>')
+        # Dòng phụ = GIẢI THÍCH "trong đó" — số NẰM TRONG CÂU (không phải ô đếm riêng),
+        # tránh hiểu nhầm là có thêm đơn. VD: "↳ trong đó: 1 chưa đóng hàng".
+        parts = [f'<b>{sv}</b> {slbl}' for slbl, sv in (subs or []) if sv]
+        if parts:
+            rows += ('<div class="row" style="padding-left:16px;font-size:.72rem;'
+                     'border-bottom:0;opacity:.8">'
+                     f'<span>↳ trong đó: {" · ".join(parts)}</span></div>')
     badge = f'⚠️ Cảnh báo ({n_hot})' if n_hot else '✅ Cảnh báo (0)'
     body = rows if n_hot else '<div class="ok">✅ Không có cảnh báo</div>' + rows
     st.markdown(
