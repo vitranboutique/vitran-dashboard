@@ -206,7 +206,7 @@ def _conxot_rows(packed, unpacked, collapse=False):
                       f'{tk_html} · {_e(str(d.get("carrier", "")))} · {_e(str(d.get("sku", "")))}{mk}</div>')
             if collapse and len(gitems) > 5:
                 h += (f'<div class="dline" style="color:#b45309;font-style:italic">'
-                      f'… còn <b>{len(gitems) - 5} đơn {_e(cr)}</b> (hiện đủ sau 18h, khi shipper đã tới lấy)</div>')
+                      f'… còn <b>{len(gitems) - 5} đơn {_e(cr)}</b> (hiện đủ sau 18h30, khi shipper đã tới lấy)</div>')
         return h
     return (f'<div class="dvgrp" style="color:#b91c1c">▸ ĐÃ đóng hàng ({len(packed)}) '
             '— ☐ tick khi đã LẤY LẠI hàng</div>'
