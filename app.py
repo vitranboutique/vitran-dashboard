@@ -5,6 +5,7 @@ Chạy:  streamlit run app.py
 DEMO:  tự bật khi chưa cấu hình credential (xem README để chuyển sang LIVE).
 """
 import os
+import unicodedata
 from datetime import datetime, timedelta, timezone
 from html import escape as _esc
 
@@ -204,6 +205,75 @@ def _week_table_html(wk):
             f'</tbody></table>')
 
 
+def _ascii_code(s):
+    """Chuẩn hoá mã để khớp: BỎ DẤU tiếng Việt (do app Dohana lỗi phông biến YX→Ỹ…),
+    in HOA, chỉ giữ chữ-số. VD 'GỸQMQTD' -> 'GYQMQTD'."""
+    s = unicodedata.normalize("NFKD", str(s or ""))
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    return "".join(c for c in s.upper() if c.isalnum())
+
+
+def _subseq(a, b):
+    """a có phải SUBSEQUENCE của b không (b giữ thứ tự, được phép xen ký tự)."""
+    it = iter(b)
+    return all(c in it for c in a)
+
+
+def match_packing_videos(order_codes, vcodes):
+    """Khớp ĐƠN ↔ VIDEO chịu được LỖI PHÔNG app Dohana (mã video bị méo/dính).
+    order_codes: list[list[str]] — mỗi đơn là danh sách mã ứng viên (vận đơn + mã đơn).
+    vcodes: iterable mã video (orderCode trên Dohana).
+    3 mức khớp:
+      1) CHÍNH XÁC sau bỏ dấu (bắt mã chỉ sai dấu/hoa-thường).
+      2) DÍNH MÃ: mã đơn (≥10 ký tự, vd VĐ) là chuỗi con của mã video — vd
+         '861864498916SPXVN064435411156' chứa 'SPXVN064435411156'.
+      3) MẤT KÝ TỰ do lỗi phông: mã video (CHỈ mã có ký tự lạ) là subsequence của
+         mã đơn, cùng ký tự đầu, lệch ≤5, và GHÉP DUY NHẤT — vd 'GYQMQTD'⊂'GYXQMQTD'.
+    Trả (matched: {idx_đơn: (mã_video, kiểu)}, font_pairs: [(mã_video, mã_đơn)] các ca cứu được)."""
+    vn2c = {}
+    for vc in vcodes:
+        n = _ascii_code(vc)
+        if n:
+            vn2c.setdefault(n, vc)
+    # mỗi đơn: list (mã gốc, mã chuẩn-hoá) — giữ mã gốc để hiển thị cặp khớp
+    onorms = [[(c, _ascii_code(c)) for c in (codes or []) if _ascii_code(c)] for codes in order_codes]
+    matched, used, mcode = {}, set(), {}
+    for i, lst in enumerate(onorms):                   # 1) chính xác (bỏ dấu)
+        for orig, nc in lst:
+            if nc in vn2c and vn2c[nc] not in used:
+                matched[i] = (vn2c[nc], "exact"); used.add(vn2c[nc]); mcode[i] = orig; break
+    for i, lst in enumerate(onorms):                   # 2) mã dính nhau (substring mã dài)
+        if i in matched:
+            continue
+        for orig, nc in lst:
+            if len(nc) < 10:
+                continue
+            hit = next((vc for vn, vc in vn2c.items()
+                        if vc not in used and (nc in vn or vn in nc)), None)
+            if hit:
+                matched[i] = (hit, "substr"); used.add(hit); mcode[i] = orig; break
+    corrupt = {vn: vc for vn, vc in vn2c.items()       # CHỈ mã video có ký tự lạ (lỗi phông)
+               if vc not in used and any(ord(ch) > 127 for ch in str(vc))}
+    for i, lst in enumerate(onorms):                   # 3) lỗi phông mất ký tự (subsequence, DUY NHẤT)
+        if i in matched:
+            continue
+        cand = {}
+        for orig, nc in lst:
+            if len(nc) < 4:
+                continue
+            for vn, vc in corrupt.items():
+                if vc not in used and vn and vn[0] == nc[0] \
+                   and 0 <= len(nc) - len(vn) <= 5 and _subseq(vn, nc):
+                    cand.setdefault(vc, orig)
+        if len(cand) == 1:
+            vc, orig = next(iter(cand.items()))
+            if vc not in used:
+                matched[i] = (vc, "font"); used.add(vc); mcode[i] = orig
+    font_pairs = [(matched[i][0], mcode[i])
+                  for i in matched if matched[i][1] in ("substr", "font")]
+    return matched, font_pairs
+
+
 def _enrich_daily(rep, dvr, inb):
     """Gắn đối chiếu CLIP KHUI HÀNG (inbound) + VIDEO ĐÓNG GÓI (package) vào rep.
     Dùng chung cho cả báo cáo hôm nay và xem lại ngày cũ."""
@@ -316,16 +386,16 @@ def _enrich_daily(rep, dvr, inb):
         dgc = rep.get("dong_goi_codes") or set()
         hgc = rep.get("huy_goi_codes") or set()
         dgo = rep.get("dong_goi_order_codes") or []
-        owv = sum(1 for d in dgo if any(c in vset for c in d.get("codes", [])))
+        # Khớp CHỊU LỖI PHÔNG (mã video méo/dính) thay vì so khớp tuyệt đối.
+        _matched, _font = match_packing_videos([d.get("codes", []) for d in dgo], vset)
+        owv = len(_matched)
+        missing = [d.get("track") for i, d in enumerate(dgo) if i not in _matched]
         _mcanc = sum(1 for c in vset if c not in dgc and c in hgc)
-        missing = [d.get("track") for d in dgo
-                   if not any(c in vset for c in d.get("codes", []))]
         rep["video_recon"] = {
             "available": True, "total": dvr.get("total", 0),
-            "match_open": sum(1 for c in vset if c in dgc), "match_canc": _mcanc,
-            "done_express": sum(1 for c in vset if c not in dgc and c not in hgc),
             "dup": dvr.get("dup", {}), "open_with_video": owv,
             "missing_video": len(missing), "missing_codes": missing,
+            "font_fixed": _font,            # [(mã_video_lỗi, mã_đơn)] đã tự cứu được
         }
         if isinstance(rep.get("funnel"), dict):
             # Đã có video = đóng gói còn hiệu lực có video + đơn HỦY đã gói có video (gồm cả hủy)
@@ -806,7 +876,9 @@ if _page == PAGE_PICK:
         _dv = load_dohana() or {"total": 0, "codes": {}, "dup": {}, "match": set()}
         _packed_ids = pdata.get("packed_ids", [])
         _mset = _dv.get("match", set())
-        _missing = [ids for ids in _packed_ids if not (set(ids) & _mset)]
+        # Khớp CHỊU LỖI PHÔNG (mã video méo/dính), thay vì giao tập tuyệt đối.
+        _vmatch, _vfont = match_packing_videos(_packed_ids, _mset)
+        _missing = [ids for i, ids in enumerate(_packed_ids) if i not in _vmatch]
         _dup = _dv["dup"]
         _vc = st.columns(3)
         _vc[0].metric("🎥 Video đóng hàng hôm nay", _dv["total"],
@@ -816,12 +888,18 @@ if _page == PAGE_PICK:
                       help="Đơn đã đóng gói (Sapo) nhưng chưa tìm thấy video (khớp cả mã vận đơn + mã đơn, 3 ngày).")
         if not _missing and not _dup and _packed_ids:
             st.success("✅ KHỚP — mọi đơn đã đóng đều có video, không trùng.")
+        if _vfont:
+            _fl = ", ".join(f"{v}↔{o}" for v, o in _vfont[:8])
+            st.info(f"ℹ️ **{len(_vfont)} clip mã bị lỗi phông / dính mã** — đã TỰ khớp (NV quay đủ): {_fl}"
+                    + ("" if len(_vfont) <= 8 else f" …(+{len(_vfont) - 8})")
+                    + ". Nên sửa app đóng hàng để mã chuẩn, tránh phải dò tay.")
         if _dup:
             st.warning(f"⚠️ **{len(_dup)} mã có VIDEO TRÙNG** (quay ≥2 lần):")
             render_compact_table(pd.DataFrame(
                 [{"Mã đơn": k, "Số video": v} for k, v in sorted(_dup.items(), key=lambda x: -x[1])]))
         if _missing:
-            st.warning(f"⚠️ **{len(_missing)} đơn đã đóng nhưng THIẾU video** (chưa quay):")
+            st.warning(f"⚠️ **{len(_missing)} đơn đã đóng nhưng THIẾU video** "
+                       "(chưa tìm thấy clip — có thể chưa quay / quay nhầm mục / mã lỗi phông nặng):")
             render_compact_table(pd.DataFrame([{"Mã đơn": (ids[0] if ids else "")} for ids in _missing]))
         st.caption("Đối chiếu Sapo (đóng hôm nay) ↔ video Dohana — khớp theo **mã vận đơn + mã đơn**, "
                    "video **3 ngày** (bắt cả đơn sót). Trùng = 1 mã có ≥2 video. Thiếu = đã đóng mà chưa quay.")

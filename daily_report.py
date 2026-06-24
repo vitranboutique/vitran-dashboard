@@ -368,21 +368,32 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
             f'<tr><td class="l" style="padding-left:20px">⤷ ✅ Đã có video đóng gói</td>'
             f'<td class="num">{_have}</td></tr>'
             + _miss_row)
+        _ff = vr.get("font_fixed") or []
         vid_note = _info_tip(
             'Đơn đóng gói đã gồm cả <b>đơn hỏa tốc giao xong trong ngày</b> (dòng “Hỏa tốc” bảng ĐVVC). '
-            + (f'<b>{_mv} đơn thiếu video</b> do clip bị <b>quay nhầm sang mục “khui hàng”</b> — xem cảnh báo.'
+            + (f'<b>{_mv} đơn chưa tìm thấy video khớp</b> — xem cảnh báo.'
                if _mv else 'Tất cả đơn đóng gói đều có video.'))
         _w = []
         if _mv:
             _ml = ", ".join(_e(str(c)) for c in _miss_codes[:8]) + (f" …(+{_mv - 8})" if _mv > 8 else "")
-            _w.append(f'<b>{_mv} đơn đã đóng gói nhưng THIẾU video đóng gói</b> '
-                      f'(clip bị quay nhầm sang mục “khui hàng”) — cần quay/chuyển lại đúng. Mã: {_ml}')
+            _w.append(f'<b>{_mv} đơn đã đóng gói nhưng CHƯA TÌM THẤY video khớp</b> '
+                      f'(có thể: chưa quay · quay nhầm mục “khui hàng” · mã lỗi phông nặng) '
+                      f'— kiểm tra Dohana. Mã: {_ml}')
         if vr.get("dup"):
             _dl = ", ".join(f'{_e(str(k))}×{v}' for k, v in vr["dup"].items())
             _w.append(f'<b>{len(vr["dup"])} đơn quay TRÙNG (≥2 lần)</b>: {_dl}.')
         vid_warn = ('<div class="warn" style="margin-top:12px">'
                     '<div class="wh">⚠️ Cảnh báo video đóng gói — cần xử lý</div>'
                     + "".join(f'<div class="wb">• {w}</div>' for w in _w) + '</div>') if _w else ''
+        # Clip mã bị LỖI PHÔNG / dính mã nhưng ĐÃ tự khớp (NV quay đủ, không phải thiếu)
+        if _ff:
+            _fl = ", ".join(f'{_e(str(v))}↔{_e(str(o))}' for v, o in _ff[:6]) + (
+                f' …(+{len(_ff) - 6})' if len(_ff) > 6 else '')
+            vid_warn += (
+                '<div class="warn" style="margin-top:8px;border-color:#2563eb;background:#eff6ff">'
+                '<div class="wh" style="color:#1d4ed8">ℹ️ Clip mã bị lỗi phông / dính mã — ĐÃ tự khớp</div>'
+                f'<div class="wb">• {len(_ff)} clip NV quay ĐỦ nhưng mã bị méo (vd {_fl}) — '
+                'đã tự nhận diện, KHÔNG tính thiếu. Nên sửa app đóng hàng để mã chuẩn.</div></div>')
     else:
         iii_rows = (f'<tr><td class="l">🎥 Tổng video đóng hàng hôm nay</td><td class="num">{video_total}</td></tr>'
                     f'<tr><td class="l">📦 Đơn đã đóng gói</td><td class="num">{t["dong_goi"]}</td></tr>')
