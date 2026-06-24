@@ -909,7 +909,11 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
         "dong_goi": tot["dong_goi"],             # đóng gói (gồm hủy) = 89
         "base": hist["tong_don"],                # đợt soạn (89) — baseline so lệch video
         "video": None,                           # đóng gói có video (gắn ở app.py)
-        "quet_bien_ban": tot["xuat_kho"],        # đã xuất kho / quét vào biên bản (issued) = 86
+        # ĐÃ QUÉT BIÊN BẢN = đã ĐÓNG GÓI (NV quét hết vào biên bản bàn giao, có NGAY khi gói xong).
+        # KHÔNG dùng issued_on (xuất kho): issued_on TRỄ trong ngày — NV đã quét hết ~155 nhưng Sapo
+        # mới đánh dấu xuất kho 46 → phễu hiện 46 sai. Đóng gói phản ánh đúng "NV đã quét biên bản".
+        "quet_bien_ban": tot["dong_goi"] + tot.get("dg_cu", 0),
+        "xuat_kho": tot["xuat_kho"],             # (giữ riêng) issued_on==hôm nay — cho bảng ĐVVC
         "dvvc_nhan": tot["shipper_nhan"],        # shipper THỰC NHẬN = ĐVVC đã xác nhận lấy = 84
         "huy": tot["huy"],
         "con_xot": len(con_xot_packed) + len(con_xot_unpacked),  # xác nhận nhưng chưa giao shipper

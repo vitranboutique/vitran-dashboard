@@ -496,7 +496,7 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
     _quet, _dvvc, _video, _soan = (fn.get("quet_bien_ban"), fn.get("dvvc_nhan"),
                                    fn.get("video"), fn.get("soan"))
 
-    def _fbox(icon, label, val, lech=0, hot=False, tick=False, strong=False, tone=""):
+    def _fbox(icon, label, val, lech=0, hot=False, tick=False, strong=False, tone="", lech_txt="lệch"):
         disp = "—" if val is None else val
         classes, mark = ["kpi"], ""
         if strong:
@@ -506,15 +506,16 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
         if tone:
             classes.append(tone)
         if lech and lech > 0:
-            classes, mark = ["kpi", "bad"], f'<div class="lech">▼ lệch {lech}</div>'
+            classes, mark = ["kpi", "bad"], f'<div class="lech">▼ {lech_txt} {lech}</div>'
         tk = '<div class="tick"><span class="cbox"></span> đã nhận</div>' if tick else ''
         return (f'<div class="{" ".join(classes)}"><div class="l">{icon} {label}</div>'
                 f'<div class="v">{disp}</div>{mark}{tk}</div>')
 
-    # Thiếu video = đóng gói (gồm hủy) chưa quay. Quét biên bản nên = đóng gói − hủy (hủy không xuất).
+    # Thiếu video = đóng gói (gồm hủy) chưa quay. Quét biên bản = đã đóng gói (NV quét hết, có ngay).
     _lv = max(0, _base - _video) if (isinstance(_video, int) and _base) else 0
     _lq = max(0, (_base - _huy) - _quet) if (isinstance(_quet, int) and _base) else 0
-    # ĐVVC đã nhận < đã quét biên bản (xuất kho) = đơn xuất kho mà shipper CHƯA xác nhận → NGHI MẤT ĐƠN
+    # ĐVVC đã nhận < đã quét biên bản (đã đóng gói) = đơn NV đã quét biên bản mà SHIPPER CHƯA xác nhận
+    # lấy. Trong ngày số này lớn (shipper đang tới lấy dần); cuối ngày còn lại = NGHI MẤT ĐƠN.
     _ld = (_quet - _dvvc) if (isinstance(_quet, int) and isinstance(_dvvc, int) and _quet > _dvvc) else 0
     # Hàng ĐẦU: đơn sót hôm trước + xác nhận hôm nay = TỔNG đơn cần gửi hôm nay (baseline phễu)
     _row_in = "".join([
@@ -525,8 +526,8 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
     _row1 = "".join([
         _fbox("🖨️", "Đã soạn hàng", _soan),
         _fbox("🎥", "Đã có video", _video, lech=_lv),
-        _fbox("📋", "Đã quét biên bản", _quet, lech=_lq),
-        _fbox("🚚", "ĐVVC đã nhận", _dvvc, lech=_ld),
+        _fbox("📋", "Đã quét biên bản", _quet, lech=_lq, lech_txt="chưa gói"),
+        _fbox("🚚", "ĐVVC đã nhận", _dvvc, lech=_ld, lech_txt="shipper chưa nhận"),
     ])
     # 2 ô này 50/50, NẰM NGAY TRÊN bảng chi tiết tương ứng (Hủy ↔ bảng Hủy, Xót ↔ bảng Xót)
     _row2 = "".join([
