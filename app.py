@@ -553,7 +553,8 @@ def render_alert_popup():
     # (label, value, [danh sách dòng phụ con])
     items = [
         ("🕒 Xác nhận sau 18h", a["conf_after18"], None),
-        ("📌 Đặt &lt;18h, xác nhận &gt;18h", a["late_confirm"], None),
+        # Đơn xác nhận trễ = đặt TRƯỚC 18h (trong giờ) nhưng mãi SAU 18h mới xác nhận
+        ("📌 Đơn xác nhận trễ", a["late_confirm"], None),
         ("📦 Đơn xót lại (chờ shipper)", a["chua_giao"], [
             ("↳ Đã xác nhận, CHƯA đóng hàng", a.get("xot_chua_dong", 0)),
             ("↳ Đã xác nhận, ĐÃ đóng hàng", a.get("xot_da_dong", 0)),
