@@ -228,18 +228,34 @@ def _enrich_daily(rep, dvr, inb):
         # đi qua NHIỀU mã vận đơn (giao đi → hoàn về); Sapo lưu mã này, NV quét clip mã khác →
         # khớp-theo-mã trượt. Nếu còn clip dư cùng ĐVVC thì coi như ĐÃ CÓ (đánh dấu "mã khác"),
         # tránh báo "thiếu clip" oan khi thực tế đã quay đủ.
-        def _pfx(code):
+        def _cg(code):   # NHÓM ĐVVC từ mã VĐ: J&T có CẢ dải 86x lẫn 85x → gộp chung
             s = str(code or "")
-            for p in ("SPXVN", "VTPVN", "GHN", "861", "854", "860", "863", "VTP"):
-                if s.startswith(p):
-                    return p
+            if s.startswith("SPXVN"):
+                return "SPX"
+            if s.startswith(("VTPVN", "VTP")):
+                return "VTP"
+            if s.startswith("GHN"):
+                return "GHN"
+            if s[:2] in ("86", "85", "84", "87"):
+                return "JT"
             return s[:3]
+        def _cgname(n):  # NHÓM ĐVVC từ TÊN đơn vị (đáng tin hơn mã)
+            n = str(n or "").lower()
+            if "spx" in n:
+                return "SPX"
+            if "viettel" in n or "vtp" in n:
+                return "VTP"
+            if "ghn" in n or "giao hàng nhanh" in n:
+                return "GHN"
+            if "j&t" in n or "jt" in n:
+                return "JT"
+            return n[:3]
         leftover = sorted(inb.get("today_codes", set()) - consumed)
         for d in nk.get("detail", []):
             if d.get("clip") or not leftover:
                 continue
-            rp = _pfx(d.get("tracking"))
-            pick = next((c for c in leftover if _pfx(c) == rp), None)
+            rp = _cgname(d.get("carrier"))
+            pick = next((c for c in leftover if _cg(c) == rp), None)
             if pick:
                 leftover.remove(pick)
                 consumed.add(pick)
@@ -915,7 +931,7 @@ if _page == PAGE_DAILY:
                 "Video chỉ còn cho ~vài ngày gần nhất; ngày quá cũ mục video có thể trống.")
         _nrep = f"{_pick[3:]} (xem lại)"
         _nrec = len((_rep.get("nhap_kho") or {}).get("recon_rows") or [])
-        _h = (1 + max(1, (_nrec + 29) // 30)) * 1140 + 120   # 1 trang 1 + N tờ trang 2 (30 đơn/tờ)
+        _h = (1 + max(1, (_nrec + 19) // 20)) * 1140 + 120   # 1 trang 1 + N tờ trang 2 (20 đơn/tờ)
         components.html(daily_report.report_html(_rep, _dvr, _nrep, sign_on=_sign_on), height=_h, scrolling=True)
         st.stop()
 
@@ -936,7 +952,7 @@ if _page == PAGE_DAILY:
     _now_vn = datetime.now(timezone.utc) + timedelta(hours=7)
     _nrep = _now_vn.strftime("%H:%M %d/%m/%Y")
     _nrec = len((_rep.get("nhap_kho") or {}).get("recon_rows") or [])
-    _h = (1 + max(1, (_nrec + 29) // 30)) * 1140 + 120   # 1 trang 1 + N tờ trang 2 (30 đơn/tờ)
+    _h = (1 + max(1, (_nrec + 19) // 20)) * 1140 + 120   # 1 trang 1 + N tờ trang 2 (20 đơn/tờ)
     # Trước 18h (shipper chưa tới lấy) → danh sách Còn xót rút gọn 5 đơn/ĐVVC cho gọn
     _collapse = _now_vn.hour < 18
     components.html(daily_report.report_html(_rep, _dvr, _nrep, sign_on=_sign_on, collapse_xot=_collapse),

@@ -13,7 +13,7 @@ _CSS = """
   .printbtn{background:var(--accent);color:#fff;border:0;border-radius:9px;padding:10px 20px;font-size:14px;font-weight:800;cursor:pointer;box-shadow:0 2px 8px rgba(226,75,74,.4);}
   .page{width:210mm;height:297mm;margin:0 auto 14px;background:#fff;box-sizing:border-box;box-shadow:0 2px 14px rgba(0,0,0,.12);overflow:hidden;}
   .pfit{padding:9mm 11mm 8mm;font-size:var(--fs,13px);box-sizing:border-box;}
-  .page.fixed .pfit{font-size:9.5px;}
+  .page.fixed .pfit{font-size:12px;}
   .hd{display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid var(--navy);padding-bottom:.45em;}
   .hd .brand{font-size:1.38em;font-weight:900;color:var(--navy);letter-spacing:.5px;}
   .hd .sub{font-size:.81em;color:#6b7280;margin-top:1px;}
@@ -629,7 +629,7 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=False):
     _ghichu = ('<div class="sec">B. Ghi chú đơn hoàn / khiếu nại</div>'
                '<div class="note"><span style="color:#9aa3af;font-size:.95em">(Ghi tay: tình trạng hàng hoàn, '
                'đơn cần khiếu nại sàn, thiếu/sai SP…)</span><div class="lines"><div></div></div></div>')
-    _CHUNK = 30
+    _CHUNK = 20
     _chunks = [recon[i:i + _CHUNK] for i in range(0, len(recon), _CHUNK)] or [[]]
     _ns = len(_chunks)
     page2 = ""
