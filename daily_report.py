@@ -506,9 +506,10 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
     fn = rep.get("funnel") or {}
     _base = fn.get("base") or fn.get("dong_goi") or 0   # đóng gói GỒM hủy (89) = chuẩn so lệch
     _huy = fn.get("huy") or 0
-    _dvvc, _video, _soan = (fn.get("dvvc_nhan"), fn.get("video"), fn.get("soan"))
+    _dvvc, _video, _soan, _soan_sp = (fn.get("dvvc_nhan"), fn.get("video"),
+                                      fn.get("soan"), fn.get("soan_sp"))
 
-    def _fbox(icon, label, val, lech=0, hot=False, tick=False, strong=False, tone="", lech_txt="lệch"):
+    def _fbox(icon, label, val, lech=0, hot=False, tick=False, strong=False, tone="", lech_txt="lệch", sub=""):
         disp = "—" if val is None else val
         classes, mark = ["kpi"], ""
         if strong:
@@ -519,9 +520,11 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
             classes.append(tone)
         if lech and lech > 0:
             classes, mark = ["kpi", "bad"], f'<div class="lech">▼ {lech_txt} {lech}</div>'
+        sb = (f'<div style="font-size:.72em;color:#5b6878;font-weight:800;margin-top:1px">{sub}</div>'
+              if sub else '')
         tk = '<div class="tick"><span class="cbox"></span> đã nhận</div>' if tick else ''
         return (f'<div class="{" ".join(classes)}"><div class="l">{icon} {label}</div>'
-                f'<div class="v">{disp}</div>{mark}{tk}</div>')
+                f'<div class="v">{disp}</div>{sb}{mark}{tk}</div>')
 
     # Thiếu video = đóng gói (gồm hủy) chưa quay.
     _lv = max(0, _base - _video) if (isinstance(_video, int) and _base) else 0
@@ -532,7 +535,7 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
         _fbox("🟰📦", "TỔNG đơn cần gửi hôm nay", fn.get("xac_nhan"), strong=True),
     ])
     _row1 = "".join([
-        _fbox("🖨️", "Đã soạn hàng", _soan),
+        _fbox("🖨️", "Đã soạn hàng", _soan, sub=(f"{_soan_sp:,} SP" if _soan_sp else "")),
         _fbox("🎥", "Đã có video", _video, lech=_lv),
         _fbox("🚚", "ĐVVC đã nhận", _dvvc),
     ])

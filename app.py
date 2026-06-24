@@ -999,7 +999,9 @@ if _page == PAGE_DAILY:
         _inb = load_dohana_inbound_date(_iso) if dohana.configured() else None
         _enrich_daily(_rep, _dvr, _inb)
         if picklog.configured() and isinstance(_rep.get("funnel"), dict):
-            _rep["funnel"]["soan"] = sum(r.get("so_don", 0) or 0 for r in picklog.read_date(_iso)) or None
+            _pl = picklog.read_date(_iso)
+            _rep["funnel"]["soan"] = sum(r.get("so_don", 0) or 0 for r in _pl) or None
+            _rep["funnel"]["soan_sp"] = sum(r.get("so_sp", 0) or 0 for r in _pl) or None
         st.info(f"🗂️ Báo cáo ngày **{_pick[3:]}** — query lại từ Sapo + Dohana (số đã cố định). "
                 "Video chỉ còn cho ~vài ngày gần nhất; ngày quá cũ mục video có thể trống.")
         _nrep = f"{_pick[3:]} (xem lại)"
@@ -1021,7 +1023,9 @@ if _page == PAGE_DAILY:
     _inb = load_dohana_inbound() if dohana.configured() else None
     _enrich_daily(_rep, _dvr, _inb)   # gắn clip khui hàng + đối chiếu video đóng gói
     if picklog.configured() and isinstance(_rep.get("funnel"), dict):
-        _rep["funnel"]["soan"] = sum(r.get("so_don", 0) or 0 for r in picklog.read_today()) or None
+        _pl = picklog.read_today()
+        _rep["funnel"]["soan"] = sum(r.get("so_don", 0) or 0 for r in _pl) or None
+        _rep["funnel"]["soan_sp"] = sum(r.get("so_sp", 0) or 0 for r in _pl) or None
     _now_vn = datetime.now(timezone.utc) + timedelta(hours=7)
     _nrep = _now_vn.strftime("%H:%M %d/%m/%Y")
     _nrec = len((_rep.get("nhap_kho") or {}).get("recon_rows") or [])
