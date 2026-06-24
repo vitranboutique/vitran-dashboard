@@ -893,10 +893,10 @@ if _page == PAGE_DAILY:
              (_vn_today - timedelta(days=i)).isoformat() for i in range(1, 7)}
     _pick = st.selectbox("Xem báo cáo chi tiết (A4) ngày", [_LIVE] + [f"🗂️ {k}" for k in _past])
     _sign_lbl = st.radio("✍️ Phần ký tên đặt ở:",
-                         ["Trang 2 (mặt sau)", "Trang 1 (mặt trước)", "Cả 2 trang"],
+                         ["Trang 1 (mặt trước)", "Trang 2 (mặt sau)", "Cả 2 trang"],
                          horizontal=True, index=0,
                          help="Chọn nơi đặt phần ký tên (NV soạn hàng / NV kho / Quản lý) cho cân đối trang in.")
-    _sign_on = {"Trang 2 (mặt sau)": "2", "Trang 1 (mặt trước)": "1", "Cả 2 trang": "both"}[_sign_lbl]
+    _sign_on = {"Trang 1 (mặt trước)": "1", "Trang 2 (mặt sau)": "2", "Cả 2 trang": "both"}[_sign_lbl]
 
     # ---- Xem báo cáo NGÀY CŨ (query lại Sapo + Dohana theo ngày, số đã cố định) ----
     if _pick != _LIVE:
@@ -914,7 +914,9 @@ if _page == PAGE_DAILY:
         st.info(f"🗂️ Báo cáo ngày **{_pick[3:]}** — query lại từ Sapo + Dohana (số đã cố định). "
                 "Video chỉ còn cho ~vài ngày gần nhất; ngày quá cũ mục video có thể trống.")
         _nrep = f"{_pick[3:]} (xem lại)"
-        components.html(daily_report.report_html(_rep, _dvr, _nrep, sign_on=_sign_on), height=2480, scrolling=True)
+        _nrec = len((_rep.get("nhap_kho") or {}).get("recon_rows") or [])
+        _h = (1 + max(1, (_nrec + 29) // 30)) * 1140 + 120   # 1 trang 1 + N tờ trang 2 (30 đơn/tờ)
+        components.html(daily_report.report_html(_rep, _dvr, _nrep, sign_on=_sign_on), height=_h, scrolling=True)
         st.stop()
 
     # ---- Hôm nay (trực tiếp) ----
@@ -932,7 +934,9 @@ if _page == PAGE_DAILY:
     if picklog.configured() and isinstance(_rep.get("funnel"), dict):
         _rep["funnel"]["soan"] = sum(r.get("so_don", 0) or 0 for r in picklog.read_today()) or None
     _nrep = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%H:%M %d/%m/%Y")
-    components.html(daily_report.report_html(_rep, _dvr, _nrep, sign_on=_sign_on), height=2480, scrolling=True)
+    _nrec = len((_rep.get("nhap_kho") or {}).get("recon_rows") or [])
+    _h = (1 + max(1, (_nrec + 29) // 30)) * 1140 + 120   # 1 trang 1 + N tờ trang 2 (30 đơn/tờ)
+    components.html(daily_report.report_html(_rep, _dvr, _nrep, sign_on=_sign_on), height=_h, scrolling=True)
     st.stop()
 
 

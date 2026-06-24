@@ -13,6 +13,7 @@ _CSS = """
   .printbtn{background:var(--accent);color:#fff;border:0;border-radius:9px;padding:10px 20px;font-size:14px;font-weight:800;cursor:pointer;box-shadow:0 2px 8px rgba(226,75,74,.4);}
   .page{width:210mm;height:297mm;margin:0 auto 14px;background:#fff;box-sizing:border-box;box-shadow:0 2px 14px rgba(0,0,0,.12);overflow:hidden;}
   .pfit{padding:9mm 11mm 8mm;font-size:var(--fs,13px);box-sizing:border-box;}
+  .page.fixed .pfit{font-size:9.5px;}
   .hd{display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid var(--navy);padding-bottom:.45em;}
   .hd .brand{font-size:1.38em;font-weight:900;color:var(--navy);letter-spacing:.5px;}
   .hd .sub{font-size:.81em;color:#6b7280;margin-top:1px;}
@@ -276,11 +277,11 @@ def _returns_clip_rows(detail):
     return body or '<tr><td colspan="7">Hôm nay không có đơn hoàn nhập kho.</td></tr>'
 
 
-def _recon_rows(rows):
+def _recon_rows(rows, start=0):
     """Đối chiếu mỗi sự kiện hoàn: cột Clip khui hàng (Dohana) vs cột Đã nhận hàng trả (Sapo).
-    Cột nào TRỐNG thì ghi LÝ DO in đỏ ngay dòng đó."""
+    Cột nào TRỐNG thì ghi LÝ DO in đỏ ngay dòng đó. start = số thứ tự bắt đầu (phân trang)."""
     body = ""
-    for i, r in enumerate(rows, 1):
+    for i, r in enumerate(rows, start + 1):
         # ── Cột 1: CLIP KHUI HÀNG (Dohana) ──
         if r.get("has_clip"):
             _alt = ' <span style="color:#b45309;font-weight:700">(mã khác)</span>' if r.get("clip_alt") else ""
@@ -338,7 +339,7 @@ def _recon_rows(rows):
     return body or '<tr><td colspan="7">Hôm nay không có đơn hoàn / clip khui hàng.</td></tr>'
 
 
-def report_html(rep, dv, now_str, sign_on="2"):
+def report_html(rep, dv, now_str, sign_on="1"):
     t = rep["totals"]
     video_total = (dv or {}).get("total", "—")
     # ---- VIDEO ĐÓNG GÓI: trình bày theo góc ĐƠN (đơn đóng gói có / thiếu video) ----
@@ -604,36 +605,46 @@ def report_html(rep, dv, now_str, sign_on="2"):
   <div class="foot">VITRAN BOUTIQUE · Trang 1/2 — Vận hành đơn giao đi{_p1note} · {_e(rep["date"])}</div>
 </div></div>"""
 
-    page2 = f"""<div class="page page2"><div class="pfit">
+    # ===== TRANG 2: FONT CỐ ĐỊNH, tối đa 30 đơn/trang (phân trang nếu nhiều hơn) =====
+    _thead = ('<thead><tr><th>#</th>'
+              '<th class="l">🎥 Clip khui hàng (Dohana)<br><span style="font-weight:600;font-size:.85em">mã · thời lượng · giờ quay</span></th>'
+              '<th class="l">📥 Đã nhận hàng trả (Sapo)<br><span style="font-weight:600;font-size:.85em">mã đơn · giờ nhận · NV</span></th>'
+              '<th class="l">🚚 Mã VĐ gửi đi<br><span style="font-weight:600;font-size:.85em">(tra Sapo/sàn)</span></th>'
+              '<th class="l">Sản phẩm (SKU × SL)</th><th class="l">Loại trả hàng</th>'
+              '<th class="l">🏷️ Tag app đóng hàng</th></tr></thead>')
+    _legend = ('<div style="font-size:.72em;color:#6b7280;margin:.25em 0 0">🔎 <b>Mã clip</b> = tra trên '
+               '<b>app đóng hàng (Dohana)</b>. <b>Mã đơn</b> = tra trên <b>Sapo</b> và <b>sàn TMĐT</b>. '
+               'Ô <span style="color:#dc2626;font-weight:700">đỏ</span> = thiếu/chưa làm, đã ghi rõ lý do trong ô. '
+               '<b style="color:#b45309">“mã khác”</b> = clip có nhưng lưu dưới <b>mã vận đơn KHÁC</b> với đơn '
+               '(SPX đổi mã nhiều lần) — máy ghép theo ĐVVC + ngày, nên KIỂM TRA lại cho chắc.</div>')
+    _ghichu = ('<div class="sec">B. Ghi chú đơn hoàn / khiếu nại</div>'
+               '<div class="note"><span style="color:#9aa3af;font-size:.95em">(Ghi tay: tình trạng hàng hoàn, '
+               'đơn cần khiếu nại sàn, thiếu/sai SP…)</span><div class="lines"><div></div></div></div>')
+    _CHUNK = 30
+    _chunks = [recon[i:i + _CHUNK] for i in range(0, len(recon), _CHUNK)] or [[]]
+    _ns = len(_chunks)
+    page2 = ""
+    for _si, _chunk in enumerate(_chunks):
+        _first, _last = _si == 0, _si == _ns - 1
+        _sub = f" (tờ {_si + 1}/{_ns})" if _ns > 1 else ""
+        _pno = f"Trang 2.{_si + 1}/{_ns}" if _ns > 1 else "Trang 2/2"
+        _kpi = f'<div class="kpis k3">{r_kpis_html}</div>' if _first else ''
+        _badge = recon_badge if _first else ''
+        _tail = (_legend + _ghichu + sign2) if _last else ''
+        page2 += f"""<div class="page page2 fixed"><div class="pfit">
   <div class="hd">
     <div><div class="brand">VITRAN BOUTIQUE</div>
       <div class="sub">Báo cáo đơn hàng hoàn trả</div></div>
     <div class="meta">Ngày báo cáo<br><b>{_e(rep["date"])}</b><br>
-      <span style="font-size:.95em">Trang 2 / 2</span></div>
+      <span style="font-size:.95em">{_pno}</span></div>
   </div>
-
   <div class="title">Báo cáo đơn hàng hoàn trả</div>
-  <div class="title-sub">Phần 2 — Hàng hoàn nhận về · nhập kho · video khui hàng (Sapo + Dohana)</div>
-
-  <div class="kpis k3">{r_kpis_html}</div>
-
-  <div class="sec">A. Đối chiếu Clip khui hàng ↔ Đã nhận hàng trả{recon_badge}</div>
-  <table>
-    <thead><tr><th>#</th><th class="l">🎥 Clip khui hàng (Dohana)<br><span style="font-weight:600;font-size:.85em">mã · thời lượng · giờ quay</span></th>
-      <th class="l">📥 Đã nhận hàng trả (Sapo)<br><span style="font-weight:600;font-size:.85em">mã đơn · giờ nhận · NV</span></th>
-      <th class="l">🚚 Mã VĐ gửi đi<br><span style="font-weight:600;font-size:.85em">(tra Sapo/sàn)</span></th>
-      <th class="l">Sản phẩm (SKU × SL)</th><th class="l">Loại trả hàng</th>
-      <th class="l">🏷️ Tag app đóng hàng</th></tr></thead>
-    <tbody>{_recon_rows(recon)}</tbody>
-  </table>
-  <div style="font-size:.72em;color:#6b7280;margin:.25em 0 0">🔎 <b>Mã clip</b> = tra trên <b>app đóng hàng (Dohana)</b>. <b>Mã đơn</b> = tra trên <b>Sapo</b> và <b>sàn TMĐT</b>. Ô <span style="color:#dc2626;font-weight:700">đỏ</span> = thiếu/chưa làm, đã ghi rõ lý do trong ô. <b style="color:#b45309">“mã khác”</b> = clip có nhưng lưu dưới <b>mã vận đơn KHÁC</b> với đơn (SPX đổi mã nhiều lần) — máy ghép theo ĐVVC + ngày, nên KIỂM TRA lại cho chắc.</div>
-
-  <div class="sec">B. Ghi chú đơn hoàn / khiếu nại</div>
-  <div class="note"><span style="color:#9aa3af;font-size:.95em">(Ghi tay: tình trạng hàng hoàn, đơn cần khiếu nại sàn, thiếu/sai SP…)</span>
-    <div class="lines"><div></div></div></div>
-
-  {sign2}
-  <div class="foot">VITRAN BOUTIQUE · Trang 2/2 — Đơn hàng hoàn trả · {_e(rep["date"])}</div>
+  <div class="title-sub">Phần 2 — Hàng hoàn nhận về · nhập kho · video khui hàng{_sub}</div>
+  {_kpi}
+  <div class="sec">A. Đối chiếu Clip khui hàng ↔ Đã nhận hàng trả{_badge}</div>
+  <table>{_thead}<tbody>{_recon_rows(_chunk, start=_si * _CHUNK)}</tbody></table>
+  {_tail}
+  <div class="foot">VITRAN BOUTIQUE · {_pno} — Đơn hàng hoàn trả · {_e(rep["date"])}</div>
 </div></div>"""
 
     body = page1 + page2
@@ -643,8 +654,11 @@ def report_html(rep, dv, now_str, sign_on="2"):
     fitjs = (
         "function fitPages(doc){doc=doc||document;"
         "var ps=doc.querySelectorAll('.page');"
-        "for(var i=0;i<ps.length;i++){var pg=ps[i],ft=pg.querySelector('.pfit');if(!ft)continue;"
-        "var t=pg.clientHeight,lo=8,hi=20,b=lo;"
+        "for(var i=0;i<ps.length;i++){var pg=ps[i];"
+        # trang .fixed (font cố định, phân trang 30 đơn) → KHÔNG auto-fit
+        "if((' '+pg.className+' ').indexOf(' fixed ')>=0)continue;"
+        "var ft=pg.querySelector('.pfit');if(!ft)continue;"
+        "var t=pg.clientHeight,lo=8,hi=24,b=lo;"
         "for(var k=0;k<18;k++){var m=(lo+hi)/2;ft.style.fontSize=m+'px';"
         "if(ft.scrollHeight<=t){b=m;lo=m;}else{hi=m;}}"
         "ft.style.fontSize=b.toFixed(2)+'px';}}"
