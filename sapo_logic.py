@@ -635,24 +635,49 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
 
     def _asc(s):  # bỏ dấu + emoji → CHỮ HOA để khớp keyword
         return _ud.normalize("NFKD", str(s or "")).encode("ascii", "ignore").decode().upper()
-    oc = {"thang": 0, "thua": 0, "khong_kn": 0, "can_kn": 0, "het_han": 0}
+    _amt_re = re.compile(r"(\d[\d.]*)\s*đ")   # bóc số tiền trong note (vd "186.760đ")
+
+    def _amt(note):
+        m = _amt_re.search(str(note or ""))
+        if not m:
+            return None
+        try:
+            return int(m.group(1).replace(".", ""))
+        except Exception:
+            return None
+
+    def _resolved(pre):   # đã có ghi chú KẾT QUẢ chuẩn → coi như xử lý xong
+        return ("THANG" in pre or "THUA" in pre or "HET HAN" in pre
+                or ("KHONG" in pre and "KN" in pre))
+    oc = {k: {"n": 0, "money": 0} for k in ("thang", "thua", "khong_kn", "can_kn", "het_han")}
+    # 4 nhóm KẾT QUẢ: đếm + cộng tiền theo prefix note (toàn bộ phiếu năm nay, bỏ huỷ)
     for x in rows:
         if x.get("status") == "canceled":
             continue
         _cd = _vn_date_of(x.get("created_on"))
         if not _cd or _cd.year != today.year:
             continue
-        pre = _asc((x.get("note") or "").split("|")[0])
-        if "THANG" in pre:
-            oc["thang"] += 1
-        elif "THUA" in pre:
-            oc["thua"] += 1
-        elif "HET HAN" in pre:
-            oc["het_han"] += 1
-        elif "KHONG" in pre and "KN" in pre:
-            oc["khong_kn"] += 1
-        elif "CAN KN" in pre:
-            oc["can_kn"] += 1
+        note = x.get("note") or ""
+        pre = _asc(note.split("|")[0])
+        amt = _amt(note)
+        if amt is None:
+            amt = int(round(x.get("total_price") or 0))
+        cat = ("thang" if "THANG" in pre else "thua" if "THUA" in pre
+               else "het_han" if "HET HAN" in pre
+               else "khong_kn" if ("KHONG" in pre and "KN" in pre) else None)
+        if cat:
+            oc[cat]["n"] += 1
+            oc[cat]["money"] += amt
+    # CẦN KN = TỰ TÍNH (KHÔNG dựa prefix note): đơn ĐANG XỬ LÝ, quá 7 ngày từ ngày tạo,
+    # CHƯA có ghi chú kết quả chuẩn (THẮNG/THUA/KHÔNG CẦN KN/HẾT HẠN).
+    for d in detail:
+        if (d.get("age") or 0) < 7:
+            continue
+        if _resolved(_asc((d.get("note") or "").split("|")[0])):
+            continue
+        amt = _amt(d.get("note"))
+        oc["can_kn"]["n"] += 1
+        oc["can_kn"]["money"] += amt if amt is not None else int(d.get("money") or 0)
 
     return {
         "total": len(inprog), "capped": capped, "n_complaint": n_complaint,
