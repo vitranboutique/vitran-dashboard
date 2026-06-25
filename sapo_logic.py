@@ -611,8 +611,12 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
                             + timedelta(hours=7)).strftime("%d/%m %H:%M")
         except Exception:
             created_disp = ""
+        _ch = (x.get("order") or {}).get("channel_definition") or {}
+        gian_hang = (_ch.get("branch_name") or _ch.get("main_name")
+                     or (x.get("order_source") or "").title() or "—")
         detail.append({
             "order_code": (x.get("order") or {}).get("name") or x.get("name") or "?",
+            "gian_hang": gian_hang,
             "created": created_disp, "created_on": _con,
             "vd_di": (si.get("fulfillment_tracking_numbers") or [None])[0],   # VĐ GIAO ĐI (trên đơn)
             "vd_tra": si.get("tracking_number"),                              # VĐ TRẢ VỀ (leg hoàn)

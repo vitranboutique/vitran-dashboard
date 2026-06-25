@@ -1063,6 +1063,7 @@ if _page == PAGE_DAILY:
                 "Mã đơn": d["order_code"],
                 "VĐ đi": d["vd_di"] or "",
                 "VĐ trả về": d["vd_tra"] or "",
+                "Gian hàng": d["gian_hang"],
                 "SKU": d["sku"],
                 "SL": d["qty"],
                 "Tổng tiền": f"{d['money']:,}đ",
