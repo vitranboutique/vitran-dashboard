@@ -657,6 +657,7 @@ def load_returns_followup():
 
 @st.cache_data(ttl=600, show_spinner="Đang quét đơn trả đang xử lý…")
 def load_returns_inprogress():
+    _cache_ver = 3   # bump khi đổi cấu trúc trả về → buộc tính lại (tránh cache cũ gây lỗi)
     return L.get_returns_in_progress(make_fetch_json(build_session()))
 
 
@@ -1054,7 +1055,9 @@ if _page == PAGE_DAILY:
             return f"{int(m or 0):,}".replace(",", ".") + "đ"
 
         def _ocard(col, label, cat):
-            o = _oc.get(cat) or {}
+            o = _oc.get(cat)
+            if not isinstance(o, dict):     # chống cache cũ (số phẳng) → không vỡ trang
+                o = {"n": int(o or 0), "money": 0}
             col.metric(label, f"{o.get('n', 0):,} đơn")
             col.caption(f"💰 {_vnd(o.get('money', 0))}")
         st.markdown("##### 🧾 Kết quả khiếu nại (năm nay)")
