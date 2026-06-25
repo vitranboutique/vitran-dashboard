@@ -657,7 +657,7 @@ def load_returns_followup():
 
 @st.cache_data(ttl=600, show_spinner="Đang quét đơn trả đang xử lý…")
 def load_returns_inprogress():
-    _cache_ver = 3   # bump khi đổi cấu trúc trả về → buộc tính lại (tránh cache cũ gây lỗi)
+    _cache_ver = 4   # bump khi đổi cấu trúc trả về → buộc tính lại (tránh cache cũ gây lỗi)
     return L.get_returns_in_progress(make_fetch_json(build_session()))
 
 
@@ -1067,6 +1067,8 @@ if _page == PAGE_DAILY:
         _ocard(_mo[2], "⛔ Không KN (mất hàng)", "khong_kn")
         _ocard(_mo[3], "🚨 Cần KN (tự tính)", "can_kn")
         _ocard(_mo[4], "⚫ Hết hạn (mất tiền)", "het_han")
+        _ckn_list = [d for d in _rip["detail"] if d.get("need_kn")]
+        _mo[3].markdown(f"[👉 Lấy {len(_ckn_list)} đơn KN](#don-can-kn)")
         st.markdown("##### 📊 Đang xử lý (chưa nhập kho)")
         _old_n = sum(1 for d in _rip["detail"] if (d.get("age") or 0) >= 7)
         _m = st.columns(4)
@@ -1074,7 +1076,7 @@ if _page == PAGE_DAILY:
         _m[1].metric("🚚 Đang hoàn hàng", f"{_rip['tot_returning']:,}")
         _m[2].metric("📥 Đã giao người bán", f"{_rip['tot_returned']:,}")
         _m[3].metric("🟡 Quá 1 tuần", f"{_old_n:,}")
-        st.caption("🟡 **Dòng tô vàng = đơn tạo đã quá 1 tuần** — cần để ý / khiếu nại.  "
+        st.caption("🟡 **Dòng tô vàng = đơn CẦN KN** (quá 1 tuần & CHƯA có ghi chú kết quả).  "
                    "VĐ đi = mã vận đơn giao đi · VĐ trả về = mã vận đơn hoàn về "
                    "(giao thất bại: 2 mã trùng nhau; hoàn tiền chưa gửi: VĐ trả về trống)."
                    + ("  ·  ⚠️ đã chạm giới hạn quét — có thể còn đơn cũ hơn" if _rip.get("capped") else ""))
@@ -1098,9 +1100,9 @@ if _page == PAGE_DAILY:
                 return
             _df = _ret_df(items)
 
-            def _row_style(r):  # tô vàng dòng tạo đã quá 1 tuần (age >= 7)
-                old = (items[r.name].get("age") or 0) >= 7
-                return ["background-color:#fff3cd" if old else "" for _ in r]
+            def _row_style(r):  # tô vàng dòng CẦN KN (>7 ngày & CHƯA có ghi chú kết quả)
+                hl = items[r.name].get("need_kn")
+                return ["background-color:#fff3cd" if hl else "" for _ in r]
             st.dataframe(_df.style.apply(_row_style, axis=1),
                          width="stretch", hide_index=True, height=h)
 
@@ -1114,6 +1116,13 @@ if _page == PAGE_DAILY:
             st.markdown(f"**📥 Đã giao người bán — {len(giao)} đơn**")
             _sub_table(giao, 260)
 
+        # ── DANH SÁCH ĐƠN CẦN KN (bấm ô "Cần KN" ở trên sẽ nhảy tới đây) ──
+        st.subheader("🚨 Đơn cần KN — lấy làm khiếu nại", anchor="don-can-kn")
+        st.caption("Quá 7 ngày từ ngày tạo & CHƯA có ghi chú kết quả (THẮNG/THUA/KHÔNG CẦN KN/HẾT HẠN). "
+                   "Đây chính là các dòng tô vàng — NV lấy làm khiếu nại.")
+        _sub_table(_ckn_list, 360)
+        st.divider()
+        st.markdown("### 📋 Chi tiết theo loại")
         _type_block("💸 Trả hàng hoàn tiền", "return_and_refund")
         _type_block("📕 Giao hàng thất bại", "delivery_failed")
         _other = [d for d in _rip["detail"]

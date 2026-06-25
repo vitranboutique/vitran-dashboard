@@ -669,11 +669,12 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
             oc[cat]["n"] += 1
             oc[cat]["money"] += amt
     # CẦN KN = TỰ TÍNH (KHÔNG dựa prefix note): đơn ĐANG XỬ LÝ, quá 7 ngày từ ngày tạo,
-    # CHƯA có ghi chú kết quả chuẩn (THẮNG/THUA/KHÔNG CẦN KN/HẾT HẠN).
+    # CHƯA có ghi chú kết quả chuẩn (THẮNG/THUA/KHÔNG CẦN KN/HẾT HẠN). Gắn cờ need_kn để
+    # HIGHLIGHT đúng các đơn này (= bỏ đơn đã có ghi chú chuẩn) + bấm ô Cần KN nhảy tới ds.
     for d in detail:
-        if (d.get("age") or 0) < 7:
-            continue
-        if _resolved(_asc((d.get("note") or "").split("|")[0])):
+        d["need_kn"] = ((d.get("age") or 0) >= 7
+                        and not _resolved(_asc((d.get("note") or "").split("|")[0])))
+        if not d["need_kn"]:
             continue
         amt = _amt(d.get("note"))
         oc["can_kn"]["n"] += 1
