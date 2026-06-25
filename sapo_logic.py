@@ -605,16 +605,25 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
             n_complaint += 1
         lis = x.get("line_items") or []
         sku = "; ".join(f"{(li.get('sku') or 'N/A')}×{int(round(li.get('quantity') or 0))}" for li in lis)
+        _con = x.get("created_on")
+        try:
+            created_disp = (datetime.fromisoformat(str(_con).replace("Z", "").split(".")[0])
+                            + timedelta(hours=7)).strftime("%d/%m %H:%M")
+        except Exception:
+            created_disp = ""
         detail.append({
             "order_code": (x.get("order") or {}).get("name") or x.get("name") or "?",
-            "vd_gui": (si.get("fulfillment_tracking_numbers") or [None])[0],
+            "created": created_disp, "created_on": _con,
+            "vd_di": (si.get("fulfillment_tracking_numbers") or [None])[0],   # VĐ GIAO ĐI (trên đơn)
+            "vd_tra": si.get("tracking_number"),                              # VĐ TRẢ VỀ (leg hoàn)
+            "note": (x.get("note") or "").strip(),                            # ghi chú cạnh mã đơn trả
             "loai_tra": _type_vn.get(rtype, rtype), "loai_tra_code": rtype,
             "ship_status": _ship_vn.get(sstat, sstat), "ship_code": sstat,
             "n_track": n_track, "age": age, "complaint": complaint, "reason": reason,
             "sku": sku, "qty": int(round(x.get("total_quantity") or 0)),
             "money": int(round(x.get("total_price") or 0)),
         })
-    detail.sort(key=lambda d: (0 if d["complaint"] else 1, -(d["age"] or 0)))
+    detail.sort(key=lambda d: d["created_on"] or "", reverse=True)   # MỚI NHẤT lên đầu
     return {
         "total": len(inprog), "capped": capped, "n_complaint": n_complaint,
         "refund": cnt.get("return_and_refund", {"returning": 0, "returned": 0}),

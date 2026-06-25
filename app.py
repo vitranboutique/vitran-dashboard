@@ -1059,22 +1059,38 @@ if _page == PAGE_DAILY:
         st.caption("🚨 **Cần khiếu nại** = *đã giao người bán mà chưa nhập kho*, hoặc *đang hoàn hàng quá 1 tuần*. "
                    "Đơn *trả hàng hoàn tiền* chỉ có 1 vận đơn (người mua chưa giao ĐVVC) thì CHƯA tính khiếu nại. "
                    "Giao hàng thất bại có 1 VĐ trả là bình thường; trả hàng hoàn tiền phải có 2 VĐ.")
-        _rows = [{
-            "🚨": "🚨" if d["complaint"] else "",
-            "Mã đơn": d["order_code"],
-            "Loại trả": d["loai_tra"],
-            "Vận chuyển hoàn": d["ship_status"],
-            "Số VĐ": d["n_track"],
-            "Tuổi (ngày)": d["age"] if d["age"] is not None else "",
-            "SKU": d["sku"],
-            "SL": d["qty"],
-            "Tổng tiền": f"{d['money']:,}đ",
-            "Lý do / ghi chú": d["reason"],
-        } for d in _rip["detail"]]
-        if _rows:
-            st.dataframe(pd.DataFrame(_rows), width="stretch", hide_index=True, height=460)
-        else:
-            st.success("✅ Không có đơn trả nào đang xử lý.")
+        def _ret_df(items):
+            return pd.DataFrame([{
+                "Ngày tạo": d["created"],
+                "🚨": "🚨" if d["complaint"] else "",
+                "Mã đơn": d["order_code"],
+                "VĐ đi": d["vd_di"] or "",
+                "VĐ trả về": d["vd_tra"] or "",
+                "Vận chuyển hoàn": d["ship_status"],
+                "SKU": d["sku"],
+                "SL": d["qty"],
+                "Tổng tiền": f"{d['money']:,}đ",
+                "Ghi chú": d["note"],
+                "Lý do khiếu nại": d["reason"],
+            } for d in items])
+
+        def _ret_section(title, code, h):
+            items = [d for d in _rip["detail"] if d["loai_tra_code"] == code]
+            kn = sum(1 for d in items if d["complaint"])
+            st.markdown(f"**{title}** — {len(items)} đơn"
+                        + (f" · 🚨 {kn} cần khiếu nại" if kn else ""))
+            if items:
+                st.dataframe(_ret_df(items), width="stretch", hide_index=True, height=h)
+            else:
+                st.caption("— Không có —")
+
+        _ret_section("💸 Trả hàng hoàn tiền", "return_and_refund", 380)
+        _ret_section("📕 Giao hàng thất bại", "delivery_failed", 280)
+        _other = [d for d in _rip["detail"]
+                  if d["loai_tra_code"] not in ("return_and_refund", "delivery_failed")]
+        if _other:
+            st.markdown(f"**Khác (hoàn tiền không trả hàng…)** — {len(_other)} đơn")
+            st.dataframe(_ret_df(_other), width="stretch", hide_index=True, height=200)
     st.stop()
 
 
