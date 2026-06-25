@@ -657,7 +657,7 @@ def load_returns_followup():
 
 @st.cache_data(ttl=600, show_spinner="Đang quét đơn trả đang xử lý…")
 def load_returns_inprogress():
-    _cache_ver = 5   # bump khi đổi cấu trúc trả về → buộc tính lại (tránh cache cũ gây lỗi)
+    _cache_ver = 6   # bump khi đổi cấu trúc trả về → buộc tính lại (tránh cache cũ gây lỗi)
     return L.get_returns_in_progress(make_fetch_json(build_session()))
 
 
@@ -1084,7 +1084,12 @@ if _page == PAGE_DAILY:
         def _ret_df(items, merge_vd=False):
             rows = []
             for d in items:
-                row = {"Ngày tạo": d["created"], "Mã đơn": d.get("order_link") or d["order_code"]}
+                _ol = d.get("order_link")
+                # Mã trả hàng cũng link tới đơn trên sàn: ghép #mã-trả vào URL để hiển thị đúng mã
+                _rl = f"{_ol}#{d['return_code']}" if (_ol and d.get("return_code")) else (d.get("return_code") or "")
+                row = {"Ngày tạo": d["created"],
+                       "Mã đơn": _ol or d["order_code"],
+                       "Mã trả hàng": _rl}
                 if merge_vd:                       # giao thất bại: VĐ đi == về → 1 cột
                     row["Vận đơn"] = d["vd_di"] or d["vd_tra"] or ""
                 else:
@@ -1115,6 +1120,9 @@ if _page == PAGE_DAILY:
                         "Mã đơn",
                         help="Bấm để MỞ đơn trên sàn (TikTok/Shopee) · chuột phải → Copy link / Mở tab mới",
                         display_text=r"(?:main_order_id\[\]=|search=)([^&]+)"),
+                    "Mã trả hàng": st.column_config.LinkColumn(
+                        "Mã trả hàng", help="Mã phiếu trả · bấm mở đơn trên sàn",
+                        display_text=r"#(.+)$"),
                 })
 
         def _type_block(title, code):

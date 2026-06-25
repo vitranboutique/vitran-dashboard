@@ -626,6 +626,7 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
         detail.append({
             "order_code": _ocode or "?",
             "order_link": order_link,
+            "return_code": x.get("name") or "",          # MÃ TRẢ HÀNG (mã phiếu trả)
             "gian_hang": gian_hang,
             "created": created_disp, "created_on": _con,
             "vd_di": (si.get("fulfillment_tracking_numbers") or [None])[0],   # VĐ GIAO ĐI (trên đơn)
