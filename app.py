@@ -1029,8 +1029,16 @@ if _page == PAGE_DAILY:
         _pl = picklog.read_today()
         _rep["funnel"]["soan"] = sum(r.get("so_don", 0) or 0 for r in _pl) or None
         _rep["funnel"]["soan_sp"] = sum(r.get("so_sp", 0) or 0 for r in _pl) or None
+    _now_vn = datetime.now(timezone.utc) + timedelta(hours=7)
+    _nrep = _now_vn.strftime("%H:%M %d/%m/%Y")
+    _nrec = len((_rep.get("nhap_kho") or {}).get("recon_rows") or [])
+    _h = (1 + max(1, (_nrec + 19) // 20)) * 1140 + 120   # 1 trang 1 + N tờ trang 2 (20 đơn/tờ)
+    # Còn xót lại LUÔN rút gọn 5 đơn/ĐVVC cho dễ đọc (collapse_xot mặc định True)
+    components.html(daily_report.report_html(_rep, _dvr, _nrep, sign_on=_sign_on),
+                    height=_h, scrolling=True)
 
-    # ── SỐ LIỆU ĐƠN TRẢ ĐANG XỬ LÝ — đưa LÊN ĐẦU (trên báo cáo A4) ──
+    # ── ĐƠN TRẢ HÀNG ĐANG XỬ LÝ (chưa nhập kho) — bổ sung cho mục "đã nhận hàng trả" ──
+    st.divider()
     st.subheader("📦 Đơn trả hàng đang xử lý (chưa nhập kho)")
     try:
         _rip = load_returns_inprogress()
@@ -1048,19 +1056,6 @@ if _page == PAGE_DAILY:
                    "VĐ đi = mã vận đơn giao đi · VĐ trả về = mã vận đơn hoàn về "
                    "(giao thất bại: 2 mã trùng nhau; hoàn tiền chưa gửi: VĐ trả về trống)."
                    + ("  ·  ⚠️ đã chạm giới hạn quét — có thể còn đơn cũ hơn" if _rip.get("capped") else ""))
-    st.divider()
-    _now_vn = datetime.now(timezone.utc) + timedelta(hours=7)
-    _nrep = _now_vn.strftime("%H:%M %d/%m/%Y")
-    _nrec = len((_rep.get("nhap_kho") or {}).get("recon_rows") or [])
-    _h = (1 + max(1, (_nrec + 19) // 20)) * 1140 + 120   # 1 trang 1 + N tờ trang 2 (20 đơn/tờ)
-    # Còn xót lại LUÔN rút gọn 5 đơn/ĐVVC cho dễ đọc (collapse_xot mặc định True)
-    components.html(daily_report.report_html(_rep, _dvr, _nrep, sign_on=_sign_on),
-                    height=_h, scrolling=True)
-
-    # ── CHI TIẾT đơn trả đang xử lý (4 bảng) — giữ DƯỚI báo cáo; số liệu đã ở đầu trang ──
-    if _rip:
-        st.divider()
-        st.markdown("#### 📋 Chi tiết đơn trả đang xử lý")
 
         def _ret_df(items):
             return pd.DataFrame([{
