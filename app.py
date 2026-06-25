@@ -1046,6 +1046,16 @@ if _page == PAGE_DAILY:
         _rip = None
         st.warning(f"Chưa lấy được đơn trả đang xử lý: `{_e}`")
     if _rip:
+        # KẾT QUẢ KHIẾU NẠI (năm nay) — đếm theo prefix ghi chú NV ghi đầu note
+        _oc = _rip.get("outcomes") or {}
+        st.markdown("##### 🧾 Kết quả khiếu nại (năm nay — theo ghi chú)")
+        _mo = st.columns(5)
+        _mo[0].metric("🟢 Thắng", f"{_oc.get('thang', 0):,}")
+        _mo[1].metric("🔴 Thua", f"{_oc.get('thua', 0):,}")
+        _mo[2].metric("⛔ Không KN (mất hàng)", f"{_oc.get('khong_kn', 0):,}")
+        _mo[3].metric("🚨 Cần KN", f"{_oc.get('can_kn', 0):,}")
+        _mo[4].metric("⚫ Hết hạn (mất tiền)", f"{_oc.get('het_han', 0):,}")
+        st.markdown("##### 📊 Đang xử lý (chưa nhập kho)")
         _old_n = sum(1 for d in _rip["detail"] if (d.get("age") or 0) >= 7)
         _m = st.columns(4)
         _m[0].metric("Tổng đang xử lý", f"{_rip['total']:,}")

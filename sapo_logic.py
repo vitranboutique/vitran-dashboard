@@ -628,8 +628,35 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
             "money": int(round(x.get("total_price") or 0)),
         })
     detail.sort(key=lambda d: d["created_on"] or "", reverse=True)   # MỚI NHẤT lên đầu
+
+    # THỐNG KÊ KẾT QUẢ KHIẾU NẠI theo PREFIX ghi chú (toàn bộ phiếu NĂM NAY, bỏ huỷ).
+    # NV ghi đầu note: 🟢/✅ THẮNG · 🔴/❌ THUA · ⛔/⚪ KHÔNG CẦN KN · 🚨 CẦN KN · ⚫ HẾT HẠN.
+    import unicodedata as _ud
+
+    def _asc(s):  # bỏ dấu + emoji → CHỮ HOA để khớp keyword
+        return _ud.normalize("NFKD", str(s or "")).encode("ascii", "ignore").decode().upper()
+    oc = {"thang": 0, "thua": 0, "khong_kn": 0, "can_kn": 0, "het_han": 0}
+    for x in rows:
+        if x.get("status") == "canceled":
+            continue
+        _cd = _vn_date_of(x.get("created_on"))
+        if not _cd or _cd.year != today.year:
+            continue
+        pre = _asc((x.get("note") or "").split("|")[0])
+        if "THANG" in pre:
+            oc["thang"] += 1
+        elif "THUA" in pre:
+            oc["thua"] += 1
+        elif "HET HAN" in pre:
+            oc["het_han"] += 1
+        elif "KHONG" in pre and "KN" in pre:
+            oc["khong_kn"] += 1
+        elif "CAN KN" in pre:
+            oc["can_kn"] += 1
+
     return {
         "total": len(inprog), "capped": capped, "n_complaint": n_complaint,
+        "outcomes": oc,
         "refund": cnt.get("return_and_refund", {"returning": 0, "returned": 0}),
         "fail": cnt.get("delivery_failed", {"returning": 0, "returned": 0}),
         "refund_only": cnt.get("refund", {"returning": 0, "returned": 0}),
