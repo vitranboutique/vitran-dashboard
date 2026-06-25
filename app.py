@@ -657,7 +657,7 @@ def load_returns_followup():
 
 @st.cache_data(ttl=600, show_spinner="Đang quét đơn trả đang xử lý…")
 def load_returns_inprogress():
-    _cache_ver = 4   # bump khi đổi cấu trúc trả về → buộc tính lại (tránh cache cũ gây lỗi)
+    _cache_ver = 5   # bump khi đổi cấu trúc trả về → buộc tính lại (tránh cache cũ gây lỗi)
     return L.get_returns_in_progress(make_fetch_json(build_session()))
 
 
@@ -1084,7 +1084,7 @@ if _page == PAGE_DAILY:
         def _ret_df(items):
             return pd.DataFrame([{
                 "Ngày tạo": d["created"],
-                "Mã đơn": d["order_code"],
+                "Mã đơn": d.get("order_link") or d["order_code"],
                 "VĐ đi": d["vd_di"] or "",
                 "VĐ trả về": d["vd_tra"] or "",
                 "Gian hàng": d["gian_hang"],
@@ -1103,8 +1103,15 @@ if _page == PAGE_DAILY:
             def _row_style(r):  # tô vàng dòng CẦN KN (>7 ngày & CHƯA có ghi chú kết quả)
                 hl = items[r.name].get("need_kn")
                 return ["background-color:#fff3cd" if hl else "" for _ in r]
-            st.dataframe(_df.style.apply(_row_style, axis=1),
-                         width="stretch", hide_index=True, height=h)
+            st.dataframe(
+                _df.style.apply(_row_style, axis=1),
+                width="stretch", hide_index=True, height=h,
+                column_config={
+                    "Mã đơn": st.column_config.LinkColumn(
+                        "Mã đơn",
+                        help="Bấm để MỞ đơn trên sàn (TikTok/Shopee) · chuột phải → Copy link / Mở tab mới",
+                        display_text=r"(?:main_order_id\[\]=|search=)([^&]+)"),
+                })
 
         def _type_block(title, code):
             items = [d for d in _rip["detail"] if d["loai_tra_code"] == code]
