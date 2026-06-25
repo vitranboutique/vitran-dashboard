@@ -657,7 +657,7 @@ def load_returns_followup():
 
 @st.cache_data(ttl=600, show_spinner="Đang quét đơn trả đang xử lý…")
 def load_returns_inprogress():
-    _cache_ver = 6   # bump khi đổi cấu trúc trả về → buộc tính lại (tránh cache cũ gây lỗi)
+    _cache_ver = 7   # bump khi đổi cấu trúc trả về → buộc tính lại (tránh cache cũ gây lỗi)
     return L.get_returns_in_progress(make_fetch_json(build_session()))
 
 
@@ -1085,8 +1085,10 @@ if _page == PAGE_DAILY:
             rows = []
             for d in items:
                 _ol = d.get("order_link")
-                # Mã trả hàng cũng link tới đơn trên sàn: ghép #mã-trả vào URL để hiển thị đúng mã
-                _rl = f"{_ol}#{d['return_code']}" if (_ol and d.get("return_code")) else (d.get("return_code") or "")
+                # Mã trả hàng link tới PHIẾU TRẢ (Sapo); ghép #mã-trả vào URL để hiển thị đúng mã
+                _retl = d.get("return_link")
+                _rl = (f"{_retl}#{d['return_code']}" if (_retl and d.get("return_code"))
+                       else (d.get("return_code") or ""))
                 row = {"Ngày tạo": d["created"],
                        "Mã đơn": _ol or d["order_code"],
                        "Mã trả hàng": _rl}
@@ -1114,7 +1116,7 @@ if _page == PAGE_DAILY:
                 return ["background-color:#fff3cd" if hl else "" for _ in r]
             st.dataframe(
                 _df.style.apply(_row_style, axis=1),
-                width="stretch", hide_index=True, height=h,
+                width="content", hide_index=True, height=h,   # gom cột sát lại, bớt ô trống
                 column_config={
                     "Mã đơn": st.column_config.LinkColumn(
                         "Mã đơn",

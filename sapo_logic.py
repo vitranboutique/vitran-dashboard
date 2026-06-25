@@ -623,10 +623,13 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
             order_link = f"https://banhang.shopee.vn/portal/sale?search={_ocode}"
         else:
             order_link = ""
+        _rid = x.get("id")
+        return_link = f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{_rid}" if _rid else ""
         detail.append({
             "order_code": _ocode or "?",
             "order_link": order_link,
             "return_code": x.get("name") or "",          # MÃ TRẢ HÀNG (mã phiếu trả)
+            "return_link": return_link,                  # link tới PHIẾU TRẢ trên Sapo
             "gian_hang": gian_hang,
             "created": created_disp, "created_on": _con,
             "vd_di": (si.get("fulfillment_tracking_numbers") or [None])[0],   # VĐ GIAO ĐI (trên đơn)
