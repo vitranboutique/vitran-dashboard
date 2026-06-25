@@ -1081,24 +1081,28 @@ if _page == PAGE_DAILY:
                    "(giao thất bại: 2 mã trùng nhau; hoàn tiền chưa gửi: VĐ trả về trống)."
                    + ("  ·  ⚠️ đã chạm giới hạn quét — có thể còn đơn cũ hơn" if _rip.get("capped") else ""))
 
-        def _ret_df(items):
-            return pd.DataFrame([{
-                "Ngày tạo": d["created"],
-                "Mã đơn": d.get("order_link") or d["order_code"],
-                "VĐ đi": d["vd_di"] or "",
-                "VĐ trả về": d["vd_tra"] or "",
-                "Gian hàng": d["gian_hang"],
-                "SKU": d["sku"],
-                "SL": d["qty"],
-                "Tổng tiền": f"{d['money']:,}đ",
-                "Ghi chú": d["note"],
-            } for d in items])
+        def _ret_df(items, merge_vd=False):
+            rows = []
+            for d in items:
+                row = {"Ngày tạo": d["created"], "Mã đơn": d.get("order_link") or d["order_code"]}
+                if merge_vd:                       # giao thất bại: VĐ đi == về → 1 cột
+                    row["Vận đơn"] = d["vd_di"] or d["vd_tra"] or ""
+                else:
+                    row["VĐ đi"] = d["vd_di"] or ""
+                    row["VĐ trả về"] = d["vd_tra"] or ""
+                row["Gian hàng"] = d["gian_hang"]
+                row["SKU"] = d["sku"]
+                row["SL"] = d["qty"]
+                row["Tổng tiền"] = f"{d['money']:,}đ"
+                row["Ghi chú"] = d["note"]
+                rows.append(row)
+            return pd.DataFrame(rows)
 
-        def _sub_table(items, h):
+        def _sub_table(items, h, merge_vd=False):
             if not items:
                 st.caption("— Không có —")
                 return
-            _df = _ret_df(items)
+            _df = _ret_df(items, merge_vd)
 
             def _row_style(r):  # tô vàng dòng CẦN KN (>7 ngày & CHƯA có ghi chú kết quả)
                 hl = items[r.name].get("need_kn")
@@ -1115,13 +1119,14 @@ if _page == PAGE_DAILY:
 
         def _type_block(title, code):
             items = [d for d in _rip["detail"] if d["loai_tra_code"] == code]
+            _mv = (code == "delivery_failed")     # giao thất bại: gộp VĐ đi/về thành 1 cột
             hoan = [d for d in items if d["ship_code"] == "returning"]
             giao = [d for d in items if d["ship_code"] == "returned"]
             st.markdown(f"### {title} — {len(items)} đơn")
             st.markdown(f"**🚚 Đang hoàn hàng — {len(hoan)} đơn**")
-            _sub_table(hoan, 260)
+            _sub_table(hoan, 260, _mv)
             st.markdown(f"**📥 Đã giao người bán — {len(giao)} đơn**")
-            _sub_table(giao, 260)
+            _sub_table(giao, 260, _mv)
 
         # ── DANH SÁCH ĐƠN CẦN KN (bấm ô "Cần KN" ở trên sẽ nhảy tới đây) ──
         st.subheader("🚨 Đơn cần KN — lấy làm khiếu nại", anchor="don-can-kn")
