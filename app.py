@@ -1081,46 +1081,59 @@ if _page == PAGE_DAILY:
                    "(giao thất bại: 2 mã trùng nhau; hoàn tiền chưa gửi: VĐ trả về trống)."
                    + ("  ·  ⚠️ đã chạm giới hạn quét — có thể còn đơn cũ hơn" if _rip.get("capped") else ""))
 
-        def _ret_df(items, merge_vd=False):
-            rows = []
-            for d in items:
-                _ol = d.get("order_link")
-                row = {"Ngày tạo": d["created"],
-                       "Mã đơn": _ol or d["order_code"],
-                       "Mã trả hàng": d.get("return_code") or ""}   # text thường (copy được, không link)
-                if merge_vd:                       # giao thất bại: VĐ đi == về → 1 cột
-                    row["Vận đơn"] = d["vd_di"] or d["vd_tra"] or ""
-                else:
-                    row["VĐ đi"] = d["vd_di"] or ""
-                    row["VĐ trả về"] = d["vd_tra"] or ""
-                row["Gian hàng"] = d["gian_hang"]
-                row["SKU"] = d["sku"]
-                row["SL"] = d["qty"]
-                row["Tổng tiền"] = f"{d['money']:,}đ"
-                row["Ghi chú"] = d["note"]
-                rows.append(row)
-            return pd.DataFrame(rows)
+        def _jss(s):       # escape chuỗi cho onclick JS
+            return str(s or "").replace("\\", "\\\\").replace("'", "\\'")
+
+        def _cp(val):      # nút copy 📋 (bấm 1 phát copy mã)
+            return (f"<span class='cp' onclick=\"cp('{_jss(val)}',this)\" title='Copy mã'>📋</span>"
+                    if val else "")
+
+        def _code_cell(val, link=None):    # mã + nút copy (kèm link nếu có)
+            v = _esc(str(val or ""))
+            disp = f"<a href='{_esc(link)}' target='_blank'>{v}</a>" if link else v
+            return f"{disp} {_cp(val)}" if val else ""
 
         def _sub_table(items, h, merge_vd=False):
             if not items:
                 st.caption("— Không có —")
                 return
-            _df = _ret_df(items, merge_vd)
-
-            def _row_style(r):  # tô vàng dòng CẦN KN (>7 ngày & CHƯA có ghi chú kết quả)
-                hl = items[r.name].get("need_kn")
-                return ["background-color:#fff3cd" if hl else "" for _ in r]
-            st.dataframe(
-                _df.style.apply(_row_style, axis=1),
-                width="content", hide_index=True, height=h,   # gom cột sát lại, bớt ô trống
-                column_config={
-                    "Mã đơn": st.column_config.LinkColumn(
-                        "Mã đơn",
-                        help="Bấm để MỞ đơn trên sàn (TikTok/Shopee) · chuột phải → Copy link / Mở tab mới",
-                        display_text=r"(?:main_order_id\[\]=|search=)([^&]+)"),
-                    "Mã trả hàng": st.column_config.TextColumn(
-                        "Mã trả hàng 📋", help="Chọn ô rồi Ctrl+C để copy mã, dán vào ô tìm bên TikTok/Shopee"),
-                })
+            cols = ["Ngày tạo", "Mã đơn", "Mã trả hàng"]
+            cols += (["Vận đơn"] if merge_vd else ["VĐ đi", "VĐ trả về"])
+            cols += ["Gian hàng", "SKU", "SL", "Tổng tiền", "Ghi chú"]
+            thead = "".join(f"<th>{c}</th>" for c in cols)
+            body = ""
+            for d in items:
+                bg = "background:#fff3cd" if d.get("need_kn") else ""
+                tds = [f"<td>{_esc(d['created'])}</td>",
+                       f"<td>{_code_cell(d['order_code'], d.get('order_link'))}</td>",
+                       f"<td>{_code_cell(d.get('return_code'))}</td>"]
+                if merge_vd:
+                    tds.append(f"<td>{_code_cell(d['vd_di'] or d['vd_tra'])}</td>")
+                else:
+                    tds.append(f"<td>{_code_cell(d['vd_di'])}</td>")
+                    tds.append(f"<td>{_code_cell(d['vd_tra'])}</td>")
+                tds += [f"<td>{_esc(d['gian_hang'])}</td>",
+                        f"<td>{_esc(d['sku'])}</td>",
+                        f"<td class='r'>{d['qty']}</td>",
+                        f"<td class='r'>{d['money']:,}đ</td>",
+                        f"<td class='note'>{_esc(d['note'])}</td>"]
+                body += f"<tr style='{bg}'>" + "".join(tds) + "</tr>"
+            html = f"""<style>
+ body{{margin:0;font-family:Tahoma,Arial,sans-serif;color:#1f2937}}
+ table{{border-collapse:collapse;font-size:12.5px;width:max-content;min-width:100%}}
+ th,td{{border:1px solid #e2e6ec;padding:4px 8px;text-align:left;white-space:nowrap}}
+ th{{background:#eef1f6;position:sticky;top:0;z-index:1;font-weight:700}}
+ td.r{{text-align:right}} td.note{{white-space:normal;min-width:150px;max-width:260px}}
+ a{{color:#1d4ed8;text-decoration:none}} a:hover{{text-decoration:underline}}
+ .cp{{cursor:pointer;opacity:.55;font-size:11px;user-select:none}} .cp:hover{{opacity:1}}
+</style>
+<table><thead><tr>{thead}</tr></thead><tbody>{body}</tbody></table>
+<script>
+ function cp(t,el){{const a=document.createElement('textarea');a.value=t;a.style.position='fixed';a.style.opacity=0;
+  document.body.appendChild(a);a.focus();a.select();try{{document.execCommand('copy');}}catch(e){{}}a.remove();
+  if(el){{const o=el.textContent;el.textContent='✅';setTimeout(()=>{{el.textContent=o;}},900);}}}}
+</script>"""
+            components.html(html, height=h, scrolling=True)
 
         def _type_block(title, code):
             items = [d for d in _rip["detail"] if d["loai_tra_code"] == code]
