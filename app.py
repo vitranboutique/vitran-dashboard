@@ -1085,13 +1085,9 @@ if _page == PAGE_DAILY:
             rows = []
             for d in items:
                 _ol = d.get("order_link")
-                # Mã trả hàng link tới PHIẾU TRẢ (Sapo); ghép #mã-trả vào URL để hiển thị đúng mã
-                _retl = d.get("return_link")
-                _rl = (f"{_retl}#{d['return_code']}" if (_retl and d.get("return_code"))
-                       else (d.get("return_code") or ""))
                 row = {"Ngày tạo": d["created"],
                        "Mã đơn": _ol or d["order_code"],
-                       "Mã trả hàng": _rl}
+                       "Mã trả hàng": d.get("return_code") or ""}   # text thường (copy được, không link)
                 if merge_vd:                       # giao thất bại: VĐ đi == về → 1 cột
                     row["Vận đơn"] = d["vd_di"] or d["vd_tra"] or ""
                 else:
@@ -1122,9 +1118,8 @@ if _page == PAGE_DAILY:
                         "Mã đơn",
                         help="Bấm để MỞ đơn trên sàn (TikTok/Shopee) · chuột phải → Copy link / Mở tab mới",
                         display_text=r"(?:main_order_id\[\]=|search=)([^&]+)"),
-                    "Mã trả hàng": st.column_config.LinkColumn(
-                        "Mã trả hàng", help="Mã phiếu trả · bấm mở đơn trên sàn",
-                        display_text=r"#(.+)$"),
+                    "Mã trả hàng": st.column_config.TextColumn(
+                        "Mã trả hàng 📋", help="Chọn ô rồi Ctrl+C để copy mã, dán vào ô tìm bên TikTok/Shopee"),
                 })
 
         def _type_block(title, code):
