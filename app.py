@@ -1097,14 +1097,15 @@ if _page == PAGE_DAILY:
             if not items:
                 st.caption("— Không có —")
                 return
-            cols = ["Ngày tạo", "Mã đơn", "Mã trả hàng"]
+            cols = ["STT", "Ngày tạo", "Mã đơn", "Mã trả hàng"]
             cols += (["Vận đơn"] if merge_vd else ["VĐ đi", "VĐ trả về"])
             cols += ["Gian hàng", "SKU", "SL", "Tổng tiền", "Ghi chú"]
             thead = "".join(f"<th>{c}</th>" for c in cols)
             body = ""
-            for d in items:
+            for i, d in enumerate(items, 1):
                 bg = "background:#fff3cd" if d.get("need_kn") else ""
-                tds = [f"<td>{_esc(d['created'])}</td>",
+                tds = [f"<td class='r'>{i}</td>",
+                       f"<td>{_esc(d['created'])}</td>",
                        f"<td>{_code_cell(d['order_code'], d.get('order_link'))}</td>",
                        f"<td>{_code_cell(d.get('return_code'))}</td>"]
                 if merge_vd:
