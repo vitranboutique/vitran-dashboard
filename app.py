@@ -657,7 +657,7 @@ def load_returns_followup():
 
 @st.cache_data(ttl=600, show_spinner="Đang quét đơn trả đang xử lý…")
 def load_returns_inprogress():
-    _cache_ver = 10  # bump khi đổi cấu trúc trả về → buộc tính lại (tránh cache cũ gây lỗi)
+    _cache_ver = 11  # bump khi đổi cấu trúc trả về → buộc tính lại (tránh cache cũ gây lỗi)
     return L.get_returns_in_progress(make_fetch_json(build_session()))
 
 
@@ -1107,7 +1107,7 @@ if _page == PAGE_DAILY:
                 tds = [f"<td class='r'>{i}</td>",
                        f"<td>{_esc(d['created'])}</td>",
                        f"<td>{_code_cell(d['order_code'], d.get('order_link'))}</td>",
-                       f"<td>{_code_cell(d.get('return_code'))}</td>"]
+                       f"<td>{_code_cell(d.get('return_code'), d.get('return_link'))}</td>"]
                 if merge_vd:
                     tds.append(f"<td>{_code_cell(d['vd_di'] or d['vd_tra'])}</td>")
                 else:
