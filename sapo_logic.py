@@ -624,9 +624,8 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
         else:
             order_link = ""
         _rid = x.get("id")
-        if "tiktok" in _osrc:        # trang Quản lý trả hàng TikTok, lọc theo mã đơn
-            return_link = (f"https://seller-vn.tiktok.com/order/return?main_order_id[]={_ocode}"
-                           "&order_sort_comp=OrderSort_UPADTE_TIME_DESC&tab=100")
+        if "tiktok" in _osrc:        # trang Quản lý trả hàng TikTok (search client-side → mở tab Tất cả)
+            return_link = "https://seller-vn.tiktok.com/order/return?order_sort_comp=OrderSort_UPADTE_TIME_DESC&tab=100"
         elif _rid:                   # Shopee: tạm link phiếu trả Sapo (chờ URL trả hàng Shopee)
             return_link = f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{_rid}"
         else:
