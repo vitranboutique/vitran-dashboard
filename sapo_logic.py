@@ -687,12 +687,18 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
         if cat:
             oc[cat]["n"] += 1
             oc[cat]["money"] += amt
-    # CẦN KN = TỰ TÍNH (KHÔNG dựa prefix note): đơn ĐANG XỬ LÝ, quá 7 ngày từ ngày tạo,
-    # CHƯA có ghi chú kết quả chuẩn (THẮNG/THUA/KHÔNG CẦN KN/HẾT HẠN). Gắn cờ need_kn để
-    # HIGHLIGHT đúng các đơn này (= bỏ đơn đã có ghi chú chuẩn) + bấm ô Cần KN nhảy tới ds.
+    # CẦN KN (cờ need_kn, dùng cho highlight + đếm). LOẠI đơn đã có ghi chú KẾT QUẢ chuẩn.
+    #  • ĐÃ GIAO NGƯỜI BÁN (returned) → MẶC ĐỊNH cần KN (bất kể tuổi).
+    #  • ĐANG HOÀN HÀNG (returning) → cần KN nếu QUÁ 7 ngày; trừ refund chỉ 1 VĐ (chưa giao ĐVVC).
     for d in detail:
-        d["need_kn"] = ((d.get("age") or 0) >= 7
-                        and not _resolved(_asc((d.get("note") or "").split("|")[0])))
+        if _resolved(_asc((d.get("note") or "").split("|")[0])):
+            d["need_kn"] = False
+        elif d.get("ship_code") == "returned":
+            d["need_kn"] = True
+        elif d.get("loai_tra_code") == "return_and_refund" and (d.get("n_track") or 0) < 2:
+            d["need_kn"] = False
+        else:
+            d["need_kn"] = (d.get("age") or 0) >= 7
         if not d["need_kn"]:
             continue
         amt = _amt(d.get("note"))

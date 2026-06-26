@@ -657,7 +657,7 @@ def load_returns_followup():
 
 @st.cache_data(ttl=600, show_spinner="Đang quét đơn trả đang xử lý…")
 def load_returns_inprogress():
-    _cache_ver = 9   # bump khi đổi cấu trúc trả về → buộc tính lại (tránh cache cũ gây lỗi)
+    _cache_ver = 10  # bump khi đổi cấu trúc trả về → buộc tính lại (tránh cache cũ gây lỗi)
     return L.get_returns_in_progress(make_fetch_json(build_session()))
 
 
@@ -1116,14 +1116,15 @@ if _page == PAGE_DAILY:
                         f"<td>{_esc(d['sku'])}</td>",
                         f"<td class='r'>{d['qty']}</td>",
                         f"<td class='r'>{d['money']:,}đ</td>",
-                        f"<td class='note'>{_esc(d['note'])}</td>"]
+                        f"<td class='note' title='{_esc(d['note'])}'>{_esc(d['note'])}</td>"]
                 body += f"<tr style='{bg}'>" + "".join(tds) + "</tr>"
             html = f"""<style>
  body{{margin:0;font-family:Tahoma,Arial,sans-serif;color:#1f2937}}
  table{{border-collapse:collapse;font-size:12.5px;width:max-content;min-width:100%}}
  th,td{{border:1px solid #e2e6ec;padding:4px 8px;text-align:left;white-space:nowrap}}
  th{{background:#eef1f6;position:sticky;top:0;z-index:1;font-weight:700}}
- td.r{{text-align:right}} td.note{{white-space:normal;min-width:150px;max-width:260px}}
+ td.r{{text-align:right}}
+ td.note{{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:help}}
  a{{color:#1d4ed8;text-decoration:none}} a:hover{{text-decoration:underline}}
  .cp{{cursor:pointer;opacity:.55;font-size:11px;user-select:none}} .cp:hover{{opacity:1}}
 </style>
