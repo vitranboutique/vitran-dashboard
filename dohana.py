@@ -8,6 +8,7 @@ Key đặt trong Streamlit secrets:  [dohana]\n  x_api_key = "..."
 """
 from collections import Counter
 from datetime import datetime, timedelta, timezone
+import time
 
 import requests
 import streamlit as st
@@ -74,18 +75,25 @@ def _fetch_videos(typ: str, cutoff_date, max_pages: int):
     headers = {"x-api-key": key}
     vids = []
     for p in range(0, max_pages):        # ⚠️ 0-INDEXED: page=0 = MỚI NHẤT
-        try:
-            r = requests.get(_BASE, params={"page": p, "limit": 100, "type": typ},
-                             headers=headers, timeout=20)
-            if r.status_code != 200:     # 429 (quá giới hạn API) / lỗi ngay trang ĐẦU →
-                if p == 0:               # Dohana KHÔNG sẵn sàng. Trả None để báo 'tạm không lấy
-                    return None          # được', KHÔNG nhầm thành '0 video / thiếu hết clip'.
-                break                    # (lỗi ở trang sau: giữ video đã lấy)
-            rows = r.json().get("data", [])
-        except Exception:
-            if p == 0:
-                return None
-            break
+        rows = None
+        # Dohana giới hạn theo GIÂY (429 + 'Retry-After: 1') → KHÔNG phải hết quota.
+        # Tải nhiều trang dồn dập sẽ dính → thử lại tối đa 5 lần, chờ đúng Retry-After.
+        for _try in range(5):
+            try:
+                r = requests.get(_BASE, params={"page": p, "limit": 100, "type": typ},
+                                 headers=headers, timeout=20)
+            except Exception:
+                break
+            if r.status_code == 429:
+                time.sleep(min(float(r.headers.get("Retry-After") or 1), 3))
+                continue
+            if r.status_code == 200:
+                rows = r.json().get("data", [])
+            break                        # thành công / lỗi khác → thoát vòng thử lại
+        if rows is None:                 # vẫn 429 sau 5 lần / lỗi mạng
+            if p == 0:                   # trang ĐẦU fail → Dohana KHÔNG sẵn sàng → trả None
+                return None              # (báo 'tạm không lấy được', KHÔNG nhầm '0 video')
+            break                        # trang sau: giữ video đã lấy
         if not rows:
             break
         vids += rows

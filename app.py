@@ -530,7 +530,8 @@ PAGE_OVERVIEW = "📊 Tổng quan điều hành"
 PAGE_REPORT = "📋 Báo cáo sáng"
 PAGE_PICK = "🧾 Phiếu nhặt hàng"
 PAGE_DAILY = "📄 Báo cáo cuối ngày"
-_page = st.sidebar.radio("Trang", [PAGE_OVERVIEW, PAGE_REPORT, PAGE_PICK, PAGE_DAILY], index=0)
+PAGE_RETURNS = "📦 Đơn trả hàng đang xử lý"
+_page = st.sidebar.radio("Trang", [PAGE_OVERVIEW, PAGE_REPORT, PAGE_PICK, PAGE_DAILY, PAGE_RETURNS], index=0)
 st.sidebar.divider()
 
 
@@ -1051,10 +1052,20 @@ if _page == PAGE_DAILY:
         st.error(f"❌ Lỗi dựng báo cáo A4 (mục đơn trả hàng bên dưới vẫn hiển thị): `{_e}`")
         with st.expander("Chi tiết lỗi (gửi Claude để sửa)"):
             st.code(_tb.format_exc())
+    st.stop()   # HẾT trang "Báo cáo cuối ngày" — mục đơn trả hàng đã TÁCH sang TRANG RIÊNG (sidebar)
 
-    # ── ĐƠN TRẢ HÀNG ĐANG XỬ LÝ (chưa nhập kho) — bổ sung cho mục "đã nhận hàng trả" ──
-    st.divider()
-    st.subheader("📦 Đơn trả hàng đang xử lý (chưa nhập kho)")
+
+# ═════════════ TRANG RIÊNG: ĐƠN TRẢ HÀNG ĐANG XỬ LÝ (nút chọn trên sidebar) ═════════════
+if _page == PAGE_RETURNS:
+    st.title("📦 Đơn trả hàng đang xử lý (chưa nhập kho)")
+    st.caption("Đơn trả CHƯA nhập kho (năm nay) — chia theo loại trả + tình trạng vận chuyển. "
+               "Bấm 📋 để copy mã · dòng tô vàng = cần khiếu nại.")
+    if not credential_present():
+        st.warning("⚠️ Cần kết nối Sapo (API LIVE).")
+        st.stop()
+    if st.button("🔄 Tải lại số liệu"):
+        st.cache_data.clear()
+        st.rerun()
     try:
         _rip = load_returns_inprogress()
     except Exception as _e:
