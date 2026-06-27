@@ -314,9 +314,19 @@ def _recon_rows(rows, start=0):
                 _ss.append(f'📥 {_e(str(r["recv_time"]))}')
             if r.get("nhan_vien"):
                 _ss.append(f'👤 {_e(str(r["nhan_vien"]))}')
+            # DÒNG SL NHẬP KHO: khách trả THIẾU (nhập < kỳ vọng) → đỏ đậm cảnh báo; đủ → xanh
+            _spn, _spe = r.get("sp_nhap"), r.get("sp")
+            if _spn is not None and _spe is not None and _spn < _spe:
+                _nhap = (f'<div style="font-size:.85em;color:#dc2626;font-weight:800">'
+                         f'📦 Nhập kho {_spn}/{_spe} SP — ⚠️ TRẢ THIẾU</div>')
+            elif _spn is not None:
+                _nhap = f'<div style="font-size:.82em;color:#15803d">📦 Nhập kho {_spn} SP</div>'
+            else:
+                _nhap = ''
             sapo_cell = (f'<b>{_e(str(r.get("order_code") or "?"))}</b>'
                          + (f'<div style="font-size:.82em;color:#6b7280">{" · ".join(_ss)}</div>'
-                            if _ss else ''))
+                            if _ss else '')
+                         + _nhap)
             sapo_td = ""
         else:
             _oc = r.get("order_code") or ""

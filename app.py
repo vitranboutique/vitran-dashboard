@@ -364,6 +364,7 @@ def _enrich_daily(rep, dvr, inb):
                 # KHÔNG fallback sang NV quay clip (Dohana) để tránh hiển thị sai người.
                 "nhan_vien": d.get("nhan_vien") or "",
                 "sku": d.get("sku"), "loai_tra": d.get("loai_tra"),
+                "sp": d.get("sp"), "sp_nhap": d.get("sp_nhap"),   # SL kỳ vọng vs SL THỰC nhập kho
                 "loai_tra_code": d.get("loai_tra_code"), "has_sapo": True,
             })
         _abc = nk.get("all_by_code") or {}
@@ -1107,7 +1108,7 @@ if _page == PAGE_DAILY:
                 tds = [f"<td class='r'>{i}</td>",
                        f"<td>{_esc(d['created'])}</td>",
                        f"<td>{_code_cell(d['order_code'], d.get('order_link'))}</td>",
-                       f"<td>{_code_cell(d.get('return_code'), d.get('return_link'))}</td>"]
+                       f"<td>{_code_cell(d.get('return_code'))}</td>"]   # KHÔNG link, chỉ copy
                 if merge_vd:
                     tds.append(f"<td>{_code_cell(d['vd_di'] or d['vd_tra'])}</td>")
                 else:

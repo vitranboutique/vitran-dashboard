@@ -818,6 +818,8 @@ def get_returns_received_today(fetch_json, scan_days: int = 60, max_pages: int =
             "order_name": order_name,
             "sku": sku,
             "sp": int(round(x.get("total_quantity") or 0)),
+            # SL THỰC NHẬP KHO (Σ stocked_quantity). Khách trả THIẾU → nhỏ hơn 'sp' (kỳ vọng).
+            "sp_nhap": int(round(sum((li.get("stocked_quantity") or 0) for li in lis))),
             "ly_do": _reason_vn.get(rsn, rsn or "—"),
             "loai_tra": _type_vn.get(rtype, rtype or "—"),
             "loai_tra_code": rtype,

@@ -77,8 +77,14 @@ def _fetch_videos(typ: str, cutoff_date, max_pages: int):
         try:
             r = requests.get(_BASE, params={"page": p, "limit": 100, "type": typ},
                              headers=headers, timeout=20)
-            rows = r.json().get("data", []) if r.status_code == 200 else []
+            if r.status_code != 200:     # 429 (quá giới hạn API) / lỗi ngay trang ĐẦU →
+                if p == 0:               # Dohana KHÔNG sẵn sàng. Trả None để báo 'tạm không lấy
+                    return None          # được', KHÔNG nhầm thành '0 video / thiếu hết clip'.
+                break                    # (lỗi ở trang sau: giữ video đã lấy)
+            rows = r.json().get("data", [])
         except Exception:
+            if p == 0:
+                return None
             break
         if not rows:
             break
