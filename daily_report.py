@@ -287,7 +287,7 @@ def _returns_clip_rows(detail):
     return body or '<tr><td colspan="7">Hôm nay không có đơn hoàn nhập kho.</td></tr>'
 
 
-def _recon_rows(rows, start=0):
+def _recon_rows(rows, start=0, clip_on=True):
     """Đối chiếu mỗi sự kiện hoàn: cột Clip khui hàng (Dohana) vs cột Đã nhận hàng trả (Sapo).
     Cột nào TRỐNG thì ghi LÝ DO in đỏ ngay dòng đó. start = số thứ tự bắt đầu (phân trang)."""
     body = ""
@@ -304,9 +304,12 @@ def _recon_rows(rows, start=0):
                          + (f'<div style="font-size:.82em;color:#6b7280">⏱ {_e(" · ".join(_cs))}</div>'
                             if _cs else ''))
             clip_td = ""
-        else:
+        elif clip_on:
             clip_cell = '<span style="color:#dc2626;font-weight:800">✗ CHƯA quay clip khui hàng — kiểm tra Dohana</span>'
             clip_td = ' style="background:#fef2f2"'
+        else:   # Dohana 429/lỗi: KHÔNG kết luận "chưa quay" — chỉ là tạm không lấy được clip
+            clip_cell = '<span style="color:#9ca3af">— Dohana tạm không lấy được clip</span>'
+            clip_td = ''
         # ── Cột 2: ĐÃ NHẬN HÀNG TRẢ (Sapo) ──
         if r.get("has_sapo"):
             _ss = []
@@ -672,7 +675,7 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
   <div class="title-sub">Phần 2 — Hàng hoàn nhận về · nhập kho · video khui hàng{_sub}</div>
   {_kpi}
   <div class="sec">A. Đối chiếu Clip khui hàng ↔ Đã nhận hàng trả{_badge}</div>
-  <table>{_thead}<tbody>{_recon_rows(_chunk, start=_si * _CHUNK)}</tbody></table>
+  <table>{_thead}<tbody>{_recon_rows(_chunk, start=_si * _CHUNK, clip_on=clip_on)}</tbody></table>
   {_tail}
   <div class="foot">VITRAN BOUTIQUE · {_pno} — Đơn hàng hoàn trả · {_e(rep["date"])}</div>
 </div></div>"""

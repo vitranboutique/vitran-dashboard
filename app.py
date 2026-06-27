@@ -351,37 +351,44 @@ def _enrich_daily(rep, dvr, inb):
              "staff": (meta.get(c) or {}).get("staff", "")}
             for c in nk["clip_unmatched"]
         ]
-        # BẢNG ĐỐI CHIẾU: mỗi dòng = 1 sự kiện hoàn. Đơn ĐÃ nhập kho (có Sapo) + clip DƯ (chưa nhập kho).
-        recon = []
-        for d in nk.get("detail", []):
-            recon.append({
-                "clip_code": d.get("clip_code"), "clip_time": d.get("clip_time"),
-                "clip_dur": d.get("clip_dur"), "clip_tag": d.get("clip_tag"),
-                "clip_alt": d.get("clip_altcode"), "has_clip": bool(d.get("clip")),
-                "order_code": d.get("order_code"), "recv_time": d.get("recv_time"),
-                "vd_gui": d.get("tracking"),   # mã VĐ GIAO ĐI (tra Sapo/sàn được)
-                # Cột "Đã nhận hàng trả (Sapo)" → CHỈ lấy NV nhận hàng từ Sapo,
-                # KHÔNG fallback sang NV quay clip (Dohana) để tránh hiển thị sai người.
-                "nhan_vien": d.get("nhan_vien") or "",
-                "sku": d.get("sku"), "loai_tra": d.get("loai_tra"),
-                "sp": d.get("sp"), "sp_nhap": d.get("sp_nhap"),   # SL kỳ vọng vs SL THỰC nhập kho
-                "loai_tra_code": d.get("loai_tra_code"), "has_sapo": True,
-            })
-        _abc = nk.get("all_by_code") or {}
-        for u in nk.get("clip_unmatched_detail", []):
-            info = _abc.get(u.get("code")) or {}   # đơn hoàn CHƯA nhập kho (vd tráo hàng giữ tranh chấp)
-            recon.append({
-                "clip_code": u.get("code"), "clip_time": u.get("recorded"),
-                "clip_dur": u.get("dur"), "clip_tag": u.get("tag"),
-                "clip_alt": False, "has_clip": True,
-                "order_code": info.get("order_code") or "", "recv_time": "", "vd_gui": info.get("vd_gui") or "",
-                "nhan_vien": u.get("staff") or "",
-                "sku": info.get("sku") or "", "loai_tra": info.get("loai_tra") or "",
-                "loai_tra_code": info.get("loai_tra_code") or "", "has_sapo": False,
-            })
-        nk["recon_rows"] = recon
     else:
+        # Dohana lỗi/429: KHÔNG có clip. Nhưng ĐƠN TRẢ HÀNG (đã nhập kho) VẪN PHẢI HIỆN —
+        # chỉ thiếu cột clip. ĐỪNG để recon rỗng làm bảng "đã nhận hàng trả" BIẾN MẤT.
         nk["clip_available"] = False
+        for d in nk.get("detail", []):
+            d["clip"] = False
+        nk["clip_co"], nk["clip_total"] = 0, 0
+        nk["clip_unmatched"], nk["clip_unmatched_detail"] = [], []
+    # BẢNG ĐỐI CHIẾU: DỰNG LUÔN LUÔN (kể cả khi Dohana lỗi/429) → đơn trả hàng KHÔNG biến mất;
+    # không lấy được clip thì cột clip để trống. Đơn ĐÃ nhập kho (Sapo) + clip DƯ (chưa nhập kho).
+    recon = []
+    for d in nk.get("detail", []):
+        recon.append({
+            "clip_code": d.get("clip_code"), "clip_time": d.get("clip_time"),
+            "clip_dur": d.get("clip_dur"), "clip_tag": d.get("clip_tag"),
+            "clip_alt": d.get("clip_altcode"), "has_clip": bool(d.get("clip")),
+            "order_code": d.get("order_code"), "recv_time": d.get("recv_time"),
+            "vd_gui": d.get("tracking"),   # mã VĐ GIAO ĐI (tra Sapo/sàn được)
+            # Cột "Đã nhận hàng trả (Sapo)" → CHỉ lấy NV nhận hàng từ Sapo,
+            # KHÔNG fallback sang NV quay clip (Dohana) để tránh hiển thị sai người.
+            "nhan_vien": d.get("nhan_vien") or "",
+            "sku": d.get("sku"), "loai_tra": d.get("loai_tra"),
+            "sp": d.get("sp"), "sp_nhap": d.get("sp_nhap"),   # SL kỳ vọng vs SL THỰC nhập kho
+            "loai_tra_code": d.get("loai_tra_code"), "has_sapo": True,
+        })
+    _abc = nk.get("all_by_code") or {}
+    for u in nk.get("clip_unmatched_detail", []):
+        info = _abc.get(u.get("code")) or {}   # đơn hoàn CHƯA nhập kho (vd tráo hàng giữ tranh chấp)
+        recon.append({
+            "clip_code": u.get("code"), "clip_time": u.get("recorded"),
+            "clip_dur": u.get("dur"), "clip_tag": u.get("tag"),
+            "clip_alt": False, "has_clip": True,
+            "order_code": info.get("order_code") or "", "recv_time": "", "vd_gui": info.get("vd_gui") or "",
+            "nhan_vien": u.get("staff") or "",
+            "sku": info.get("sku") or "", "loai_tra": info.get("loai_tra") or "",
+            "loai_tra_code": info.get("loai_tra_code") or "", "has_sapo": False,
+        })
+    nk["recon_rows"] = recon
     if dvr is not None:
         vset = set((dvr.get("codes") or {}).keys())
         dgc = rep.get("dong_goi_codes") or set()
@@ -1036,8 +1043,14 @@ if _page == PAGE_DAILY:
     _nrec = len((_rep.get("nhap_kho") or {}).get("recon_rows") or [])
     _h = (1 + max(1, (_nrec + 19) // 20)) * 1140 + 120   # 1 trang 1 + N tờ trang 2 (20 đơn/tờ)
     # Còn xót lại LUÔN rút gọn 5 đơn/ĐVVC cho dễ đọc (collapse_xot mặc định True)
-    components.html(daily_report.report_html(_rep, _dvr, _nrep, sign_on=_sign_on),
-                    height=_h, scrolling=True)
+    try:
+        components.html(daily_report.report_html(_rep, _dvr, _nrep, sign_on=_sign_on),
+                        height=_h, scrolling=True)
+    except Exception as _e:   # báo cáo A4 lỗi KHÔNG được làm BIẾN MẤT mục đơn trả hàng bên dưới
+        import traceback as _tb
+        st.error(f"❌ Lỗi dựng báo cáo A4 (mục đơn trả hàng bên dưới vẫn hiển thị): `{_e}`")
+        with st.expander("Chi tiết lỗi (gửi Claude để sửa)"):
+            st.code(_tb.format_exc())
 
     # ── ĐƠN TRẢ HÀNG ĐANG XỬ LÝ (chưa nhập kho) — bổ sung cho mục "đã nhận hàng trả" ──
     st.divider()
