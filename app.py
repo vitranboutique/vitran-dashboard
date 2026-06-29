@@ -1072,7 +1072,7 @@ if _page == PAGE_RETURNS:
         _rip = None
         st.warning(f"Chưa lấy được đơn trả đang xử lý: `{_e}`")
     if _rip:
-        # KẾT QUẢ KHIẾU NẠI (năm nay): Thắng/Thua/Không KN/Hết hạn theo prefix note;
+        # KẾT QUẢ KHIẾU NẠI (đang xử lý năm nay): Thắng/Thua/Không KN/Hết hạn theo prefix note;
         # CẦN KN = TỰ TÍNH (đơn đang xử lý quá 7 ngày, chưa có ghi chú kết quả).
         _oc = _rip.get("outcomes") or {}
 
@@ -1085,7 +1085,7 @@ if _page == PAGE_RETURNS:
                 o = {"n": int(o or 0), "money": 0}
             col.metric(label, f"{o.get('n', 0):,} đơn")
             col.caption(f"💰 {_vnd(o.get('money', 0))}")
-        st.markdown("##### 🧾 Kết quả khiếu nại (năm nay)")
+        st.markdown("##### 🧾 Kết quả khiếu nại (đang xử lý năm nay)")
         _mo = st.columns(5)
         _ocard(_mo[0], "🟢 Thắng (thu hồi)", "thang")
         _ocard(_mo[1], "🔴 Thua (mất tiền)", "thua")

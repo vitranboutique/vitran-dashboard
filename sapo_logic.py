@@ -648,7 +648,8 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
         })
     detail.sort(key=lambda d: d["created_on"] or "", reverse=True)   # MỚI NHẤT lên đầu
 
-    # THỐNG KÊ KẾT QUẢ KHIẾU NẠI theo PREFIX ghi chú (toàn bộ phiếu NĂM NAY, bỏ huỷ).
+    # THỐNG KÊ KẾT QUẢ KHIẾU NẠI theo PREFIX ghi chú trong đúng danh sách đang xử lý.
+    # Giữ cùng phạm vi với bảng chi tiết và ô CẦN KN, tránh trộn cả phiếu đã nhập kho/đã đóng.
     # NV ghi đầu note: 🟢/✅ THẮNG · 🔴/❌ THUA · ⛔/⚪ KHÔNG CẦN KN · 🚨 CẦN KN · ⚫ HẾT HẠN.
     import unicodedata as _ud
 
@@ -669,18 +670,13 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
         return ("THANG" in pre or "THUA" in pre or "HET HAN" in pre
                 or ("KHONG" in pre and "KN" in pre))
     oc = {k: {"n": 0, "money": 0} for k in ("thang", "thua", "khong_kn", "can_kn", "het_han")}
-    # 4 nhóm KẾT QUẢ: đếm + cộng tiền theo prefix note (toàn bộ phiếu năm nay, bỏ huỷ)
-    for x in rows:
-        if x.get("status") == "canceled":
-            continue
-        _cd = _vn_date_of(x.get("created_on"))
-        if not _cd or _cd.year != today.year:
-            continue
-        note = x.get("note") or ""
+    # 4 nhóm KẾT QUẢ: đếm + cộng tiền theo prefix note của các phiếu đang hiển thị.
+    for d in detail:
+        note = d.get("note") or ""
         pre = _asc(note.split("|")[0])
         amt = _amt(note)
         if amt is None:
-            amt = int(round(x.get("total_price") or 0))
+            amt = int(d.get("money") or 0)
         cat = ("thang" if "THANG" in pre else "thua" if "THUA" in pre
                else "het_han" if "HET HAN" in pre
                else "khong_kn" if ("KHONG" in pre and "KN" in pre) else None)
