@@ -1072,7 +1072,7 @@ if _page == PAGE_RETURNS:
         _rip = None
         st.warning(f"Chưa lấy được đơn trả đang xử lý: `{_e}`")
     if _rip:
-        # KẾT QUẢ KHIẾU NẠI (đang xử lý năm nay): Thắng/Thua/Không KN/Hết hạn theo prefix note;
+        # KẾT QUẢ KHIẾU NẠI (đang xử lý năm nay): Thắng/Thua/Không cần KN/Hết hạn theo prefix note;
         # CẦN KN = TỰ TÍNH (đơn đang xử lý quá 7 ngày, chưa có ghi chú kết quả).
         _oc = _rip.get("outcomes") or {}
 
@@ -1089,7 +1089,7 @@ if _page == PAGE_RETURNS:
         _mo = st.columns(5)
         _ocard(_mo[0], "🟢 Thắng (thu hồi)", "thang")
         _ocard(_mo[1], "🔴 Thua (mất tiền)", "thua")
-        _ocard(_mo[2], "⛔ Không KN (mất hàng)", "khong_kn")
+        _ocard(_mo[2], "⛔ Không cần KN (mất hàng)", "khong_kn")
         _ocard(_mo[3], "🚨 Cần KN (tự tính)", "can_kn")
         _ocard(_mo[4], "⚫ Hết hạn (mất tiền)", "het_han")
         _ckn_list = [d for d in _rip["detail"] if d.get("need_kn")]

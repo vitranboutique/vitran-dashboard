@@ -666,9 +666,12 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
         except Exception:
             return None
 
+    def _is_khong_can_kn(pre):
+        return "KHONG CAN KN" in pre or "KHONG CAN KHIEU NAI" in pre
+
     def _resolved(pre):   # đã có ghi chú KẾT QUẢ chuẩn → coi như xử lý xong
         return ("THANG" in pre or "THUA" in pre or "HET HAN" in pre
-                or ("KHONG" in pre and "KN" in pre))
+                or _is_khong_can_kn(pre))
     oc = {k: {"n": 0, "money": 0} for k in ("thang", "thua", "khong_kn", "can_kn", "het_han")}
     # 4 nhóm KẾT QUẢ: đếm + cộng tiền theo prefix note của các phiếu đang hiển thị.
     for d in detail:
@@ -679,7 +682,7 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
             amt = int(d.get("money") or 0)
         cat = ("thang" if "THANG" in pre else "thua" if "THUA" in pre
                else "het_han" if "HET HAN" in pre
-               else "khong_kn" if ("KHONG" in pre and "KN" in pre) else None)
+               else "khong_kn" if _is_khong_can_kn(pre) else None)
         if cat:
             oc[cat]["n"] += 1
             oc[cat]["money"] += amt
