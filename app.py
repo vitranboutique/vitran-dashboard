@@ -2026,6 +2026,51 @@ if _page == PAGE_RETURNS:
                 legend=dict(orientation="h", y=1.14, x=0),
             )
             st.plotly_chart(_outcome_fig, width="stretch")
+
+            with st.expander("🔍 Soi chi tiết theo tháng / trạng thái nhập kho", expanded=False):
+                _month_options = list(_month_df["Tháng"])
+                _default_month_idx = _month_options.index("04/2026") if "04/2026" in _month_options else max(0, len(_month_options) - 1)
+                _drill_cols = st.columns(2)
+                _drill_month = _drill_cols[0].selectbox(
+                    "Tháng",
+                    _month_options,
+                    index=_default_month_idx,
+                    key="return_month_drill_month",
+                )
+                _drill_stock = _drill_cols[1].selectbox(
+                    "Trạng thái nhập kho",
+                    ["Không nhập kho", "Nhập kho 1 phần", "Chưa nhập kho", "Đã nhập kho"],
+                    key="return_month_drill_stock",
+                )
+                _drill_rows = []
+                for _d in _all_returns_detail:
+                    _raw = str(_d.get("created_on") or "")
+                    try:
+                        _dt = datetime.fromisoformat(_raw.replace("Z", "").split(".")[0]) + timedelta(hours=7)
+                    except Exception:
+                        continue
+                    if _dt.strftime("%m/%Y") != _drill_month:
+                        continue
+                    if _stock_group(_d) != _drill_stock:
+                        continue
+                    _drill_rows.append({
+                        "Ngày tạo": _d.get("created") or "",
+                        "Mã đơn": _d.get("order_code") or "",
+                        "Mã trả": _d.get("return_code") or "",
+                        "Loại trả": _d.get("loai_tra") or "",
+                        "VĐ đi": _d.get("vd_di") or "",
+                        "VĐ trả về": _d.get("vd_tra") or "",
+                        "Shipper hoàn": _d.get("return_shipper") or "Chưa có",
+                        "Kết quả": _return_outcome(_d),
+                        "Nhập kho": _d.get("stock_status") or "",
+                        "Tổng tiền": _vnd(_d.get("money") or 0),
+                        "Ghi chú": _d.get("note") or "",
+                    })
+                if _drill_rows:
+                    st.caption(f"{len(_drill_rows)} đơn {_drill_stock.lower()} trong tháng {_drill_month}.")
+                    st.dataframe(pd.DataFrame(_drill_rows), use_container_width=True, hide_index=True)
+                else:
+                    st.caption(f"Không có đơn {_drill_stock.lower()} trong tháng {_drill_month}.")
         st.markdown("##### 📊 Đang xử lý (chưa nhập kho)")
         _old_n = sum(1 for d in _rip["detail"] if (d.get("age") or 0) >= 7)
         _m = st.columns(5)
