@@ -700,7 +700,8 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
         return ("THANG" in pre or "THUA" in pre or "HET HAN" in pre
                 or _is_khong_can_kn(pre))
     oc = {k: {"n": 0, "money": 0} for k in ("thang", "thua", "khong_kn", "can_kn", "het_han")}
-    # 4 nhóm KẾT QUẢ: đếm + cộng tiền theo prefix note của các phiếu đang hiển thị.
+    # Kết quả cuối lấy theo prefix note; riêng "Không cần KN" tự tính từ nhóm
+    # Chỉ hoàn tiền/không cần trả lại/chưa nhập kho, đúng bộ lọc vận hành trên Sapo.
     for d in detail:
         note = d.get("note") or ""
         pre = _asc(note.split("|")[0])
@@ -708,11 +709,13 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
         if amt is None:
             amt = int(d.get("money") or 0)
         cat = ("thang" if "THANG" in pre else "thua" if "THUA" in pre
-               else "het_han" if "HET HAN" in pre
-               else "khong_kn" if _is_khong_can_kn(pre) else None)
+               else "het_han" if "HET HAN" in pre else None)
         if cat:
             oc[cat]["n"] += 1
             oc[cat]["money"] += amt
+        elif d.get("ship_code") == "no_return":
+            oc["khong_kn"]["n"] += 1
+            oc["khong_kn"]["money"] += int(d.get("money") or 0)
     # CẦN KN (cờ need_kn, dùng cho highlight + đếm). LOẠI đơn đã có ghi chú KẾT QUẢ chuẩn.
     #  • ĐÃ GIAO NGƯỜI BÁN (returned) → MẶC ĐỊNH cần KN (bất kể tuổi).
     #  • ĐANG HOÀN HÀNG (returning) → cần KN nếu QUÁ 7 ngày; trừ refund chỉ 1 VĐ (chưa giao ĐVVC).

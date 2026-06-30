@@ -1092,7 +1092,9 @@ if _page == PAGE_RETURNS:
         _ocard(_mo[2], "⛔ Không cần KN (mất hàng)", "khong_kn")
         _ocard(_mo[3], "🚨 Cần KN (tự tính)", "can_kn")
         _ocard(_mo[4], "⚫ Hết hạn (mất tiền)", "het_han")
+        _khong_can_kn_list = [d for d in _rip["detail"] if d.get("ship_code") == "no_return"]
         _ckn_list = [d for d in _rip["detail"] if d.get("need_kn")]
+        _mo[2].markdown(f"[👉 Xem {len(_khong_can_kn_list)} đơn](#don-khong-can-kn)")
         _mo[3].markdown(f"[👉 Lấy {len(_ckn_list)} đơn KN](#don-can-kn)")
         st.markdown("##### 📊 Đang xử lý (chưa nhập kho)")
         _old_n = sum(1 for d in _rip["detail"] if (d.get("age") or 0) >= 7)
@@ -1187,6 +1189,9 @@ if _page == PAGE_RETURNS:
         st.caption("Quá 7 ngày từ ngày tạo & CHƯA có ghi chú kết quả (THẮNG/THUA/KHÔNG CẦN KN/HẾT HẠN). "
                    "Đây chính là các dòng tô vàng — NV lấy làm khiếu nại.")
         _sub_table(_ckn_list, 360)
+        st.subheader("⛔ Đơn không cần KN — chỉ hoàn tiền / không cần trả lại", anchor="don-khong-can-kn")
+        st.caption("Các đơn chưa nhập kho nhưng không cần hàng hoàn trả về. Nhóm này dùng để theo dõi mất hàng/không cần khiếu nại, không trộn vào danh sách CẦN KN.")
+        _sub_table(_khong_can_kn_list, 300)
         st.divider()
         st.markdown("### 📋 Chi tiết theo loại")
         _type_block("💸 Trả hàng hoàn tiền", "return_and_refund")
