@@ -547,8 +547,9 @@ def get_week_summary(fetch_json, days: int = 7) -> list:
     return out
 
 
-def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
+def get_returns_in_progress(fetch_json, max_pages: int = 120) -> dict:
     """ĐƠN TRẢ HÀNG ĐANG XỬ LÝ — CHƯA nhập kho (bổ sung cho mục 'đã nhận hàng trả').
+    Tổng đơn trả lấy theo tab TẤT CẢ của phiếu trả trong NĂM NAY, loại phiếu hủy/gạch ngang.
     Phạm vi: phiếu trả chưa bị hủy & chưa nhập kho đầy đủ, gồm cả:
     {returning=Đang hoàn hàng, returned=Đã giao người bán, no_return=Không cần trả lại}.
     Cờ CẦN KHIẾU NẠI:

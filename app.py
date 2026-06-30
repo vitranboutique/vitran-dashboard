@@ -1880,8 +1880,8 @@ if _page == PAGE_RETURNS:
         _chart_df = pd.DataFrame(_chart_rows)
         st.markdown("##### 📈 Tỉ lệ kết quả trên tổng đơn trả")
         _summary_cols = st.columns([1, 2, 2])
-        _summary_cols[0].metric("Tổng đơn trả", f"{_total_returns:,} đơn")
-        _summary_cols[0].caption("Gồm phiếu đã nhận/đã nhập kho và phiếu trong bảng chi tiết; loại trừ phiếu hủy.")
+        _summary_cols[0].metric("Tổng đơn trả (tab Tất cả)", f"{_total_returns:,} đơn")
+        _summary_cols[0].caption("Lấy toàn bộ phiếu trả năm nay trong tab Tất cả, loại phiếu hủy/gạch ngang và loại năm 2025.")
         if not _chart_df.empty:
             _donut_fig = go.Figure(go.Pie(
                 labels=_chart_df["Loại"],
