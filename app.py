@@ -1090,10 +1090,21 @@ if _page == PAGE_RETURNS:
             update_line = lines.pop()
         combined_lines = lines
         if old_note:
-            combined_lines.append(f"📝 Ghi chú cũ SAPO: {old_note}")
+            combined_lines.append(f"📝 Ghi chú cũ SAPO: {old_note[:180]}")
         if update_line:
             combined_lines.append(update_line)
         combined = "\n".join(combined_lines) if combined_lines else new_note
+        if len(combined) > 500 and old_note:
+            fixed_tail = f"\n{update_line}" if update_line else ""
+            head = "\n".join(lines)
+            available = 500 - len(head) - len("\n📝 Ghi chú cũ SAPO: ") - len(fixed_tail)
+            clipped_old = (old_note[:max(0, available - 1)] + "…") if available > 1 else ""
+            combined_lines = lines
+            if clipped_old:
+                combined_lines.append(f"📝 Ghi chú cũ SAPO: {clipped_old}")
+            if update_line:
+                combined_lines.append(update_line)
+            combined = "\n".join(combined_lines)
         return combined[:500], "Sẽ ghi"
 
     def _note_is_bulk_write_result(note):
@@ -1202,7 +1213,12 @@ if _page == PAGE_RETURNS:
         if extra:
             lines.append(extra)
         lines.append(f"🕘 Cập nhật: {note_date}")
-        return "\n".join(lines)[:500]
+        note = "\n".join(lines)
+        if len(note) <= 500:
+            return note
+        suffix = f"\n🕘 Cập nhật: {note_date}"
+        body = "\n".join(lines[:-1])
+        return body[:max(0, 500 - len(suffix))].rstrip() + suffix
 
     def _return_note_rows(codes, max_pages):
         matches = find_order_returns_by_codes(build_session(), codes, max_pages=max_pages)
