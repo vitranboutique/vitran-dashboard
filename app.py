@@ -22,7 +22,7 @@ import dohana
 import daily_report
 from sapo_client import (
     SapoAuthError, build_session, credential_present, make_fetch_json,
-    find_order_returns_by_codes, parse_codes, update_order_return_note,
+    find_order_returns_by_codes, get_order_return, parse_codes, update_order_return_note,
 )
 from picking_render import picking_html
 
@@ -1236,7 +1236,8 @@ if _page == PAGE_RETURNS:
         return body[:max(0, 500 - len(suffix))].rstrip() + suffix
 
     def _return_note_rows(codes, max_pages):
-        matches = find_order_returns_by_codes(build_session(), codes, max_pages=max_pages)
+        session = build_session()
+        matches = find_order_returns_by_codes(session, codes, max_pages=max_pages)
         rows = []
         for code in codes:
             found = matches.get(code) or []
@@ -1244,17 +1245,25 @@ if _page == PAGE_RETURNS:
                 rows.append({"Mã tìm": code, "Kết quả": "Không tìm thấy", "Mã đơn": "", "Mã trả": "", "Link hồ sơ trả": "", "Ghi chú hiện tại": ""})
                 continue
             for r in found:
-                order = r.get("order") or {}
                 rid = r.get("id") or ""
+                detail = r
+                if rid:
+                    try:
+                        detail = {**r, **(get_order_return(session, rid) or {})}
+                    except Exception:
+                        detail = r
+                order = r.get("order") or {}
+                if not order and detail.get("order"):
+                    order = detail.get("order") or {}
                 rows.append({
                     "Mã tìm": code,
                     "Kết quả": "Tìm thấy",
                     "Mã đơn": order.get("name") or "",
-                    "Mã trả": r.get("name") or "",
+                    "Mã trả": detail.get("name") or r.get("name") or "",
                     "ID phiếu trả": rid,
                     "Link hồ sơ trả": f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{rid}" if rid else "",
-                    "Ghi chú hiện tại": r.get("note") or "",
-                    "_requires_shipper": _row_requires_return_shipper(r),
+                    "Ghi chú hiện tại": detail.get("note") or "",
+                    "_requires_shipper": _row_requires_return_shipper(detail),
                 })
         return rows, matches
 
@@ -1286,6 +1295,11 @@ if _page == PAGE_RETURNS:
         if not _can_write_sapo:
             st.warning("Chức năng ghi SAPO chỉ mở cho tài khoản admin khi app đã cấu hình đăng nhập.")
         _default_codes = ""
+        if st.button("🧹 Xóa mã và kết quả dò", key="return_note_clear_btn"):
+            st.session_state["return_note_codes"] = ""
+            st.session_state.pop("return_note_preview_rows", None)
+            st.session_state.pop("return_note_write_rows", None)
+            st.rerun()
         _codes_text = st.text_area("Dán mã đơn / mã trả hàng / mã vận đơn", value=_default_codes,
                                    placeholder="VD: 260204RBTMYA9C 582422766280803724 ...",
                                    height=100, key="return_note_codes")
@@ -1393,6 +1407,10 @@ if _page == PAGE_RETURNS:
                 session = build_session()
                 for rid, info in targets.items():
                     r = info["row"]
+                    try:
+                        r = {**r, **(get_order_return(session, rid) or {})}
+                    except Exception:
+                        pass
                     order = r.get("order") or {}
                     order_name = order.get("name") or ""
                     return_name = r.get("name") or ""
