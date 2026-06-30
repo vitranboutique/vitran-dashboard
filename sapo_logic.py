@@ -579,11 +579,15 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
         return _stock_code(x) not in ("stocked", "restocked")
 
     def _ship_code(x):
-        s = x.get("shipment_status")
+        s = str(x.get("shipment_status") or "").lower()
         rtype = x.get("return_type") or "refund"
-        if rtype == "refund" and s not in ("returning", "returned"):
+        if s in ("no_return", "not_required"):
             return "no_return"
-        return s or "no_return"
+        if s in ("returning", "returned"):
+            return s
+        if rtype == "refund":
+            return "no_return"
+        return s or "unknown"
 
     rows, capped = [], False
     for p in range(1, max_pages + 1):
@@ -706,14 +710,15 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
             return None
 
     def _is_khong_can_kn(pre):
-        return "KHONG CAN KN" in pre or "KHONG CAN KHIEU NAI" in pre
+        compact = "".join(ch for ch in str(pre or "") if ch.isalnum())
+        return "KHONGCANKN" in compact or "KHONGCANKHIEUNAI" in compact
 
     def _resolved(pre):   # đã có ghi chú KẾT QUẢ chuẩn → coi như xử lý xong
         return ("THANG" in pre or "THUA" in pre or "HET HAN" in pre
                 or _is_khong_can_kn(pre))
     oc = {k: {"n": 0, "money": 0} for k in ("thang", "thua", "khong_kn", "can_kn", "het_han")}
-    # Kết quả cuối lấy theo prefix note; riêng "Không cần KN" tự tính từ nhóm
-    # Chỉ hoàn tiền/không cần trả lại/chưa nhập kho, đúng bộ lọc vận hành trên Sapo.
+    # Kết quả cuối lấy theo prefix note trong chính bảng detail.
+    # "Không cần KN" là kết luận đã xử lý/không khiếu nại, không đồng nghĩa mất hàng.
     for d in detail:
         note = d.get("note") or ""
         pre = _asc(note.split("|")[0])
@@ -722,6 +727,7 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
             amt = int(d.get("money") or 0)
         is_khong_can_kn = _is_khong_can_kn(pre)
         d["khong_can_kn_note"] = is_khong_can_kn
+        d["khong_can_kn_money"] = amt if is_khong_can_kn else None
         cat = ("thang" if "THANG" in pre else "thua" if "THUA" in pre
                else "het_han" if "HET HAN" in pre else None)
         if cat:
