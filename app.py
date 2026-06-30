@@ -2027,7 +2027,7 @@ if _page == PAGE_RETURNS:
             )
             st.plotly_chart(_outcome_fig, width="stretch")
 
-            with st.expander("🔍 Soi chi tiết theo tháng / trạng thái nhập kho", expanded=False):
+            with st.expander("🔍 Bấm xem lý do từng đơn theo tháng / trạng thái nhập kho", expanded=True):
                 _month_options = list(_month_df["Tháng"])
                 _default_month_idx = _month_options.index("04/2026") if "04/2026" in _month_options else max(0, len(_month_options) - 1)
                 _drill_cols = st.columns(2)
