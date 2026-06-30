@@ -1093,16 +1093,18 @@ if _page == PAGE_RETURNS:
         for code in codes:
             found = matches.get(code) or []
             if not found:
-                rows.append({"Mã tìm": code, "Kết quả": "Không tìm thấy", "Mã đơn": "", "Mã trả": "", "Ghi chú hiện tại": ""})
+                rows.append({"Mã tìm": code, "Kết quả": "Không tìm thấy", "Mã đơn": "", "Mã trả": "", "Link hồ sơ trả": "", "Ghi chú hiện tại": ""})
                 continue
             for r in found:
                 order = r.get("order") or {}
+                rid = r.get("id") or ""
                 rows.append({
                     "Mã tìm": code,
                     "Kết quả": "Tìm thấy",
                     "Mã đơn": order.get("name") or "",
                     "Mã trả": r.get("name") or "",
-                    "ID phiếu trả": r.get("id") or "",
+                    "ID phiếu trả": rid,
+                    "Link hồ sơ trả": f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{rid}" if rid else "",
                     "Ghi chú hiện tại": r.get("note") or "",
                 })
         return rows, matches
@@ -1156,32 +1158,42 @@ if _page == PAGE_RETURNS:
                     if not new_note:
                         results.append({
                             "Mã tìm": ", ".join(info["codes"]), "Mã đơn": order_name,
-                            "Mã trả": return_name, "Kết quả": status,
+                            "Mã trả": return_name,
+                            "Link hồ sơ trả": f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{rid}",
+                            "Kết quả": status,
                         })
                         continue
                     try:
                         update_order_return_note(session, rid, new_note)
                         results.append({
                             "Mã tìm": ", ".join(info["codes"]), "Mã đơn": order_name,
-                            "Mã trả": return_name, "Kết quả": "Đã ghi hồ sơ trả",
+                            "Mã trả": return_name,
+                            "Link hồ sơ trả": f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{rid}",
+                            "Kết quả": "Đã ghi và xác nhận",
                         })
                     except Exception as e:
                         results.append({
                             "Mã tìm": ", ".join(info["codes"]), "Mã đơn": order_name,
-                            "Mã trả": return_name, "Kết quả": f"Lỗi ghi hồ sơ trả: {e}",
+                            "Mã trả": return_name,
+                            "Link hồ sơ trả": f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{rid}",
+                            "Kết quả": f"Lỗi ghi hồ sơ trả: {e}",
                         })
                 missing = [c for c in _codes if not matches.get(c)]
                 for code in missing:
-                    results.append({"Mã tìm": code, "Mã đơn": "", "Mã trả": "", "Kết quả": "Không tìm thấy"})
+                    results.append({"Mã tìm": code, "Mã đơn": "", "Mã trả": "", "Link hồ sơ trả": "", "Kết quả": "Không tìm thấy"})
                 st.session_state["return_note_write_rows"] = results
                 st.cache_data.clear()
-                st.success(f"Đã xử lý {len(results)} dòng. Số phiếu ghi thành công: {sum(1 for x in results if x['Kết quả'] == 'Đã ghi hồ sơ trả')}.")
+                st.success(f"Đã xử lý {len(results)} dòng. Số phiếu ghi thành công: {sum(1 for x in results if x['Kết quả'] == 'Đã ghi và xác nhận')}.")
             except Exception as e:
                 st.error(f"Ghi SAPO lỗi: {e}")
         if st.session_state.get("return_note_preview_rows"):
-            st.dataframe(pd.DataFrame(st.session_state["return_note_preview_rows"]), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(st.session_state["return_note_preview_rows"]),
+                         use_container_width=True, hide_index=True,
+                         column_config={"Link hồ sơ trả": st.column_config.LinkColumn("Link hồ sơ trả")})
         if st.session_state.get("return_note_write_rows"):
-            st.dataframe(pd.DataFrame(st.session_state["return_note_write_rows"]), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(st.session_state["return_note_write_rows"]),
+                         use_container_width=True, hide_index=True,
+                         column_config={"Link hồ sơ trả": st.column_config.LinkColumn("Link hồ sơ trả")})
 
     try:
         _rip = load_returns_inprogress()

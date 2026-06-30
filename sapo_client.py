@@ -9,9 +9,11 @@ Nếu KHÔNG có credential nào -> raise SapoAuthError (app sẽ rơi về ch�
 """
 from __future__ import annotations
 
+from html import unescape
 from html.parser import HTMLParser
 import os
 import re
+import time
 from urllib.parse import urljoin
 import requests
 
@@ -152,6 +154,40 @@ def _attempt_desc(resp: requests.Response) -> str:
     return f"{req.method} {req.url} -> {resp.status_code}"
 
 
+def get_order_return(session: requests.Session, return_id) -> dict:
+    """Lấy chi tiết hồ sơ trả hàng theo id."""
+    resp = session.get(f"{BASE}/admin/order_returns/{return_id}.json", timeout=30)
+    resp.raise_for_status()
+    data = _json_or_empty(resp)
+    return data.get("order_return") or data.get("return") or data
+
+
+def _saved_return_note(session: requests.Session, return_id, expected_note: str, attempts: list[str]) -> bool:
+    expected = str(expected_note or "").strip()
+    if not expected:
+        return False
+    time.sleep(0.15)
+    try:
+        resp = session.get(f"{BASE}/admin/order_returns/{return_id}.json", timeout=30)
+        attempts.append(_attempt_desc(resp))
+        if resp.status_code < 400:
+            data = _json_or_empty(resp)
+            row = data.get("order_return") or data.get("return") or data
+            saved = str(row.get("note") or "").strip()
+            if saved == expected or expected in saved:
+                return True
+    except Exception as e:
+        attempts.append(f"GET verify json -> {type(e).__name__}: {e}")
+    try:
+        resp = session.get(f"{BASE}/admin/order_returns/{return_id}", headers={"Accept": "text/html,application/xhtml+xml"}, timeout=30)
+        attempts.append(_attempt_desc(resp))
+        if resp.status_code < 400 and expected in unescape(resp.text or ""):
+            return True
+    except Exception as e:
+        attempts.append(f"GET verify html -> {type(e).__name__}: {e}")
+    return False
+
+
 class _SapoFormParser(HTMLParser):
     def __init__(self):
         super().__init__()
@@ -197,7 +233,7 @@ def _csrf_token(html: str) -> str | None:
     return m.group(1) if m else None
 
 
-def _post_form(session: requests.Session, url: str, data: dict, token: str | None, attempts: list[str]) -> dict | None:
+def _post_form(session: requests.Session, url: str, data: dict, token: str | None, attempts: list[str]) -> requests.Response | None:
     headers = {
         "Accept": "application/json, text/javascript, */*; q=0.01",
         "X-Requested-With": "XMLHttpRequest",
@@ -208,7 +244,7 @@ def _post_form(session: requests.Session, url: str, data: dict, token: str | Non
     resp = session.post(url, data=data, headers=headers, timeout=30, allow_redirects=False)
     attempts.append(_attempt_desc(resp))
     if resp.status_code < 400:
-        return _json_or_empty(resp)
+        return resp
     return None
 
 
@@ -234,9 +270,9 @@ def _update_order_return_note_via_html(session: requests.Session, return_id, not
         fields[note_field] = note
         action = form.get("attrs", {}).get("action") or page_url
         url = urljoin(BASE, action)
-        result = _post_form(session, url, fields, token, attempts)
-        if result is not None:
-            return result
+        resp = _post_form(session, url, fields, token, attempts)
+        if resp is not None and _saved_return_note(session, return_id, note, attempts):
+            return _json_or_empty(resp)
 
     fallback_rows = [
         {"_method": "put", "order_return[note]": note},
@@ -253,9 +289,9 @@ def _update_order_return_note_via_html(session: requests.Session, return_id, not
     ]
     for url in fallback_urls:
         for data in fallback_rows:
-            result = _post_form(session, url, data, token, attempts)
-            if result is not None:
-                return result
+            resp = _post_form(session, url, data, token, attempts)
+            if resp is not None and _saved_return_note(session, return_id, note, attempts):
+                return _json_or_empty(resp)
     return None
 
 
@@ -271,7 +307,7 @@ def update_order_return_note(session: requests.Session, return_id, note: str) ->
             for payload in _note_payloads(return_id, note):
                 resp = getattr(session, method)(path, json=payload, timeout=30, allow_redirects=False)
                 attempts.append(_attempt_desc(resp))
-                if resp.status_code < 400:
+                if resp.status_code < 400 and _saved_return_note(session, return_id, note, attempts):
                     return _json_or_empty(resp)
         for data in (
             {"_method": "put", "order_return[note]": note},
@@ -279,12 +315,12 @@ def update_order_return_note(session: requests.Session, return_id, note: str) ->
         ):
             resp = session.post(path, data=data, timeout=30, allow_redirects=False)
             attempts.append(_attempt_desc(resp))
-            if resp.status_code < 400:
+            if resp.status_code < 400 and _saved_return_note(session, return_id, note, attempts):
                 return _json_or_empty(resp)
 
     result = _update_order_return_note_via_html(session, return_id, note, attempts)
     if result is not None:
         return result
 
-    tail = "; ".join(attempts[-12:])
-    raise RuntimeError(f"Không tìm được endpoint ghi note SAPO cho phiếu {return_id}. Đã thử: {tail}")
+    tail = "; ".join(attempts[-16:])
+    raise RuntimeError(f"SAPO có phản hồi nhưng đọc lại chưa thấy ghi chú được lưu cho phiếu {return_id}. Đã thử: {tail}")
