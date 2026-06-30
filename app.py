@@ -1312,85 +1312,13 @@ if _page == PAGE_RETURNS:
                 "Mã tìm": row.get("Mã tìm") or "",
                 "Mã đơn": row.get("Mã đơn") or "",
                 "Mã trả": row.get("Mã trả") or "",
+                "Hồ sơ": row.get("Link hồ sơ trả") or "",
                 "Ghi chú hiện tại": row.get("Ghi chú hiện tại") or "",
                 "Ghi chú mới": "",
                 "_return_id": row.get("_return_id") or "",
                 "_requires_shipper": row.get("_requires_shipper", False),
             })
         return out
-
-    def _render_return_lookup_table(rows):
-        if not rows:
-            return
-        html_rows = []
-        for row in rows:
-            return_code = _esc(str(row.get("Mã trả") or ""))
-            link = str(row.get("Link hồ sơ trả") or "").strip()
-            return_cell = f'<a href="{_esc(link)}" target="_blank">{return_code}</a>' if link and return_code else return_code
-            html_rows.append(
-                "<tr>"
-                f"<td>{_esc(str(row.get('Mã tìm') or ''))}</td>"
-                f"<td>{_esc(str(row.get('Kết quả') or ''))}</td>"
-                f"<td>{_esc(str(row.get('Mã đơn') or ''))}</td>"
-                f"<td>{return_cell}</td>"
-                f"<td>{_esc(str(row.get('Ghi chú hiện tại') or ''))}</td>"
-                "</tr>"
-            )
-        html = f"""
-        <style>
-          .return-lookup-wrap {{
-            max-height: 300px;
-            overflow: auto;
-            border: 1px solid #d8dee6;
-            border-radius: 8px;
-            background: #fff;
-          }}
-          .return-lookup-table {{
-            width: 100%;
-            border-collapse: collapse;
-            font-family: Arial, sans-serif;
-            font-size: 13px;
-          }}
-          .return-lookup-table th {{
-            position: sticky;
-            top: 0;
-            background: #f3f6fa;
-            color: #1f2937;
-            text-align: left;
-            z-index: 1;
-          }}
-          .return-lookup-table th,
-          .return-lookup-table td {{
-            border-bottom: 1px solid #e5e7eb;
-            padding: 8px 10px;
-            vertical-align: top;
-            white-space: pre-wrap;
-          }}
-          .return-lookup-table td:nth-child(5) {{
-            min-width: 420px;
-          }}
-          .return-lookup-table a {{
-            color: #0068ff;
-            text-decoration: none;
-            font-weight: 600;
-          }}
-        </style>
-        <div class="return-lookup-wrap">
-          <table class="return-lookup-table">
-            <thead>
-              <tr>
-                <th>Mã tìm</th>
-                <th>Kết quả</th>
-                <th>Mã đơn</th>
-                <th>Mã trả</th>
-                <th>Ghi chú hiện tại</th>
-              </tr>
-            </thead>
-            <tbody>{''.join(html_rows)}</tbody>
-          </table>
-        </div>
-        """
-        components.html(html, height=330, scrolling=False)
 
     def _return_note_rows(codes, max_pages):
         session = build_session()
@@ -1484,47 +1412,51 @@ if _page == PAGE_RETURNS:
         _full_note_plan, _full_note_valid = {}, True
         _full_note_mode = False
         if _preview_ready and st.session_state.get("return_note_preview_rows"):
-            st.markdown("**Kết quả dò mã - đọc ghi chú hiện tại trước khi quyết định ghi**")
             _lookup_rows = st.session_state["return_note_preview_rows"]
-            _render_return_lookup_table(_lookup_rows)
             _hidden_final_count = sum(
                 1 for _r in _lookup_rows
                 if _r.get("Kết quả") == "Tìm thấy" and _note_has_final_result(_r.get("Ghi chú hiện tại"))
             )
+            _not_found_count = sum(1 for _r in _lookup_rows if _r.get("Kết quả") != "Tìm thấy")
+            st.markdown("**Dò mã và ghi chú mới**")
             _full_note_mode = st.checkbox(
-                "Agent ghi full note riêng từng phiếu",
+                "Ghi full note riêng từng phiếu",
                 value=True,
                 disabled=not _preview_ready,
                 key="return_note_full_note_mode",
             )
-            st.caption("Muốn dùng phần tự tạo ghi chú đúng mẫu ở dưới thì tắt chế độ agent này.")
+            _notice = []
             if _hidden_final_count:
-                st.caption(f"Đã ẩn {_hidden_final_count} phiếu đã có kết quả cuối, không cho ghi lại ở bảng agent.")
+                _notice.append(f"ẩn {_hidden_final_count} phiếu đã có kết quả cuối")
+            if _not_found_count:
+                _notice.append(f"{_not_found_count} mã không tìm thấy")
+            _notice.append("tắt checkbox này nếu muốn dùng phần tạo ghi chú theo mẫu bên dưới")
+            st.caption(" · ".join(_notice))
             if _full_note_mode:
                 _full_seed_rows = _build_full_note_editor_rows(_lookup_rows)
                 if not _full_seed_rows:
                     st.info("Không còn phiếu nào cần nhập ghi chú mới: tất cả đã có kết quả cuối hoặc không tìm thấy.")
                 else:
-                    st.caption("Agent dán nguyên ghi chú chuẩn vào cột bên phải. Mỗi dòng ghi vào đúng một hồ sơ trả, không gom chung.")
+                    st.caption("Dán nguyên ghi chú chuẩn vào cột `Ghi chú mới`. Mỗi dòng ghi đúng một hồ sơ trả, không gom chung.")
                     _full_editor_df = st.data_editor(
                         pd.DataFrame(_full_seed_rows),
                         use_container_width=True,
                         hide_index=True,
-                        height=min(460, 46 * (len(_full_seed_rows) + 1) + 40),
+                        height=min(520, 50 * (len(_full_seed_rows) + 1) + 40),
                         key=f"return_note_full_editor_{_ascii_code(_codes_key)[:50]}",
-                        disabled=["Mã tìm", "Mã đơn", "Mã trả", "Ghi chú hiện tại", "_return_id", "_requires_shipper"],
+                        disabled=["Mã tìm", "Mã đơn", "Mã trả", "Hồ sơ", "Ghi chú hiện tại", "_return_id", "_requires_shipper"],
                         column_config={
                             "Ghi": st.column_config.CheckboxColumn("Ghi", width="small"),
-                            "Mã tìm": st.column_config.TextColumn("Mã tìm", width="medium"),
-                            "Mã đơn": st.column_config.TextColumn("Mã đơn", width="medium"),
-                            "Mã trả": st.column_config.TextColumn("Mã trả", width="medium"),
+                            "Mã tìm": st.column_config.TextColumn("Mã tìm", width="small"),
+                            "Mã đơn": st.column_config.TextColumn("Mã đơn", width="small"),
+                            "Mã trả": st.column_config.TextColumn("Mã trả", width="small"),
+                            "Hồ sơ": st.column_config.LinkColumn("Mở", width="small", display_text="Mở"),
                             "Ghi chú hiện tại": st.column_config.TextColumn("Ghi chú hiện tại", width="large"),
                             "Ghi chú mới": st.column_config.TextColumn("Ghi chú mới", width="large"),
                             "_return_id": None,
                             "_requires_shipper": None,
                         },
                     )
-                    _full_preview_rows = []
                     for _row in _full_editor_df.to_dict("records"):
                         _rid = str(_row.get("_return_id") or "")
                         if not _rid or not bool(_row.get("Ghi")):
@@ -1548,33 +1480,28 @@ if _page == PAGE_RETURNS:
                             "new_note": _new_note or "",
                             "row": _row,
                         }
-                        _full_preview_rows.append({
-                            "Mã tìm": _row.get("Mã tìm") or "",
-                            "Mã đơn": _row.get("Mã đơn") or "",
-                            "Mã trả": _row.get("Mã trả") or "",
-                            "Đối chiếu": _status,
-                            "Ghi chú sẽ ghi": _new_note or "",
-                        })
-                    with st.expander("Xem nhanh ghi chú agent sẽ ghi", expanded=False):
-                        if _full_preview_rows:
-                            st.dataframe(
-                                pd.DataFrame(_full_preview_rows),
-                                use_container_width=True,
-                                hide_index=True,
-                                column_config={"Ghi chú sẽ ghi": st.column_config.TextColumn("Ghi chú sẽ ghi", width="large")},
-                            )
-                        else:
-                            st.caption("Chưa có dòng nào nhập ghi chú mới.")
-        st.caption("Phần dưới dùng khi chị muốn tự tạo ghi chú đúng mẫu. Không dùng CẦN KN để ghi SAPO hàng loạt vì đó là trạng thái chưa chốt.")
+                    _ready_count = sum(1 for _p in _full_note_plan.values() if _p.get("new_note"))
+                    if _ready_count:
+                        st.caption(f"Đã sẵn sàng ghi {_ready_count} phiếu. App vẫn kiểm tra prefix chuẩn và tên shipper trước khi cho ghi.")
+        if (not _full_note_mode) and _preview_ready:
+            st.markdown("**Tự tạo ghi chú đúng mẫu**")
+            st.caption("Dùng phần này khi chị muốn tự soạn bằng mẫu có sẵn. Không dùng CẦN KN để ghi SAPO hàng loạt vì đó là trạng thái chưa chốt.")
         _groups = []
         for _tpl in _RETURN_NOTE_TEMPLATES:
             if _tpl["group"] not in _groups:
                 _groups.append(_tpl["group"])
-        _cfg_cols = st.columns([1, 2, 1])
-        _note_group = _cfg_cols[0].selectbox("Nhóm kết luận", _groups, key="return_note_group")
+        if _full_note_mode or not _preview_ready:
+            _note_group = _groups[0]
+        else:
+            _cfg_cols = st.columns([1, 2, 1])
+            _note_group = _cfg_cols[0].selectbox("Nhóm kết luận", _groups, key="return_note_group")
         _group_templates = [x for x in _RETURN_NOTE_TEMPLATES if x["group"] == _note_group]
-        _note_label = _cfg_cols[1].selectbox("Mẫu ghi chú chuẩn", [x["label"] for x in _group_templates], key=f"return_note_template_label_{_note_group}")
-        _show_note_details = _cfg_cols[2].checkbox("Hiện chi tiết", value=False, key="return_note_show_details")
+        if _full_note_mode or not _preview_ready:
+            _note_label = _group_templates[0]["label"]
+            _show_note_details = False
+        else:
+            _note_label = _cfg_cols[1].selectbox("Mẫu ghi chú chuẩn", [x["label"] for x in _group_templates], key=f"return_note_template_label_{_note_group}")
+            _show_note_details = _cfg_cols[2].checkbox("Hiện chi tiết", value=False, key="return_note_show_details")
         _template_row = next(x for x in _group_templates if x["label"] == _note_label)
         _template = _template_row["template"]
         _note_values = {
@@ -1650,14 +1577,18 @@ if _page == PAGE_RETURNS:
             st.code(_note_text, language="text")
         _note_valid = _note_is_bulk_write_result(_note_text)
         _shipper_valid = (not _return_has_code) or bool(str(_shipper_return or "").strip())
-        _replace_result = st.checkbox("Cho phép đổi các ghi chú kết quả cũ sang ghi chú mới", value=False,
-                                      key="return_note_replace_result")
-        _individual_mode = st.checkbox(
-            "Tự ghi theo mẫu từng mã",
-            value=False,
-            disabled=not _preview_ready,
-            key="return_note_individual_mode",
-        )
+        if _full_note_mode or not _preview_ready:
+            _replace_result = False
+            _individual_mode = False
+        else:
+            _replace_result = st.checkbox("Cho phép đổi các ghi chú kết quả cũ sang ghi chú mới", value=False,
+                                          key="return_note_replace_result")
+            _individual_mode = st.checkbox(
+                "Tự ghi theo mẫu từng mã",
+                value=False,
+                disabled=not _preview_ready,
+                key="return_note_individual_mode",
+            )
         _individual_plan, _individual_valid = {}, True
         if _individual_mode and _preview_ready and st.session_state.get("return_note_preview_rows"):
             _seed_rows = _build_individual_editor_rows(
@@ -1833,7 +1764,7 @@ if _page == PAGE_RETURNS:
                 st.success(f"Đã xử lý {len(results)} dòng. Số phiếu ghi thành công: {sum(1 for x in results if x['Kết quả'] == 'Đã ghi và xác nhận')}.")
             except Exception as e:
                 st.error(f"Ghi SAPO lỗi: {e}")
-        if _preview_ready and st.session_state.get("return_note_preview_rows"):
+        if (not _full_note_mode) and _preview_ready and st.session_state.get("return_note_preview_rows"):
             _preview_rows = _build_return_note_preview_rows(
                 st.session_state["return_note_preview_rows"], _note_text, _replace_result, _shipper_return
             )
@@ -1848,9 +1779,12 @@ if _page == PAGE_RETURNS:
                                  "Đối chiếu": st.column_config.TextColumn("Đối chiếu", width="medium"),
                              })
         if st.session_state.get("return_note_write_rows"):
-            st.dataframe(pd.DataFrame(st.session_state["return_note_write_rows"]),
+            _write_df = pd.DataFrame(st.session_state["return_note_write_rows"])
+            if "Link hồ sơ trả" in _write_df.columns:
+                _write_df = _write_df.rename(columns={"Link hồ sơ trả": "Hồ sơ"})
+            st.dataframe(_write_df,
                          use_container_width=True, hide_index=True,
-                         column_config={"Link hồ sơ trả": st.column_config.LinkColumn("Link hồ sơ trả")})
+                         column_config={"Hồ sơ": st.column_config.LinkColumn("Mở", width="small", display_text="Mở")})
 
     try:
         _rip = load_returns_inprogress()
