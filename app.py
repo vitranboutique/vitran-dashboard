@@ -1295,14 +1295,48 @@ if _page == PAGE_RETURNS:
         if not _can_write_sapo:
             st.warning("Chức năng ghi SAPO chỉ mở cho tài khoản admin khi app đã cấu hình đăng nhập.")
         _default_codes = ""
-        if st.button("🧹 Xóa mã và kết quả dò", key="return_note_clear_btn"):
-            st.session_state["return_note_codes"] = ""
-            st.session_state.pop("return_note_preview_rows", None)
-            st.session_state.pop("return_note_write_rows", None)
-            st.rerun()
-        _codes_text = st.text_area("Dán mã đơn / mã trả hàng / mã vận đơn", value=_default_codes,
-                                   placeholder="VD: 260204RBTMYA9C 582422766280803724 ...",
-                                   height=100, key="return_note_codes")
+        _code_col, _lookup_col = st.columns([5, 1])
+        with _lookup_col:
+            if st.button("🧹 Xóa", key="return_note_clear_btn", use_container_width=True):
+                st.session_state["return_note_codes"] = ""
+                st.session_state.pop("return_note_preview_rows", None)
+                st.session_state.pop("return_note_preview_key", None)
+                st.session_state.pop("return_note_write_rows", None)
+                st.rerun()
+        with _code_col:
+            _codes_text = st.text_area("Dán mã đơn / mã trả hàng / mã vận đơn", value=_default_codes,
+                                       placeholder="VD: 260204RBTMYA9C 582422766280803724 ...",
+                                       height=100, key="return_note_codes")
+        _codes = parse_codes(_codes_text)
+        _codes_key = " ".join(_codes)
+        with _lookup_col:
+            _max_pages = st.number_input("Số trang dò", min_value=10, max_value=300, value=120, step=10,
+                                         key="return_note_max_pages")
+            if st.button(f"🔎 Dò trước ({len(_codes)} mã)", disabled=(not _codes or not _can_write_sapo),
+                         key="return_note_preview_btn", use_container_width=True):
+                try:
+                    rows, _ = _return_note_rows(_codes, int(_max_pages))
+                    st.session_state["return_note_preview_rows"] = rows
+                    st.session_state["return_note_preview_key"] = _codes_key
+                    st.session_state.pop("return_note_write_rows", None)
+                except Exception as e:
+                    st.error(f"Dò phiếu trả lỗi: {e}")
+        _preview_ready = bool(_codes) and st.session_state.get("return_note_preview_key") == _codes_key
+        if _codes and not _preview_ready:
+            st.warning("Phải bấm 🔎 Dò trước cho danh sách mã hiện tại rồi mới ghi chú SAPO.")
+        if _preview_ready and st.session_state.get("return_note_preview_rows"):
+            _raw_preview_df = pd.DataFrame(st.session_state["return_note_preview_rows"])
+            _raw_preview_df = _raw_preview_df.drop(columns=[c for c in ["_requires_shipper"] if c in _raw_preview_df.columns])
+            st.markdown("**Kết quả dò mã - đọc ghi chú hiện tại trước khi quyết định ghi**")
+            st.dataframe(
+                _raw_preview_df,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Link hồ sơ trả": st.column_config.LinkColumn("Link hồ sơ trả"),
+                    "Ghi chú hiện tại": st.column_config.TextColumn("Ghi chú hiện tại", width="large"),
+                },
+            )
         st.caption("Mẫu đang có trong app: KHÔNG CẦN KN = đã nhận hàng/đã được đền/khách hoàn bị hủy/shop đóng thiếu thật; THẮNG = đã thu hồi; THUA/HẾT HẠN = mất tiền đã kết luận. Không dùng CẦN KN để ghi SAPO hàng loạt vì đó là trạng thái chưa chốt.")
         _groups = []
         for _tpl in _RETURN_NOTE_TEMPLATES:
@@ -1376,24 +1410,13 @@ if _page == PAGE_RETURNS:
             st.error("Nếu có mã vận đơn hoàn về thì bắt buộc điền tên shipper hoàn. Nếu chưa có tên shipper, đơn vẫn phải để nhóm CẦN KN/theo dõi, chưa chốt kết quả.")
         st.caption("Khi ghi thật, app sẽ tự chèn ghi chú cũ SAPO của từng phiếu vào dòng kế cuối, ngay trước dòng Cập nhật.")
         st.caption("Tool này chỉ ghi vào ghi chú hồ sơ trả hàng, là nơi bảng KN đang đọc kết quả.")
-        _max_pages = st.number_input("Số trang phiếu trả cần dò", min_value=10, max_value=300, value=120, step=10,
-                                     key="return_note_max_pages")
         _replace_result = st.checkbox("Cho phép đổi các ghi chú kết quả cũ sang ghi chú mới", value=False,
                                       key="return_note_replace_result")
-        _codes = parse_codes(_codes_text)
-        _cprev, _cwrite = st.columns([1, 1])
-        if _cprev.button(f"🔎 Dò trước ({len(_codes)} mã)", disabled=(not _codes or not _can_write_sapo), key="return_note_preview_btn"):
-            try:
-                rows, _ = _return_note_rows(_codes, int(_max_pages))
-                st.session_state["return_note_preview_rows"] = _build_return_note_preview_rows(
-                    rows, _note_text, _replace_result, _shipper_return
-                )
-            except Exception as e:
-                st.error(f"Dò phiếu trả lỗi: {e}")
         _confirm_write = st.checkbox("Tôi xác nhận ghi chú các phiếu tìm thấy vào SAPO", value=False,
                                      key="return_note_confirm_write")
-        if _cwrite.button("✍️ Ghi chú vào SAPO", disabled=(not _codes or not _confirm_write or not _can_write_sapo or not _note_valid or not _shipper_valid),
-                          key="return_note_write_btn"):
+        if st.button("✍️ Ghi chú vào SAPO",
+                     disabled=(not _codes or not _preview_ready or not _confirm_write or not _can_write_sapo or not _note_valid or not _shipper_valid),
+                     key="return_note_write_btn"):
             results = []
             try:
                 rows, matches = _return_note_rows(_codes, int(_max_pages))
@@ -1462,9 +1485,13 @@ if _page == PAGE_RETURNS:
                 st.success(f"Đã xử lý {len(results)} dòng. Số phiếu ghi thành công: {sum(1 for x in results if x['Kết quả'] == 'Đã ghi và xác nhận')}.")
             except Exception as e:
                 st.error(f"Ghi SAPO lỗi: {e}")
-        if st.session_state.get("return_note_preview_rows"):
-            _preview_df = pd.DataFrame(st.session_state["return_note_preview_rows"])
+        if _preview_ready and st.session_state.get("return_note_preview_rows"):
+            _preview_rows = _build_return_note_preview_rows(
+                st.session_state["return_note_preview_rows"], _note_text, _replace_result, _shipper_return
+            )
+            _preview_df = pd.DataFrame(_preview_rows)
             _preview_df = _preview_df.drop(columns=[c for c in ["_requires_shipper"] if c in _preview_df.columns])
+            st.markdown("**Đối chiếu theo mẫu ghi chú đang chọn**")
             st.dataframe(_preview_df,
                          use_container_width=True, hide_index=True,
                          column_config={
