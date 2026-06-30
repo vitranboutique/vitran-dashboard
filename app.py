@@ -1850,44 +1850,77 @@ if _page == PAGE_RETURNS:
         _mo[2].markdown(f"[👉 Xem {len(_khong_can_kn_list)} đơn](#don-khong-can-kn)")
         _mo[3].markdown(f"[👉 Lấy {len(_ckn_list)} đơn KN](#don-can-kn)")
         _total_returns = int(_rip.get("total_returns") or _rip.get("total") or len(_rip.get("detail") or []))
-        _all_oc = _rip.get("all_outcomes") or {}
-        _chart_items = [
-            ("Thắng", "thang", "#1D9E75"),
-            ("Thua", "thua", "#E24B4A"),
-            ("Hết hạn", "het_han", "#6B7280"),
-            ("Không cần KN", "khong_kn", "#534AB7"),
-            ("Cần KN", "can_kn", "#F59E0B"),
-        ]
-        _chart_rows = []
-        for _label, _key, _color in _chart_items:
-            _o = (_oc if _key == "can_kn" else _all_oc).get(_key) or {}
-            _n = int(_o.get("n") or 0)
-            _chart_rows.append({
-                "Loại": _label,
+
+        def _note_amount(note, fallback=0):
+            import re
+            m = re.search(r"(\d[\d.]*)\s*đ", str(note or ""))
+            if not m:
+                return int(fallback or 0)
+            try:
+                return int(m.group(1).replace(".", ""))
+            except Exception:
+                return int(fallback or 0)
+
+        def _stock_group(d):
+            sc = str(d.get("stock_code") or "").lower()
+            if sc in ("stocked", "restocked"):
+                return "Đã nhập kho"
+            if "partial" in sc or "partially" in sc:
+                return "Nhập kho 1 phần"
+            if sc in ("unstocked", "unrestock", "not_stocked", "not_restocked", "no_stock", "no_restock"):
+                return "Không nhập kho"
+            return "Chưa nhập kho"
+
+        def _note_compact(d):
+            pre = _ascii_code(str(d.get("note") or "").split("|")[0])
+            return "".join(ch for ch in pre if ch.isalnum())
+
+        def _return_outcome(d):
+            if _stock_group(d) == "Đã nhập kho":
+                return "Đã nhập kho"
+            compact = _note_compact(d)
+            if "THANG" in compact:
+                return "Thắng"
+            if "THUA" in compact:
+                return "Thua"
+            if "HETHAN" in compact:
+                return "Hết hạn"
+            if "KHONGCANKN" in compact or "KHONGCANKHIEUNAI" in compact:
+                return "Không cần KN"
+            if "DANGKN" in compact or "DANGKHANGNGHI" in compact or "DANGXULY" in compact:
+                return "Đang KN"
+            if d.get("need_kn"):
+                return "Cần KN"
+            return "Chưa chốt"
+
+        _all_returns_detail = _rip.get("all_detail") or _rip.get("detail") or []
+        _stock_order = ["Đã nhập kho", "Chưa nhập kho", "Nhập kho 1 phần", "Không nhập kho"]
+        _stock_colors = {
+            "Đã nhập kho": "#1D9E75",
+            "Chưa nhập kho": "#F59E0B",
+            "Nhập kho 1 phần": "#378ADD",
+            "Không nhập kho": "#E24B4A",
+        }
+        _stock_rows = []
+        for _label in _stock_order:
+            _n = sum(1 for d in _all_returns_detail if _stock_group(d) == _label)
+            _stock_rows.append({
+                "Nhóm": _label,
                 "Số đơn": _n,
                 "Tỉ lệ": (_n / _total_returns * 100) if _total_returns else 0,
-                "Màu": _color,
+                "Màu": _stock_colors[_label],
             })
-        _known_n = sum(x["Số đơn"] for x in _chart_rows)
-        _pending_n = max(0, _total_returns - _known_n)
-        if _pending_n:
-            _chart_rows.append({
-                "Loại": "Theo dõi/chưa chốt",
-                "Số đơn": _pending_n,
-                "Tỉ lệ": (_pending_n / _total_returns * 100) if _total_returns else 0,
-                "Màu": "#94A3B8",
-            })
-        _chart_df = pd.DataFrame(_chart_rows)
-        st.markdown("##### 📈 Tỉ lệ kết quả trên tổng đơn trả")
-        _summary_cols = st.columns([1, 2, 2])
+        _stock_df = pd.DataFrame(_stock_rows)
+        st.markdown("##### 📈 Cơ cấu tổng đơn trả")
+        _summary_cols = st.columns([1, 2])
         _summary_cols[0].metric("Tổng đơn trả (tab Tất cả)", f"{_total_returns:,} đơn")
         _summary_cols[0].caption("Lấy toàn bộ phiếu trả năm nay trong tab Tất cả, loại phiếu hủy/gạch ngang và loại năm 2025.")
-        if not _chart_df.empty:
+        if not _stock_df.empty:
             _donut_fig = go.Figure(go.Pie(
-                labels=_chart_df["Loại"],
-                values=_chart_df["Số đơn"],
+                labels=_stock_df["Nhóm"],
+                values=_stock_df["Số đơn"],
                 hole=0.58,
-                marker=dict(colors=_chart_df["Màu"], line=dict(color="white", width=2)),
+                marker=dict(colors=_stock_df["Màu"], line=dict(color="white", width=2)),
                 sort=False,
                 textinfo="label+percent",
             ))
@@ -1898,30 +1931,74 @@ if _page == PAGE_RETURNS:
                 margin=dict(t=10, b=10, l=10, r=10),
                 legend=dict(orientation="h", y=-0.12, x=0.5, xanchor="center"),
             )
-            _bar_fig = go.Figure(go.Bar(
-                x=_chart_df["Loại"],
-                y=_chart_df["Số đơn"],
-                marker_color=_chart_df["Màu"],
-                text=[f"{r['Số đơn']:,} ({r['Tỉ lệ']:.1f}%)" for r in _chart_rows],
-                textposition="outside",
-            ))
-            _bar_fig.update_layout(
-                height=300,
-                margin=dict(t=20, b=20, l=10, r=10),
-                yaxis_title="Số đơn",
-                xaxis_title="",
-                showlegend=False,
-            )
             _summary_cols[1].plotly_chart(_donut_fig, width="stretch")
-            _summary_cols[2].plotly_chart(_bar_fig, width="stretch")
+
+        _month_map = {}
+        for _d in _all_returns_detail:
+            _raw = str(_d.get("created_on") or "")
+            try:
+                _dt = datetime.fromisoformat(_raw.replace("Z", "").split(".")[0]) + timedelta(hours=7)
+            except Exception:
+                continue
+            _key = _dt.strftime("%Y-%m")
+            _label = _dt.strftime("%m/%Y")
+            _mrow = _month_map.setdefault(_key, {
+                "Tháng": _label,
+                "Tổng đơn trả": 0,
+                "Đã nhập kho": 0,
+                "Chưa nhận/chưa nhập đủ": 0,
+                "Chưa nhập kho": 0,
+                "Nhập kho 1 phần": 0,
+                "Không nhập kho": 0,
+                "Thắng": 0,
+                "Thua": 0,
+                "Hết hạn": 0,
+                "Không cần KN": 0,
+                "Cần KN": 0,
+                "Đang KN": 0,
+                "Chưa chốt": 0,
+                "Mất tiền": 0,
+            })
+            _mrow["Tổng đơn trả"] += 1
+            _sg = _stock_group(_d)
+            _mrow[_sg] += 1
+            if _sg != "Đã nhập kho":
+                _mrow["Chưa nhận/chưa nhập đủ"] += 1
+                _outcome = _return_outcome(_d)
+                if _outcome in _mrow:
+                    _mrow[_outcome] += 1
+                if _outcome in ("Thua", "Hết hạn"):
+                    _mrow["Mất tiền"] += _note_amount(_d.get("note"), _d.get("money") or 0)
+        _month_rows = [_month_map[k] for k in sorted(_month_map)]
+        if _month_rows:
+            st.markdown("##### 📅 Thống kê đơn trả theo tháng")
+            _month_df = pd.DataFrame(_month_rows)
             st.dataframe(
-                _chart_df[["Loại", "Số đơn", "Tỉ lệ"]],
+                _month_df,
                 use_container_width=True,
                 hide_index=True,
-                column_config={
-                    "Tỉ lệ": st.column_config.NumberColumn("Tỉ lệ trên tổng", format="%.1f%%"),
-                },
+                column_config={"Mất tiền": st.column_config.NumberColumn("Mất tiền", format="%dđ")},
             )
+            _month_fig = go.Figure()
+            _month_fig.add_bar(x=_month_df["Tháng"], y=_month_df["Tổng đơn trả"], name="Tổng đơn trả", marker_color="#94A3B8")
+            _month_fig.add_bar(x=_month_df["Tháng"], y=_month_df["Đã nhập kho"], name="Đã nhận/đã nhập kho", marker_color="#1D9E75")
+            _month_fig.add_bar(x=_month_df["Tháng"], y=_month_df["Chưa nhận/chưa nhập đủ"], name="Chưa nhận/chưa nhập đủ", marker_color="#F59E0B")
+            _month_fig.add_scatter(x=_month_df["Tháng"], y=_month_df["Thắng"], name="Thắng", mode="lines+markers", line=dict(color="#1D9E75", width=3))
+            _month_fig.add_scatter(x=_month_df["Tháng"], y=_month_df["Thua"], name="Thua", mode="lines+markers", line=dict(color="#E24B4A", width=3))
+            _month_fig.add_scatter(x=_month_df["Tháng"], y=_month_df["Hết hạn"], name="Hết hạn", mode="lines+markers", line=dict(color="#6B7280", width=3))
+            _month_fig.add_scatter(
+                x=_month_df["Tháng"], y=_month_df["Mất tiền"], name="Mất tiền",
+                mode="lines+markers", yaxis="y2", line=dict(color="#7F1D1D", width=3, dash="dot"),
+            )
+            _month_fig.update_layout(
+                height=420,
+                barmode="group",
+                margin=dict(t=20, b=20, l=10, r=10),
+                yaxis=dict(title="Số đơn"),
+                yaxis2=dict(title="Mất tiền", overlaying="y", side="right", showgrid=False),
+                legend=dict(orientation="h", y=1.12, x=0),
+            )
+            st.plotly_chart(_month_fig, width="stretch")
         st.markdown("##### 📊 Đang xử lý (chưa nhập kho)")
         _old_n = sum(1 for d in _rip["detail"] if (d.get("age") or 0) >= 7)
         _m = st.columns(5)
