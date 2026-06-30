@@ -597,11 +597,23 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
         if p == max_pages and len(chunk) == 250:
             capped = True
 
+    def _include_in_detail(x):
+        cdate = _vn_date_of(x.get("created_on"))
+        if not cdate or cdate.year != today.year:
+            return False
+        if not _not_fully_stocked(x):
+            return False
+        sstat = _ship_code(x)
+        if sstat not in ("returning", "returned", "no_return"):
+            return False
+        # Sapo can close refund-only/no-return rows as canceled, but they still
+        # belong in detail before note-based KHONG CAN KN filtering.
+        if x.get("status") == "canceled":
+            return (x.get("return_type") or "refund") == "refund" and sstat == "no_return"
+        return True
+
     # CHỈ tính NĂM NAY (loại hết đơn năm trước)
-    inprog = [x for x in rows
-              if x.get("status") != "canceled" and _not_fully_stocked(x)
-              and _ship_code(x) in ("returning", "returned", "no_return")
-              and _vn_date_of(x.get("created_on")) and _vn_date_of(x.get("created_on")).year == today.year]
+    inprog = [x for x in rows if _include_in_detail(x)]
 
     cnt, detail, n_complaint = {}, [], 0
     for x in inprog:
@@ -708,14 +720,16 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
         amt = _amt(note)
         if amt is None:
             amt = int(d.get("money") or 0)
+        is_khong_can_kn = _is_khong_can_kn(pre)
+        d["khong_can_kn_note"] = is_khong_can_kn
         cat = ("thang" if "THANG" in pre else "thua" if "THUA" in pre
                else "het_han" if "HET HAN" in pre else None)
         if cat:
             oc[cat]["n"] += 1
             oc[cat]["money"] += amt
-        elif d.get("ship_code") == "no_return":
+        elif is_khong_can_kn:
             oc["khong_kn"]["n"] += 1
-            oc["khong_kn"]["money"] += int(d.get("money") or 0)
+            oc["khong_kn"]["money"] += amt
     # CẦN KN (cờ need_kn, dùng cho highlight + đếm). LOẠI đơn đã có ghi chú KẾT QUẢ chuẩn.
     #  • ĐÃ GIAO NGƯỜI BÁN (returned) → MẶC ĐỊNH cần KN (bất kể tuổi).
     #  • ĐANG HOÀN HÀNG (returning) → cần KN nếu QUÁ 7 ngày; trừ refund chỉ 1 VĐ (chưa giao ĐVVC).

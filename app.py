@@ -1092,7 +1092,12 @@ if _page == PAGE_RETURNS:
         _ocard(_mo[2], "⛔ Không cần KN (mất hàng)", "khong_kn")
         _ocard(_mo[3], "🚨 Cần KN (tự tính)", "can_kn")
         _ocard(_mo[4], "⚫ Hết hạn (mất tiền)", "het_han")
-        _khong_can_kn_list = [d for d in _rip["detail"] if d.get("ship_code") == "no_return"]
+
+        def _note_is_khong_can_kn(d):
+            pre = _ascii_code(str(d.get("note") or "").split("|")[0])
+            return bool(d.get("khong_can_kn_note")) or "KHONGCANKN" in pre or "KHONGCANKHIEUNAI" in pre
+
+        _khong_can_kn_list = [d for d in _rip["detail"] if _note_is_khong_can_kn(d)]
         _ckn_list = [d for d in _rip["detail"] if d.get("need_kn")]
         _mo[2].markdown(f"[👉 Xem {len(_khong_can_kn_list)} đơn](#don-khong-can-kn)")
         _mo[3].markdown(f"[👉 Lấy {len(_ckn_list)} đơn KN](#don-can-kn)")
