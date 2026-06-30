@@ -1979,26 +1979,56 @@ if _page == PAGE_RETURNS:
                 hide_index=True,
                 column_config={"Mất tiền": st.column_config.NumberColumn("Mất tiền", format="%dđ")},
             )
-            _month_fig = go.Figure()
-            _month_fig.add_bar(x=_month_df["Tháng"], y=_month_df["Tổng đơn trả"], name="Tổng đơn trả", marker_color="#94A3B8")
-            _month_fig.add_bar(x=_month_df["Tháng"], y=_month_df["Đã nhập kho"], name="Đã nhận/đã nhập kho", marker_color="#1D9E75")
-            _month_fig.add_bar(x=_month_df["Tháng"], y=_month_df["Chưa nhận/chưa nhập đủ"], name="Chưa nhận/chưa nhập đủ", marker_color="#F59E0B")
-            _month_fig.add_scatter(x=_month_df["Tháng"], y=_month_df["Thắng"], name="Thắng", mode="lines+markers", line=dict(color="#1D9E75", width=3))
-            _month_fig.add_scatter(x=_month_df["Tháng"], y=_month_df["Thua"], name="Thua", mode="lines+markers", line=dict(color="#E24B4A", width=3))
-            _month_fig.add_scatter(x=_month_df["Tháng"], y=_month_df["Hết hạn"], name="Hết hạn", mode="lines+markers", line=dict(color="#6B7280", width=3))
-            _month_fig.add_scatter(
-                x=_month_df["Tháng"], y=_month_df["Mất tiền"], name="Mất tiền",
-                mode="lines+markers", yaxis="y2", line=dict(color="#7F1D1D", width=3, dash="dot"),
-            )
-            _month_fig.update_layout(
-                height=420,
+            _volume_fig = go.Figure()
+            _volume_fig.add_bar(x=_month_df["Tháng"], y=_month_df["Tổng đơn trả"], name="Tổng đơn trả", marker_color="#94A3B8")
+            _volume_fig.add_bar(x=_month_df["Tháng"], y=_month_df["Đã nhập kho"], name="Đã nhận/đã nhập kho", marker_color="#1D9E75")
+            _volume_fig.add_bar(x=_month_df["Tháng"], y=_month_df["Chưa nhận/chưa nhập đủ"], name="Chưa nhận/chưa nhập đủ", marker_color="#F59E0B")
+            _volume_fig.update_layout(
+                title="Sản lượng đơn trả theo tháng",
+                height=340,
                 barmode="group",
-                margin=dict(t=20, b=20, l=10, r=10),
+                margin=dict(t=42, b=20, l=10, r=10),
                 yaxis=dict(title="Số đơn"),
-                yaxis2=dict(title="Mất tiền", overlaying="y", side="right", showgrid=False),
                 legend=dict(orientation="h", y=1.12, x=0),
             )
-            st.plotly_chart(_month_fig, width="stretch")
+            st.plotly_chart(_volume_fig, width="stretch")
+
+            _trend_cols = st.columns(2)
+            _outcome_fig = go.Figure()
+            _outcome_fig.add_bar(x=_month_df["Tháng"], y=_month_df["Thắng"], name="Thắng", marker_color="#1D9E75")
+            _outcome_fig.add_bar(x=_month_df["Tháng"], y=_month_df["Thua"], name="Thua", marker_color="#E24B4A")
+            _outcome_fig.add_bar(x=_month_df["Tháng"], y=_month_df["Hết hạn"], name="Hết hạn", marker_color="#6B7280")
+            _outcome_fig.add_bar(x=_month_df["Tháng"], y=_month_df["Không cần KN"], name="Không cần KN", marker_color="#534AB7")
+            _outcome_fig.add_bar(x=_month_df["Tháng"], y=_month_df["Cần KN"], name="Cần KN", marker_color="#F59E0B")
+            _outcome_fig.add_bar(x=_month_df["Tháng"], y=_month_df["Đang KN"], name="Đang KN", marker_color="#378ADD")
+            _outcome_fig.add_bar(x=_month_df["Tháng"], y=_month_df["Chưa chốt"], name="Chưa chốt", marker_color="#CBD5E1")
+            _outcome_fig.update_layout(
+                title="Kết quả KN trong nhóm chưa nhận/chưa nhập đủ",
+                height=330,
+                barmode="stack",
+                margin=dict(t=42, b=20, l=10, r=10),
+                yaxis=dict(title="Số đơn", rangemode="tozero"),
+                legend=dict(orientation="h", y=1.18, x=0),
+            )
+            _trend_cols[0].plotly_chart(_outcome_fig, width="stretch")
+
+            _loss_fig = go.Figure()
+            _loss_fig.add_scatter(
+                x=_month_df["Tháng"], y=_month_df["Mất tiền"], name="Mất tiền",
+                mode="lines+markers+text",
+                text=[_vnd(v) if v else "" for v in _month_df["Mất tiền"]],
+                textposition="top center",
+                line=dict(color="#7F1D1D", width=3),
+                marker=dict(size=8),
+            )
+            _loss_fig.update_layout(
+                title="Tiền mất theo tháng",
+                height=330,
+                margin=dict(t=42, b=20, l=10, r=10),
+                yaxis=dict(title="Mất tiền", rangemode="tozero"),
+                legend=dict(orientation="h", y=1.12, x=0),
+            )
+            _trend_cols[1].plotly_chart(_loss_fig, width="stretch")
         st.markdown("##### 📊 Đang xử lý (chưa nhập kho)")
         _old_n = sum(1 for d in _rip["detail"] if (d.get("age") or 0) >= 7)
         _m = st.columns(5)
