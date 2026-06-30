@@ -1849,6 +1849,79 @@ if _page == PAGE_RETURNS:
         _ocard(_mo[4], "⚫ Hết hạn (mất tiền)", "het_han")
         _mo[2].markdown(f"[👉 Xem {len(_khong_can_kn_list)} đơn](#don-khong-can-kn)")
         _mo[3].markdown(f"[👉 Lấy {len(_ckn_list)} đơn KN](#don-can-kn)")
+        _total_returns = int(_rip.get("total_returns") or _rip.get("total") or len(_rip.get("detail") or []))
+        _all_oc = _rip.get("all_outcomes") or {}
+        _chart_items = [
+            ("Thắng", "thang", "#1D9E75"),
+            ("Thua", "thua", "#E24B4A"),
+            ("Hết hạn", "het_han", "#6B7280"),
+            ("Không cần KN", "khong_kn", "#534AB7"),
+            ("Cần KN", "can_kn", "#F59E0B"),
+        ]
+        _chart_rows = []
+        for _label, _key, _color in _chart_items:
+            _o = (_oc if _key == "can_kn" else _all_oc).get(_key) or {}
+            _n = int(_o.get("n") or 0)
+            _chart_rows.append({
+                "Loại": _label,
+                "Số đơn": _n,
+                "Tỉ lệ": (_n / _total_returns * 100) if _total_returns else 0,
+                "Màu": _color,
+            })
+        _known_n = sum(x["Số đơn"] for x in _chart_rows)
+        _pending_n = max(0, _total_returns - _known_n)
+        if _pending_n:
+            _chart_rows.append({
+                "Loại": "Theo dõi/chưa chốt",
+                "Số đơn": _pending_n,
+                "Tỉ lệ": (_pending_n / _total_returns * 100) if _total_returns else 0,
+                "Màu": "#94A3B8",
+            })
+        _chart_df = pd.DataFrame(_chart_rows)
+        st.markdown("##### 📈 Tỉ lệ kết quả trên tổng đơn trả")
+        _summary_cols = st.columns([1, 2, 2])
+        _summary_cols[0].metric("Tổng đơn trả", f"{_total_returns:,} đơn")
+        _summary_cols[0].caption("Gồm phiếu đã nhận/đã nhập kho và phiếu trong bảng chi tiết; loại trừ phiếu hủy.")
+        if not _chart_df.empty:
+            _donut_fig = go.Figure(go.Pie(
+                labels=_chart_df["Loại"],
+                values=_chart_df["Số đơn"],
+                hole=0.58,
+                marker=dict(colors=_chart_df["Màu"], line=dict(color="white", width=2)),
+                sort=False,
+                textinfo="label+percent",
+            ))
+            _donut_fig.update_layout(
+                annotations=[dict(text=f"{_total_returns:,}<br>đơn", x=0.5, y=0.5, showarrow=False,
+                                  font=dict(size=20, color="#111827"))],
+                height=300,
+                margin=dict(t=10, b=10, l=10, r=10),
+                legend=dict(orientation="h", y=-0.12, x=0.5, xanchor="center"),
+            )
+            _bar_fig = go.Figure(go.Bar(
+                x=_chart_df["Loại"],
+                y=_chart_df["Số đơn"],
+                marker_color=_chart_df["Màu"],
+                text=[f"{r['Số đơn']:,} ({r['Tỉ lệ']:.1f}%)" for r in _chart_rows],
+                textposition="outside",
+            ))
+            _bar_fig.update_layout(
+                height=300,
+                margin=dict(t=20, b=20, l=10, r=10),
+                yaxis_title="Số đơn",
+                xaxis_title="",
+                showlegend=False,
+            )
+            _summary_cols[1].plotly_chart(_donut_fig, width="stretch")
+            _summary_cols[2].plotly_chart(_bar_fig, width="stretch")
+            st.dataframe(
+                _chart_df[["Loại", "Số đơn", "Tỉ lệ"]],
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Tỉ lệ": st.column_config.NumberColumn("Tỉ lệ trên tổng", format="%.1f%%"),
+                },
+            )
         st.markdown("##### 📊 Đang xử lý (chưa nhập kho)")
         _old_n = sum(1 for d in _rip["detail"] if (d.get("age") or 0) >= 7)
         _m = st.columns(5)
@@ -1874,13 +1947,44 @@ if _page == PAGE_RETURNS:
             disp = f"<a href='{_esc(link)}' target='_blank'>{v}</a>" if link else v
             return f"{disp} {_cp(val)}" if val else ""
 
-        def _sub_table(items, h, show_type=False, show_reason=False, merge_delivery_vd=False):
+        def _search_norm(s):
+            return "".join(ch for ch in _ascii_code(s) if ch.isalnum())
+
+        def _row_matches_code(d, needle):
+            q = _search_norm(needle)
+            if not q:
+                return False
+            fields = [
+                d.get("order_code"), d.get("return_code"), d.get("vd_di"), d.get("vd_tra"),
+                d.get("sku"), d.get("note"), d.get("return_shipper"),
+            ]
+            return any(q in _search_norm(x) for x in fields if x)
+
+        def _row_location(d):
+            if str(d.get("stock_code") or "").lower() in ("stocked", "restocked"):
+                return "Đã nhận/đã nhập kho"
+            if d.get("need_kn"):
+                return "Cần KN"
+            if _note_is_khong_can_kn(d):
+                return "Không cần KN"
+            if d.get("ship_code") == "no_return":
+                return "Không có hàng hoàn về / chỉ hoàn tiền"
+            if d.get("loai_tra_code") == "return_and_refund":
+                return "Trả hàng hoàn tiền"
+            if d.get("loai_tra_code") == "delivery_failed":
+                return "Giao hàng thất bại"
+            return "Khác"
+
+        def _sub_table(items, h, show_type=False, show_reason=False, merge_delivery_vd=False, show_location=False):
             if not items:
                 st.caption("— Không có —")
                 return
             def _safe(v, default=""):
                 return _esc(str(v if v not in (None, "") else default))
-            cols = ["STT", "Ngày tạo", "Mã đơn", "Mã trả hàng"]
+            cols = ["STT"]
+            if show_location:
+                cols += ["Vị trí"]
+            cols += ["Ngày tạo", "Mã đơn", "Mã trả hàng"]
             cols += ["Vận đơn"] if merge_delivery_vd else ["VĐ đi", "VĐ trả về"]
             cols += ["Shipper hoàn", "Gian hàng"]
             if show_type:
@@ -1894,10 +1998,14 @@ if _page == PAGE_RETURNS:
             for i, d in enumerate(items, 1):
                 bg = "background:#fff3cd" if d.get("need_kn") else ""
                 note = d.get("note") or ""
-                tds = [f"<td class='r'>{i}</td>",
-                       f"<td>{_safe(d.get('created'))}</td>",
-                       f"<td>{_code_cell(d['order_code'], d.get('order_link'))}</td>",
-                       f"<td>{_code_cell(d.get('return_code'))}</td>"]   # KHÔNG link, chỉ copy
+                tds = [f"<td class='r'>{i}</td>"]
+                if show_location:
+                    tds.append(f"<td>{_safe(d.get('_location') or _row_location(d))}</td>")
+                tds += [
+                    f"<td>{_safe(d.get('created'))}</td>",
+                    f"<td>{_code_cell(d['order_code'], d.get('order_link'))}</td>",
+                    f"<td>{_code_cell(d.get('return_code'))}</td>",
+                ]   # KHÔNG link, chỉ copy
                 if merge_delivery_vd:
                     tds.append(f"<td>{_code_cell(d.get('vd_di') or d.get('vd_tra'))}</td>")
                 else:
@@ -1948,6 +2056,41 @@ if _page == PAGE_RETURNS:
             if giao:
                 st.markdown(f"**📥 Đã giao người bán — {len(giao)} đơn**")
                 _sub_table(giao, 260, merge_delivery_vd=(code == "delivery_failed"))
+
+        st.markdown("##### 🔎 Tìm nhanh mã đơn / mã trả / vận đơn")
+        with st.form("return_detail_search_form", clear_on_submit=False):
+            _s_cols = st.columns([5, 1])
+            _search_input = _s_cols[0].text_input(
+                "Dán hoặc quét mã",
+                value=st.session_state.get("return_detail_search_code", ""),
+                placeholder="Quét mã đơn, mã trả hàng, VĐ đi hoặc VĐ trả về",
+                label_visibility="collapsed",
+            )
+            _search_submit = _s_cols[1].form_submit_button("🔎 Tìm", use_container_width=True)
+        if _search_submit:
+            st.session_state["return_detail_search_code"] = str(_search_input or "").strip()
+        _active_search = str(st.session_state.get("return_detail_search_code") or "").strip()
+        if _active_search:
+            _search_matches = []
+            for _d in (_rip.get("all_detail") or _rip["detail"]):
+                if _row_matches_code(_d, _active_search):
+                    _r = dict(_d)
+                    _r["_location"] = _row_location(_d)
+                    _search_matches.append(_r)
+            st.markdown('<div id="ket-qua-tim-ma"></div>', unsafe_allow_html=True)
+            if _search_matches:
+                st.success(f"Tìm thấy {len(_search_matches)} dòng khớp `{_active_search}`. Xem trạng thái ngay bên dưới.")
+                _merge_search_vd = all(d.get("loai_tra_code") == "delivery_failed" for d in _search_matches)
+                _sub_table(
+                    _search_matches,
+                    min(360, 86 + 42 * len(_search_matches)),
+                    show_type=True,
+                    show_reason=True,
+                    show_location=True,
+                    merge_delivery_vd=_merge_search_vd,
+                )
+            else:
+                st.warning(f"Không tìm thấy mã `{_active_search}` trong danh sách đơn trả đang xử lý.")
 
         # ── DANH SÁCH ĐƠN CẦN KN (bấm ô "Cần KN" ở trên sẽ nhảy tới đây) ──
         st.subheader("🚨 Đơn cần KN — lấy làm khiếu nại", anchor="don-can-kn")

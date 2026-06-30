@@ -606,6 +606,58 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
                 return val
         return ""
 
+    def _return_detail_row(x, complaint=False, reason=""):
+        si = x.get("shipping_info") or {}
+        lis = x.get("line_items") or []
+        sku = "; ".join(f"{(li.get('sku') or 'N/A')}×{int(round(li.get('quantity') or 0))}" for li in lis)
+        _con = x.get("created_on")
+        try:
+            created_disp = (datetime.fromisoformat(str(_con).replace("Z", "").split(".")[0])
+                            + timedelta(hours=7)).strftime("%d/%m %H:%M")
+        except Exception:
+            created_disp = ""
+        _ch = (x.get("order") or {}).get("channel_definition") or {}
+        gian_hang = (_ch.get("branch_name") or _ch.get("main_name")
+                     or (x.get("order_source") or "").title() or "—")
+        _ocode = (x.get("order") or {}).get("name") or x.get("name") or ""
+        _osrc = (x.get("order_source") or "").lower()
+        if "tiktok" in _osrc:
+            order_link = f"https://seller-vn.tiktok.com/order?main_order_id[]={_ocode}&selected_sort=6&tab=all"
+            return_link = "https://seller-vn.tiktok.com/order/return?order_sort_comp=OrderSort_UPADTE_TIME_DESC&tab=100"
+        elif "shopee" in _osrc:
+            order_link = f"https://banhang.shopee.vn/portal/sale?search={_ocode}"
+            return_link = "https://banhang.shopee.vn/portal/sale/returnrefundcancel"
+        else:
+            order_link = ""
+            return_link = ""
+        cdate = _vn_date_of(x.get("created_on"))
+        age = (today - cdate).days if cdate else None
+        return_shipper = _return_shipper_name(x)
+        ucodes = {c for c in ([si.get("tracking_number")] + (si.get("fulfillment_tracking_numbers") or [])) if c}
+        rtype = x.get("return_type") or "refund"
+        sstat = _ship_code(x)
+        return {
+            "order_code": _ocode or "?",
+            "order_link": order_link,
+            "return_code": x.get("name") or "",
+            "return_link": return_link,
+            "gian_hang": gian_hang,
+            "created": created_disp, "created_on": _con,
+            "vd_di": (si.get("fulfillment_tracking_numbers") or [None])[0],
+            "vd_tra": si.get("tracking_number"),
+            "return_shipper": return_shipper,
+            "has_return_shipper": bool(return_shipper),
+            "note": (x.get("note") or "").strip(),
+            "loai_tra": _type_vn.get(rtype, rtype), "loai_tra_code": rtype,
+            "ship_status": _ship_vn.get(sstat, sstat), "ship_code": sstat,
+            "stock_status": _stock_vn.get(_stock_code(x), _stock_code(x) or "Chưa rõ"),
+            "stock_code": _stock_code(x),
+            "n_track": len(ucodes), "age": age, "complaint": complaint, "reason": reason,
+            "sku": sku, "qty": int(round(x.get("total_quantity") or 0)),
+            "money": int(round(x.get("total_price") or 0)),
+            "need_kn": False,
+        }
+
     rows, capped = [], False
     for p in range(1, max_pages + 1):
         chunk = fetch_json("/admin/order_returns.json", limit=250, page=p).get("order_returns", [])
@@ -617,6 +669,14 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
             break
         if p == max_pages and len(chunk) == 250:
             capped = True
+
+    def _include_in_total_returns(x):
+        cdate = _vn_date_of(x.get("created_on"))
+        if not cdate or cdate.year != today.year:
+            return False
+        if _is_canceled_return(x):
+            return False
+        return True
 
     def _include_in_detail(x):
         cdate = _vn_date_of(x.get("created_on"))
@@ -632,6 +692,7 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
         return True
 
     # CHỈ tính NĂM NAY (loại hết đơn năm trước)
+    all_returns = [x for x in rows if _include_in_total_returns(x)]
     inprog = [x for x in rows if _include_in_detail(x)]
 
     cnt, detail, n_complaint = {}, [], 0
@@ -663,54 +724,16 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
             complaint, reason = False, ("Đang hoàn hàng — theo dõi" if sstat == "returning" else "")
         if complaint:
             n_complaint += 1
-        lis = x.get("line_items") or []
-        sku = "; ".join(f"{(li.get('sku') or 'N/A')}×{int(round(li.get('quantity') or 0))}" for li in lis)
-        _con = x.get("created_on")
-        try:
-            created_disp = (datetime.fromisoformat(str(_con).replace("Z", "").split(".")[0])
-                            + timedelta(hours=7)).strftime("%d/%m %H:%M")
-        except Exception:
-            created_disp = ""
-        _ch = (x.get("order") or {}).get("channel_definition") or {}
-        gian_hang = (_ch.get("branch_name") or _ch.get("main_name")
-                     or (x.get("order_source") or "").title() or "—")
-        # LINK mở đơn trên sàn (Sapo source_url; order.name == source_identifier nên tự dựng được).
-        _ocode = (x.get("order") or {}).get("name") or x.get("name") or ""
-        _osrc = (x.get("order_source") or "").lower()
-        if "tiktok" in _osrc:
-            order_link = f"https://seller-vn.tiktok.com/order?main_order_id[]={_ocode}&selected_sort=6&tab=all"
-        elif "shopee" in _osrc:
-            order_link = f"https://banhang.shopee.vn/portal/sale?search={_ocode}"
-        else:
-            order_link = ""
-        _rid = x.get("id")
-        if "tiktok" in _osrc:        # trang Quản lý trả hàng TikTok (search client-side → dán mã tìm)
-            return_link = "https://seller-vn.tiktok.com/order/return?order_sort_comp=OrderSort_UPADTE_TIME_DESC&tab=100"
-        elif "shopee" in _osrc:      # trang Quản lý trả hàng/hoàn tiền Shopee
-            return_link = "https://banhang.shopee.vn/portal/sale/returnrefundcancel"
-        else:
-            return_link = ""
-        detail.append({
-            "order_code": _ocode or "?",
-            "order_link": order_link,
-            "return_code": x.get("name") or "",          # MÃ TRẢ HÀNG (mã phiếu trả)
-            "return_link": return_link,                  # link tới PHIẾU TRẢ trên Sapo
-            "gian_hang": gian_hang,
-            "created": created_disp, "created_on": _con,
-            "vd_di": (si.get("fulfillment_tracking_numbers") or [None])[0],   # VĐ GIAO ĐI (trên đơn)
-            "vd_tra": si.get("tracking_number"),                              # VĐ TRẢ VỀ (leg hoàn)
-            "return_shipper": return_shipper,
-            "has_return_shipper": bool(return_shipper),
-            "note": (x.get("note") or "").strip(),                            # ghi chú cạnh mã đơn trả
-            "loai_tra": _type_vn.get(rtype, rtype), "loai_tra_code": rtype,
-            "ship_status": _ship_vn.get(sstat, sstat), "ship_code": sstat,
-            "stock_status": _stock_vn.get(_stock_code(x), _stock_code(x) or "Chưa rõ"),
-            "stock_code": _stock_code(x),
-            "n_track": n_track, "age": age, "complaint": complaint, "reason": reason,
-            "sku": sku, "qty": int(round(x.get("total_quantity") or 0)),
-            "money": int(round(x.get("total_price") or 0)),
-        })
+        detail.append(_return_detail_row(x, complaint=complaint, reason=reason))
     detail.sort(key=lambda d: d["created_on"] or "", reverse=True)   # MỚI NHẤT lên đầu
+    detail_by_return = {d.get("return_code"): d for d in detail if d.get("return_code")}
+    all_detail = []
+    for x in all_returns:
+        row = _return_detail_row(x)
+        if row.get("return_code") in detail_by_return:
+            row = detail_by_return[row.get("return_code")]
+        all_detail.append(row)
+    all_detail.sort(key=lambda d: d["created_on"] or "", reverse=True)
 
     # THỐNG KÊ KẾT QUẢ KHIẾU NẠI theo PREFIX ghi chú trong đúng danh sách đang xử lý.
     # Giữ cùng phạm vi với bảng chi tiết và ô CẦN KN, tránh trộn cả phiếu đã nhập kho/đã đóng.
@@ -738,6 +761,22 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
         return ("THANG" in pre or "THUA" in pre or "HET HAN" in pre
                 or _is_khong_can_kn(pre))
     oc = {k: {"n": 0, "money": 0} for k in ("thang", "thua", "khong_kn", "can_kn", "het_han")}
+    all_oc = {k: {"n": 0, "money": 0} for k in ("thang", "thua", "khong_kn", "het_han")}
+    for x in all_returns:
+        note = x.get("note") or ""
+        pre = _asc(note.split("|")[0])
+        amt = _amt(note)
+        if amt is None:
+            amt = int(round(x.get("total_price") or 0))
+        is_khong_can_kn = _is_khong_can_kn(pre)
+        cat = ("thang" if "THANG" in pre else "thua" if "THUA" in pre
+               else "het_han" if "HET HAN" in pre else None)
+        if cat:
+            all_oc[cat]["n"] += 1
+            all_oc[cat]["money"] += amt
+        elif is_khong_can_kn:
+            all_oc["khong_kn"]["n"] += 1
+            all_oc["khong_kn"]["money"] += amt
     # Kết quả cuối lấy theo prefix note trong chính bảng detail.
     # "Không cần KN" là kết luận đã xử lý/không khiếu nại, không đồng nghĩa mất hàng.
     for d in detail:
@@ -779,8 +818,9 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
         oc["can_kn"]["money"] += amt if amt is not None else int(d.get("money") or 0)
 
     return {
-        "total": len(inprog), "capped": capped, "n_complaint": n_complaint,
+        "total": len(inprog), "total_returns": len(all_returns), "capped": capped, "n_complaint": n_complaint,
         "outcomes": oc,
+        "all_outcomes": all_oc,
         "refund": cnt.get("return_and_refund", {"returning": 0, "returned": 0}),
         "fail": cnt.get("delivery_failed", {"returning": 0, "returned": 0}),
         "refund_only": cnt.get("refund", {"returning": 0, "returned": 0, "no_return": 0}),
@@ -788,6 +828,7 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
         "tot_returned": sum(c.get("returned", 0) for c in cnt.values()),
         "tot_no_return": sum(c.get("no_return", 0) for c in cnt.values()),
         "detail": detail,
+        "all_detail": all_detail,
     }
 
 
