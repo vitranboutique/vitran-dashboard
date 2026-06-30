@@ -1960,21 +1960,40 @@ if _page == PAGE_RETURNS:
         if _month_rows:
             st.markdown("##### 📅 Thống kê đơn trả theo tháng")
             _month_df = pd.DataFrame(_month_rows)
+            _month_show_df = _month_df.copy()
+            _month_show_df["Mất tiền"] = _month_show_df["Mất tiền"].map(_vnd)
             st.dataframe(
-                _month_df,
+                _month_show_df,
                 use_container_width=True,
                 hide_index=True,
-                column_config={"Mất tiền": st.column_config.NumberColumn("Mất tiền", format="%dđ")},
             )
             _volume_fig = go.Figure()
-            _volume_fig.add_bar(x=_month_df["Tháng"], y=_month_df["Tổng đơn trả"], name="Tổng đơn trả", marker_color="#94A3B8")
-            _volume_fig.add_bar(x=_month_df["Tháng"], y=_month_df["Đã nhập kho"], name="Đã nhận/đã nhập kho", marker_color="#1D9E75")
-            _volume_fig.add_bar(x=_month_df["Tháng"], y=_month_df["Chưa nhận/chưa nhập đủ"], name="Chưa nhận/chưa nhập đủ", marker_color="#F59E0B")
+            _total_pct = ["100%" for _ in _month_df["Tổng đơn trả"]]
+            _received_pct = [
+                f"{(v / t * 100):.1f}%" if t else ""
+                for v, t in zip(_month_df["Đã nhập kho"], _month_df["Tổng đơn trả"])
+            ]
+            _open_pct = [
+                f"{(v / t * 100):.1f}%" if t else ""
+                for v, t in zip(_month_df["Chưa nhận/chưa nhập đủ"], _month_df["Tổng đơn trả"])
+            ]
+            _volume_fig.add_bar(
+                x=_month_df["Tháng"], y=_month_df["Tổng đơn trả"], name="Tổng đơn trả",
+                marker_color="#94A3B8", text=_total_pct, textposition="outside",
+            )
+            _volume_fig.add_bar(
+                x=_month_df["Tháng"], y=_month_df["Đã nhập kho"], name="Đã nhận/đã nhập kho",
+                marker_color="#1D9E75", text=_received_pct, textposition="outside",
+            )
+            _volume_fig.add_bar(
+                x=_month_df["Tháng"], y=_month_df["Chưa nhận/chưa nhập đủ"], name="Chưa nhận/chưa nhập đủ",
+                marker_color="#F59E0B", text=_open_pct, textposition="outside",
+            )
             _volume_fig.update_layout(
                 title="Sản lượng đơn trả theo tháng",
                 height=340,
                 barmode="group",
-                margin=dict(t=42, b=20, l=10, r=10),
+                margin=dict(t=54, b=20, l=10, r=10),
                 yaxis=dict(title="Số đơn"),
                 legend=dict(orientation="h", y=1.12, x=0),
             )
@@ -2129,11 +2148,12 @@ if _page == PAGE_RETURNS:
             components.html(html, height=h, scrolling=True)
 
         def _type_block(title, code):
-            items = [d for d in _rip["detail"] if d["loai_tra_code"] == code and d["ship_code"] != "no_return"]
+            items = [d for d in _rip["detail"] if d["loai_tra_code"] == code and (code == "refund" or d["ship_code"] != "no_return")]
             if not items:
                 return
             hoan = [d for d in items if d["ship_code"] == "returning"]
             giao = [d for d in items if d["ship_code"] == "returned"]
+            khong_hoan = [d for d in items if d["ship_code"] == "no_return"]
             st.markdown(f"### {title} — {len(items)} đơn")
             if hoan:
                 st.markdown(f"**🚚 Đang hoàn hàng — {len(hoan)} đơn**")
@@ -2141,6 +2161,9 @@ if _page == PAGE_RETURNS:
             if giao:
                 st.markdown(f"**📥 Đã giao người bán — {len(giao)} đơn**")
                 _sub_table(giao, 260, merge_delivery_vd=(code == "delivery_failed"))
+            if khong_hoan:
+                st.markdown(f"**🚫 Không có hàng hoàn về — {len(khong_hoan)} đơn**")
+                _sub_table(khong_hoan, 260)
 
         st.markdown("##### 🔎 Tìm nhanh mã đơn / mã trả / vận đơn")
         with st.form("return_detail_search_form", clear_on_submit=False):
@@ -2186,13 +2209,11 @@ if _page == PAGE_RETURNS:
         st.subheader("⛔ Đơn không cần KN — đã có kết luận", anchor="don-khong-can-kn")
         st.caption("Các đơn trong bảng detail đã có ghi chú KHÔNG CẦN KN: đã nhận hàng, đã nhận/được đền tiền, hoặc shop đóng thiếu thật. Nhóm này không trộn vào danh sách CẦN KN.")
         _sub_table(_khong_can_kn_list, 300)
-        st.subheader("🚫 Đơn không có hàng hoàn về / chỉ hoàn tiền", anchor="don-khong-tra-hang")
-        st.caption("Bảng này là trạng thái vận chuyển/loại phiếu, khác với kết luận KHÔNG CẦN KN. Nếu chưa có ghi chú kết luận chuẩn thì vẫn thuộc nhóm CẦN KN; vẫn có thể KN thắng nếu sàn/shipper bồi thường. Phiếu bị hủy/gạch ngang đã được loại khỏi bảng detail.")
-        _sub_table(_no_return_list, 340, show_type=True)
         st.divider()
         st.markdown("### 📋 Chi tiết còn hàng hoàn về theo loại")
         _type_block("💸 Trả hàng hoàn tiền", "return_and_refund")
         _type_block("📕 Giao hàng thất bại", "delivery_failed")
+        _type_block("🚫 Chỉ hoàn tiền / không có hàng hoàn về", "refund")
         _other = [d for d in _rip["detail"]
                   if d["loai_tra_code"] not in ("return_and_refund", "delivery_failed", "refund")
                   and d["ship_code"] != "no_return"]
