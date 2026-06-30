@@ -161,9 +161,17 @@ def _picking_deadline_vn(created_vn):
     return cutoff if created_vn < cutoff else cutoff + timedelta(days=1)
 
 
+def _shipping_service_label(order, shipping_line):
+    for key in ("service_name", "shipping_service", "service_type", "delivery_service", "title"):
+        val = shipping_line.get(key)
+        if val:
+            return val
+    return "Hỏa tốc" if order.get("shipment_category") == "express" else "Nhanh"
+
+
 def _summarize_picking(orders):
     today = (_now_utc() + timedelta(hours=7)).date()
-    channels, stores, carriers, sku = {}, {}, {}, {}
+    channels, stores, carriers, services, sku = {}, {}, {}, {}, {}
     total_qty = old = new = late = 0
     late_list = []
     for o in orders:
@@ -172,9 +180,11 @@ def _summarize_picking(orders):
         store = cd.get("branch_name") or ch or "Khác"
         sl = (o.get("shipping_lines") or [{}])[0]
         carrier = sl.get("carrier_name") or sl.get("title") or "Chưa rõ"
+        service = _shipping_service_label(o, sl)
         channels[ch] = channels.get(ch, 0) + 1
         stores[store] = stores.get(store, 0) + 1
         carriers[carrier] = carriers.get(carrier, 0) + 1
+        services[service] = services.get(service, 0) + 1
         for li in (o.get("line_items") or []):
             s = li.get("sku") or "N/A"
             q = li.get("quantity", 0) or 0
@@ -198,6 +208,7 @@ def _summarize_picking(orders):
         "sku_count": len(sku),
         "old": old, "new": new, "late": late, "late_list": late_list,
         "channels": srt(channels), "stores": srt(stores), "carriers": srt(carriers),
+        "services": srt(services),
         "skus": sorted(sku.items(), key=lambda x: (-x[1], str(x[0]))),
     }
 

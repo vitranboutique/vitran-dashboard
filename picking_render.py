@@ -4,6 +4,7 @@ Trả về 1 chuỗi HTML (nhúng bằng st.components.v1.html) gồm: nút In K
 (hỏa tốc trên, thường dưới), in liền khối khổ 80mm không bị cắt giữa chừng.
 """
 import json
+import re
 from html import escape as _esc
 
 RECEIPT_CSS = """
@@ -20,10 +21,13 @@ RECEIPT_CSS = """
   .subkv{display:grid;grid-template-columns:1fr auto;gap:2px 8px;font-size:13px;font-weight:700;}
   .subkv .v{text-align:right;}
   .line{border-top:2px solid #111;margin:8px 0;}
-  .skuhead{display:grid;grid-template-columns:1fr auto;font-size:13px;font-weight:900;}
-  .skutable{border-top:1px solid #111;margin-top:3px;}
-  .skurow{display:grid;grid-template-columns:1fr auto;padding:3px 0;border-bottom:1px solid #999;font-size:13px;font-weight:700;}
+  .skuhead{display:grid;grid-template-columns:1fr 52px;font-size:13px;font-weight:900;border:2px solid #111;border-bottom:0;text-align:center;}
+  .skuhead>div,.skurow>div{padding:4px 6px;}
+  .skuhead>div:first-child,.skurow>div:first-child{border-right:1px solid #111;}
+  .skutable{border:2px solid #111;border-top:0;margin-top:0;}
+  .skurow{display:grid;grid-template-columns:1fr 52px;border-bottom:1px solid #777;font-size:13px;font-weight:800;}
   .skurow .qty{text-align:right;}
+  .skusep{border-top:2px dashed #111;margin:4px 0;}
   .footer-line{border-top:2px solid #111;margin:12px 0 8px;}
   .sign{display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px;font-weight:800;text-align:center;}
 """
@@ -42,10 +46,13 @@ PRINT_CSS = """
   .subkv{display:grid;grid-template-columns:1fr auto;gap:2px 8px;font-size:13px;font-weight:700;}
   .subkv .v{text-align:right;}
   .line{border-top:2px solid #111;margin:8px 0;}
-  .skuhead{display:grid;grid-template-columns:1fr auto;font-size:13px;font-weight:900;}
-  .skutable{border-top:1px solid #111;margin-top:3px;}
-  .skurow{display:grid;grid-template-columns:1fr auto;padding:3px 0;border-bottom:1px solid #999;font-size:13px;font-weight:700;page-break-inside:avoid;break-inside:avoid;}
+  .skuhead{display:grid;grid-template-columns:1fr 52px;font-size:13px;font-weight:900;border:2px solid #111;border-bottom:0;text-align:center;}
+  .skuhead>div,.skurow>div{padding:4px 6px;}
+  .skuhead>div:first-child,.skurow>div:first-child{border-right:1px solid #111;}
+  .skutable{border:2px solid #111;border-top:0;margin-top:0;}
+  .skurow{display:grid;grid-template-columns:1fr 52px;border-bottom:1px solid #777;font-size:13px;font-weight:800;page-break-inside:avoid;break-inside:avoid;}
   .skurow .qty{text-align:right;}
+  .skusep{border-top:2px dashed #111;margin:4px 0;page-break-after:avoid;break-after:avoid;}
   .footer-line{border-top:2px solid #111;margin:12px 0 8px;}
   .sign{display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px;font-weight:800;text-align:center;page-break-inside:avoid;break-inside:avoid;}
   *{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
@@ -58,11 +65,45 @@ def _subkv(d):
     return "".join(f'<div>{_esc(str(k))}:</div><div class="v">{v}</div>' for k, v in d.items())
 
 
+def _natural_key(text):
+    return [int(p) if p.isdigit() else p.lower() for p in re.split(r"(\d+)", str(text))]
+
+
+def _sku_group(sku):
+    first = str(sku or "N/A").strip().split("-", 1)[0].strip()
+    return first.upper() if first else "N/A"
+
+
+def _grouped_sku_rows(skus):
+    groups = {}
+    for sku, qty in skus or []:
+        try:
+            q = int(qty)
+        except Exception:
+            q = qty or 0
+        group = _sku_group(sku)
+        groups.setdefault(group, {"total": 0, "rows": []})
+        groups[group]["total"] += q if isinstance(q, int) else 0
+        groups[group]["rows"].append((str(sku), q))
+
+    if not groups:
+        return '<div class="skurow"><div>-</div><div class="qty">0</div></div>'
+
+    html = []
+    ordered_groups = sorted(groups.items(), key=lambda x: (-x[1]["total"], _natural_key(x[0])))
+    for idx, (_group, info) in enumerate(ordered_groups):
+        if idx:
+            html.append('<div class="skusep"></div>')
+        rows = sorted(info["rows"], key=lambda x: (-(x[1] if isinstance(x[1], int) else 0), _natural_key(x[0])))
+        html.extend(
+            f'<div class="skurow"><div>{_esc(sku)}</div><div class="qty">{qty}</div></div>'
+            for sku, qty in rows
+        )
+    return "".join(html)
+
+
 def _slip(title, accent, g, now_str):
-    skurows = "".join(
-        f'<div class="skurow"><div>{_esc(str(s))}</div><div class="qty">{q}</div></div>'
-        for s, q in g["skus"]
-    ) or '<div class="skurow"><div>-</div><div class="qty">0</div></div>'
+    skurows = _grouped_sku_rows(g.get("skus"))
     late = ""
     if g["late"]:
         late = (f'<div class="kv" style="color:#c00"><div>&#9888; XÁC NHẬN TRỄ:</div>'
@@ -81,9 +122,10 @@ def _slip(title, accent, g, now_str):
     <div>Đơn CŨ (tồn):</div><div class="v">{g['old']}</div>
   </div>
   {late}
-  <div class="section"><h3>KÊNH</h3><div class="subkv">{_subkv(g['channels'])}</div></div>
-  <div class="section"><h3>GIAN HÀNG</h3><div class="subkv">{_subkv(g['stores'])}</div></div>
-  <div class="section"><h3>ĐVVC</h3><div class="subkv">{_subkv(g['carriers'])}</div></div>
+  <div class="section"><h3>KÊNH BÁN</h3><div class="subkv">{_subkv(g.get('channels'))}</div></div>
+  <div class="section"><h3>GIAN HÀNG</h3><div class="subkv">{_subkv(g.get('stores'))}</div></div>
+  <div class="section"><h3>ĐỐI TÁC GIAO HÀNG</h3><div class="subkv">{_subkv(g.get('carriers'))}</div></div>
+  <div class="section"><h3>DỊCH VỤ VC</h3><div class="subkv">{_subkv(g.get('services'))}</div></div>
   <div class="line"></div>
   <div class="skuhead"><div>SKU</div><div>SL</div></div>
   <div class="skutable">{skurows}</div>
