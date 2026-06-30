@@ -288,21 +288,3 @@ def update_order_return_note(session: requests.Session, return_id, note: str) ->
 
     tail = "; ".join(attempts[-12:])
     raise RuntimeError(f"Không tìm được endpoint ghi note SAPO cho phiếu {return_id}. Đã thử: {tail}")
-
-
-def update_order_note(session: requests.Session, order_id, note: str) -> dict:
-    """Cập nhật ghi chú đơn hàng chính theo REST API chính thức của Sapo."""
-    resp = session.put(
-        f"{BASE}/admin/orders/{order_id}.json",
-        json={"order": {"note": note}},
-        timeout=30,
-    )
-    resp.raise_for_status()
-    return _json_or_empty(resp)
-
-
-def get_order(session: requests.Session, order_id) -> dict:
-    """Lấy chi tiết đơn hàng chính."""
-    resp = session.get(f"{BASE}/admin/orders/{order_id}.json", timeout=30)
-    resp.raise_for_status()
-    return (_json_or_empty(resp) or {}).get("order") or {}

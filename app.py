@@ -22,8 +22,7 @@ import dohana
 import daily_report
 from sapo_client import (
     SapoAuthError, build_session, credential_present, make_fetch_json,
-    find_order_returns_by_codes, get_order, parse_codes, update_order_note,
-    update_order_return_note,
+    find_order_returns_by_codes, parse_codes, update_order_return_note,
 )
 from picking_render import picking_html
 
@@ -1120,12 +1119,7 @@ if _page == PAGE_RETURNS:
         _note_text = st.text_input("Ghi chú sẽ đưa lên đầu note SAPO",
                                    value="⚪ KHÔNG CẦN KN | Đã nhận hàng hoàn ở Sapo cũ",
                                    key="return_note_text")
-        _write_target = st.selectbox(
-            "Ghi chú vào đâu",
-            ["Hồ sơ trả hàng (dashboard đọc mục này)", "Đơn hàng chính (API chuẩn Sapo)"],
-            key="return_note_write_target",
-        )
-        st.caption("Hồ sơ trả hàng dùng để bảng KN đọc kết quả. Đơn hàng chính dùng endpoint chuẩn trong tài liệu Sapo: PUT /admin/orders/{id}.json.")
+        st.caption("Tool này chỉ ghi vào ghi chú hồ sơ trả hàng, là nơi bảng KN đang đọc kết quả.")
         _max_pages = st.number_input("Số trang phiếu trả cần dò", min_value=10, max_value=300, value=120, step=10,
                                      key="return_note_max_pages")
         _replace_result = st.checkbox("Cho phép đổi các ghi chú kết quả cũ sang ghi chú mới", value=False,
@@ -1156,40 +1150,32 @@ if _page == PAGE_RETURNS:
                 for rid, info in targets.items():
                     r = info["row"]
                     order = r.get("order") or {}
-                    order_id = order.get("id") or r.get("order_id")
                     order_name = order.get("name") or ""
                     return_name = r.get("name") or ""
-                    if _write_target.startswith("Đơn hàng chính"):
-                        if not order_id:
-                            results.append({
-                                "Mã tìm": ", ".join(info["codes"]), "Mã đơn": order_name,
-                                "Mã trả": return_name, "Kết quả": "Thiếu ID đơn hàng",
-                            })
-                            continue
-                        current_order = get_order(session, order_id)
-                        new_note, status = _compose_return_note(current_order.get("note"), _note_text, _replace_result)
-                    else:
-                        new_note, status = _compose_return_note(r.get("note"), _note_text, _replace_result)
+                    new_note, status = _compose_return_note(r.get("note"), _note_text, _replace_result)
                     if not new_note:
                         results.append({
                             "Mã tìm": ", ".join(info["codes"]), "Mã đơn": order_name,
                             "Mã trả": return_name, "Kết quả": status,
                         })
                         continue
-                    if _write_target.startswith("Đơn hàng chính"):
-                        update_order_note(session, order_id, new_note)
-                    else:
+                    try:
                         update_order_return_note(session, rid, new_note)
-                    results.append({
-                        "Mã tìm": ", ".join(info["codes"]), "Mã đơn": order_name,
-                        "Mã trả": return_name, "Kết quả": "Đã ghi SAPO",
-                    })
+                        results.append({
+                            "Mã tìm": ", ".join(info["codes"]), "Mã đơn": order_name,
+                            "Mã trả": return_name, "Kết quả": "Đã ghi hồ sơ trả",
+                        })
+                    except Exception as e:
+                        results.append({
+                            "Mã tìm": ", ".join(info["codes"]), "Mã đơn": order_name,
+                            "Mã trả": return_name, "Kết quả": f"Lỗi ghi hồ sơ trả: {e}",
+                        })
                 missing = [c for c in _codes if not matches.get(c)]
                 for code in missing:
                     results.append({"Mã tìm": code, "Mã đơn": "", "Mã trả": "", "Kết quả": "Không tìm thấy"})
                 st.session_state["return_note_write_rows"] = results
                 st.cache_data.clear()
-                st.success(f"Đã xử lý {len(results)} dòng. Số phiếu ghi thành công: {sum(1 for x in results if x['Kết quả'] == 'Đã ghi SAPO')}.")
+                st.success(f"Đã xử lý {len(results)} dòng. Số phiếu ghi thành công: {sum(1 for x in results if x['Kết quả'] == 'Đã ghi hồ sơ trả')}.")
             except Exception as e:
                 st.error(f"Ghi SAPO lỗi: {e}")
         if st.session_state.get("return_note_preview_rows"):
