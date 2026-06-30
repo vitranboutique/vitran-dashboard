@@ -1278,9 +1278,11 @@ if _page == PAGE_RETURNS:
                 continue
             out.append({
                 "Ghi": True,
-                "Mã tìm": row.get("Mã tìm") or "",
+                "Ngày tạo": row.get("Ngày tạo") or "",
                 "Mã đơn": row.get("Mã đơn") or "",
                 "Mã trả": row.get("Mã trả") or "",
+                "VĐ đi": row.get("VĐ đi") or "",
+                "VĐ trả về": row.get("VĐ trả về") or "",
                 "_return_id": row.get("_return_id") or "",
                 "Mẫu ghi chú": default_template_label,
                 "Sàn": "TikTok",
@@ -1309,9 +1311,11 @@ if _page == PAGE_RETURNS:
                 continue
             out.append({
                 "Ghi": True,
-                "Mã tìm": row.get("Mã tìm") or "",
+                "Ngày tạo": row.get("Ngày tạo") or "",
                 "Mã đơn": row.get("Mã đơn") or "",
                 "Mã trả": row.get("Mã trả") or "",
+                "VĐ đi": row.get("VĐ đi") or "",
+                "VĐ trả về": row.get("VĐ trả về") or "",
                 "Hồ sơ": row.get("Link hồ sơ trả") or "",
                 "Ghi chú hiện tại": row.get("Ghi chú hiện tại") or "",
                 "Ghi chú mới": "",
@@ -1327,7 +1331,11 @@ if _page == PAGE_RETURNS:
         for code in codes:
             found = matches.get(code) or []
             if not found:
-                rows.append({"Mã tìm": code, "Kết quả": "Không tìm thấy", "Mã đơn": "", "Mã trả": "", "_return_id": "", "Link hồ sơ trả": "", "Ghi chú hiện tại": ""})
+                rows.append({
+                    "Kết quả": "Không tìm thấy", "Ngày tạo": "", "Mã đơn": code, "Mã trả": "",
+                    "VĐ đi": "", "VĐ trả về": "", "_return_id": "", "Link hồ sơ trả": "",
+                    "Ghi chú hiện tại": "",
+                })
                 continue
             for r in found:
                 rid = r.get("id") or ""
@@ -1340,11 +1348,20 @@ if _page == PAGE_RETURNS:
                 order = r.get("order") or {}
                 if not order and detail.get("order"):
                     order = detail.get("order") or {}
+                si = detail.get("shipping_info") or r.get("shipping_info") or {}
+                created_raw = detail.get("created_on") or r.get("created_on") or ""
+                try:
+                    created_disp = (datetime.fromisoformat(str(created_raw).replace("Z", "").split(".")[0])
+                                    + timedelta(hours=7)).strftime("%d/%m %H:%M")
+                except Exception:
+                    created_disp = ""
                 rows.append({
-                    "Mã tìm": code,
                     "Kết quả": "Tìm thấy",
+                    "Ngày tạo": created_disp,
                     "Mã đơn": order.get("name") or "",
                     "Mã trả": detail.get("name") or r.get("name") or "",
+                    "VĐ đi": ((si.get("fulfillment_tracking_numbers") or [None])[0]) or "",
+                    "VĐ trả về": si.get("tracking_number") or "",
                     "_return_id": str(rid or ""),
                     "Link hồ sơ trả": f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{rid}" if rid else "",
                     "Ghi chú hiện tại": detail.get("note") or "",
@@ -1444,12 +1461,14 @@ if _page == PAGE_RETURNS:
                         hide_index=True,
                         height=min(520, 50 * (len(_full_seed_rows) + 1) + 40),
                         key=f"return_note_full_editor_{_ascii_code(_codes_key)[:50]}",
-                        disabled=["Mã tìm", "Mã đơn", "Mã trả", "Hồ sơ", "Ghi chú hiện tại", "_return_id", "_requires_shipper"],
+                        disabled=["Ngày tạo", "Mã đơn", "Mã trả", "VĐ đi", "VĐ trả về", "Hồ sơ", "Ghi chú hiện tại", "_return_id", "_requires_shipper"],
                         column_config={
                             "Ghi": st.column_config.CheckboxColumn("Ghi", width="small"),
-                            "Mã tìm": st.column_config.TextColumn("Mã tìm", width="small"),
+                            "Ngày tạo": st.column_config.TextColumn("Ngày tạo", width="small"),
                             "Mã đơn": st.column_config.TextColumn("Mã đơn", width="small"),
                             "Mã trả": st.column_config.TextColumn("Mã trả", width="small"),
+                            "VĐ đi": st.column_config.TextColumn("VĐ đi", width="small"),
+                            "VĐ trả về": st.column_config.TextColumn("VĐ trả về", width="small"),
                             "Hồ sơ": st.column_config.LinkColumn("Mở", width="small", display_text="Mở"),
                             "Ghi chú hiện tại": st.column_config.TextColumn("Ghi chú hiện tại", width="large"),
                             "Ghi chú mới": st.column_config.TextColumn("Ghi chú mới", width="large"),
@@ -1601,7 +1620,7 @@ if _page == PAGE_RETURNS:
                 hide_index=True,
                 height=min(420, 38 * (len(_seed_rows) + 1) + 40),
                 key=f"return_note_individual_editor_{_ascii_code(_codes_key)[:50]}",
-                disabled=["Mã tìm", "Mã đơn", "Mã trả", "_return_id", "Ghi chú hiện tại", "Link hồ sơ trả", "_requires_shipper"],
+                disabled=["Ngày tạo", "Mã đơn", "Mã trả", "VĐ đi", "VĐ trả về", "_return_id", "Ghi chú hiện tại", "Link hồ sơ trả", "_requires_shipper"],
                 column_config={
                     "Ghi": st.column_config.CheckboxColumn("Ghi"),
                     "Mẫu ghi chú": st.column_config.SelectboxColumn("Mẫu ghi chú", options=_RETURN_NOTE_TEMPLATE_LABELS),
@@ -1635,9 +1654,11 @@ if _page == PAGE_RETURNS:
                     "row": _row,
                 }
                 _preview_individual.append({
-                    "Mã tìm": _row.get("Mã tìm") or "",
+                    "Ngày tạo": _row.get("Ngày tạo") or "",
                     "Mã đơn": _row.get("Mã đơn") or "",
                     "Mã trả": _row.get("Mã trả") or "",
+                    "VĐ đi": _row.get("VĐ đi") or "",
+                    "VĐ trả về": _row.get("VĐ trả về") or "",
                     "Đối chiếu": _status,
                     "Ghi chú sẽ ghi": _new_note or "",
                 })
@@ -1693,7 +1714,7 @@ if _page == PAGE_RETURNS:
                         _plan = _full_note_plan.get(str(rid))
                         if not _plan:
                             results.append({
-                                "Mã tìm": ", ".join(info["codes"]), "Mã đơn": order_name,
+                                "Mã đơn": order_name or ", ".join(info["codes"]),
                                 "Mã trả": return_name,
                                 "Link hồ sơ trả": f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{rid}",
                                 "Kết quả": "Bỏ qua: đã có kết quả cuối hoặc chưa nhập ghi chú mới",
@@ -1705,7 +1726,7 @@ if _page == PAGE_RETURNS:
                         _plan = _individual_plan.get(str(rid))
                         if not _plan:
                             results.append({
-                                "Mã tìm": ", ".join(info["codes"]), "Mã đơn": order_name,
+                                "Mã đơn": order_name or ", ".join(info["codes"]),
                                 "Mã trả": return_name,
                                 "Link hồ sơ trả": f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{rid}",
                                 "Kết quả": "Bỏ qua: chưa tick ghi dòng này",
@@ -1718,7 +1739,7 @@ if _page == PAGE_RETURNS:
                         _shipper_for_row = _shipper_return
                     if _note_matches_existing(r.get("note"), _note_to_write):
                         results.append({
-                            "Mã tìm": ", ".join(info["codes"]), "Mã đơn": order_name,
+                            "Mã đơn": order_name or ", ".join(info["codes"]),
                             "Mã trả": return_name,
                             "Link hồ sơ trả": f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{rid}",
                             "Kết quả": "Đã khớp, không cần cập nhật",
@@ -1726,7 +1747,7 @@ if _page == PAGE_RETURNS:
                         continue
                     if _row_requires_return_shipper(r) and not str(_shipper_for_row or "").strip():
                         results.append({
-                            "Mã tìm": ", ".join(info["codes"]), "Mã đơn": order_name,
+                            "Mã đơn": order_name or ", ".join(info["codes"]),
                             "Mã trả": return_name,
                             "Link hồ sơ trả": f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{rid}",
                             "Kết quả": "Bỏ qua: phiếu trả hàng hoàn tiền có VĐ trả về nhưng chưa nhập tên shipper hoàn",
@@ -1735,7 +1756,7 @@ if _page == PAGE_RETURNS:
                     new_note, status = _compose_return_note(r.get("note"), _note_to_write, _replace_result)
                     if not new_note:
                         results.append({
-                            "Mã tìm": ", ".join(info["codes"]), "Mã đơn": order_name,
+                            "Mã đơn": order_name or ", ".join(info["codes"]),
                             "Mã trả": return_name,
                             "Link hồ sơ trả": f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{rid}",
                             "Kết quả": status,
@@ -1744,21 +1765,21 @@ if _page == PAGE_RETURNS:
                     try:
                         update_order_return_note(session, rid, new_note)
                         results.append({
-                            "Mã tìm": ", ".join(info["codes"]), "Mã đơn": order_name,
+                            "Mã đơn": order_name or ", ".join(info["codes"]),
                             "Mã trả": return_name,
                             "Link hồ sơ trả": f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{rid}",
                             "Kết quả": "Đã ghi và xác nhận",
                         })
                     except Exception as e:
                         results.append({
-                            "Mã tìm": ", ".join(info["codes"]), "Mã đơn": order_name,
+                            "Mã đơn": order_name or ", ".join(info["codes"]),
                             "Mã trả": return_name,
                             "Link hồ sơ trả": f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{rid}",
                             "Kết quả": f"Lỗi ghi hồ sơ trả: {e}",
                         })
                 missing = [c for c in _codes if not matches.get(c)]
                 for code in missing:
-                    results.append({"Mã tìm": code, "Mã đơn": "", "Mã trả": "", "Link hồ sơ trả": "", "Kết quả": "Không tìm thấy"})
+                    results.append({"Mã đơn": code, "Mã trả": "", "Link hồ sơ trả": "", "Kết quả": "Không tìm thấy"})
                 st.session_state["return_note_write_rows"] = results
                 st.cache_data.clear()
                 st.success(f"Đã xử lý {len(results)} dòng. Số phiếu ghi thành công: {sum(1 for x in results if x['Kết quả'] == 'Đã ghi và xác nhận')}.")
@@ -1853,20 +1874,20 @@ if _page == PAGE_RETURNS:
             disp = f"<a href='{_esc(link)}' target='_blank'>{v}</a>" if link else v
             return f"{disp} {_cp(val)}" if val else ""
 
-        def _sub_table(items, h, merge_vd=False, show_type=False, show_reason=False):
+        def _sub_table(items, h, show_type=False, show_reason=False):
             if not items:
                 st.caption("— Không có —")
                 return
             def _safe(v, default=""):
                 return _esc(str(v if v not in (None, "") else default))
             cols = ["STT", "Ngày tạo", "Mã đơn", "Mã trả hàng"]
-            cols += (["Vận đơn"] if merge_vd else ["VĐ đi", "VĐ trả về"])
-            cols += ["Gian hàng"]
+            cols += ["VĐ đi", "VĐ trả về", "Shipper hoàn", "Gian hàng"]
             if show_type:
                 cols += ["Loại trả"]
+            cols += ["SKU", "SL", "Tổng tiền", "Nhập kho"]
             if show_reason:
-                cols += ["Shipper hoàn", "Lý do vào KN"]
-            cols += ["SKU", "SL", "Tổng tiền", "Nhập kho", "Ghi chú"]
+                cols += ["Lý do vào KN"]
+            cols += ["Ghi chú"]
             thead = "".join(f"<th>{c}</th>" for c in cols)
             body = ""
             for i, d in enumerate(items, 1):
@@ -1876,22 +1897,21 @@ if _page == PAGE_RETURNS:
                        f"<td>{_safe(d.get('created'))}</td>",
                        f"<td>{_code_cell(d['order_code'], d.get('order_link'))}</td>",
                        f"<td>{_code_cell(d.get('return_code'))}</td>"]   # KHÔNG link, chỉ copy
-                if merge_vd:
-                    tds.append(f"<td>{_code_cell(d['vd_di'] or d['vd_tra'])}</td>")
-                else:
-                    tds.append(f"<td>{_code_cell(d['vd_di'])}</td>")
-                    tds.append(f"<td>{_code_cell(d['vd_tra'])}</td>")
-                tds += [f"<td>{_safe(d.get('gian_hang'))}</td>"]
+                tds.append(f"<td>{_code_cell(d['vd_di'])}</td>")
+                tds.append(f"<td>{_code_cell(d['vd_tra'])}</td>")
+                tds += [
+                    f"<td>{_safe(d.get('return_shipper'), 'Chưa có')}</td>",
+                    f"<td>{_safe(d.get('gian_hang'))}</td>",
+                ]
                 if show_type:
                     tds.append(f"<td>{_safe(d.get('loai_tra'))}</td>")
-                if show_reason:
-                    tds.append(f"<td>{_safe(d.get('return_shipper'), 'Chưa có')}</td>")
-                    tds.append(f"<td>{_safe(d.get('reason'))}</td>")
                 tds += [f"<td>{_safe(d.get('sku'))}</td>",
                         f"<td class='r'>{int(d.get('qty') or 0)}</td>",
                         f"<td class='r'>{int(d.get('money') or 0):,}đ</td>",
-                        f"<td>{_safe(d.get('stock_status'), 'Chưa rõ')}</td>",
-                        f"<td class='note' title='{_safe(note)}'>{_safe(note)}</td>"]
+                        f"<td>{_safe(d.get('stock_status'), 'Chưa rõ')}</td>"]
+                if show_reason:
+                    tds.append(f"<td>{_safe(d.get('reason'))}</td>")
+                tds.append(f"<td class='note' title='{_safe(note)}'>{_safe(note)}</td>")
                 body += f"<tr style='{bg}'>" + "".join(tds) + "</tr>"
             html = f"""<style>
  body{{margin:0;font-family:Tahoma,Arial,sans-serif;color:#1f2937}}
@@ -1915,16 +1935,15 @@ if _page == PAGE_RETURNS:
             items = [d for d in _rip["detail"] if d["loai_tra_code"] == code and d["ship_code"] != "no_return"]
             if not items:
                 return
-            _mv = (code == "delivery_failed")     # giao thất bại: gộp VĐ đi/về thành 1 cột
             hoan = [d for d in items if d["ship_code"] == "returning"]
             giao = [d for d in items if d["ship_code"] == "returned"]
             st.markdown(f"### {title} — {len(items)} đơn")
             if hoan:
                 st.markdown(f"**🚚 Đang hoàn hàng — {len(hoan)} đơn**")
-                _sub_table(hoan, 260, _mv)
+                _sub_table(hoan, 260)
             if giao:
                 st.markdown(f"**📥 Đã giao người bán — {len(giao)} đơn**")
-                _sub_table(giao, 260, _mv)
+                _sub_table(giao, 260)
 
         # ── DANH SÁCH ĐƠN CẦN KN (bấm ô "Cần KN" ở trên sẽ nhảy tới đây) ──
         st.subheader("🚨 Đơn cần KN — lấy làm khiếu nại", anchor="don-can-kn")
@@ -1936,7 +1955,7 @@ if _page == PAGE_RETURNS:
         st.caption("Các đơn trong bảng detail đã có ghi chú KHÔNG CẦN KN: đã nhận hàng, đã nhận/được đền tiền, hoặc shop đóng thiếu thật. Nhóm này không trộn vào danh sách CẦN KN.")
         _sub_table(_khong_can_kn_list, 300)
         st.subheader("🚫 Đơn không có hàng hoàn về / chỉ hoàn tiền", anchor="don-khong-tra-hang")
-        st.caption("Bảng này là trạng thái vận chuyển/loại phiếu, khác với kết luận KHÔNG CẦN KN. Nếu chưa có ghi chú kết luận chuẩn thì vẫn thuộc nhóm CẦN KN. Phiếu bị hủy/gạch ngang đã được loại khỏi bảng detail.")
+        st.caption("Bảng này là trạng thái vận chuyển/loại phiếu, khác với kết luận KHÔNG CẦN KN. Nếu chưa có ghi chú kết luận chuẩn thì vẫn thuộc nhóm CẦN KN; vẫn có thể KN thắng nếu sàn/shipper bồi thường. Phiếu bị hủy/gạch ngang đã được loại khỏi bảng detail.")
         _sub_table(_no_return_list, 340, show_type=True)
         st.divider()
         st.markdown("### 📋 Chi tiết còn hàng hoàn về theo loại")
