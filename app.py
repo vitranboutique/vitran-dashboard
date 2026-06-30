@@ -1397,17 +1397,27 @@ if _page == PAGE_RETURNS:
                     "Ghi chú hiện tại": st.column_config.TextColumn("Ghi chú hiện tại", width="large"),
                 },
             )
-        st.caption("Mẫu đang có trong app: KHÔNG CẦN KN = đã nhận hàng/đã được đền/khách hoàn bị hủy/shop đóng thiếu thật; THẮNG = đã thu hồi; THUA/HẾT HẠN = mất tiền đã kết luận. Không dùng CẦN KN để ghi SAPO hàng loạt vì đó là trạng thái chưa chốt.")
+        st.caption("Sau khi dò mã, nếu cần cập nhật thì chọn mẫu ghi chú bên dưới. Không dùng CẦN KN để ghi SAPO hàng loạt vì đó là trạng thái chưa chốt.")
         _groups = []
         for _tpl in _RETURN_NOTE_TEMPLATES:
             if _tpl["group"] not in _groups:
                 _groups.append(_tpl["group"])
-        _note_group = st.selectbox("Nhóm kết luận", _groups, key="return_note_group")
+        _cfg_cols = st.columns([1, 2, 1])
+        _note_group = _cfg_cols[0].selectbox("Nhóm kết luận", _groups, key="return_note_group")
         _group_templates = [x for x in _RETURN_NOTE_TEMPLATES if x["group"] == _note_group]
-        _note_label = st.selectbox("Mẫu ghi chú chuẩn", [x["label"] for x in _group_templates], key=f"return_note_template_label_{_note_group}")
+        _note_label = _cfg_cols[1].selectbox("Mẫu ghi chú chuẩn", [x["label"] for x in _group_templates], key=f"return_note_template_label_{_note_group}")
+        _show_note_details = _cfg_cols[2].checkbox("Hiện chi tiết", value=False, key="return_note_show_details")
         _template_row = next(x for x in _group_templates if x["label"] == _note_label)
         _template = _template_row["template"]
-        _note_values = {}
+        _note_values = {
+            "amount": "0đ",
+            "comp_amount": "0đ",
+            "loss_amount": "0đ",
+            "qty": 1,
+            "platform": "TikTok",
+            "reason": "Khách trả sai hàng",
+            "custom_note": "⚪ KHÔNG CẦN KN | Đã nhận hàng hoàn ở Sapo cũ",
+        }
         _needs_amount = "{amount}" in _template
         _needs_comp = "{comp_amount}" in _template
         _needs_loss = "{loss_amount}" in _template
@@ -1415,44 +1425,51 @@ if _page == PAGE_RETURNS:
         _needs_platform = "{platform}" in _template
         _needs_reason = "{reason}" in _template
         _needs_custom = "{custom_note}" in _template
-        _fields = st.columns(3)
-        if _needs_amount:
-            _note_values["amount"] = _fields[0].text_input("Số tiền", value="0đ", key="return_note_amount")
-        if _needs_comp:
-            _note_values["comp_amount"] = _fields[0].text_input("Tiền bồi thường", value="0đ", key="return_note_comp_amount")
-        if _needs_loss:
-            _note_values["loss_amount"] = _fields[1].text_input("Lỗ chênh", value="0đ", key="return_note_loss_amount")
-        if _needs_qty:
-            _note_values["qty"] = _fields[1].number_input("Số SP thiếu", min_value=1, max_value=99, value=1, step=1, key="return_note_qty")
-        if _needs_platform:
-            _note_values["platform"] = _fields[2].selectbox("Sàn", ["TikTok", "Shopee", "Sàn"], key="return_note_platform")
-        if _needs_reason:
-            _note_values["reason"] = st.text_input("Lý do ngắn", value="Khách trả sai hàng", key="return_note_reason")
-        if _needs_custom:
-            _note_values["custom_note"] = st.text_area(
-                "Ghi chú tự nhập",
-                value="⚪ KHÔNG CẦN KN | Đã nhận hàng hoàn ở Sapo cũ",
-                height=70,
-                key="return_note_custom",
+        _return_has_code = False
+        _shipper_return = ""
+        _note_date = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%d/%m/%Y")
+        _customer_refund = ""
+        _compensation = ""
+        _extra_note = ""
+        if _show_note_details or _needs_custom:
+            _fields = st.columns(3)
+            if _needs_amount:
+                _note_values["amount"] = _fields[0].text_input("Số tiền", value="0đ", key="return_note_amount")
+            if _needs_comp:
+                _note_values["comp_amount"] = _fields[0].text_input("Tiền bồi thường", value="0đ", key="return_note_comp_amount")
+            if _needs_loss:
+                _note_values["loss_amount"] = _fields[1].text_input("Lỗ chênh", value="0đ", key="return_note_loss_amount")
+            if _needs_qty:
+                _note_values["qty"] = _fields[1].number_input("Số SP thiếu", min_value=1, max_value=99, value=1, step=1, key="return_note_qty")
+            if _needs_platform:
+                _note_values["platform"] = _fields[2].selectbox("Sàn", ["TikTok", "Shopee", "Sàn"], key="return_note_platform")
+            if _needs_reason:
+                _note_values["reason"] = st.text_input("Lý do ngắn", value="Khách trả sai hàng", key="return_note_reason")
+            if _needs_custom:
+                _note_values["custom_note"] = st.text_area(
+                    "Ghi chú tự nhập",
+                    value="⚪ KHÔNG CẦN KN | Đã nhận hàng hoàn ở Sapo cũ",
+                    height=70,
+                    key="return_note_custom",
+                )
+            _common = st.columns(3)
+            _return_has_code = _common[0].checkbox("Có mã vận đơn hoàn về", value=False, key="return_note_has_return_waybill")
+            _shipper_return = _common[1].text_input("Tên shipper hoàn", value="", placeholder="VD: Hồ Hữu Thành - 0382854410 (Viettel Post, giao 27/06)", key="return_note_shipper_return")
+            _note_date = _common[2].text_input(
+                "Ngày ghi chú",
+                value=_note_date,
+                key="return_note_update_date",
             )
-        _common = st.columns(3)
-        _return_has_code = _common[0].checkbox("Có mã vận đơn hoàn về", value=False, key="return_note_has_return_waybill")
-        _shipper_return = _common[1].text_input("Tên shipper hoàn", value="", placeholder="VD: Hồ Hữu Thành - 0382854410 (Viettel Post, giao 27/06)", key="return_note_shipper_return")
-        _note_date = _common[2].text_input(
-            "Ngày ghi chú",
-            value=(datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%d/%m/%Y"),
-            key="return_note_update_date",
-        )
-        _money_common = st.columns(2)
-        _customer_refund = _money_common[0].text_input("Hoàn khách", value="", placeholder="VD: 158.746đ", key="return_note_customer_refund")
-        _compensation = _money_common[1].text_input("Bồi thường shop", value="", placeholder="VD: 149.408đ hoặc chưa thấy", key="return_note_compensation")
-        _extra_note = st.text_area(
-            "Chi tiết bổ sung sau dòng kết luận (không bắt buộc)",
-            value="",
-            placeholder="VD: 🚩 Khách: Mặt hàng quá lớn/quá nhỏ. / ✅ Ảnh kho: ... / 📌 Cần làm: ...",
-            height=70,
-            key="return_note_extra",
-        )
+            _money_common = st.columns(2)
+            _customer_refund = _money_common[0].text_input("Hoàn khách", value="", placeholder="VD: 158.746đ", key="return_note_customer_refund")
+            _compensation = _money_common[1].text_input("Bồi thường shop", value="", placeholder="VD: 149.408đ hoặc chưa thấy", key="return_note_compensation")
+            _extra_note = st.text_area(
+                "Chi tiết bổ sung sau dòng kết luận (không bắt buộc)",
+                value="",
+                placeholder="VD: 🚩 Khách: Mặt hàng quá lớn/quá nhỏ. / ✅ Ảnh kho: ... / 📌 Cần làm: ...",
+                height=70,
+                key="return_note_extra",
+            )
         _note_text = _build_return_note_text(
             _template, _note_values, _extra_note,
             shipper_return=_shipper_return,
@@ -1460,8 +1477,9 @@ if _page == PAGE_RETURNS:
             compensation=_compensation,
             note_date=_note_date,
         )
-        st.markdown("**Xem trước ghi chú sẽ đưa lên đầu note SAPO**")
-        st.code(_note_text, language="text")
+        if _show_note_details:
+            st.markdown("**Xem trước ghi chú chung**")
+            st.code(_note_text, language="text")
         _note_valid = _note_is_bulk_write_result(_note_text)
         _shipper_valid = (not _return_has_code) or bool(str(_shipper_return or "").strip())
         _replace_result = st.checkbox("Cho phép đổi các ghi chú kết quả cũ sang ghi chú mới", value=False,
@@ -1637,15 +1655,15 @@ if _page == PAGE_RETURNS:
             )
             _preview_df = pd.DataFrame(_preview_rows)
             _preview_df = _preview_df.drop(columns=[c for c in ["_requires_shipper"] if c in _preview_df.columns])
-            st.markdown("**Đối chiếu theo mẫu ghi chú đang chọn**")
-            st.dataframe(_preview_df,
-                         use_container_width=True, hide_index=True,
-                         column_config={
-                             "Link hồ sơ trả": st.column_config.LinkColumn("Link hồ sơ trả"),
-                             "Ghi chú hiện tại": st.column_config.TextColumn("Ghi chú hiện tại", width="large"),
-                             "Ghi chú mới dự kiến": st.column_config.TextColumn("Ghi chú mới dự kiến", width="large"),
-                             "Đối chiếu": st.column_config.TextColumn("Đối chiếu", width="medium"),
-                         })
+            with st.expander("Đối chiếu theo mẫu ghi chú đang chọn", expanded=False):
+                st.dataframe(_preview_df,
+                             use_container_width=True, hide_index=True,
+                             column_config={
+                                 "Link hồ sơ trả": st.column_config.LinkColumn("Link hồ sơ trả"),
+                                 "Ghi chú hiện tại": st.column_config.TextColumn("Ghi chú hiện tại", width="large"),
+                                 "Ghi chú mới dự kiến": st.column_config.TextColumn("Ghi chú mới dự kiến", width="large"),
+                                 "Đối chiếu": st.column_config.TextColumn("Đối chiếu", width="medium"),
+                             })
         if st.session_state.get("return_note_write_rows"):
             st.dataframe(pd.DataFrame(st.session_state["return_note_write_rows"]),
                          use_container_width=True, hide_index=True,
