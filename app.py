@@ -1084,7 +1084,16 @@ if _page == PAGE_RETURNS:
             return None, "Đã có ghi chú này"
         if old_note and _note_has_result(old_note) and not replace_result:
             return None, "Bỏ qua vì đã có ghi chú kết quả"
-        combined = f"{new_note} | {old_note}" if old_note else new_note
+        lines = [line.strip() for line in new_note.splitlines() if line.strip()]
+        update_line = ""
+        if lines and _ascii_code(lines[-1]).startswith("CAPNHAT"):
+            update_line = lines.pop()
+        combined_lines = lines
+        if old_note:
+            combined_lines.append(f"📝 Ghi chú cũ SAPO: {old_note}")
+        if update_line:
+            combined_lines.append(update_line)
+        combined = "\n".join(combined_lines) if combined_lines else new_note
         return combined[:500], "Sẽ ghi"
 
     def _note_is_bulk_write_result(note):
@@ -1171,15 +1180,29 @@ if _page == PAGE_RETURNS:
             return default
         return value if value.endswith("đ") else f"{value}đ"
 
-    def _build_return_note_text(template, values, extra):
+    def _build_return_note_text(template, values, extra, shipper_return="", customer_refund="", compensation="", note_date=""):
         values = dict(values or {})
         for key in ("amount", "comp_amount", "loss_amount"):
             values[key] = _money_text(values.get(key))
-        note = template.format(**values).strip()
+        lines = [template.format(**values).strip()]
+        shipper_return = str(shipper_return or "").strip()
+        customer_refund = str(customer_refund or "").strip()
+        compensation = str(compensation or "").strip()
         extra = str(extra or "").strip()
+        note_date = str(note_date or "").strip() or (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%d/%m/%Y")
+        if shipper_return:
+            lines.append(f"🚚 Shipper hoàn: {shipper_return}")
+        if customer_refund or compensation:
+            money_parts = []
+            if customer_refund:
+                money_parts.append(f"Hoàn khách {customer_refund}")
+            if compensation:
+                money_parts.append(f"Bồi thường shop {compensation}")
+            lines.append("💸 " + "; ".join(money_parts))
         if extra:
-            note = f"{note} {extra}"
-        return note[:500]
+            lines.append(extra)
+        lines.append(f"🕘 Cập nhật: {note_date}")
+        return "\n".join(lines)[:500]
 
     def _return_note_rows(codes, max_pages):
         matches = find_order_returns_by_codes(build_session(), codes, max_pages=max_pages)
@@ -1202,6 +1225,10 @@ if _page == PAGE_RETURNS:
                     "Ghi chú hiện tại": r.get("note") or "",
                 })
         return rows, matches
+
+    def _row_requires_return_shipper(row):
+        si = row.get("shipping_info") or {}
+        return (row.get("return_type") == "return_and_refund") and bool(si.get("tracking_number"))
 
     with st.expander("📝 Ghi chú SAPO hàng loạt"):
         _can_write_sapo = _auth_configured() and CUR_ROLE == "admin"
@@ -1250,19 +1277,40 @@ if _page == PAGE_RETURNS:
                 height=70,
                 key="return_note_custom",
             )
+        _common = st.columns(3)
+        _return_has_code = _common[0].checkbox("Có mã vận đơn hoàn về", value=False, key="return_note_has_return_waybill")
+        _shipper_return = _common[1].text_input("Tên shipper hoàn", value="", placeholder="VD: Hồ Hữu Thành - 0382854410 (Viettel Post, giao 27/06)", key="return_note_shipper_return")
+        _note_date = _common[2].text_input(
+            "Ngày ghi chú",
+            value=(datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%d/%m/%Y"),
+            key="return_note_update_date",
+        )
+        _money_common = st.columns(2)
+        _customer_refund = _money_common[0].text_input("Hoàn khách", value="", placeholder="VD: 158.746đ", key="return_note_customer_refund")
+        _compensation = _money_common[1].text_input("Bồi thường shop", value="", placeholder="VD: 149.408đ hoặc chưa thấy", key="return_note_compensation")
         _extra_note = st.text_area(
             "Chi tiết bổ sung sau dòng kết luận (không bắt buộc)",
             value="",
-            placeholder="VD: 🚚 VĐ hoàn: ... ✅ Ảnh kho: ... 💰 Hoàn khách ... 🕘 Cập nhật: 30/06/2026",
+            placeholder="VD: 🚩 Khách: Mặt hàng quá lớn/quá nhỏ. / ✅ Ảnh kho: ... / 📌 Cần làm: ...",
             height=70,
             key="return_note_extra",
         )
-        _note_text = _build_return_note_text(_template, _note_values, _extra_note)
+        _note_text = _build_return_note_text(
+            _template, _note_values, _extra_note,
+            shipper_return=_shipper_return,
+            customer_refund=_customer_refund,
+            compensation=_compensation,
+            note_date=_note_date,
+        )
         st.markdown("**Xem trước ghi chú sẽ đưa lên đầu note SAPO**")
         st.code(_note_text, language="text")
         _note_valid = _note_is_bulk_write_result(_note_text)
+        _shipper_valid = (not _return_has_code) or bool(str(_shipper_return or "").strip())
         if not _note_valid:
             st.error("Ghi chú chưa đúng chuẩn. Dòng đầu phải là THẮNG / THUA / HẾT HẠN / KHÔNG CẦN KN.")
+        if not _shipper_valid:
+            st.error("Nếu có mã vận đơn hoàn về thì bắt buộc điền tên shipper hoàn. Nếu chưa có tên shipper, đơn vẫn phải để nhóm CẦN KN/theo dõi, chưa chốt kết quả.")
+        st.caption("Khi ghi thật, app sẽ tự chèn ghi chú cũ SAPO của từng phiếu vào dòng kế cuối, ngay trước dòng Cập nhật.")
         st.caption("Tool này chỉ ghi vào ghi chú hồ sơ trả hàng, là nơi bảng KN đang đọc kết quả.")
         _max_pages = st.number_input("Số trang phiếu trả cần dò", min_value=10, max_value=300, value=120, step=10,
                                      key="return_note_max_pages")
@@ -1278,7 +1326,7 @@ if _page == PAGE_RETURNS:
                 st.error(f"Dò phiếu trả lỗi: {e}")
         _confirm_write = st.checkbox("Tôi xác nhận ghi chú các phiếu tìm thấy vào SAPO", value=False,
                                      key="return_note_confirm_write")
-        if _cwrite.button("✍️ Ghi chú vào SAPO", disabled=(not _codes or not _confirm_write or not _can_write_sapo or not _note_valid),
+        if _cwrite.button("✍️ Ghi chú vào SAPO", disabled=(not _codes or not _confirm_write or not _can_write_sapo or not _note_valid or not _shipper_valid),
                           key="return_note_write_btn"):
             results = []
             try:
@@ -1296,6 +1344,14 @@ if _page == PAGE_RETURNS:
                     order = r.get("order") or {}
                     order_name = order.get("name") or ""
                     return_name = r.get("name") or ""
+                    if _row_requires_return_shipper(r) and not str(_shipper_return or "").strip():
+                        results.append({
+                            "Mã tìm": ", ".join(info["codes"]), "Mã đơn": order_name,
+                            "Mã trả": return_name,
+                            "Link hồ sơ trả": f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{rid}",
+                            "Kết quả": "Bỏ qua: phiếu trả hàng hoàn tiền có VĐ trả về nhưng chưa nhập tên shipper hoàn",
+                        })
+                        continue
                     new_note, status = _compose_return_note(r.get("note"), _note_text, _replace_result)
                     if not new_note:
                         results.append({
@@ -1404,7 +1460,7 @@ if _page == PAGE_RETURNS:
             disp = f"<a href='{_esc(link)}' target='_blank'>{v}</a>" if link else v
             return f"{disp} {_cp(val)}" if val else ""
 
-        def _sub_table(items, h, merge_vd=False, show_type=False):
+        def _sub_table(items, h, merge_vd=False, show_type=False, show_reason=False):
             if not items:
                 st.caption("— Không có —")
                 return
@@ -1415,6 +1471,8 @@ if _page == PAGE_RETURNS:
             cols += ["Gian hàng"]
             if show_type:
                 cols += ["Loại trả"]
+            if show_reason:
+                cols += ["Shipper hoàn", "Lý do vào KN"]
             cols += ["SKU", "SL", "Tổng tiền", "Nhập kho", "Ghi chú"]
             thead = "".join(f"<th>{c}</th>" for c in cols)
             body = ""
@@ -1433,6 +1491,9 @@ if _page == PAGE_RETURNS:
                 tds += [f"<td>{_safe(d.get('gian_hang'))}</td>"]
                 if show_type:
                     tds.append(f"<td>{_safe(d.get('loai_tra'))}</td>")
+                if show_reason:
+                    tds.append(f"<td>{_safe(d.get('return_shipper'), 'Chưa có')}</td>")
+                    tds.append(f"<td>{_safe(d.get('reason'))}</td>")
                 tds += [f"<td>{_safe(d.get('sku'))}</td>",
                         f"<td class='r'>{int(d.get('qty') or 0)}</td>",
                         f"<td class='r'>{int(d.get('money') or 0):,}đ</td>",
@@ -1477,7 +1538,7 @@ if _page == PAGE_RETURNS:
         st.caption("Gồm các đơn CHƯA có ghi chú kết quả chuẩn (THẮNG/THUA/KHÔNG CẦN KN/HẾT HẠN): "
                    "đã giao người bán chưa nhập kho, đang hoàn quá 7 ngày, hoặc chỉ hoàn tiền/không có hàng hoàn về. "
                    "Đây chính là các dòng tô vàng — NV lấy làm khiếu nại.")
-        _sub_table(_ckn_list, 360)
+        _sub_table(_ckn_list, 360, show_reason=True)
         st.subheader("⛔ Đơn không cần KN — đã có kết luận", anchor="don-khong-can-kn")
         st.caption("Các đơn trong bảng detail đã có ghi chú KHÔNG CẦN KN: đã nhận hàng, đã nhận/được đền tiền, hoặc shop đóng thiếu thật. Nhóm này không trộn vào danh sách CẦN KN.")
         _sub_table(_khong_can_kn_list, 300)

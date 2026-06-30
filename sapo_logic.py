@@ -554,7 +554,8 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
     Cờ CẦN KHIẾU NẠI:
       • đã giao người bán (returned) mà chưa nhập kho → khiếu nại
       • đang hoàn hàng (returning) quá 7 ngày → khiếu nại
-      • NGOẠI LỆ: 'Trả hàng hoàn tiền' chỉ 1 VĐ (người mua chưa giao ĐVVC) → CHƯA khiếu nại
+      • 'Trả hàng hoàn tiền' có mã hoàn về nhưng chưa có tên shipper hoàn → quá 7 ngày vẫn khiếu nại
+      • NGOẠI LỆ: 'Trả hàng hoàn tiền' chỉ 1 VĐ và chưa quá 7 ngày → CHƯA khiếu nại
     (Giao hàng thất bại có 1 VĐ trả là bình thường; Trả hàng hoàn tiền phải có 2 VĐ.)
     Kèm SKU, SL SP, tổng tiền (total_price) mỗi đơn."""
     today = (_now_utc() + timedelta(hours=7)).date()
@@ -593,6 +594,18 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
         status = str(x.get("status") or "").lower()
         return status in ("canceled", "cancelled") or bool(x.get("cancelled_on") or x.get("canceled_on"))
 
+    def _return_shipper_name(x):
+        note = str(x.get("note") or "")
+        m = re.search(r"shipper\s*ho[aà]n\s*:\s*([^|\n\r]+)", note, flags=re.I)
+        if m:
+            return m.group(1).strip()
+        si = x.get("shipping_info") or {}
+        for key in ("return_shipper_name", "shipper_name", "delivery_staff_name", "driver_name"):
+            val = str(si.get(key) or "").strip()
+            if val:
+                return val
+        return ""
+
     rows, capped = [], False
     for p in range(1, max_pages + 1):
         chunk = fetch_json("/admin/order_returns.json", limit=250, page=p).get("order_returns", [])
@@ -630,16 +643,20 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
         si = x.get("shipping_info") or {}
         ucodes = {c for c in ([si.get("tracking_number")] + (si.get("fulfillment_tracking_numbers") or [])) if c}
         n_track = len(ucodes)
+        return_shipper = _return_shipper_name(x)
+        has_return_waybill = bool(si.get("tracking_number"))
         cdate = _vn_date_of(x.get("created_on"))
         age = (today - cdate).days if cdate else None
-        # NGOẠI LỆ chỉ cho ĐANG HOÀN HÀNG: refund mà 1 VĐ = người mua CHƯA giao ĐVVC → chưa cần.
-        # (Đã giao người bán = chắc chắn đã gửi, không áp ngoại lệ này.)
+        # NGOẠI LỆ chỉ cho ĐANG HOÀN HÀNG khi chưa quá 7 ngày.
+        # Quá 7 ngày mà chưa có shipper hoàn/tên shipper vẫn phải vào nhóm CẦN KN.
         if sstat == "no_return":
             complaint, reason = True, "Chỉ hoàn tiền/không có hàng hoàn về — cần kết luận KN"
-        elif rtype == "return_and_refund" and sstat == "returning" and n_track < 2:
+        elif rtype == "return_and_refund" and sstat == "returning" and n_track < 2 and (age or 0) < 7:
             complaint, reason = False, "Người mua chưa giao ĐVVC (1 VĐ) — chưa cần khiếu nại"
         elif sstat == "returned":
             complaint, reason = True, "Đã giao người bán mà chưa nhập kho — cần khiếu nại"
+        elif rtype == "return_and_refund" and sstat == "returning" and has_return_waybill and not return_shipper and age is not None and age >= 7:
+            complaint, reason = True, f"Có mã hoàn về nhưng chưa có tên shipper hoàn {age} ngày — cần khiếu nại"
         elif sstat == "returning" and age is not None and age >= 7:
             complaint, reason = True, f"Đang hoàn hàng {age} ngày (quá 1 tuần) — cần khiếu nại"
         else:
@@ -682,6 +699,8 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
             "created": created_disp, "created_on": _con,
             "vd_di": (si.get("fulfillment_tracking_numbers") or [None])[0],   # VĐ GIAO ĐI (trên đơn)
             "vd_tra": si.get("tracking_number"),                              # VĐ TRẢ VỀ (leg hoàn)
+            "return_shipper": return_shipper,
+            "has_return_shipper": bool(return_shipper),
             "note": (x.get("note") or "").strip(),                            # ghi chú cạnh mã đơn trả
             "loai_tra": _type_vn.get(rtype, rtype), "loai_tra_code": rtype,
             "ship_status": _ship_vn.get(sstat, sstat), "ship_code": sstat,
@@ -741,7 +760,7 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
     # CẦN KN (cờ need_kn, dùng cho highlight + đếm). LOẠI đơn đã có ghi chú KẾT QUẢ chuẩn.
     #  • ĐÃ GIAO NGƯỜI BÁN (returned) → MẶC ĐỊNH cần KN (bất kể tuổi).
     #  • KHÔNG CÓ HÀNG HOÀN VỀ / CHỈ HOÀN TIỀN (no_return) → cần KN nếu chưa có kết luận chuẩn.
-    #  • ĐANG HOÀN HÀNG (returning) → cần KN nếu QUÁ 7 ngày; trừ refund chỉ 1 VĐ (chưa giao ĐVVC).
+    #  • ĐANG HOÀN HÀNG (returning) → cần KN nếu QUÁ 7 ngày; chỉ chưa cần khi refund 1 VĐ và chưa quá 7 ngày.
     for d in detail:
         if _resolved(_asc((d.get("note") or "").split("|")[0])):
             d["need_kn"] = False
@@ -749,7 +768,7 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
             d["need_kn"] = True
         elif d.get("ship_code") == "no_return":
             d["need_kn"] = True
-        elif d.get("loai_tra_code") == "return_and_refund" and (d.get("n_track") or 0) < 2:
+        elif d.get("loai_tra_code") == "return_and_refund" and (d.get("n_track") or 0) < 2 and (d.get("age") or 0) < 7:
             d["need_kn"] = False
         else:
             d["need_kn"] = (d.get("age") or 0) >= 7
