@@ -1087,6 +1087,100 @@ if _page == PAGE_RETURNS:
         combined = f"{new_note} | {old_note}" if old_note else new_note
         return combined[:500], "Sẽ ghi"
 
+    def _note_is_bulk_write_result(note):
+        pre = _ascii_code(str(note or "").split("|")[0])
+        compact = "".join(ch for ch in pre if ch.isalnum())
+        return any(t in compact for t in ("THANG", "THUA", "HETHAN", "KHONGCANKN", "KHONGCANKHIEUNAI"))
+
+    _RETURN_NOTE_TEMPLATES = [
+        {
+            "group": "KHÔNG CẦN KN",
+            "label": "Đã nhận hàng hoàn ở Sapo cũ",
+            "template": "⚪ KHÔNG CẦN KN | Đã nhận hàng hoàn ở Sapo cũ",
+        },
+        {
+            "group": "KHÔNG CẦN KN",
+            "label": "Có ảnh/kho xác nhận đã nhận hoàn",
+            "template": "⛔ KHÔNG CẦN KN | 0đ thất thoát | Có ảnh nhận hoàn",
+        },
+        {
+            "group": "KHÔNG CẦN KN",
+            "label": "Shop đóng thiếu thật",
+            "template": "⛔ KHÔNG CẦN KN | {amount} | Shop đóng thiếu {qty} SP",
+        },
+        {
+            "group": "KHÔNG CẦN KN",
+            "label": "Shipper/sàn đã bồi thường",
+            "template": "⛔ KHÔNG CẦN KN | Shipper đã bồi thường {comp_amount} | Lỗ chênh {loss_amount}",
+        },
+        {
+            "group": "KHÔNG CẦN KN",
+            "label": "Yêu cầu hoàn bị hủy",
+            "template": "⚪ KHÔNG CẦN KN | 0đ | Yêu cầu {platform} bị hủy",
+        },
+        {
+            "group": "THẮNG",
+            "label": "KN sàn thành công",
+            "template": "✅ THẮNG | Thu hồi {amount} | {platform} KN thành công",
+        },
+        {
+            "group": "THẮNG",
+            "label": "Sàn chấp nhận KN theo chat",
+            "template": "✅ THẮNG | Thu hồi đủ theo chat {platform} | {platform} KN được chấp nhận",
+        },
+        {
+            "group": "THẮNG",
+            "label": "Thu hồi theo lý do khác",
+            "template": "🟢 THẮNG | Thu hồi {amount} | {reason}",
+        },
+        {
+            "group": "THUA",
+            "label": "Đã KN nhưng sàn bác",
+            "template": "❌ THUA | Mất {amount} | Đã KN nhưng {platform} bác",
+        },
+        {
+            "group": "THUA",
+            "label": "KN không thành công",
+            "template": "🔴 THUA | {platform} KN không thành công | Mất {amount}",
+        },
+        {
+            "group": "HẾT HẠN",
+            "label": "Hoàn tiền khách, không bồi thường",
+            "template": "⚫ HẾT HẠN | Mất {amount} | Hoàn tiền khách, không bồi thường",
+        },
+        {
+            "group": "HẾT HẠN",
+            "label": "Đã giao hoàn, không bồi thường",
+            "template": "⚫ HẾT HẠN | Mất {amount} | Đã giao hoàn, không bồi thường",
+        },
+        {
+            "group": "HẾT HẠN",
+            "label": "Quá 30 ngày chưa có kết quả thu hồi",
+            "template": "⚫ HẾT HẠN | Mất {amount} | Quá 30 ngày chưa có kết quả thu hồi",
+        },
+        {
+            "group": "TỰ NHẬP",
+            "label": "Tự nhập nhưng phải đúng prefix chuẩn",
+            "template": "{custom_note}",
+        },
+    ]
+
+    def _money_text(value, default="0đ"):
+        value = str(value or "").strip()
+        if not value:
+            return default
+        return value if value.endswith("đ") else f"{value}đ"
+
+    def _build_return_note_text(template, values, extra):
+        values = dict(values or {})
+        for key in ("amount", "comp_amount", "loss_amount"):
+            values[key] = _money_text(values.get(key))
+        note = template.format(**values).strip()
+        extra = str(extra or "").strip()
+        if extra:
+            note = f"{note} {extra}"
+        return note[:500]
+
     def _return_note_rows(codes, max_pages):
         matches = find_order_returns_by_codes(build_session(), codes, max_pages=max_pages)
         rows = []
@@ -1118,9 +1212,57 @@ if _page == PAGE_RETURNS:
         _codes_text = st.text_area("Dán mã đơn / mã trả hàng / mã vận đơn", value=_default_codes,
                                    placeholder="VD: 260204RBTMYA9C 582422766280803724 ...",
                                    height=100, key="return_note_codes")
-        _note_text = st.text_input("Ghi chú sẽ đưa lên đầu note SAPO",
-                                   value="⚪ KHÔNG CẦN KN | Đã nhận hàng hoàn ở Sapo cũ",
-                                   key="return_note_text")
+        st.caption("Mẫu đang có trong app: KHÔNG CẦN KN = đã nhận hàng/đã được đền/khách hoàn bị hủy/shop đóng thiếu thật; THẮNG = đã thu hồi; THUA/HẾT HẠN = mất tiền đã kết luận. Không dùng CẦN KN để ghi SAPO hàng loạt vì đó là trạng thái chưa chốt.")
+        _groups = []
+        for _tpl in _RETURN_NOTE_TEMPLATES:
+            if _tpl["group"] not in _groups:
+                _groups.append(_tpl["group"])
+        _note_group = st.selectbox("Nhóm kết luận", _groups, key="return_note_group")
+        _group_templates = [x for x in _RETURN_NOTE_TEMPLATES if x["group"] == _note_group]
+        _note_label = st.selectbox("Mẫu ghi chú chuẩn", [x["label"] for x in _group_templates], key=f"return_note_template_label_{_note_group}")
+        _template_row = next(x for x in _group_templates if x["label"] == _note_label)
+        _template = _template_row["template"]
+        _note_values = {}
+        _needs_amount = "{amount}" in _template
+        _needs_comp = "{comp_amount}" in _template
+        _needs_loss = "{loss_amount}" in _template
+        _needs_qty = "{qty}" in _template
+        _needs_platform = "{platform}" in _template
+        _needs_reason = "{reason}" in _template
+        _needs_custom = "{custom_note}" in _template
+        _fields = st.columns(3)
+        if _needs_amount:
+            _note_values["amount"] = _fields[0].text_input("Số tiền", value="0đ", key="return_note_amount")
+        if _needs_comp:
+            _note_values["comp_amount"] = _fields[0].text_input("Tiền bồi thường", value="0đ", key="return_note_comp_amount")
+        if _needs_loss:
+            _note_values["loss_amount"] = _fields[1].text_input("Lỗ chênh", value="0đ", key="return_note_loss_amount")
+        if _needs_qty:
+            _note_values["qty"] = _fields[1].number_input("Số SP thiếu", min_value=1, max_value=99, value=1, step=1, key="return_note_qty")
+        if _needs_platform:
+            _note_values["platform"] = _fields[2].selectbox("Sàn", ["TikTok", "Shopee", "Sàn"], key="return_note_platform")
+        if _needs_reason:
+            _note_values["reason"] = st.text_input("Lý do ngắn", value="Khách trả sai hàng", key="return_note_reason")
+        if _needs_custom:
+            _note_values["custom_note"] = st.text_area(
+                "Ghi chú tự nhập",
+                value="⚪ KHÔNG CẦN KN | Đã nhận hàng hoàn ở Sapo cũ",
+                height=70,
+                key="return_note_custom",
+            )
+        _extra_note = st.text_area(
+            "Chi tiết bổ sung sau dòng kết luận (không bắt buộc)",
+            value="",
+            placeholder="VD: 🚚 VĐ hoàn: ... ✅ Ảnh kho: ... 💰 Hoàn khách ... 🕘 Cập nhật: 30/06/2026",
+            height=70,
+            key="return_note_extra",
+        )
+        _note_text = _build_return_note_text(_template, _note_values, _extra_note)
+        st.markdown("**Xem trước ghi chú sẽ đưa lên đầu note SAPO**")
+        st.code(_note_text, language="text")
+        _note_valid = _note_is_bulk_write_result(_note_text)
+        if not _note_valid:
+            st.error("Ghi chú chưa đúng chuẩn. Dòng đầu phải là THẮNG / THUA / HẾT HẠN / KHÔNG CẦN KN.")
         st.caption("Tool này chỉ ghi vào ghi chú hồ sơ trả hàng, là nơi bảng KN đang đọc kết quả.")
         _max_pages = st.number_input("Số trang phiếu trả cần dò", min_value=10, max_value=300, value=120, step=10,
                                      key="return_note_max_pages")
@@ -1136,7 +1278,7 @@ if _page == PAGE_RETURNS:
                 st.error(f"Dò phiếu trả lỗi: {e}")
         _confirm_write = st.checkbox("Tôi xác nhận ghi chú các phiếu tìm thấy vào SAPO", value=False,
                                      key="return_note_confirm_write")
-        if _cwrite.button("✍️ Ghi chú vào SAPO", disabled=(not _codes or not _confirm_write or not _can_write_sapo),
+        if _cwrite.button("✍️ Ghi chú vào SAPO", disabled=(not _codes or not _confirm_write or not _can_write_sapo or not _note_valid),
                           key="return_note_write_btn"):
             results = []
             try:
