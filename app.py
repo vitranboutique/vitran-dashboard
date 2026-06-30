@@ -5,6 +5,7 @@ Chạy:  streamlit run app.py
 DEMO:  tự bật khi chưa cấu hình credential (xem README để chuyển sang LIVE).
 """
 import os
+import re
 import unicodedata
 from datetime import datetime, timedelta, timezone
 from html import escape as _esc
@@ -22,7 +23,7 @@ import dohana
 import daily_report
 from sapo_client import (
     SapoAuthError, build_session, credential_present, make_fetch_json,
-    find_order_returns_by_codes, get_order_return, parse_codes, update_order_return_note,
+    find_order_returns_by_codes, get_order_return, parse_codes, update_order_note, update_order_return_note,
 )
 from picking_render import picking_html
 
@@ -532,9 +533,10 @@ CUR_NAME, CUR_USER, CUR_ROLE = require_login()
 PAGE_OVERVIEW = "📊 Tổng quan điều hành"
 PAGE_REPORT = "📋 Báo cáo sáng"
 PAGE_PICK = "🧾 Phiếu nhặt hàng"
+PAGE_TTKH = "📞 Lấy - lưu TTKH"
 PAGE_DAILY = "📄 Báo cáo cuối ngày"
 PAGE_RETURNS = "📦 Đơn trả hàng đang xử lý"
-_page = st.sidebar.radio("Trang", [PAGE_OVERVIEW, PAGE_REPORT, PAGE_PICK, PAGE_DAILY, PAGE_RETURNS], index=0)
+_page = st.sidebar.radio("Trang", [PAGE_OVERVIEW, PAGE_REPORT, PAGE_PICK, PAGE_TTKH, PAGE_DAILY, PAGE_RETURNS], index=0)
 st.sidebar.divider()
 
 
@@ -577,6 +579,11 @@ def load_overview():
 @st.cache_data(ttl=120, show_spinner="Đang kéo đơn cần nhặt từ Sapo…")
 def load_picking():
     return L.get_picking(make_fetch_json(build_session()))
+
+
+@st.cache_data(ttl=180, show_spinner="Đang lọc đơn cần lấy TTKH…")
+def load_ttkh_candidates(days=15, channel_filter="tiktok"):
+    return L.get_tt_customer_candidates(make_fetch_json(build_session()), days=days, channel_filter=channel_filter)
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -975,6 +982,135 @@ if _page == PAGE_PICK:
         _html_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "picking_slip.html")
         with open(_html_path, encoding="utf-8") as _f:
             components.html(_f.read(), height=1300, scrolling=True)
+    st.stop()
+
+
+# ════════════════ TRANG LẤY - LƯU TTKH ════════════════
+if _page == PAGE_TTKH:
+    st.title("📞 Lấy - lưu TTKH")
+    st.caption("Lọc đơn chưa có SĐT trong ghi chú SAPO để nhân viên lấy TTKH từ TikTok, dán vào app rồi ghi ngược vào SAPO.")
+    if not credential_present():
+        st.warning("⚠️ Trang này cần kết nối Sapo (API LIVE).")
+        st.stop()
+
+    _top = st.columns([1, 1.3, 1, 4.7])
+    _days = _top[0].number_input("Số ngày gần nhất", min_value=1, max_value=30, value=15, step=1)
+    _channel_label = _top[1].selectbox("Kênh", ["TikTok Shop", "Shopee", "Tất cả"], index=0)
+    _channel_filter = {"TikTok Shop": "tiktok", "Shopee": "shopee", "Tất cả": "all"}[_channel_label]
+    if _top[2].button("🔄 Tải lại", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
+
+    try:
+        _tt = load_ttkh_candidates(int(_days), _channel_filter)
+    except Exception as _e:
+        st.error(f"❌ Lỗi lọc đơn TTKH: `{_e}`")
+        st.stop()
+
+    _m = st.columns(4)
+    _m[0].metric("Tổng cần lấy", _tt["total"])
+    _m[1].metric("Đơn ≥ 2 SP", len(_tt["multi"]))
+    _m[2].metric("Đơn 1 SP", len(_tt["single"]))
+    _m[3].metric("Cập nhật", _tt["generated_at_vn"])
+
+    st.info("Điều kiện lọc: đơn trong `Tất cả`, không hủy, tạo trong số ngày chọn, ghi chú SAPO chưa có `sdt`/số điện thoại.")
+
+    _phone_re = re.compile(r"\b(?:\+?84|0)\d[\d\s.\-]{8,12}\b")
+
+    def _ttkh_editor_rows(rows):
+        return pd.DataFrame([{
+            "Ngày tạo": r.get("created_on", ""),
+            "Mã đơn": r.get("name", ""),
+            "Mã tham chiếu": r.get("source_identifier", ""),
+            "SL SP": r.get("qty", 0),
+            "Kênh": r.get("channel", ""),
+            "Gian hàng": r.get("store", ""),
+            "Ghi chú SAPO": r.get("note", ""),
+            "TTKH dán vào": "",
+            "_order_id": r.get("order_id"),
+        } for r in rows])
+
+    def _ttkh_editor(label, rows, key):
+        st.markdown(f"#### {label} — {len(rows)} đơn")
+        df = _ttkh_editor_rows(rows)
+        if df.empty:
+            st.caption("Không có đơn.")
+            return df
+        return st.data_editor(
+            df,
+            key=key,
+            hide_index=True,
+            width="stretch",
+            height=min(560, 92 + len(df) * 36),
+            column_order=["Ngày tạo", "Mã đơn", "Mã tham chiếu", "SL SP", "Kênh", "Gian hàng", "Ghi chú SAPO", "TTKH dán vào"],
+            disabled=["Ngày tạo", "Mã đơn", "Mã tham chiếu", "SL SP", "Kênh", "Gian hàng", "Ghi chú SAPO"],
+            column_config={
+                "Mã đơn": st.column_config.TextColumn("Mã đơn", width="medium"),
+                "Mã tham chiếu": st.column_config.TextColumn("Mã tham chiếu", width="medium"),
+                "SL SP": st.column_config.NumberColumn("SL SP", width="small"),
+                "Ghi chú SAPO": st.column_config.TextColumn("Ghi chú SAPO", width="medium"),
+                "TTKH dán vào": st.column_config.TextColumn("TTKH dán vào", width="large"),
+            },
+        )
+
+    _ed_multi = _ttkh_editor("Đơn ≥ 2 SP", _tt["multi"], "ttkh_editor_multi")
+    _ed_single = _ttkh_editor("Đơn 1 SP", _tt["single"], "ttkh_editor_single")
+
+    def _collect_ttkh_rows(*dfs):
+        out = []
+        for df in dfs:
+            if df is None or df.empty:
+                continue
+            for _, row in df.iterrows():
+                txt = str(row.get("TTKH dán vào") or "").strip()
+                if not txt:
+                    continue
+                has_phone = bool(_phone_re.search(txt))
+                out.append({
+                    "order_id": row.get("_order_id"),
+                    "code": row.get("Mã đơn"),
+                    "old_note": str(row.get("Ghi chú SAPO") or "").strip(),
+                    "ttkh": txt,
+                    "has_phone": has_phone,
+                })
+        return out
+
+    _pending_write = _collect_ttkh_rows(_ed_multi, _ed_single)
+    if _pending_write:
+        _bad = [r for r in _pending_write if not r["has_phone"]]
+        if _bad:
+            st.warning("Một số dòng đã dán TTKH nhưng chưa thấy số điện thoại, app sẽ chưa ghi các dòng đó: "
+                       + ", ".join(str(r["code"]) for r in _bad[:10]))
+        st.markdown(f"**Sẵn sàng ghi:** {sum(1 for r in _pending_write if r['has_phone'])} đơn")
+
+    _confirm = st.checkbox("Tôi xác nhận ghi TTKH các dòng đã dán vào ghi chú SAPO", key="ttkh_confirm_write")
+    if st.button("💾 Ghi TTKH vào SAPO", type="primary", disabled=not _confirm or not _pending_write):
+        session = build_session()
+        now_note = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%d/%m/%Y %H:%M")
+        results = []
+        ok_count = 0
+        for r in _pending_write:
+            if not r["has_phone"]:
+                results.append({"Mã đơn": r["code"], "Kết quả": "Bỏ qua", "Lý do": "TTKH chưa có SĐT"})
+                continue
+            old_note = r["old_note"]
+            block = f"📞 TTKH TikTok:\n{r['ttkh']}\n🕘 Cập nhật: {now_note}"
+            new_note = f"{old_note}\n{block}".strip() if old_note else block
+            try:
+                update_order_note(session, r["order_id"], new_note)
+                ok_count += 1
+                results.append({"Mã đơn": r["code"], "Kết quả": "Đã ghi", "Lý do": ""})
+            except Exception as e:
+                results.append({"Mã đơn": r["code"], "Kết quả": "Lỗi", "Lý do": str(e)[:220]})
+        st.session_state["ttkh_write_results"] = results
+        if ok_count:
+            load_ttkh_candidates.clear()
+        st.rerun()
+
+    if st.session_state.get("ttkh_write_results"):
+        st.markdown("#### Kết quả ghi SAPO")
+        st.dataframe(pd.DataFrame(st.session_state["ttkh_write_results"]), hide_index=True, width="stretch")
+
     st.stop()
 
 

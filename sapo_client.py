@@ -162,6 +162,76 @@ def get_order_return(session: requests.Session, return_id) -> dict:
     return data.get("order_return") or data.get("return") or data
 
 
+def get_order(session: requests.Session, order_id) -> dict:
+    """Lấy chi tiết đơn hàng theo id."""
+    resp = session.get(f"{BASE}/admin/orders/{order_id}.json", timeout=30)
+    resp.raise_for_status()
+    data = _json_or_empty(resp)
+    return data.get("order") or data
+
+
+def _saved_order_note(session: requests.Session, order_id, expected_note: str, attempts: list[str]) -> bool:
+    expected = str(expected_note or "").strip()
+    if not expected:
+        return False
+    time.sleep(0.15)
+    try:
+        row = get_order(session, order_id)
+        saved = str(row.get("note") or "").strip()
+        attempts.append(f"GET order verify -> {bool(saved)}")
+        return saved == expected or expected in saved
+    except Exception as e:
+        attempts.append(f"GET order verify -> {type(e).__name__}: {e}")
+        return False
+
+
+def update_order_note(session: requests.Session, order_id, note: str) -> dict:
+    """Cập nhật ghi chú đơn hàng SAPO và đọc lại để xác nhận đã lưu."""
+    attempts = []
+    page_url = f"{BASE}/admin/orders/{order_id}"
+    token = _page_csrf_token(session, page_url, attempts)
+    paths = [
+        f"{BASE}/admin/orders/{order_id}.json",
+        page_url,
+    ]
+    payloads = [
+        {"order": {"id": order_id, "note": note}},
+        {"order": {"note": note}},
+        {"note": note},
+    ]
+    for path in paths:
+        for method in ("put", "patch", "post"):
+            for payload in payloads:
+                resp = getattr(session, method)(
+                    path,
+                    json=payload,
+                    headers=_json_headers(page_url, token),
+                    timeout=30,
+                    allow_redirects=False,
+                )
+                attempts.append(_attempt_desc(resp))
+                if resp.status_code < 400 and _saved_order_note(session, order_id, note, attempts):
+                    return _json_or_empty(resp)
+        for data in (
+            {"_method": "put", "order[note]": note},
+            {"_method": "patch", "order[note]": note},
+            {"order[note]": note},
+            {"note": note},
+        ):
+            resp = session.post(
+                path,
+                data=data,
+                headers=_json_headers(page_url, token),
+                timeout=30,
+                allow_redirects=False,
+            )
+            attempts.append(_attempt_desc(resp))
+            if resp.status_code < 400 and _saved_order_note(session, order_id, note, attempts):
+                return _json_or_empty(resp)
+    tail = "; ".join(attempts[-16:])
+    raise RuntimeError(f"SAPO có phản hồi nhưng đọc lại chưa thấy ghi chú được lưu cho đơn {order_id}. Đã thử: {tail}")
+
+
 def _saved_return_note(session: requests.Session, return_id, expected_note: str, attempts: list[str]) -> bool:
     expected = str(expected_note or "").strip()
     if not expected:

@@ -22,6 +22,7 @@ from datetime import datetime, timedelta, timezone
 
 # Mẫu mã vận đơn để bóc từ note (SPXVN.../VTPVN... hoặc mã số 11–14 chữ số như J&T 861...)
 _TRACK_RE = re.compile(r'[A-Z]{2,}VN\d+|\b\d{11,14}\b')
+_PHONE_RE = re.compile(r'(?:s\s*[đd]t|phone|tel|dien\s*thoai|điện\s*thoại)\s*[:\-]?\s*(?:\+?84|0)?\d[\d\s.\-]{7,12}|\b(?:\+?84|0)\d[\d\s.\-]{8,12}\b', re.I)
 
 SNAPSHOT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "snapshot.json")
 
@@ -155,6 +156,10 @@ def _parse_vn(iso):
         return None
 
 
+def _has_customer_phone(note) -> bool:
+    return bool(_PHONE_RE.search(str(note or "")))
+
+
 def _picking_deadline_vn(created_vn):
     """Hạn xác nhận: 18h ngày đặt; nếu đặt từ 18h trở đi -> 18h hôm sau."""
     cutoff = created_vn.replace(hour=18, minute=0, second=0, microsecond=0)
@@ -210,6 +215,79 @@ def _summarize_picking(orders):
         "channels": srt(channels), "stores": srt(stores), "carriers": srt(carriers),
         "services": srt(services),
         "skus": sorted(sku.items(), key=lambda x: (-x[1], str(x[0]))),
+    }
+
+
+def get_tt_customer_candidates(fetch_json, days: int = 15, max_pages: int = 30, channel_filter: str = "tiktok") -> dict:
+    """Đơn còn thiếu SĐT/TTKH trong ghi chú để NV lấy thông tin từ TikTok rồi ghi ngược vào SAPO.
+
+    Nguồn: danh sách đơn hàng "Tất cả"; loại đơn hủy; chỉ lấy đơn tạo trong `days` ngày gần nhất;
+    chỉ lấy đơn chưa có SĐT trong ghi chú.
+    """
+    now_vn = (_now_utc() + timedelta(hours=7)).replace(tzinfo=None)
+    cutoff_vn = now_vn - timedelta(days=days)
+    rows = []
+    stopped_by_old = False
+
+    for page in range(1, int(max_pages) + 1):
+        try:
+            data = fetch_json("/admin/orders.json", limit=250, page=page, status="any")
+        except Exception:
+            data = fetch_json("/admin/orders.json", limit=250, page=page)
+        orders = data.get("orders", []) or []
+        if not orders:
+            break
+
+        page_has_recent = False
+        for o in orders:
+            created_vn = _parse_vn(o.get("created_on"))
+            if not created_vn:
+                continue
+            if created_vn < cutoff_vn:
+                continue
+            page_has_recent = True
+            if str(o.get("status") or "").lower() == "cancelled" or o.get("cancelled_on"):
+                continue
+            note = o.get("note") or ""
+            if _has_customer_phone(note):
+                continue
+            line_items = o.get("line_items") or []
+            total_qty = int(round(sum((li.get("quantity") or 0) for li in line_items)))
+            if total_qty <= 0:
+                continue
+            cd = o.get("channel_definition") or {}
+            store = cd.get("branch_name") or o.get("source_name") or "Khác"
+            channel = cd.get("main_name") or o.get("source_name") or "Khác"
+            channel_key = str(channel_filter or "all").lower()
+            haystack = f"{channel} {store} {o.get('source_name') or ''}".lower()
+            if channel_key != "all" and channel_key not in haystack:
+                continue
+            rows.append({
+                "order_id": o.get("id"),
+                "created_on": created_vn.strftime("%d/%m %H:%M"),
+                "name": o.get("name") or o.get("code") or o.get("source_identifier") or o.get("id"),
+                "source_identifier": o.get("source_identifier") or "",
+                "qty": total_qty,
+                "store": store,
+                "channel": channel,
+                "note": note,
+            })
+
+        if not page_has_recent:
+            stopped_by_old = True
+            break
+
+    rows.sort(key=lambda x: (-x["qty"], x["created_on"], str(x["name"])))
+    multi = [r for r in rows if r["qty"] >= 2]
+    single = [r for r in rows if r["qty"] == 1]
+    return {
+        "days": days,
+        "channel_filter": channel_filter,
+        "multi": multi,
+        "single": single,
+        "total": len(rows),
+        "stopped_by_old": stopped_by_old,
+        "generated_at_vn": now_vn.strftime("%H:%M %d/%m/%Y"),
     }
 
 
