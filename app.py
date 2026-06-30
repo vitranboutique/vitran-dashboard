@@ -22,7 +22,8 @@ import dohana
 import daily_report
 from sapo_client import (
     SapoAuthError, build_session, credential_present, make_fetch_json,
-    find_order_returns_by_codes, parse_codes, update_order_return_note,
+    find_order_returns_by_codes, get_order, parse_codes, update_order_note,
+    update_order_return_note,
 )
 from picking_render import picking_html
 
@@ -1119,6 +1120,12 @@ if _page == PAGE_RETURNS:
         _note_text = st.text_input("Ghi chú sẽ đưa lên đầu note SAPO",
                                    value="⚪ KHÔNG CẦN KN | Đã nhận hàng hoàn ở Sapo cũ",
                                    key="return_note_text")
+        _write_target = st.selectbox(
+            "Ghi chú vào đâu",
+            ["Hồ sơ trả hàng (dashboard đọc mục này)", "Đơn hàng chính (API chuẩn Sapo)"],
+            key="return_note_write_target",
+        )
+        st.caption("Hồ sơ trả hàng dùng để bảng KN đọc kết quả. Đơn hàng chính dùng endpoint chuẩn trong tài liệu Sapo: PUT /admin/orders/{id}.json.")
         _max_pages = st.number_input("Số trang phiếu trả cần dò", min_value=10, max_value=300, value=120, step=10,
                                      key="return_note_max_pages")
         _replace_result = st.checkbox("Cho phép đổi các ghi chú kết quả cũ sang ghi chú mới", value=False,
@@ -1149,17 +1156,33 @@ if _page == PAGE_RETURNS:
                 for rid, info in targets.items():
                     r = info["row"]
                     order = r.get("order") or {}
-                    new_note, status = _compose_return_note(r.get("note"), _note_text, _replace_result)
+                    order_id = order.get("id") or r.get("order_id")
+                    order_name = order.get("name") or ""
+                    return_name = r.get("name") or ""
+                    if _write_target.startswith("Đơn hàng chính"):
+                        if not order_id:
+                            results.append({
+                                "Mã tìm": ", ".join(info["codes"]), "Mã đơn": order_name,
+                                "Mã trả": return_name, "Kết quả": "Thiếu ID đơn hàng",
+                            })
+                            continue
+                        current_order = get_order(session, order_id)
+                        new_note, status = _compose_return_note(current_order.get("note"), _note_text, _replace_result)
+                    else:
+                        new_note, status = _compose_return_note(r.get("note"), _note_text, _replace_result)
                     if not new_note:
                         results.append({
-                            "Mã tìm": ", ".join(info["codes"]), "Mã đơn": order.get("name") or "",
-                            "Mã trả": r.get("name") or "", "Kết quả": status,
+                            "Mã tìm": ", ".join(info["codes"]), "Mã đơn": order_name,
+                            "Mã trả": return_name, "Kết quả": status,
                         })
                         continue
-                    update_order_return_note(session, rid, new_note)
+                    if _write_target.startswith("Đơn hàng chính"):
+                        update_order_note(session, order_id, new_note)
+                    else:
+                        update_order_return_note(session, rid, new_note)
                     results.append({
-                        "Mã tìm": ", ".join(info["codes"]), "Mã đơn": order.get("name") or "",
-                        "Mã trả": r.get("name") or "", "Kết quả": "Đã ghi SAPO",
+                        "Mã tìm": ", ".join(info["codes"]), "Mã đơn": order_name,
+                        "Mã trả": return_name, "Kết quả": "Đã ghi SAPO",
                     })
                 missing = [c for c in _codes if not matches.get(c)]
                 for code in missing:

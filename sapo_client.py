@@ -9,8 +9,10 @@ Nếu KHÔNG có credential nào -> raise SapoAuthError (app sẽ rơi về ch�
 """
 from __future__ import annotations
 
+from html.parser import HTMLParser
 import os
 import re
+from urllib.parse import urljoin
 import requests
 
 BASE = "https://vitranboutiquehcm.mysapo.net"
@@ -36,9 +38,11 @@ def _get_secret(name: str) -> str | None:
 
 
 def credential_present() -> bool:
-    """True nếu đã có đủ cookie HOẶC cặp api key/secret."""
+    """True nếu đã có token, cookie HOẶC cặp api key/secret."""
     return bool(
-        _get_secret("SAPO_COOKIE")
+        _get_secret("SAPO_ACCESS_TOKEN")
+        or _get_secret("SAPO_TOKEN")
+        or _get_secret("SAPO_COOKIE")
         or (_get_secret("SAPO_API_KEY") and _get_secret("SAPO_API_SECRET"))
     )
 
@@ -49,16 +53,19 @@ def build_session() -> requests.Session:
     s.headers.update({"User-Agent": "Mozilla/5.0", "Accept": "application/json"})
 
     cookie = _get_secret("SAPO_COOKIE")
+    token = _get_secret("SAPO_ACCESS_TOKEN") or _get_secret("SAPO_TOKEN")
     key = _get_secret("SAPO_API_KEY")
     secret = _get_secret("SAPO_API_SECRET")
 
-    if cookie:
+    if token:
+        s.headers["X-Sapo-Access-Token"] = token
+    elif cookie:
         s.headers["Cookie"] = cookie
     elif key and secret:
         s.auth = (key, secret)  # Basic Auth cho Sapo Open API
     else:
         raise SapoAuthError(
-            "Thiếu credential: cần SAPO_COOKIE hoặc SAPO_API_KEY + SAPO_API_SECRET."
+            "Thiếu credential: cần SAPO_ACCESS_TOKEN, SAPO_COOKIE hoặc SAPO_API_KEY + SAPO_API_SECRET."
         )
     return s
 
@@ -125,22 +132,177 @@ def find_order_returns_by_codes(session: requests.Session, codes: list[str], max
     return found
 
 
-def update_order_return_note(session: requests.Session, return_id, note: str) -> dict:
-    """Cập nhật note phiếu trả hàng trên Sapo."""
-    path = f"{BASE}/admin/order_returns/{return_id}.json"
-    payloads = (
+def _json_or_empty(resp: requests.Response) -> dict:
+    try:
+        return resp.json() if resp.content else {}
+    except Exception:
+        return {}
+
+
+def _note_payloads(return_id, note: str) -> list[dict]:
+    return [
         {"order_return": {"id": return_id, "note": note}},
         {"order_return": {"note": note}},
         {"note": note},
+    ]
+
+
+def _attempt_desc(resp: requests.Response) -> str:
+    req = resp.request
+    return f"{req.method} {req.url} -> {resp.status_code}"
+
+
+class _SapoFormParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.forms = []
+        self._form = None
+        self._textarea = None
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        if tag == "form":
+            self._form = {"attrs": attrs, "fields": {}, "textareas": []}
+            return
+        if not self._form:
+            return
+        if tag == "input":
+            name = attrs.get("name")
+            if name:
+                self._form["fields"][name] = attrs.get("value", "")
+        elif tag == "textarea":
+            name = attrs.get("name")
+            if name:
+                self._form["textareas"].append(name)
+                self._form["fields"].setdefault(name, "")
+                self._textarea = name
+
+    def handle_data(self, data):
+        if self._form and self._textarea:
+            self._form["fields"][self._textarea] = self._form["fields"].get(self._textarea, "") + data
+
+    def handle_endtag(self, tag):
+        if tag == "textarea":
+            self._textarea = None
+        elif tag == "form" and self._form:
+            self.forms.append(self._form)
+            self._form = None
+
+
+def _csrf_token(html: str) -> str | None:
+    m = re.search(r'<meta[^>]+name=["\']csrf-token["\'][^>]+content=["\']([^"\']+)["\']', html, re.I)
+    if m:
+        return m.group(1)
+    m = re.search(r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']csrf-token["\']', html, re.I)
+    return m.group(1) if m else None
+
+
+def _post_form(session: requests.Session, url: str, data: dict, token: str | None, attempts: list[str]) -> dict | None:
+    headers = {
+        "Accept": "application/json, text/javascript, */*; q=0.01",
+        "X-Requested-With": "XMLHttpRequest",
+        "Referer": url,
+    }
+    if token:
+        headers["X-CSRF-Token"] = token
+    resp = session.post(url, data=data, headers=headers, timeout=30, allow_redirects=False)
+    attempts.append(_attempt_desc(resp))
+    if resp.status_code < 400:
+        return _json_or_empty(resp)
+    return None
+
+
+def _update_order_return_note_via_html(session: requests.Session, return_id, note: str, attempts: list[str]) -> dict | None:
+    page_url = f"{BASE}/admin/order_returns/{return_id}"
+    page = session.get(page_url, headers={"Accept": "text/html,application/xhtml+xml"}, timeout=30)
+    attempts.append(_attempt_desc(page))
+    if page.status_code >= 400:
+        return None
+
+    html = page.text or ""
+    token = _csrf_token(html)
+    parser = _SapoFormParser()
+    parser.feed(html)
+    note_names = ("note", "ghi_chu", "remark", "description")
+
+    for form in parser.forms:
+        fields = dict(form.get("fields") or {})
+        textareas = form.get("textareas") or []
+        note_field = next((n for n in textareas if any(k in n.lower() for k in note_names)), None)
+        if not note_field:
+            continue
+        fields[note_field] = note
+        action = form.get("attrs", {}).get("action") or page_url
+        url = urljoin(BASE, action)
+        result = _post_form(session, url, fields, token, attempts)
+        if result is not None:
+            return result
+
+    fallback_rows = [
+        {"_method": "put", "order_return[note]": note},
+        {"_method": "patch", "order_return[note]": note},
+        {"order_return[note]": note},
+        {"note": note},
+    ]
+    fallback_urls = [
+        page_url,
+        f"{page_url}/update_note",
+        f"{page_url}/update_note.json",
+        f"{page_url}/notes",
+        f"{page_url}/notes.json",
+    ]
+    for url in fallback_urls:
+        for data in fallback_rows:
+            result = _post_form(session, url, data, token, attempts)
+            if result is not None:
+                return result
+    return None
+
+
+def update_order_return_note(session: requests.Session, return_id, note: str) -> dict:
+    """Cập nhật note phiếu trả hàng trên Sapo."""
+    attempts = []
+    paths = [
+        f"{BASE}/admin/order_returns/{return_id}.json",
+        f"{BASE}/admin/order_returns/{return_id}",
+    ]
+    for path in paths:
+        for method in ("put", "patch", "post"):
+            for payload in _note_payloads(return_id, note):
+                resp = getattr(session, method)(path, json=payload, timeout=30, allow_redirects=False)
+                attempts.append(_attempt_desc(resp))
+                if resp.status_code < 400:
+                    return _json_or_empty(resp)
+        for data in (
+            {"_method": "put", "order_return[note]": note},
+            {"_method": "patch", "order_return[note]": note},
+        ):
+            resp = session.post(path, data=data, timeout=30, allow_redirects=False)
+            attempts.append(_attempt_desc(resp))
+            if resp.status_code < 400:
+                return _json_or_empty(resp)
+
+    result = _update_order_return_note_via_html(session, return_id, note, attempts)
+    if result is not None:
+        return result
+
+    tail = "; ".join(attempts[-12:])
+    raise RuntimeError(f"Không tìm được endpoint ghi note SAPO cho phiếu {return_id}. Đã thử: {tail}")
+
+
+def update_order_note(session: requests.Session, order_id, note: str) -> dict:
+    """Cập nhật ghi chú đơn hàng chính theo REST API chính thức của Sapo."""
+    resp = session.put(
+        f"{BASE}/admin/orders/{order_id}.json",
+        json={"order": {"note": note}},
+        timeout=30,
     )
-    last = None
-    for payload in payloads:
-        r = session.put(path, json=payload, timeout=30)
-        if r.status_code < 400:
-            return r.json() if r.content else {}
-        last = r
-        if r.status_code not in (400, 422):
-            break
-    if last is not None:
-        last.raise_for_status()
-    return {}
+    resp.raise_for_status()
+    return _json_or_empty(resp)
+
+
+def get_order(session: requests.Session, order_id) -> dict:
+    """Lấy chi tiết đơn hàng chính."""
+    resp = session.get(f"{BASE}/admin/orders/{order_id}.json", timeout=30)
+    resp.raise_for_status()
+    return (_json_or_empty(resp) or {}).get("order") or {}
