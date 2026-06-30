@@ -20,7 +20,10 @@ import sapo_logic as L
 import picklog
 import dohana
 import daily_report
-from sapo_client import SapoAuthError, build_session, credential_present, make_fetch_json
+from sapo_client import (
+    SapoAuthError, build_session, credential_present, make_fetch_json,
+    find_order_returns_by_codes, parse_codes, update_order_return_note,
+)
 from picking_render import picking_html
 
 # ───────────────────────── Cấu hình trang ─────────────────────────
@@ -1066,6 +1069,111 @@ if _page == PAGE_RETURNS:
     if st.button("🔄 Tải lại số liệu"):
         st.cache_data.clear()
         st.rerun()
+
+    def _note_has_result(note):
+        pre = _ascii_code(str(note or "").split("|")[0])
+        compact = "".join(ch for ch in pre if ch.isalnum())
+        return any(t in compact for t in ("THANG", "THUA", "HETHAN", "CANKN", "KHONGCANKN", "KHONGCANKHIEUNAI"))
+
+    def _compose_return_note(old_note, new_note, replace_result=False):
+        old_note = str(old_note or "").strip()
+        new_note = str(new_note or "").strip()
+        if not new_note:
+            return None, "Thiếu ghi chú"
+        if new_note in old_note:
+            return None, "Đã có ghi chú này"
+        if old_note and _note_has_result(old_note) and not replace_result:
+            return None, "Bỏ qua vì đã có ghi chú kết quả"
+        combined = f"{new_note} | {old_note}" if old_note else new_note
+        return combined[:500], "Sẽ ghi"
+
+    def _return_note_rows(codes, max_pages):
+        matches = find_order_returns_by_codes(build_session(), codes, max_pages=max_pages)
+        rows = []
+        for code in codes:
+            found = matches.get(code) or []
+            if not found:
+                rows.append({"Mã tìm": code, "Kết quả": "Không tìm thấy", "Mã đơn": "", "Mã trả": "", "Ghi chú hiện tại": ""})
+                continue
+            for r in found:
+                order = r.get("order") or {}
+                rows.append({
+                    "Mã tìm": code,
+                    "Kết quả": "Tìm thấy",
+                    "Mã đơn": order.get("name") or "",
+                    "Mã trả": r.get("name") or "",
+                    "ID phiếu trả": r.get("id") or "",
+                    "Ghi chú hiện tại": r.get("note") or "",
+                })
+        return rows, matches
+
+    with st.expander("📝 Ghi chú SAPO hàng loạt"):
+        _can_write_sapo = _auth_configured() and CUR_ROLE == "admin"
+        st.caption("Dùng khi đã đối chiếu xong bên ngoài app. App sẽ dò phiếu trả theo mã đơn/mã trả hàng/mã vận đơn rồi ghi note vào SAPO qua API.")
+        if not _can_write_sapo:
+            st.warning("Chức năng ghi SAPO chỉ mở cho tài khoản admin khi app đã cấu hình đăng nhập.")
+        _default_codes = ""
+        _codes_text = st.text_area("Dán mã đơn / mã trả hàng / mã vận đơn", value=_default_codes,
+                                   placeholder="VD: 260204RBTMYA9C 582422766280803724 ...",
+                                   height=100, key="return_note_codes")
+        _note_text = st.text_input("Ghi chú sẽ đưa lên đầu note SAPO",
+                                   value="⚪ KHÔNG CẦN KN | Đã nhận hàng hoàn ở Sapo cũ",
+                                   key="return_note_text")
+        _max_pages = st.number_input("Số trang phiếu trả cần dò", min_value=10, max_value=300, value=120, step=10,
+                                     key="return_note_max_pages")
+        _replace_result = st.checkbox("Cho phép đổi các ghi chú kết quả cũ sang ghi chú mới", value=False,
+                                      key="return_note_replace_result")
+        _codes = parse_codes(_codes_text)
+        _cprev, _cwrite = st.columns([1, 1])
+        if _cprev.button(f"🔎 Dò trước ({len(_codes)} mã)", disabled=(not _codes or not _can_write_sapo), key="return_note_preview_btn"):
+            try:
+                rows, _ = _return_note_rows(_codes, int(_max_pages))
+                st.session_state["return_note_preview_rows"] = rows
+            except Exception as e:
+                st.error(f"Dò phiếu trả lỗi: {e}")
+        _confirm_write = st.checkbox("Tôi xác nhận ghi chú các phiếu tìm thấy vào SAPO", value=False,
+                                     key="return_note_confirm_write")
+        if _cwrite.button("✍️ Ghi chú vào SAPO", disabled=(not _codes or not _confirm_write or not _can_write_sapo),
+                          key="return_note_write_btn"):
+            results = []
+            try:
+                rows, matches = _return_note_rows(_codes, int(_max_pages))
+                targets = {}
+                for code in _codes:
+                    for r in matches.get(code) or []:
+                        rid = str(r.get("id") or "")
+                        if not rid:
+                            continue
+                        targets.setdefault(rid, {"row": r, "codes": []})["codes"].append(code)
+                session = build_session()
+                for rid, info in targets.items():
+                    r = info["row"]
+                    order = r.get("order") or {}
+                    new_note, status = _compose_return_note(r.get("note"), _note_text, _replace_result)
+                    if not new_note:
+                        results.append({
+                            "Mã tìm": ", ".join(info["codes"]), "Mã đơn": order.get("name") or "",
+                            "Mã trả": r.get("name") or "", "Kết quả": status,
+                        })
+                        continue
+                    update_order_return_note(session, rid, new_note)
+                    results.append({
+                        "Mã tìm": ", ".join(info["codes"]), "Mã đơn": order.get("name") or "",
+                        "Mã trả": r.get("name") or "", "Kết quả": "Đã ghi SAPO",
+                    })
+                missing = [c for c in _codes if not matches.get(c)]
+                for code in missing:
+                    results.append({"Mã tìm": code, "Mã đơn": "", "Mã trả": "", "Kết quả": "Không tìm thấy"})
+                st.session_state["return_note_write_rows"] = results
+                st.cache_data.clear()
+                st.success(f"Đã xử lý {len(results)} dòng. Số phiếu ghi thành công: {sum(1 for x in results if x['Kết quả'] == 'Đã ghi SAPO')}.")
+            except Exception as e:
+                st.error(f"Ghi SAPO lỗi: {e}")
+        if st.session_state.get("return_note_preview_rows"):
+            st.dataframe(pd.DataFrame(st.session_state["return_note_preview_rows"]), use_container_width=True, hide_index=True)
+        if st.session_state.get("return_note_write_rows"):
+            st.dataframe(pd.DataFrame(st.session_state["return_note_write_rows"]), use_container_width=True, hide_index=True)
+
     try:
         _rip = load_returns_inprogress()
     except Exception as _e:
@@ -1092,6 +1200,7 @@ if _page == PAGE_RETURNS:
 
         _khong_can_kn_list = [d for d in _rip["detail"] if _note_is_khong_can_kn(d)]
         _ckn_list = [d for d in _rip["detail"] if d.get("need_kn")]
+        _no_return_list = [d for d in _rip["detail"] if d.get("ship_code") == "no_return"]
         _khong_can_kn_money = sum(int(d.get("khong_can_kn_money")
                                       if d.get("khong_can_kn_money") is not None
                                       else d.get("money") or 0)
@@ -1113,11 +1222,11 @@ if _page == PAGE_RETURNS:
         _m[0].metric("Tổng đang xử lý", f"{_rip['total']:,}")
         _m[1].metric("🚚 Đang hoàn hàng", f"{_rip['tot_returning']:,}")
         _m[2].metric("📥 Đã giao người bán", f"{_rip['tot_returned']:,}")
-        _m[3].metric("🚫 Vận chuyển không trả hàng", f"{_rip.get('tot_no_return', 0):,}")
+        _m[3].metric("🚫 Không có hàng hoàn về", f"{len(_no_return_list):,}")
         _m[4].metric("🟡 Quá 1 tuần", f"{_old_n:,}")
         st.caption("🟡 **Dòng tô vàng = đơn CẦN KN** (quá 1 tuần & CHƯA có ghi chú kết quả).  "
                 "VĐ đi = mã vận đơn giao đi · VĐ trả về = mã vận đơn hoàn về "
-                "(giao thất bại: 2 mã trùng nhau; chỉ hoàn tiền: không cần trả lại)."
+                "(giao thất bại: 2 mã trùng nhau; chỉ hoàn tiền: không có kiện hàng hoàn về)."
                 + ("  ·  ⚠️ đã chạm giới hạn quét — có thể còn đơn cũ hơn" if _rip.get("capped") else ""))
 
         def _jss(s):       # escape chuỗi cho onclick JS
@@ -1132,7 +1241,7 @@ if _page == PAGE_RETURNS:
             disp = f"<a href='{_esc(link)}' target='_blank'>{v}</a>" if link else v
             return f"{disp} {_cp(val)}" if val else ""
 
-        def _sub_table(items, h, merge_vd=False):
+        def _sub_table(items, h, merge_vd=False, show_type=False):
             if not items:
                 st.caption("— Không có —")
                 return
@@ -1140,7 +1249,10 @@ if _page == PAGE_RETURNS:
                 return _esc(str(v if v not in (None, "") else default))
             cols = ["STT", "Ngày tạo", "Mã đơn", "Mã trả hàng"]
             cols += (["Vận đơn"] if merge_vd else ["VĐ đi", "VĐ trả về"])
-            cols += ["Gian hàng", "SKU", "SL", "Tổng tiền", "Nhập kho", "Ghi chú"]
+            cols += ["Gian hàng"]
+            if show_type:
+                cols += ["Loại trả"]
+            cols += ["SKU", "SL", "Tổng tiền", "Nhập kho", "Ghi chú"]
             thead = "".join(f"<th>{c}</th>" for c in cols)
             body = ""
             for i, d in enumerate(items, 1):
@@ -1155,8 +1267,10 @@ if _page == PAGE_RETURNS:
                 else:
                     tds.append(f"<td>{_code_cell(d['vd_di'])}</td>")
                     tds.append(f"<td>{_code_cell(d['vd_tra'])}</td>")
-                tds += [f"<td>{_safe(d.get('gian_hang'))}</td>",
-                        f"<td>{_safe(d.get('sku'))}</td>",
+                tds += [f"<td>{_safe(d.get('gian_hang'))}</td>"]
+                if show_type:
+                    tds.append(f"<td>{_safe(d.get('loai_tra'))}</td>")
+                tds += [f"<td>{_safe(d.get('sku'))}</td>",
                         f"<td class='r'>{int(d.get('qty') or 0)}</td>",
                         f"<td class='r'>{int(d.get('money') or 0):,}đ</td>",
                         f"<td>{_safe(d.get('stock_status'), 'Chưa rõ')}</td>",
@@ -1181,19 +1295,19 @@ if _page == PAGE_RETURNS:
             components.html(html, height=h, scrolling=True)
 
         def _type_block(title, code):
-            items = [d for d in _rip["detail"] if d["loai_tra_code"] == code]
+            items = [d for d in _rip["detail"] if d["loai_tra_code"] == code and d["ship_code"] != "no_return"]
+            if not items:
+                return
             _mv = (code == "delivery_failed")     # giao thất bại: gộp VĐ đi/về thành 1 cột
             hoan = [d for d in items if d["ship_code"] == "returning"]
             giao = [d for d in items if d["ship_code"] == "returned"]
-            no_return = [d for d in items if d["ship_code"] == "no_return"]
             st.markdown(f"### {title} — {len(items)} đơn")
-            st.markdown(f"**🚚 Đang hoàn hàng — {len(hoan)} đơn**")
-            _sub_table(hoan, 260, _mv)
-            st.markdown(f"**📥 Đã giao người bán — {len(giao)} đơn**")
-            _sub_table(giao, 260, _mv)
-            if no_return:
-                st.markdown(f"**🚫 Vận chuyển không trả hàng — {len(no_return)} đơn**")
-                _sub_table(no_return, 260, _mv)
+            if hoan:
+                st.markdown(f"**🚚 Đang hoàn hàng — {len(hoan)} đơn**")
+                _sub_table(hoan, 260, _mv)
+            if giao:
+                st.markdown(f"**📥 Đã giao người bán — {len(giao)} đơn**")
+                _sub_table(giao, 260, _mv)
 
         # ── DANH SÁCH ĐƠN CẦN KN (bấm ô "Cần KN" ở trên sẽ nhảy tới đây) ──
         st.subheader("🚨 Đơn cần KN — lấy làm khiếu nại", anchor="don-can-kn")
@@ -1203,13 +1317,16 @@ if _page == PAGE_RETURNS:
         st.subheader("⛔ Đơn không cần KN — đã có kết luận", anchor="don-khong-can-kn")
         st.caption("Các đơn trong bảng detail đã có ghi chú KHÔNG CẦN KN: đã nhận hàng, đã nhận/được đền tiền, shop đóng thiếu thật, hoặc đơn hoàn bị hủy. Nhóm này không trộn vào danh sách CẦN KN.")
         _sub_table(_khong_can_kn_list, 300)
+        st.subheader("🚫 Đơn không có hàng hoàn về / chỉ hoàn tiền", anchor="don-khong-tra-hang")
+        st.caption("Bảng này là trạng thái vận chuyển/loại phiếu, khác với kết luận KHÔNG CẦN KN. Một đơn ở đây chỉ thành KHÔNG CẦN KN khi ghi chú đã kết luận không cần khiếu nại.")
+        _sub_table(_no_return_list, 340, show_type=True)
         st.divider()
-        st.markdown("### 📋 Chi tiết theo loại")
+        st.markdown("### 📋 Chi tiết còn hàng hoàn về theo loại")
         _type_block("💸 Trả hàng hoàn tiền", "return_and_refund")
         _type_block("📕 Giao hàng thất bại", "delivery_failed")
-        _type_block("💵 Chỉ hoàn tiền", "refund")
         _other = [d for d in _rip["detail"]
-                  if d["loai_tra_code"] not in ("return_and_refund", "delivery_failed", "refund")]
+                  if d["loai_tra_code"] not in ("return_and_refund", "delivery_failed", "refund")
+                  and d["ship_code"] != "no_return"]
         if _other:
             st.markdown(f"### Khác — {len(_other)} đơn")
             _sub_table(_other, 200)
