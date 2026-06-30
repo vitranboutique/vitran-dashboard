@@ -1199,6 +1199,8 @@ if _page == PAGE_RETURNS:
             "template": "{custom_note}",
         },
     ]
+    _RETURN_NOTE_TEMPLATE_LABELS = [x["label"] for x in _RETURN_NOTE_TEMPLATES]
+    _RETURN_NOTE_TEMPLATE_BY_LABEL = {x["label"]: x for x in _RETURN_NOTE_TEMPLATES}
 
     def _money_text(value, default="0đ"):
         value = str(value or "").strip()
@@ -1234,6 +1236,64 @@ if _page == PAGE_RETURNS:
         suffix = f"\n🕘 Cập nhật: {note_date}"
         body = "\n".join(lines[:-1])
         return body[:max(0, 500 - len(suffix))].rstrip() + suffix
+
+    def _note_from_editor_row(row, default_template_label, default_date):
+        label = str(row.get("Mẫu ghi chú") or default_template_label or "").strip()
+        tpl = _RETURN_NOTE_TEMPLATE_BY_LABEL.get(label) or _RETURN_NOTE_TEMPLATE_BY_LABEL.get(default_template_label)
+        template = (tpl or {}).get("template") or "⚪ KHÔNG CẦN KN | Đã nhận hàng hoàn ở Sapo cũ"
+        platform = str(row.get("Sàn") or "TikTok").strip() or "TikTok"
+        qty_raw = row.get("SL thiếu")
+        try:
+            qty = int(qty_raw) if not pd.isna(qty_raw) else 1
+        except Exception:
+            qty = 1
+        values = {
+            "amount": row.get("Số tiền") or "0đ",
+            "comp_amount": row.get("Bồi thường") or "0đ",
+            "loss_amount": row.get("Lỗ chênh") or "0đ",
+            "qty": qty,
+            "platform": platform,
+            "reason": str(row.get("Lý do") or "Khách trả sai hàng").strip() or "Khách trả sai hàng",
+            "custom_note": str(row.get("Tự nhập") or "").strip(),
+        }
+        return _build_return_note_text(
+            template,
+            values,
+            str(row.get("Chi tiết") or "").strip(),
+            shipper_return=str(row.get("Shipper hoàn") or "").strip(),
+            customer_refund=str(row.get("Hoàn khách") or "").strip(),
+            compensation=str(row.get("Bồi thường") or "").strip(),
+            note_date=str(row.get("Ngày") or default_date or "").strip(),
+        )
+
+    def _build_individual_editor_rows(rows, default_template_label, default_date):
+        out = []
+        for row in rows:
+            if row.get("Kết quả") != "Tìm thấy":
+                continue
+            out.append({
+                "Ghi": True,
+                "Mã tìm": row.get("Mã tìm") or "",
+                "Mã đơn": row.get("Mã đơn") or "",
+                "Mã trả": row.get("Mã trả") or "",
+                "ID phiếu trả": row.get("ID phiếu trả") or "",
+                "Mẫu ghi chú": default_template_label,
+                "Sàn": "TikTok",
+                "Số tiền": "",
+                "Shipper hoàn": "",
+                "Hoàn khách": "",
+                "Bồi thường": "",
+                "Lỗ chênh": "",
+                "SL thiếu": 1,
+                "Lý do": "",
+                "Chi tiết": "",
+                "Tự nhập": "⚪ KHÔNG CẦN KN | Đã nhận hàng hoàn ở Sapo cũ",
+                "Ngày": default_date,
+                "Ghi chú hiện tại": row.get("Ghi chú hiện tại") or "",
+                "Link hồ sơ trả": row.get("Link hồ sơ trả") or "",
+                "_requires_shipper": row.get("_requires_shipper", False),
+            })
+        return out
 
     def _return_note_rows(codes, max_pages):
         session = build_session()
@@ -1404,18 +1464,89 @@ if _page == PAGE_RETURNS:
         st.code(_note_text, language="text")
         _note_valid = _note_is_bulk_write_result(_note_text)
         _shipper_valid = (not _return_has_code) or bool(str(_shipper_return or "").strip())
+        _replace_result = st.checkbox("Cho phép đổi các ghi chú kết quả cũ sang ghi chú mới", value=False,
+                                      key="return_note_replace_result")
+        _individual_mode = st.checkbox(
+            "Ghi chú riêng từng mã",
+            value=bool(_preview_ready and len(st.session_state.get("return_note_preview_rows") or []) > 1),
+            disabled=not _preview_ready,
+            key="return_note_individual_mode",
+        )
+        _individual_plan, _individual_valid = {}, True
+        if _individual_mode and _preview_ready and st.session_state.get("return_note_preview_rows"):
+            _seed_rows = _build_individual_editor_rows(
+                st.session_state["return_note_preview_rows"], _note_label, _note_date
+            )
+            st.caption("Chỉ sửa các cột cần thiết. Ghi chú đầy đủ được ẩn bên dưới trong mục xem trước.")
+            _editor_df = st.data_editor(
+                pd.DataFrame(_seed_rows),
+                use_container_width=True,
+                hide_index=True,
+                height=min(420, 38 * (len(_seed_rows) + 1) + 40),
+                key=f"return_note_individual_editor_{_ascii_code(_codes_key)[:50]}",
+                disabled=["Mã tìm", "Mã đơn", "Mã trả", "ID phiếu trả", "Ghi chú hiện tại", "Link hồ sơ trả", "_requires_shipper"],
+                column_config={
+                    "Ghi": st.column_config.CheckboxColumn("Ghi"),
+                    "Mẫu ghi chú": st.column_config.SelectboxColumn("Mẫu ghi chú", options=_RETURN_NOTE_TEMPLATE_LABELS),
+                    "Sàn": st.column_config.SelectboxColumn("Sàn", options=["TikTok", "Shopee", "Sàn"]),
+                    "SL thiếu": st.column_config.NumberColumn("SL thiếu", min_value=1, max_value=99, step=1),
+                    "Ghi chú hiện tại": st.column_config.TextColumn("Ghi chú hiện tại", width="large"),
+                    "Link hồ sơ trả": st.column_config.LinkColumn("Link hồ sơ trả"),
+                    "_requires_shipper": None,
+                },
+            )
+            _preview_individual = []
+            for _row in _editor_df.to_dict("records"):
+                _rid = str(_row.get("ID phiếu trả") or "")
+                if not _rid or not bool(_row.get("Ghi")):
+                    continue
+                _row_note = _note_from_editor_row(_row, _note_label, _note_date)
+                if _row.get("_requires_shipper") and not str(_row.get("Shipper hoàn") or "").strip():
+                    _status, _new_note = "Thiếu tên shipper hoàn", ""
+                    _individual_valid = False
+                elif not _note_is_bulk_write_result(_row_note):
+                    _status, _new_note = "Ghi chú chưa đúng prefix chuẩn", ""
+                    _individual_valid = False
+                else:
+                    _new_note, _status = _compose_return_note(_row.get("Ghi chú hiện tại"), _row_note, _replace_result)
+                _individual_plan[_rid] = {
+                    "note": _row_note,
+                    "shipper": str(_row.get("Shipper hoàn") or "").strip(),
+                    "status": _status,
+                    "new_note": _new_note or "",
+                    "row": _row,
+                }
+                _preview_individual.append({
+                    "Mã tìm": _row.get("Mã tìm") or "",
+                    "Mã đơn": _row.get("Mã đơn") or "",
+                    "Mã trả": _row.get("Mã trả") or "",
+                    "Đối chiếu": _status,
+                    "Ghi chú sẽ ghi": _new_note or "",
+                })
+            with st.expander("👁️ Xem ghi chú sẽ ghi từng dòng", expanded=False):
+                if _preview_individual:
+                    st.dataframe(
+                        pd.DataFrame(_preview_individual),
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={"Ghi chú sẽ ghi": st.column_config.TextColumn("Ghi chú sẽ ghi", width="large")},
+                    )
+                else:
+                    st.caption("Chưa chọn dòng nào để ghi.")
         if not _note_valid:
             st.error("Ghi chú chưa đúng chuẩn. Dòng đầu phải là THẮNG / THUA / HẾT HẠN / KHÔNG CẦN KN.")
         if not _shipper_valid:
             st.error("Nếu có mã vận đơn hoàn về thì bắt buộc điền tên shipper hoàn. Nếu chưa có tên shipper, đơn vẫn phải để nhóm CẦN KN/theo dõi, chưa chốt kết quả.")
+        if _individual_mode and not _individual_valid:
+            st.error("Bảng ghi chú riêng từng mã còn dòng thiếu thông tin hoặc sai prefix chuẩn.")
         st.caption("Khi ghi thật, app sẽ tự chèn ghi chú cũ SAPO của từng phiếu vào dòng kế cuối, ngay trước dòng Cập nhật.")
         st.caption("Tool này chỉ ghi vào ghi chú hồ sơ trả hàng, là nơi bảng KN đang đọc kết quả.")
-        _replace_result = st.checkbox("Cho phép đổi các ghi chú kết quả cũ sang ghi chú mới", value=False,
-                                      key="return_note_replace_result")
         _confirm_write = st.checkbox("Tôi xác nhận ghi chú các phiếu tìm thấy vào SAPO", value=False,
                                      key="return_note_confirm_write")
         if st.button("✍️ Ghi chú vào SAPO",
-                     disabled=(not _codes or not _preview_ready or not _confirm_write or not _can_write_sapo or not _note_valid or not _shipper_valid),
+                     disabled=(not _codes or not _preview_ready or not _confirm_write or not _can_write_sapo
+                               or (not _individual_mode and (not _note_valid or not _shipper_valid))
+                               or (_individual_mode and (not _individual_plan or not _individual_valid))),
                      key="return_note_write_btn"):
             results = []
             try:
@@ -1437,7 +1568,22 @@ if _page == PAGE_RETURNS:
                     order = r.get("order") or {}
                     order_name = order.get("name") or ""
                     return_name = r.get("name") or ""
-                    if _note_matches_existing(r.get("note"), _note_text):
+                    if _individual_mode:
+                        _plan = _individual_plan.get(str(rid))
+                        if not _plan:
+                            results.append({
+                                "Mã tìm": ", ".join(info["codes"]), "Mã đơn": order_name,
+                                "Mã trả": return_name,
+                                "Link hồ sơ trả": f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{rid}",
+                                "Kết quả": "Bỏ qua: chưa tick ghi dòng này",
+                            })
+                            continue
+                        _note_to_write = _plan["note"]
+                        _shipper_for_row = _plan.get("shipper") or ""
+                    else:
+                        _note_to_write = _note_text
+                        _shipper_for_row = _shipper_return
+                    if _note_matches_existing(r.get("note"), _note_to_write):
                         results.append({
                             "Mã tìm": ", ".join(info["codes"]), "Mã đơn": order_name,
                             "Mã trả": return_name,
@@ -1445,7 +1591,7 @@ if _page == PAGE_RETURNS:
                             "Kết quả": "Đã khớp, không cần cập nhật",
                         })
                         continue
-                    if _row_requires_return_shipper(r) and not str(_shipper_return or "").strip():
+                    if _row_requires_return_shipper(r) and not str(_shipper_for_row or "").strip():
                         results.append({
                             "Mã tìm": ", ".join(info["codes"]), "Mã đơn": order_name,
                             "Mã trả": return_name,
@@ -1453,7 +1599,7 @@ if _page == PAGE_RETURNS:
                             "Kết quả": "Bỏ qua: phiếu trả hàng hoàn tiền có VĐ trả về nhưng chưa nhập tên shipper hoàn",
                         })
                         continue
-                    new_note, status = _compose_return_note(r.get("note"), _note_text, _replace_result)
+                    new_note, status = _compose_return_note(r.get("note"), _note_to_write, _replace_result)
                     if not new_note:
                         results.append({
                             "Mã tìm": ", ".join(info["codes"]), "Mã đơn": order_name,
