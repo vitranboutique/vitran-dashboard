@@ -549,8 +549,8 @@ def get_week_summary(fetch_json, days: int = 7) -> list:
 
 def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
     """ĐƠN TRẢ HÀNG ĐANG XỬ LÝ — CHƯA nhập kho (bổ sung cho mục 'đã nhận hàng trả').
-    Phạm vi: phiếu trả status='open' & stock_status != 'stocked', shipment_status ∈
-    {returning=Đang hoàn hàng, returned=Đã giao người bán}. Lấy TẤT CẢ đơn đang mở (cap max_pages).
+    Phạm vi: phiếu trả chưa bị hủy & chưa nhập kho đầy đủ, gồm cả:
+    {returning=Đang hoàn hàng, returned=Đã giao người bán, no_return=Không cần trả lại}.
     Cờ CẦN KHIẾU NẠI:
       • đã giao người bán (returned) mà chưa nhập kho → khiếu nại
       • đang hoàn hàng (returning) quá 7 ngày → khiếu nại
@@ -559,8 +559,31 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
     Kèm SKU, SL SP, tổng tiền (total_price) mỗi đơn."""
     today = (_now_utc() + timedelta(hours=7)).date()
     _type_vn = {"return_and_refund": "Trả hàng hoàn tiền", "delivery_failed": "Giao hàng thất bại",
-                "refund": "Hoàn tiền (không trả hàng)"}
-    _ship_vn = {"returning": "Đang hoàn hàng", "returned": "Đã giao người bán"}
+                "refund": "Chỉ hoàn tiền"}
+    _ship_vn = {"returning": "Đang hoàn hàng", "returned": "Đã giao người bán",
+                "no_return": "Không cần trả lại", "not_required": "Không cần trả lại"}
+    _stock_vn = {
+        "stocked": "Đã nhập kho", "restocked": "Đã nhập kho",
+        "partial_stocked": "Nhập kho một phần", "partially_stocked": "Nhập kho một phần",
+        "partial_restocked": "Nhập kho một phần", "partially_restocked": "Nhập kho một phần",
+        "partial": "Nhập kho một phần", "partially": "Nhập kho một phần",
+        "unstocked": "Không nhập kho", "unrestock": "Không nhập kho",
+        "not_stocked": "Không nhập kho", "not_restocked": "Không nhập kho",
+        "no_stock": "Không nhập kho", "no_restock": "Không nhập kho",
+    }
+
+    def _stock_code(x):
+        return str(x.get("stock_status") or x.get("restock_status") or "").lower()
+
+    def _not_fully_stocked(x):
+        return _stock_code(x) not in ("stocked", "restocked")
+
+    def _ship_code(x):
+        s = x.get("shipment_status")
+        rtype = x.get("return_type") or "refund"
+        if rtype == "refund" and s not in ("returning", "returned"):
+            return "no_return"
+        return s or "no_return"
 
     rows, capped = [], False
     for p in range(1, max_pages + 1):
@@ -576,15 +599,15 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
 
     # CHỈ tính NĂM NAY (loại hết đơn năm trước)
     inprog = [x for x in rows
-              if x.get("status") == "open" and x.get("stock_status") != "stocked"
-              and x.get("shipment_status") in ("returning", "returned")
+              if x.get("status") != "canceled" and _not_fully_stocked(x)
+              and _ship_code(x) in ("returning", "returned", "no_return")
               and _vn_date_of(x.get("created_on")) and _vn_date_of(x.get("created_on")).year == today.year]
 
     cnt, detail, n_complaint = {}, [], 0
     for x in inprog:
         rtype = x.get("return_type") or "refund"
-        sstat = x.get("shipment_status")
-        cnt.setdefault(rtype, {"returning": 0, "returned": 0})
+        sstat = _ship_code(x)
+        cnt.setdefault(rtype, {"returning": 0, "returned": 0, "no_return": 0})
         cnt[rtype][sstat] = cnt[rtype].get(sstat, 0) + 1
         si = x.get("shipping_info") or {}
         ucodes = {c for c in ([si.get("tracking_number")] + (si.get("fulfillment_tracking_numbers") or [])) if c}
@@ -593,7 +616,9 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
         age = (today - cdate).days if cdate else None
         # NGOẠI LỆ chỉ cho ĐANG HOÀN HÀNG: refund mà 1 VĐ = người mua CHƯA giao ĐVVC → chưa cần.
         # (Đã giao người bán = chắc chắn đã gửi, không áp ngoại lệ này.)
-        if rtype == "return_and_refund" and sstat == "returning" and n_track < 2:
+        if sstat == "no_return":
+            complaint, reason = False, "Chỉ hoàn tiền/không cần trả lại — không tự đánh CẦN KN"
+        elif rtype == "return_and_refund" and sstat == "returning" and n_track < 2:
             complaint, reason = False, "Người mua chưa giao ĐVVC (1 VĐ) — chưa cần khiếu nại"
         elif sstat == "returned":
             complaint, reason = True, "Đã giao người bán mà chưa nhập kho — cần khiếu nại"
@@ -642,6 +667,8 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
             "note": (x.get("note") or "").strip(),                            # ghi chú cạnh mã đơn trả
             "loai_tra": _type_vn.get(rtype, rtype), "loai_tra_code": rtype,
             "ship_status": _ship_vn.get(sstat, sstat), "ship_code": sstat,
+            "stock_status": _stock_vn.get(_stock_code(x), _stock_code(x) or "Chưa rõ"),
+            "stock_code": _stock_code(x),
             "n_track": n_track, "age": age, "complaint": complaint, "reason": reason,
             "sku": sku, "qty": int(round(x.get("total_quantity") or 0)),
             "money": int(round(x.get("total_price") or 0)),
@@ -694,6 +721,8 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
             d["need_kn"] = False
         elif d.get("ship_code") == "returned":
             d["need_kn"] = True
+        elif d.get("ship_code") == "no_return":
+            d["need_kn"] = False
         elif d.get("loai_tra_code") == "return_and_refund" and (d.get("n_track") or 0) < 2:
             d["need_kn"] = False
         else:
@@ -709,9 +738,10 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
         "outcomes": oc,
         "refund": cnt.get("return_and_refund", {"returning": 0, "returned": 0}),
         "fail": cnt.get("delivery_failed", {"returning": 0, "returned": 0}),
-        "refund_only": cnt.get("refund", {"returning": 0, "returned": 0}),
+        "refund_only": cnt.get("refund", {"returning": 0, "returned": 0, "no_return": 0}),
         "tot_returning": sum(c.get("returning", 0) for c in cnt.values()),
         "tot_returned": sum(c.get("returned", 0) for c in cnt.values()),
+        "tot_no_return": sum(c.get("no_return", 0) for c in cnt.values()),
         "detail": detail,
     }
 

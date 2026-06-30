@@ -1096,15 +1096,16 @@ if _page == PAGE_RETURNS:
         _mo[3].markdown(f"[👉 Lấy {len(_ckn_list)} đơn KN](#don-can-kn)")
         st.markdown("##### 📊 Đang xử lý (chưa nhập kho)")
         _old_n = sum(1 for d in _rip["detail"] if (d.get("age") or 0) >= 7)
-        _m = st.columns(4)
+        _m = st.columns(5)
         _m[0].metric("Tổng đang xử lý", f"{_rip['total']:,}")
         _m[1].metric("🚚 Đang hoàn hàng", f"{_rip['tot_returning']:,}")
         _m[2].metric("📥 Đã giao người bán", f"{_rip['tot_returned']:,}")
-        _m[3].metric("🟡 Quá 1 tuần", f"{_old_n:,}")
+        _m[3].metric("🚫 Không cần trả lại", f"{_rip.get('tot_no_return', 0):,}")
+        _m[4].metric("🟡 Quá 1 tuần", f"{_old_n:,}")
         st.caption("🟡 **Dòng tô vàng = đơn CẦN KN** (quá 1 tuần & CHƯA có ghi chú kết quả).  "
-                   "VĐ đi = mã vận đơn giao đi · VĐ trả về = mã vận đơn hoàn về "
-                   "(giao thất bại: 2 mã trùng nhau; hoàn tiền chưa gửi: VĐ trả về trống)."
-                   + ("  ·  ⚠️ đã chạm giới hạn quét — có thể còn đơn cũ hơn" if _rip.get("capped") else ""))
+                "VĐ đi = mã vận đơn giao đi · VĐ trả về = mã vận đơn hoàn về "
+                "(giao thất bại: 2 mã trùng nhau; chỉ hoàn tiền: không cần trả lại)."
+                + ("  ·  ⚠️ đã chạm giới hạn quét — có thể còn đơn cũ hơn" if _rip.get("capped") else ""))
 
         def _jss(s):       # escape chuỗi cho onclick JS
             return str(s or "").replace("\\", "\\\\").replace("'", "\\'")
@@ -1124,7 +1125,7 @@ if _page == PAGE_RETURNS:
                 return
             cols = ["STT", "Ngày tạo", "Mã đơn", "Mã trả hàng"]
             cols += (["Vận đơn"] if merge_vd else ["VĐ đi", "VĐ trả về"])
-            cols += ["Gian hàng", "SKU", "SL", "Tổng tiền", "Ghi chú"]
+            cols += ["Gian hàng", "SKU", "SL", "Tổng tiền", "Nhập kho", "Ghi chú"]
             thead = "".join(f"<th>{c}</th>" for c in cols)
             body = ""
             for i, d in enumerate(items, 1):
@@ -1142,6 +1143,7 @@ if _page == PAGE_RETURNS:
                         f"<td>{_esc(d['sku'])}</td>",
                         f"<td class='r'>{d['qty']}</td>",
                         f"<td class='r'>{d['money']:,}đ</td>",
+                        f"<td>{_esc(d.get('stock_status'))}</td>",
                         f"<td class='note' title='{_esc(d['note'])}'>{_esc(d['note'])}</td>"]
                 body += f"<tr style='{bg}'>" + "".join(tds) + "</tr>"
             html = f"""<style>
@@ -1167,11 +1169,15 @@ if _page == PAGE_RETURNS:
             _mv = (code == "delivery_failed")     # giao thất bại: gộp VĐ đi/về thành 1 cột
             hoan = [d for d in items if d["ship_code"] == "returning"]
             giao = [d for d in items if d["ship_code"] == "returned"]
+            no_return = [d for d in items if d["ship_code"] == "no_return"]
             st.markdown(f"### {title} — {len(items)} đơn")
             st.markdown(f"**🚚 Đang hoàn hàng — {len(hoan)} đơn**")
             _sub_table(hoan, 260, _mv)
             st.markdown(f"**📥 Đã giao người bán — {len(giao)} đơn**")
             _sub_table(giao, 260, _mv)
+            if no_return:
+                st.markdown(f"**🚫 Không cần trả lại — {len(no_return)} đơn**")
+                _sub_table(no_return, 260, _mv)
 
         # ── DANH SÁCH ĐƠN CẦN KN (bấm ô "Cần KN" ở trên sẽ nhảy tới đây) ──
         st.subheader("🚨 Đơn cần KN — lấy làm khiếu nại", anchor="don-can-kn")
@@ -1182,8 +1188,9 @@ if _page == PAGE_RETURNS:
         st.markdown("### 📋 Chi tiết theo loại")
         _type_block("💸 Trả hàng hoàn tiền", "return_and_refund")
         _type_block("📕 Giao hàng thất bại", "delivery_failed")
+        _type_block("💵 Chỉ hoàn tiền", "refund")
         _other = [d for d in _rip["detail"]
-                  if d["loai_tra_code"] not in ("return_and_refund", "delivery_failed")]
+                  if d["loai_tra_code"] not in ("return_and_refund", "delivery_failed", "refund")]
         if _other:
             st.markdown(f"### Khác — {len(_other)} đơn")
             _sub_table(_other, 200)
