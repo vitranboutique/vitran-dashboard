@@ -589,6 +589,10 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
             return "no_return"
         return s or "unknown"
 
+    def _is_canceled_return(x):
+        status = str(x.get("status") or "").lower()
+        return status in ("canceled", "cancelled") or bool(x.get("cancelled_on") or x.get("canceled_on"))
+
     rows, capped = [], False
     for p in range(1, max_pages + 1):
         chunk = fetch_json("/admin/order_returns.json", limit=250, page=p).get("order_returns", [])
@@ -610,10 +614,8 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
         sstat = _ship_code(x)
         if sstat not in ("returning", "returned", "no_return"):
             return False
-        # Sapo can close refund-only/no-return rows as canceled, but they still
-        # belong in detail before note-based KHONG CAN KN filtering.
-        if x.get("status") == "canceled":
-            return (x.get("return_type") or "refund") == "refund" and sstat == "no_return"
+        if _is_canceled_return(x):
+            return False
         return True
 
     # CHỈ tính NĂM NAY (loại hết đơn năm trước)
@@ -633,7 +635,7 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
         # NGOẠI LỆ chỉ cho ĐANG HOÀN HÀNG: refund mà 1 VĐ = người mua CHƯA giao ĐVVC → chưa cần.
         # (Đã giao người bán = chắc chắn đã gửi, không áp ngoại lệ này.)
         if sstat == "no_return":
-            complaint, reason = False, "Chỉ hoàn tiền/không cần trả lại — không tự đánh CẦN KN"
+            complaint, reason = True, "Chỉ hoàn tiền/không có hàng hoàn về — cần kết luận KN"
         elif rtype == "return_and_refund" and sstat == "returning" and n_track < 2:
             complaint, reason = False, "Người mua chưa giao ĐVVC (1 VĐ) — chưa cần khiếu nại"
         elif sstat == "returned":
@@ -738,6 +740,7 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
             oc["khong_kn"]["money"] += amt
     # CẦN KN (cờ need_kn, dùng cho highlight + đếm). LOẠI đơn đã có ghi chú KẾT QUẢ chuẩn.
     #  • ĐÃ GIAO NGƯỜI BÁN (returned) → MẶC ĐỊNH cần KN (bất kể tuổi).
+    #  • KHÔNG CÓ HÀNG HOÀN VỀ / CHỈ HOÀN TIỀN (no_return) → cần KN nếu chưa có kết luận chuẩn.
     #  • ĐANG HOÀN HÀNG (returning) → cần KN nếu QUÁ 7 ngày; trừ refund chỉ 1 VĐ (chưa giao ĐVVC).
     for d in detail:
         if _resolved(_asc((d.get("note") or "").split("|")[0])):
@@ -745,7 +748,7 @@ def get_returns_in_progress(fetch_json, max_pages: int = 24) -> dict:
         elif d.get("ship_code") == "returned":
             d["need_kn"] = True
         elif d.get("ship_code") == "no_return":
-            d["need_kn"] = False
+            d["need_kn"] = True
         elif d.get("loai_tra_code") == "return_and_refund" and (d.get("n_track") or 0) < 2:
             d["need_kn"] = False
         else:

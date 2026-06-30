@@ -1332,14 +1332,15 @@ if _page == PAGE_RETURNS:
 
         # ── DANH SÁCH ĐƠN CẦN KN (bấm ô "Cần KN" ở trên sẽ nhảy tới đây) ──
         st.subheader("🚨 Đơn cần KN — lấy làm khiếu nại", anchor="don-can-kn")
-        st.caption("Quá 7 ngày từ ngày tạo & CHƯA có ghi chú kết quả (THẮNG/THUA/KHÔNG CẦN KN/HẾT HẠN). "
+        st.caption("Gồm các đơn CHƯA có ghi chú kết quả chuẩn (THẮNG/THUA/KHÔNG CẦN KN/HẾT HẠN): "
+                   "đã giao người bán chưa nhập kho, đang hoàn quá 7 ngày, hoặc chỉ hoàn tiền/không có hàng hoàn về. "
                    "Đây chính là các dòng tô vàng — NV lấy làm khiếu nại.")
         _sub_table(_ckn_list, 360)
         st.subheader("⛔ Đơn không cần KN — đã có kết luận", anchor="don-khong-can-kn")
-        st.caption("Các đơn trong bảng detail đã có ghi chú KHÔNG CẦN KN: đã nhận hàng, đã nhận/được đền tiền, shop đóng thiếu thật, hoặc đơn hoàn bị hủy. Nhóm này không trộn vào danh sách CẦN KN.")
+        st.caption("Các đơn trong bảng detail đã có ghi chú KHÔNG CẦN KN: đã nhận hàng, đã nhận/được đền tiền, hoặc shop đóng thiếu thật. Nhóm này không trộn vào danh sách CẦN KN.")
         _sub_table(_khong_can_kn_list, 300)
         st.subheader("🚫 Đơn không có hàng hoàn về / chỉ hoàn tiền", anchor="don-khong-tra-hang")
-        st.caption("Bảng này là trạng thái vận chuyển/loại phiếu, khác với kết luận KHÔNG CẦN KN. Một đơn ở đây chỉ thành KHÔNG CẦN KN khi ghi chú đã kết luận không cần khiếu nại.")
+        st.caption("Bảng này là trạng thái vận chuyển/loại phiếu, khác với kết luận KHÔNG CẦN KN. Nếu chưa có ghi chú kết luận chuẩn thì vẫn thuộc nhóm CẦN KN. Phiếu bị hủy/gạch ngang đã được loại khỏi bảng detail.")
         _sub_table(_no_return_list, 340, show_type=True)
         st.divider()
         st.markdown("### 📋 Chi tiết còn hàng hoàn về theo loại")
