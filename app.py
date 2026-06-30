@@ -1123,6 +1123,8 @@ if _page == PAGE_RETURNS:
             if not items:
                 st.caption("— Không có —")
                 return
+            def _safe(v, default=""):
+                return _esc(str(v if v not in (None, "") else default))
             cols = ["STT", "Ngày tạo", "Mã đơn", "Mã trả hàng"]
             cols += (["Vận đơn"] if merge_vd else ["VĐ đi", "VĐ trả về"])
             cols += ["Gian hàng", "SKU", "SL", "Tổng tiền", "Nhập kho", "Ghi chú"]
@@ -1130,8 +1132,9 @@ if _page == PAGE_RETURNS:
             body = ""
             for i, d in enumerate(items, 1):
                 bg = "background:#fff3cd" if d.get("need_kn") else ""
+                note = d.get("note") or ""
                 tds = [f"<td class='r'>{i}</td>",
-                       f"<td>{_esc(d['created'])}</td>",
+                       f"<td>{_safe(d.get('created'))}</td>",
                        f"<td>{_code_cell(d['order_code'], d.get('order_link'))}</td>",
                        f"<td>{_code_cell(d.get('return_code'))}</td>"]   # KHÔNG link, chỉ copy
                 if merge_vd:
@@ -1139,12 +1142,12 @@ if _page == PAGE_RETURNS:
                 else:
                     tds.append(f"<td>{_code_cell(d['vd_di'])}</td>")
                     tds.append(f"<td>{_code_cell(d['vd_tra'])}</td>")
-                tds += [f"<td>{_esc(d['gian_hang'])}</td>",
-                        f"<td>{_esc(d['sku'])}</td>",
-                        f"<td class='r'>{d['qty']}</td>",
-                        f"<td class='r'>{d['money']:,}đ</td>",
-                        f"<td>{_esc(d.get('stock_status'))}</td>",
-                        f"<td class='note' title='{_esc(d['note'])}'>{_esc(d['note'])}</td>"]
+                tds += [f"<td>{_safe(d.get('gian_hang'))}</td>",
+                        f"<td>{_safe(d.get('sku'))}</td>",
+                        f"<td class='r'>{int(d.get('qty') or 0)}</td>",
+                        f"<td class='r'>{int(d.get('money') or 0):,}đ</td>",
+                        f"<td>{_safe(d.get('stock_status'), 'Chưa rõ')}</td>",
+                        f"<td class='note' title='{_safe(note)}'>{_safe(note)}</td>"]
                 body += f"<tr style='{bg}'>" + "".join(tds) + "</tr>"
             html = f"""<style>
  body{{margin:0;font-family:Tahoma,Arial,sans-serif;color:#1f2937}}
