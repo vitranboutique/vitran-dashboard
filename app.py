@@ -1075,13 +1075,28 @@ if _page == PAGE_RETURNS:
         compact = "".join(ch for ch in pre if ch.isalnum())
         return any(t in compact for t in ("THANG", "THUA", "HETHAN", "CANKN", "KHONGCANKN", "KHONGCANKHIEUNAI"))
 
+    def _note_first_line(note):
+        lines = [line.strip() for line in str(note or "").splitlines() if line.strip()]
+        if not lines:
+            return ""
+        return lines[0].strip()
+
+    def _note_matches_existing(old_note, new_note):
+        old_first = _ascii_code(_note_first_line(old_note))
+        new_first = _ascii_code(_note_first_line(new_note))
+        if old_first and new_first and old_first == new_first:
+            return True
+        old_flat = _ascii_code(old_note)
+        new_flat = _ascii_code(new_note)
+        return bool(new_flat and new_flat in old_flat)
+
     def _compose_return_note(old_note, new_note, replace_result=False):
         old_note = str(old_note or "").strip()
         new_note = str(new_note or "").strip()
         if not new_note:
             return None, "Thiếu ghi chú"
-        if new_note in old_note:
-            return None, "Đã có ghi chú này"
+        if _note_matches_existing(old_note, new_note):
+            return None, "Đã khớp, không cần cập nhật"
         if old_note and _note_has_result(old_note) and not replace_result:
             return None, "Bỏ qua vì đã có ghi chú kết quả"
         lines = [line.strip() for line in new_note.splitlines() if line.strip()]
@@ -1239,12 +1254,31 @@ if _page == PAGE_RETURNS:
                     "ID phiếu trả": rid,
                     "Link hồ sơ trả": f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{rid}" if rid else "",
                     "Ghi chú hiện tại": r.get("note") or "",
+                    "_requires_shipper": _row_requires_return_shipper(r),
                 })
         return rows, matches
 
     def _row_requires_return_shipper(row):
         si = row.get("shipping_info") or {}
         return (row.get("return_type") == "return_and_refund") and bool(si.get("tracking_number"))
+
+    def _build_return_note_preview_rows(rows, note_text, replace_result, shipper_return):
+        out = []
+        for row in rows:
+            row = dict(row)
+            old_note = row.get("Ghi chú hiện tại") or ""
+            if row.get("Kết quả") != "Tìm thấy":
+                row["Đối chiếu"] = row.get("Kết quả") or ""
+                row["Ghi chú mới dự kiến"] = ""
+            elif row.get("_requires_shipper") and not str(shipper_return or "").strip():
+                row["Đối chiếu"] = "Thiếu tên shipper hoàn"
+                row["Ghi chú mới dự kiến"] = ""
+            else:
+                new_note, status = _compose_return_note(old_note, note_text, replace_result)
+                row["Đối chiếu"] = status
+                row["Ghi chú mới dự kiến"] = new_note or ""
+            out.append(row)
+        return out
 
     with st.expander("📝 Ghi chú SAPO hàng loạt"):
         _can_write_sapo = _auth_configured() and CUR_ROLE == "admin"
@@ -1337,7 +1371,9 @@ if _page == PAGE_RETURNS:
         if _cprev.button(f"🔎 Dò trước ({len(_codes)} mã)", disabled=(not _codes or not _can_write_sapo), key="return_note_preview_btn"):
             try:
                 rows, _ = _return_note_rows(_codes, int(_max_pages))
-                st.session_state["return_note_preview_rows"] = rows
+                st.session_state["return_note_preview_rows"] = _build_return_note_preview_rows(
+                    rows, _note_text, _replace_result, _shipper_return
+                )
             except Exception as e:
                 st.error(f"Dò phiếu trả lỗi: {e}")
         _confirm_write = st.checkbox("Tôi xác nhận ghi chú các phiếu tìm thấy vào SAPO", value=False,
@@ -1360,6 +1396,14 @@ if _page == PAGE_RETURNS:
                     order = r.get("order") or {}
                     order_name = order.get("name") or ""
                     return_name = r.get("name") or ""
+                    if _note_matches_existing(r.get("note"), _note_text):
+                        results.append({
+                            "Mã tìm": ", ".join(info["codes"]), "Mã đơn": order_name,
+                            "Mã trả": return_name,
+                            "Link hồ sơ trả": f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{rid}",
+                            "Kết quả": "Đã khớp, không cần cập nhật",
+                        })
+                        continue
                     if _row_requires_return_shipper(r) and not str(_shipper_return or "").strip():
                         results.append({
                             "Mã tìm": ", ".join(info["codes"]), "Mã đơn": order_name,
@@ -1401,9 +1445,16 @@ if _page == PAGE_RETURNS:
             except Exception as e:
                 st.error(f"Ghi SAPO lỗi: {e}")
         if st.session_state.get("return_note_preview_rows"):
-            st.dataframe(pd.DataFrame(st.session_state["return_note_preview_rows"]),
+            _preview_df = pd.DataFrame(st.session_state["return_note_preview_rows"])
+            _preview_df = _preview_df.drop(columns=[c for c in ["_requires_shipper"] if c in _preview_df.columns])
+            st.dataframe(_preview_df,
                          use_container_width=True, hide_index=True,
-                         column_config={"Link hồ sơ trả": st.column_config.LinkColumn("Link hồ sơ trả")})
+                         column_config={
+                             "Link hồ sơ trả": st.column_config.LinkColumn("Link hồ sơ trả"),
+                             "Ghi chú hiện tại": st.column_config.TextColumn("Ghi chú hiện tại", width="large"),
+                             "Ghi chú mới dự kiến": st.column_config.TextColumn("Ghi chú mới dự kiến", width="large"),
+                             "Đối chiếu": st.column_config.TextColumn("Đối chiếu", width="medium"),
+                         })
         if st.session_state.get("return_note_write_rows"):
             st.dataframe(pd.DataFrame(st.session_state["return_note_write_rows"]),
                          use_container_width=True, hide_index=True,
