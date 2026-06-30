@@ -1912,26 +1912,13 @@ if _page == PAGE_RETURNS:
             })
         _stock_df = pd.DataFrame(_stock_rows)
         st.markdown("##### 📈 Cơ cấu tổng đơn trả")
-        _summary_cols = st.columns([1, 2])
+        _summary_cols = st.columns(5)
         _summary_cols[0].metric("Tổng đơn trả (tab Tất cả)", f"{_total_returns:,} đơn")
         _summary_cols[0].caption("Lấy toàn bộ phiếu trả năm nay trong tab Tất cả, loại phiếu hủy/gạch ngang và loại năm 2025.")
         if not _stock_df.empty:
-            _donut_fig = go.Figure(go.Pie(
-                labels=_stock_df["Nhóm"],
-                values=_stock_df["Số đơn"],
-                hole=0.58,
-                marker=dict(colors=_stock_df["Màu"], line=dict(color="white", width=2)),
-                sort=False,
-                textinfo="label+percent",
-            ))
-            _donut_fig.update_layout(
-                annotations=[dict(text=f"{_total_returns:,}<br>đơn", x=0.5, y=0.5, showarrow=False,
-                                  font=dict(size=20, color="#111827"))],
-                height=300,
-                margin=dict(t=10, b=10, l=10, r=10),
-                legend=dict(orientation="h", y=-0.12, x=0.5, xanchor="center"),
-            )
-            _summary_cols[1].plotly_chart(_donut_fig, width="stretch")
+            for _idx, _row in enumerate(_stock_rows, start=1):
+                _summary_cols[_idx].metric(_row["Nhóm"], f"{_row['Số đơn']:,} đơn")
+                _summary_cols[_idx].caption(f"{_row['Tỉ lệ']:.1f}% tổng đơn trả")
 
         _month_map = {}
         for _d in _all_returns_detail:
@@ -1993,7 +1980,6 @@ if _page == PAGE_RETURNS:
             )
             st.plotly_chart(_volume_fig, width="stretch")
 
-            _trend_cols = st.columns(2)
             _outcome_fig = go.Figure()
             _outcome_fig.add_bar(x=_month_df["Tháng"], y=_month_df["Thắng"], name="Thắng", marker_color="#1D9E75")
             _outcome_fig.add_bar(x=_month_df["Tháng"], y=_month_df["Thua"], name="Thua", marker_color="#E24B4A")
@@ -2002,33 +1988,25 @@ if _page == PAGE_RETURNS:
             _outcome_fig.add_bar(x=_month_df["Tháng"], y=_month_df["Cần KN"], name="Cần KN", marker_color="#F59E0B")
             _outcome_fig.add_bar(x=_month_df["Tháng"], y=_month_df["Đang KN"], name="Đang KN", marker_color="#378ADD")
             _outcome_fig.add_bar(x=_month_df["Tháng"], y=_month_df["Chưa chốt"], name="Chưa chốt", marker_color="#CBD5E1")
-            _outcome_fig.update_layout(
-                title="Kết quả KN trong nhóm chưa nhận/chưa nhập đủ",
-                height=330,
-                barmode="stack",
-                margin=dict(t=42, b=20, l=10, r=10),
-                yaxis=dict(title="Số đơn", rangemode="tozero"),
-                legend=dict(orientation="h", y=1.18, x=0),
-            )
-            _trend_cols[0].plotly_chart(_outcome_fig, width="stretch")
-
-            _loss_fig = go.Figure()
-            _loss_fig.add_scatter(
+            _outcome_fig.add_scatter(
                 x=_month_df["Tháng"], y=_month_df["Mất tiền"], name="Mất tiền",
                 mode="lines+markers+text",
                 text=[_vnd(v) if v else "" for v in _month_df["Mất tiền"]],
                 textposition="top center",
+                yaxis="y2",
                 line=dict(color="#7F1D1D", width=3),
                 marker=dict(size=8),
             )
-            _loss_fig.update_layout(
-                title="Tiền mất theo tháng",
-                height=330,
+            _outcome_fig.update_layout(
+                title="Kết quả KN và tiền mất theo tháng",
+                height=390,
+                barmode="stack",
                 margin=dict(t=42, b=20, l=10, r=10),
-                yaxis=dict(title="Mất tiền", rangemode="tozero"),
-                legend=dict(orientation="h", y=1.12, x=0),
+                yaxis=dict(title="Số đơn", rangemode="tozero"),
+                yaxis2=dict(title="Mất tiền", overlaying="y", side="right", showgrid=False, rangemode="tozero"),
+                legend=dict(orientation="h", y=1.14, x=0),
             )
-            _trend_cols[1].plotly_chart(_loss_fig, width="stretch")
+            st.plotly_chart(_outcome_fig, width="stretch")
         st.markdown("##### 📊 Đang xử lý (chưa nhập kho)")
         _old_n = sum(1 for d in _rip["detail"] if (d.get("age") or 0) >= 7)
         _m = st.columns(5)
