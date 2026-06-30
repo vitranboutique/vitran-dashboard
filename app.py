@@ -1874,14 +1874,15 @@ if _page == PAGE_RETURNS:
             disp = f"<a href='{_esc(link)}' target='_blank'>{v}</a>" if link else v
             return f"{disp} {_cp(val)}" if val else ""
 
-        def _sub_table(items, h, show_type=False, show_reason=False):
+        def _sub_table(items, h, show_type=False, show_reason=False, merge_delivery_vd=False):
             if not items:
                 st.caption("— Không có —")
                 return
             def _safe(v, default=""):
                 return _esc(str(v if v not in (None, "") else default))
             cols = ["STT", "Ngày tạo", "Mã đơn", "Mã trả hàng"]
-            cols += ["VĐ đi", "VĐ trả về", "Shipper hoàn", "Gian hàng"]
+            cols += ["Vận đơn"] if merge_delivery_vd else ["VĐ đi", "VĐ trả về"]
+            cols += ["Shipper hoàn", "Gian hàng"]
             if show_type:
                 cols += ["Loại trả"]
             cols += ["SKU", "SL", "Tổng tiền", "Nhập kho"]
@@ -1897,8 +1898,11 @@ if _page == PAGE_RETURNS:
                        f"<td>{_safe(d.get('created'))}</td>",
                        f"<td>{_code_cell(d['order_code'], d.get('order_link'))}</td>",
                        f"<td>{_code_cell(d.get('return_code'))}</td>"]   # KHÔNG link, chỉ copy
-                tds.append(f"<td>{_code_cell(d['vd_di'])}</td>")
-                tds.append(f"<td>{_code_cell(d['vd_tra'])}</td>")
+                if merge_delivery_vd:
+                    tds.append(f"<td>{_code_cell(d.get('vd_di') or d.get('vd_tra'))}</td>")
+                else:
+                    tds.append(f"<td>{_code_cell(d['vd_di'])}</td>")
+                    tds.append(f"<td>{_code_cell(d['vd_tra'])}</td>")
                 tds += [
                     f"<td>{_safe(d.get('return_shipper'), 'Chưa có')}</td>",
                     f"<td>{_safe(d.get('gian_hang'))}</td>",
@@ -1940,10 +1944,10 @@ if _page == PAGE_RETURNS:
             st.markdown(f"### {title} — {len(items)} đơn")
             if hoan:
                 st.markdown(f"**🚚 Đang hoàn hàng — {len(hoan)} đơn**")
-                _sub_table(hoan, 260)
+                _sub_table(hoan, 260, merge_delivery_vd=(code == "delivery_failed"))
             if giao:
                 st.markdown(f"**📥 Đã giao người bán — {len(giao)} đơn**")
-                _sub_table(giao, 260)
+                _sub_table(giao, 260, merge_delivery_vd=(code == "delivery_failed"))
 
         # ── DANH SÁCH ĐƠN CẦN KN (bấm ô "Cần KN" ở trên sẽ nhảy tới đây) ──
         st.subheader("🚨 Đơn cần KN — lấy làm khiếu nại", anchor="don-can-kn")
