@@ -233,14 +233,40 @@ def _csrf_token(html: str) -> str | None:
     return m.group(1) if m else None
 
 
+def _json_headers(referer: str | None = None, token: str | None = None) -> dict:
+    headers = {
+        "Accept": "application/json, text/plain, */*",
+        "X-Bizweb-Accept-Language": "vi",
+        "X-Sapo-Client": "frontend",
+    }
+    if referer:
+        headers["Referer"] = referer
+    if token:
+        headers["X-Csrf-Token"] = token
+    return headers
+
+
+def _page_csrf_token(session: requests.Session, page_url: str, attempts: list[str]) -> str | None:
+    try:
+        page = session.get(page_url, headers={"Accept": "text/html,application/xhtml+xml"}, timeout=30)
+        attempts.append(_attempt_desc(page))
+        if page.status_code < 400:
+            return _csrf_token(page.text or "")
+    except Exception as e:
+        attempts.append(f"GET csrf html -> {type(e).__name__}: {e}")
+    return None
+
+
 def _post_form(session: requests.Session, url: str, data: dict, token: str | None, attempts: list[str]) -> requests.Response | None:
     headers = {
         "Accept": "application/json, text/javascript, */*; q=0.01",
+        "X-Bizweb-Accept-Language": "vi",
+        "X-Sapo-Client": "frontend",
         "X-Requested-With": "XMLHttpRequest",
         "Referer": url,
     }
     if token:
-        headers["X-CSRF-Token"] = token
+        headers["X-Csrf-Token"] = token
     resp = session.post(url, data=data, headers=headers, timeout=30, allow_redirects=False)
     attempts.append(_attempt_desc(resp))
     if resp.status_code < 400:
@@ -298,14 +324,32 @@ def _update_order_return_note_via_html(session: requests.Session, return_id, not
 def update_order_return_note(session: requests.Session, return_id, note: str) -> dict:
     """Cập nhật note phiếu trả hàng trên Sapo."""
     attempts = []
+    page_url = f"{BASE}/admin/order_returns/{return_id}"
+    token = _page_csrf_token(session, page_url, attempts)
+    resp = session.put(
+        f"{page_url}/edit_note.json",
+        json={"order_return": {"note": note}},
+        headers=_json_headers(page_url, token),
+        timeout=30,
+        allow_redirects=False,
+    )
+    attempts.append(_attempt_desc(resp))
+    if resp.status_code < 400 and _saved_return_note(session, return_id, note, attempts):
+        return _json_or_empty(resp)
     paths = [
         f"{BASE}/admin/order_returns/{return_id}.json",
-        f"{BASE}/admin/order_returns/{return_id}",
+        page_url,
     ]
     for path in paths:
         for method in ("put", "patch", "post"):
             for payload in _note_payloads(return_id, note):
-                resp = getattr(session, method)(path, json=payload, timeout=30, allow_redirects=False)
+                resp = getattr(session, method)(
+                    path,
+                    json=payload,
+                    headers=_json_headers(page_url, token),
+                    timeout=30,
+                    allow_redirects=False,
+                )
                 attempts.append(_attempt_desc(resp))
                 if resp.status_code < 400 and _saved_return_note(session, return_id, note, attempts):
                     return _json_or_empty(resp)
@@ -313,7 +357,13 @@ def update_order_return_note(session: requests.Session, return_id, note: str) ->
             {"_method": "put", "order_return[note]": note},
             {"_method": "patch", "order_return[note]": note},
         ):
-            resp = session.post(path, data=data, timeout=30, allow_redirects=False)
+            resp = session.post(
+                path,
+                data=data,
+                headers=_json_headers(page_url, token),
+                timeout=30,
+                allow_redirects=False,
+            )
             attempts.append(_attempt_desc(resp))
             if resp.status_code < 400 and _saved_return_note(session, return_id, note, attempts):
                 return _json_or_empty(resp)
