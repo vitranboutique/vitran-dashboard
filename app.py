@@ -22,6 +22,7 @@ import sapo_logic as L
 import picklog
 import dohana
 import daily_report
+from sapo_address import resolve_address
 from sapo_client import (
     SapoAuthError, build_session, credential_present, make_fetch_json,
     find_order_returns_by_codes, get_order_return, parse_codes,
@@ -1147,6 +1148,7 @@ if _page == PAGE_TTKH:
                     info["address1"] = addr_lines[0]
         if not info["name"] or not info["address1"]:
             return info, "Thiếu tên hoặc địa chỉ giao hàng"
+        info = resolve_address(info)
         return info, "Hợp lệ"
 
     def _ttkh_editor_rows(rows):

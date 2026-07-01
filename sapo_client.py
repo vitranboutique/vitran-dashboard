@@ -296,10 +296,16 @@ def _customer_payload(customer_id, info: dict, note: str) -> dict:
         "address1": info.get("address1") or "",
         "ward": info.get("ward") or "",
         "ward_name": info.get("ward") or "",
+        "ward_code": info.get("ward_code") or "",
+        "ward_id": info.get("ward_code") or "",
         "district": info.get("district") or "",
         "district_name": info.get("district") or "",
+        "district_code": info.get("district_code") or "",
+        "district_id": info.get("district_code") or "",
         "province": info.get("province") or "",
         "province_name": info.get("province") or "",
+        "province_code": info.get("province_code") or "",
+        "province_id": info.get("province_code") or "",
         "city": info.get("province") or "",
         "city_name": info.get("province") or "",
         "country": "Vietnam",
@@ -309,6 +315,8 @@ def _customer_payload(customer_id, info: dict, note: str) -> dict:
     if info.get("address_format") == "new":
         address.pop("district", None)
         address.pop("district_name", None)
+        address.pop("district_code", None)
+        address.pop("district_id", None)
     customer = {
         "first_name": first_name,
         "last_name": last_name,
@@ -555,10 +563,16 @@ def update_order_customer_info(session: requests.Session, order_id, info: dict, 
         "address1": info.get("address1") or "",
         "ward": info.get("ward") or "",
         "ward_name": info.get("ward") or "",
+        "ward_code": info.get("ward_code") or "",
+        "ward_id": info.get("ward_code") or "",
         "district": info.get("district") or "",
         "district_name": info.get("district") or "",
+        "district_code": info.get("district_code") or "",
+        "district_id": info.get("district_code") or "",
         "province": info.get("province") or "",
         "province_name": info.get("province") or "",
+        "province_code": info.get("province_code") or "",
+        "province_id": info.get("province_code") or "",
         "city": info.get("province") or "",
         "city_name": info.get("province") or "",
         "country": "Vietnam",
@@ -567,6 +581,8 @@ def update_order_customer_info(session: requests.Session, order_id, info: dict, 
     if info.get("address_format") == "new":
         shipping.pop("district", None)
         shipping.pop("district_name", None)
+        shipping.pop("district_code", None)
+        shipping.pop("district_id", None)
     order_payload = {
         "id": order_id,
         "note": note,
