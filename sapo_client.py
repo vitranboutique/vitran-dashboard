@@ -244,10 +244,25 @@ def _saved_order_customer_info(session: requests.Session, order_id, info: dict, 
     try:
         row = get_order(session, order_id)
         addr = row.get("shipping_address") or {}
+        billing = row.get("billing_address") or {}
+        customer = row.get("customer") if isinstance(row.get("customer"), dict) else {}
         saved_note = str(row.get("note") or "")
-        saved_phone = addr.get("phone") or addr.get("phone_number") or addr.get("mobile") or ""
-        attempts.append(f"GET order customer verify -> phone:{bool(saved_phone)} note:{bool(saved_note)}")
-        phone_ok = _phone_matches(saved_phone, info.get("phone"))
+        saved_phones = [
+            row.get("phone"),
+            row.get("mobile"),
+            row.get("phone_number"),
+            addr.get("phone"),
+            addr.get("phone_number"),
+            addr.get("mobile"),
+            billing.get("phone"),
+            billing.get("phone_number"),
+            billing.get("mobile"),
+            customer.get("phone"),
+            customer.get("phone_number"),
+            customer.get("mobile"),
+        ]
+        attempts.append(f"GET order customer verify -> phone:{any(bool(x) for x in saved_phones)} note:{bool(saved_note)}")
+        phone_ok = any(_phone_matches(phone, info.get("phone")) for phone in saved_phones)
         note_ok = (not expected_note) or expected_note.strip() in saved_note or saved_note.strip() == expected_note.strip()
         customer_ok = False
         linked_customer_id = (row.get("customer") or {}).get("id") if isinstance(row.get("customer"), dict) else row.get("customer_id")
@@ -541,20 +556,42 @@ def update_order_customer_info(session: requests.Session, order_id, info: dict, 
     order_payload = {
         "id": order_id,
         "note": note,
+        "phone": info.get("phone") or "",
+        "phone_number": info.get("phone") or "",
+        "mobile": info.get("phone") or "",
         "shipping_address": shipping,
         "shipping_address_attributes": shipping,
+        "billing_address": shipping,
+        "billing_address_attributes": shipping,
     }
     if customer_id:
         order_payload["customer_id"] = customer_id
-        order_payload["customer"] = {"id": customer_id}
+        order_payload["customer"] = {
+            "id": customer_id,
+            "name": info.get("name") or "",
+            "phone": info.get("phone") or "",
+            "phone_number": info.get("phone") or "",
+            "mobile": info.get("phone") or "",
+        }
+        order_payload["customer_attributes"] = order_payload["customer"]
     paths = [f"{BASE}/admin/orders/{order_id}.json", page_url]
     payloads = [
         {"order": order_payload},
-        {"order": {"note": note, "shipping_address": shipping}},
-        {"order": {"note": note, "shipping_address_attributes": shipping}},
+        {"order": {"note": note, "phone": info.get("phone") or "", "shipping_address": shipping, "billing_address": shipping}},
+        {"order": {"note": note, "phone": info.get("phone") or "", "shipping_address_attributes": shipping, "billing_address_attributes": shipping}},
     ]
     if customer_id:
-        payloads.append({"order": {"note": note, "customer_id": customer_id, "customer": {"id": customer_id}, "shipping_address": shipping}})
+        payloads.append({
+            "order": {
+                "note": note,
+                "phone": info.get("phone") or "",
+                "customer_id": customer_id,
+                "customer": order_payload["customer"],
+                "customer_attributes": order_payload["customer"],
+                "shipping_address": shipping,
+                "billing_address": shipping,
+            }
+        })
     for path in paths:
         for method in ("put", "patch", "post"):
             for payload in payloads:
@@ -568,12 +605,30 @@ def update_order_customer_info(session: requests.Session, order_id, info: dict, 
                 attempts.append(_attempt_desc(resp))
                 if resp.status_code < 400 and _saved_order_customer_info(session, order_id, info, note, attempts, customer_id):
                     return _json_or_empty(resp)
-        form_data = {"_method": "put", "order[note]": note}
+        form_data = {
+            "_method": "put",
+            "order[note]": note,
+            "order[phone]": info.get("phone") or "",
+            "order[phone_number]": info.get("phone") or "",
+            "order[mobile]": info.get("phone") or "",
+            "order[customer_phone]": info.get("phone") or "",
+            "order[contact_phone]": info.get("phone") or "",
+            "customer[phone]": info.get("phone") or "",
+            "customer[phone_number]": info.get("phone") or "",
+            "customer[mobile]": info.get("phone") or "",
+        }
         if customer_id:
             form_data["order[customer_id]"] = customer_id
+            form_data["order[customer][id]"] = customer_id
+            form_data["order[customer][name]"] = info.get("name") or ""
+            form_data["order[customer][phone]"] = info.get("phone") or ""
+            form_data["order[customer][phone_number]"] = info.get("phone") or ""
+            form_data["order[customer][mobile]"] = info.get("phone") or ""
         for k, v in shipping.items():
             form_data[f"order[shipping_address][{k}]"] = v
             form_data[f"order[shipping_address_attributes][{k}]"] = v
+            form_data[f"order[billing_address][{k}]"] = v
+            form_data[f"order[billing_address_attributes][{k}]"] = v
         resp = session.post(
             path,
             data=form_data,
