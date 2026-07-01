@@ -245,19 +245,18 @@ def _saved_order_customer_info(session: requests.Session, order_id, info: dict, 
         row = get_order(session, order_id)
         addr = row.get("shipping_address") or {}
         saved_note = str(row.get("note") or "")
-        saved_phone = re.sub(r"\D+", "", str(addr.get("phone") or addr.get("phone_number") or ""))
-        expected_phone = re.sub(r"\D+", "", str(info.get("phone") or ""))
+        saved_phone = addr.get("phone") or addr.get("phone_number") or addr.get("mobile") or ""
         attempts.append(f"GET order customer verify -> phone:{bool(saved_phone)} note:{bool(saved_note)}")
-        phone_ok = expected_phone and (saved_phone.endswith(expected_phone[-9:]) or expected_phone.endswith(saved_phone[-9:]))
+        phone_ok = _phone_matches(saved_phone, info.get("phone"))
         note_ok = (not expected_note) or expected_note.strip() in saved_note or saved_note.strip() == expected_note.strip()
-        customer_ok = True
+        customer_ok = False
         linked_customer_id = (row.get("customer") or {}).get("id") if isinstance(row.get("customer"), dict) else row.get("customer_id")
         linked_ok = (not customer_id) or (str(linked_customer_id or "") == str(customer_id))
         check_customer_id = linked_customer_id or customer_id
         if check_customer_id:
             try:
-                customer_ok = _customer_phone_saved(get_customer(session, check_customer_id), info.get("phone"))
-                attempts.append(f"GET linked customer verify -> linked:{linked_ok} phone:{customer_ok}")
+                customer_ok = _customer_info_saved(get_customer(session, check_customer_id), info)
+                attempts.append(f"GET linked customer verify -> linked:{linked_ok} info:{customer_ok}")
             except Exception as e:
                 customer_ok = False
                 attempts.append(f"GET linked customer verify -> {type(e).__name__}: {e}")
@@ -273,14 +272,19 @@ def _customer_payload(customer_id, info: dict, note: str) -> dict:
     first_name = parts[0] if parts else name
     last_name = " ".join(parts[1:]) if len(parts) > 1 else ""
     address = {
+        "first_name": first_name,
+        "last_name": last_name,
         "name": name,
         "phone": info.get("phone") or "",
+        "phone_number": info.get("phone") or "",
+        "mobile": info.get("phone") or "",
         "address1": info.get("address1") or "",
         "ward": info.get("ward") or "",
         "district": info.get("district") or "",
         "province": info.get("province") or "",
         "city": info.get("province") or "",
         "country": "Vietnam",
+        "country_code": "VN",
         "default": True,
     }
     customer = {
@@ -288,17 +292,32 @@ def _customer_payload(customer_id, info: dict, note: str) -> dict:
         "last_name": last_name,
         "name": name,
         "phone": info.get("phone") or "",
+        "phone_number": info.get("phone") or "",
+        "mobile": info.get("phone") or "",
         "note": note,
         "addresses": [address],
         "default_address": address,
+        "accepts_marketing": False,
     }
     if customer_id:
         customer["id"] = customer_id
     return {"customer": customer}
 
 
+def _norm_phone(value) -> str:
+    digits = re.sub(r"\D+", "", str(value or ""))
+    if digits.startswith("84") and len(digits) >= 11:
+        digits = "0" + digits[2:]
+    return digits
+
+
+def _phone_matches(saved_value, expected_value) -> bool:
+    expected = _norm_phone(expected_value)
+    saved = _norm_phone(saved_value)
+    return bool(expected and saved and (saved.endswith(expected[-9:]) or expected.endswith(saved[-9:])))
+
+
 def _customer_phone_saved(customer: dict, expected_phone: str) -> bool:
-    expected = re.sub(r"\D+", "", str(expected_phone or ""))
     phones = [customer.get("phone"), customer.get("mobile"), customer.get("phone_number")]
     for addr in (customer.get("addresses") or []):
         if isinstance(addr, dict):
@@ -307,15 +326,137 @@ def _customer_phone_saved(customer: dict, expected_phone: str) -> bool:
     if isinstance(default_addr, dict):
         phones.extend([default_addr.get("phone"), default_addr.get("mobile"), default_addr.get("phone_number")])
     for phone in phones:
-        saved = re.sub(r"\D+", "", str(phone or ""))
-        if expected and saved and (saved.endswith(expected[-9:]) or expected.endswith(saved[-9:])):
+        if _phone_matches(phone, expected_phone):
             return True
     return False
 
 
+def _address_text(value) -> str:
+    if not isinstance(value, dict):
+        return ""
+    parts = [
+        value.get("name"),
+        value.get("phone"),
+        value.get("phone_number"),
+        value.get("mobile"),
+        value.get("address1"),
+        value.get("ward"),
+        value.get("district"),
+        value.get("province"),
+        value.get("city"),
+    ]
+    return " ".join(str(x or "").strip().lower() for x in parts if str(x or "").strip())
+
+
+def _customer_info_saved(customer: dict, info: dict) -> bool:
+    if not _customer_phone_saved(customer, info.get("phone")):
+        return False
+    expected_addr = str(info.get("address1") or "").strip().lower()
+    if not expected_addr:
+        return True
+    candidates = []
+    default_addr = customer.get("default_address") or {}
+    if isinstance(default_addr, dict):
+        candidates.append(default_addr)
+    for addr in (customer.get("addresses") or []):
+        if isinstance(addr, dict):
+            candidates.append(addr)
+    customer_text = _address_text(customer)
+    return any(expected_addr in _address_text(addr) for addr in candidates) or expected_addr in customer_text
+
+
+def _customer_address_payload(info: dict) -> dict:
+    payload = _customer_payload(None, info, "").get("customer", {}).get("default_address") or {}
+    payload.pop("default", None)
+    return {"address": payload}
+
+
+def _save_customer_address(session: requests.Session, customer_id, info: dict, attempts: list[str], token: str | None) -> bool:
+    if not customer_id:
+        return False
+    page_url = f"{BASE}/admin/customers/{customer_id}"
+    try:
+        customer = get_customer(session, customer_id)
+    except Exception as e:
+        attempts.append(f"GET customer before address -> {type(e).__name__}: {e}")
+        customer = {}
+
+    address_ids = []
+    default_addr = customer.get("default_address") or {}
+    if isinstance(default_addr, dict) and default_addr.get("id"):
+        address_ids.append(default_addr.get("id"))
+    for addr in (customer.get("addresses") or []):
+        if isinstance(addr, dict) and addr.get("id") and addr.get("id") not in address_ids:
+            address_ids.append(addr.get("id"))
+
+    payload = _customer_address_payload(info)
+    for address_id in address_ids[:3]:
+        url = f"{BASE}/admin/customers/{customer_id}/addresses/{address_id}.json"
+        for method in ("put", "patch"):
+            resp = getattr(session, method)(
+                url,
+                json=payload,
+                headers=_json_headers(page_url, token),
+                timeout=30,
+                allow_redirects=False,
+            )
+            attempts.append(_attempt_desc(resp))
+            if resp.status_code < 400:
+                try:
+                    if _customer_info_saved(get_customer(session, customer_id), info):
+                        return True
+                except Exception as e:
+                    attempts.append(f"GET customer after address update -> {type(e).__name__}: {e}")
+
+    url = f"{BASE}/admin/customers/{customer_id}/addresses.json"
+    resp = session.post(
+        url,
+        json=payload,
+        headers=_json_headers(page_url, token),
+        timeout=30,
+        allow_redirects=False,
+    )
+    attempts.append(_attempt_desc(resp))
+    if resp.status_code < 400:
+        try:
+            return _customer_info_saved(get_customer(session, customer_id), info)
+        except Exception as e:
+            attempts.append(f"GET customer after address create -> {type(e).__name__}: {e}")
+    return False
+
+
+def _find_customer_by_phone(session: requests.Session, phone: str, attempts: list[str]):
+    expected = _norm_phone(phone)
+    if not expected:
+        return None
+    queries = [phone, expected, expected[-9:]]
+    seen = set()
+    for query in queries:
+        query = str(query or "").strip()
+        if not query or query in seen:
+            continue
+        seen.add(query)
+        for path in ("/admin/customers/search.json", "/admin/customers.json"):
+            try:
+                resp = session.get(f"{BASE}{path}", params={"query": query, "limit": 10}, timeout=30)
+                attempts.append(_attempt_desc(resp))
+                if resp.status_code >= 400:
+                    continue
+                data = _json_or_empty(resp)
+                customers = data.get("customers") or data.get("data") or []
+                if isinstance(customers, dict):
+                    customers = [customers]
+                for customer in customers:
+                    if isinstance(customer, dict) and _customer_phone_saved(customer, expected):
+                        return customer.get("id")
+            except Exception as e:
+                attempts.append(f"GET customer search -> {type(e).__name__}: {e}")
+    return None
+
+
 def _upsert_customer_info(session: requests.Session, order: dict, info: dict, note: str, attempts: list[str]):
     customer = order.get("customer") if isinstance(order.get("customer"), dict) else {}
-    customer_id = customer.get("id") or order.get("customer_id")
+    customer_id = customer.get("id") or order.get("customer_id") or _find_customer_by_phone(session, info.get("phone"), attempts)
     token = _page_csrf_token(session, f"{BASE}/admin/customers/{customer_id}" if customer_id else f"{BASE}/admin/customers", attempts)
     if customer_id:
         url = f"{BASE}/admin/customers/{customer_id}.json"
@@ -332,7 +473,7 @@ def _upsert_customer_info(session: requests.Session, order: dict, info: dict, no
                 try:
                     saved = get_customer(session, customer_id)
                     attempts.append("GET customer verify -> ok")
-                    if _customer_phone_saved(saved, info.get("phone")):
+                    if _customer_info_saved(saved, info) or _save_customer_address(session, customer_id, info, attempts, token):
                         return customer_id
                 except Exception as e:
                     attempts.append(f"GET customer verify -> {type(e).__name__}: {e}")
@@ -350,6 +491,7 @@ def _upsert_customer_info(session: requests.Session, order: dict, info: dict, no
         created = data.get("customer") or data
         new_id = created.get("id")
         if new_id:
+            _save_customer_address(session, new_id, info, attempts, token)
             return new_id
     return customer_id
 
@@ -362,15 +504,24 @@ def update_order_customer_info(session: requests.Session, order_id, info: dict, 
     current_order = get_order(session, order_id)
     customer_note = f"TTKH từ sàn: {info.get('phone') or ''}".strip()
     customer_id = _upsert_customer_info(session, current_order, info, customer_note, attempts)
+    name = str(info.get("name") or "").strip()
+    parts = name.split()
+    first_name = parts[0] if parts else name
+    last_name = " ".join(parts[1:]) if len(parts) > 1 else ""
     shipping = {
+        "first_name": first_name,
+        "last_name": last_name,
         "name": info.get("name") or "",
         "phone": info.get("phone") or "",
+        "phone_number": info.get("phone") or "",
+        "mobile": info.get("phone") or "",
         "address1": info.get("address1") or "",
         "ward": info.get("ward") or "",
         "district": info.get("district") or "",
         "province": info.get("province") or "",
         "city": info.get("province") or "",
         "country": "Vietnam",
+        "country_code": "VN",
     }
     order_payload = {
         "id": order_id,
