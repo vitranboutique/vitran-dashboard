@@ -2455,6 +2455,14 @@ if _page == PAGE_RETURNS:
                 return
             def _safe(v, default=""):
                 return _esc(str(v if v not in (None, "") else default))
+            def _doisoat(d):   # Sapo API KHÔNG cho lấy số/ngày đối soát → mở NHANH trang đối soát
+                oc = d.get("order_code") or ""   # (đã điền sẵn mã, tab "Đã thanh toán") để xem tay
+                if oc and "tiktok" in (d.get("order_link") or "").lower():
+                    u = ("https://vitranboutiquehcm.mysapo.net/admin/apps/tiktok-channel/home/"
+                         "automation-delivery-collations?query=" + oc +
+                         "&connection_ids=11589%2C12966%2C19313&channel_type=6&paid=true")
+                    return f"<a href='{_esc(u)}' target='_blank'>🔍 Xem</a>"
+                return "<span style='color:#cbd5e1'>—</span>"
             cols = ["STT"]
             if show_location:
                 cols += ["Vị trí"]
@@ -2466,7 +2474,7 @@ if _page == PAGE_RETURNS:
             cols += ["SKU", "SL", "Tổng tiền", "Nhập kho"]
             if show_reason:
                 cols += ["Lý do vào KN"]
-            cols += ["Ghi chú"]
+            cols += ["Đối soát", "Ghi chú"]
             _sticky_n = cols.index("Mã trả hàng") + 1   # cố định các cột đầu → hết "Mã trả hàng"
             thead = "".join(f"<th>{c}</th>" for c in cols)
             body = ""
@@ -2498,6 +2506,7 @@ if _page == PAGE_RETURNS:
                         f"<td>{_safe(d.get('stock_status'), 'Chưa rõ')}</td>"]
                 if show_reason:
                     tds.append(f"<td>{_safe(d.get('reason'))}</td>")
+                tds.append(f"<td>{_doisoat(d)}</td>")
                 tds.append(f"<td class='note' title='{_safe(note)}'>{_safe(note)}</td>")
                 body += f"<tr style='{bg}'>" + "".join(tds) + "</tr>"
             html = f"""<style>
