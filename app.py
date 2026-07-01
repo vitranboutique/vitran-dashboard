@@ -2455,17 +2455,22 @@ if _page == PAGE_RETURNS:
                 return
             def _safe(v, default=""):
                 return _esc(str(v if v not in (None, "") else default))
-            def _doisoat(d):   # 1 LINK tự chọn tab: note CÓ kết quả KN (🟢✅🔴❌⛔⚪⚫) → "Đã thanh toán";
-                oc = d.get("order_code") or ""              # còn lại (chờ / 🚨 cần KN / chưa ghi) → "Chưa thanh toán"
-                if oc and "tiktok" in (d.get("order_link") or "").lower():
-                    _done = any(m in (d.get("note") or "") for m in ("🟢", "✅", "🔴", "❌", "⛔", "⚪", "⚫"))
-                    paid, tab = ("true", "Đã") if _done else ("false", "Chờ")
-                    u = ("https://vitranboutiquehcm.mysapo.net/admin/apps/tiktok-channel/home/"
-                         "automation-delivery-collations?query=" + oc +
-                         "&connection_ids=11589%2C12966%2C19313&channel_type=6"
-                         "&created_on_min=2024-01-01&created_on_max=2027-12-31&paid=" + paid)
-                    return f"<a href='{_esc(u)}' target='_blank' title='Mở đối soát — tab {tab} thanh toán'>🔍 {tab}</a>"
-                return "<span style='color:#cbd5e1'>—</span>"
+            def _doisoat(d):   # 1 LINK đối soát TikTok/Shopee, tự chọn tab: note CÓ kết quả KN
+                oc = d.get("order_code") or ""              # (🟢✅🔴❌⛔⚪⚫) → "Đã thanh toán"; còn lại → "Chưa thanh toán"
+                _lk = (d.get("order_link") or "").lower()
+                if oc and "tiktok" in _lk:                  # channel_type/connection_ids account-specific
+                    app, conn, ch = "tiktok-channel", "11589%2C12966%2C19313", "6"
+                elif oc and "shopee" in _lk:
+                    app, conn, ch = "shopee-channel", "11588%2C12082%2C12405", "1"
+                else:
+                    return "<span style='color:#cbd5e1'>—</span>"
+                _done = any(m in (d.get("note") or "") for m in ("🟢", "✅", "🔴", "❌", "⛔", "⚪", "⚫"))
+                paid, tab = ("true", "Đã") if _done else ("false", "Chờ")
+                u = (f"https://vitranboutiquehcm.mysapo.net/admin/apps/{app}/home/"
+                     "automation-delivery-collations?query=" + oc +
+                     "&connection_ids=" + conn + "&channel_type=" + ch +
+                     "&created_on_min=2024-01-01&created_on_max=2027-12-31&paid=" + paid)
+                return f"<a href='{_esc(u)}' target='_blank' title='Mở đối soát — tab {tab} thanh toán'>🔍 {tab}</a>"
             cols = ["STT"]
             if show_location:
                 cols += ["Vị trí"]
