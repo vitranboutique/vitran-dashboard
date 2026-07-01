@@ -1066,7 +1066,7 @@ if _page == PAGE_TTKH:
     def _parse_tiktok_ttkh(text):
         raw = str(text or "").replace("\r", "\n").strip()
         lines = [x.strip() for x in raw.splitlines() if x.strip()]
-        info = {"username": "", "name": "", "phone": "", "address1": "", "ward": "", "district": "", "province": "", "raw": raw}
+        info = {"username": "", "name": "", "phone": "", "address1": "", "ward": "", "district": "", "province": "", "address_format": "", "raw": raw}
         if not raw:
             return info, "Chưa dán TTKH"
 
@@ -1091,10 +1091,17 @@ if _page == PAGE_TTKH:
             info["address1"] = addr_lines[0]
         if len(addr_lines) >= 2:
             parts = [p.strip() for p in re.split(r"[,，]", addr_lines[-1]) if p.strip()]
-            if len(parts) >= 4:
-                info["ward"], info["district"], info["province"] = parts[-4], parts[-3], parts[-2]
+            country = _ascii_code(parts[-1]) if parts else ""
+            region_parts = parts[:-1] if country == "VIETNAM" else parts
+            if len(region_parts) >= 3 and _ascii_code(region_parts[-3]) == _ascii_code(region_parts[-2]):
+                info["ward"], info["district"], info["province"] = region_parts[-3], "", region_parts[-1]
+                info["address_format"] = "new"
+            elif len(region_parts) >= 3:
+                info["ward"], info["district"], info["province"] = region_parts[-3], region_parts[-2], region_parts[-1]
+                info["address_format"] = "old"
             elif len(parts) >= 3:
                 info["ward"], info["district"], info["province"] = parts[-3], parts[-2], parts[-1]
+                info["address_format"] = "old"
         if not info["name"] or not info["address1"]:
             return info, "Thiếu tên hoặc địa chỉ giao hàng"
         return info, "Hợp lệ"

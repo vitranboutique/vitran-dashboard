@@ -302,6 +302,8 @@ def _customer_payload(customer_id, info: dict, note: str) -> dict:
         "country_code": "VN",
         "default": True,
     }
+    if info.get("address_format") == "new":
+        address.pop("district", None)
     customer = {
         "first_name": first_name,
         "last_name": last_name,
@@ -553,6 +555,8 @@ def update_order_customer_info(session: requests.Session, order_id, info: dict, 
         "country": "Vietnam",
         "country_code": "VN",
     }
+    if info.get("address_format") == "new":
+        shipping.pop("district", None)
     order_payload = {
         "id": order_id,
         "note": note,
