@@ -1085,7 +1085,7 @@ if _page == PAGE_TTKH:
             return ""
         if "shopee" in str(store or "").lower():
             return f"https://banhang.shopee.vn/portal/sale?search={quote_plus(code)}"
-        return f"https://seller-vn.tiktok.com/order?main_order_id[]={quote_plus(code)}&selected_sort=6&tab=all"
+        return f"https://seller-vn.tiktok.com/order/detail?order_no={quote_plus(code)}&shop_region=VN"
 
     def _ttkh_table_html(df):
         if df.empty:
