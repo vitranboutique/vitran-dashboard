@@ -1092,28 +1092,43 @@ if _page == PAGE_TTKH:
             s = re.sub(r"\([^)]*$", "", str(value or "")).strip(" ,")
             return s.strip()
 
+        def _region_name(value):
+            raw = _region_token(value)
+            key = _ascii_code(raw)
+            special = {
+                "TANANHOI": "Tân An Hội",
+                "CUCHI": "Củ Chi",
+                "HOCMON": "Hóc Môn",
+                "BINHCHANH": "Bình Chánh",
+                "NHABE": "Nhà Bè",
+                "CANGIO": "Cần Giờ",
+            }
+            if key in special:
+                return special[key]
+            return " ".join(w[:1].upper() + w[1:].lower() for w in raw.split())
+
         def _province_name(value):
             key = _ascii_code(_region_token(value))
             if key in {"TPHCM", "HCM", "HOCHIMINH", "THANHPHOHOCHIMINH"}:
                 return "Hồ Chí Minh"
             if key in {"HN", "HANOI", "THANHPHOHANOI"}:
                 return "Hà Nội"
-            return _region_token(value)
+            return _region_name(value)
 
         def _apply_region(parts):
             parts = [_region_token(p) for p in parts if _region_token(p)]
             country = _ascii_code(parts[-1]) if parts else ""
             region_parts = parts[:-1] if country == "VIETNAM" else parts
             if len(region_parts) >= 3 and _ascii_code(region_parts[-3]) == _ascii_code(region_parts[-2]):
-                info["ward"], info["district"], info["province"] = region_parts[-3], "", _province_name(region_parts[-1])
+                info["ward"], info["district"], info["province"] = _region_name(region_parts[-3]), "", _province_name(region_parts[-1])
                 info["address_format"] = "new"
                 return 3 + (1 if country == "VIETNAM" else 0)
             elif len(region_parts) >= 3:
-                info["ward"], info["district"], info["province"] = region_parts[-3], region_parts[-2], _province_name(region_parts[-1])
+                info["ward"], info["district"], info["province"] = _region_name(region_parts[-3]), _region_name(region_parts[-2]), _province_name(region_parts[-1])
                 info["address_format"] = "old"
                 return 3 + (1 if country == "VIETNAM" else 0)
             elif len(region_parts) >= 2:
-                info["ward"], info["district"], info["province"] = region_parts[-2], "", _province_name(region_parts[-1])
+                info["ward"], info["district"], info["province"] = _region_name(region_parts[-2]), "", _province_name(region_parts[-1])
                 info["address_format"] = "new"
                 return 2 + (1 if country == "VIETNAM" else 0)
             return 0
