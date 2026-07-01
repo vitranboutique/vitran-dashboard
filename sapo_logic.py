@@ -242,6 +242,47 @@ def get_tt_customer_candidates(fetch_json, days: int = 15, max_pages: int = 30, 
     rows = []
     stopped_by_old = False
 
+    def _money_value(value) -> int:
+        try:
+            return int(round(float(value or 0)))
+        except Exception:
+            return 0
+
+    def _line_discount(li: dict) -> int:
+        keys = ("total_discount", "discount_amount", "total_discount_amount", "discount")
+        direct = sum(_money_value(li.get(k)) for k in keys if li.get(k) not in (None, ""))
+        allocs = li.get("discount_allocations") or li.get("discount_applications") or []
+        alloc_total = 0
+        if isinstance(allocs, list):
+            for a in allocs:
+                if isinstance(a, dict):
+                    alloc_total += _money_value(a.get("amount") or a.get("discount_amount") or a.get("value"))
+        return max(direct, alloc_total)
+
+    def _line_prices(li: dict, qty: int) -> tuple[int, int, int]:
+        original_unit = _money_value(li.get("original_price") or li.get("base_price") or li.get("price"))
+        discounted_unit = _money_value(
+            li.get("discounted_price")
+            or li.get("final_price")
+            or li.get("sale_price")
+            or li.get("price_after_discount")
+        )
+        line_total = _money_value(
+            li.get("line_price")
+            or li.get("total_price")
+            or li.get("total")
+            or li.get("subtotal_price")
+        )
+        discount = _line_discount(li)
+        if not line_total and original_unit:
+            line_total = max(0, original_unit * max(qty, 1) - discount)
+        if not discounted_unit and line_total and qty:
+            discounted_unit = int(round(line_total / qty))
+        if not discounted_unit:
+            discounted_unit = original_unit
+            line_total = discounted_unit * max(qty, 1)
+        return original_unit, discounted_unit, line_total
+
     created_min = cutoff_vn.isoformat()
     for page in range(1, int(max_pages) + 1):
         data = fetch_json("/admin/orders.json", limit=250, page=page, created_on_min=created_min)
@@ -270,19 +311,16 @@ def get_tt_customer_candidates(fetch_json, days: int = 15, max_pages: int = 30, 
             order_value = 0
             for li in line_items:
                 q = int(round(li.get("quantity") or 0))
-                price = li.get("price")
-                if price in (None, ""):
-                    price = li.get("original_price") or li.get("base_price") or 0
-                try:
-                    price = int(round(float(price or 0)))
-                except Exception:
-                    price = 0
-                order_value += q * price
+                original_price, price, line_total = _line_prices(li, q)
+                order_value += line_total
                 products.append({
                     "sku": li.get("sku") or "N/A",
                     "qty": q,
                     "price": price,
-                    "title": li.get("title") or li.get("name") or "",
+                    "original_price": original_price,
+                    "line_total": line_total,
+                    "title": li.get("product_title") or li.get("product_name") or li.get("title") or li.get("name") or "",
+                    "variant": li.get("variant_title") or li.get("variant_name") or li.get("variant") or "",
                 })
             cd = o.get("channel_definition") or {}
             store = cd.get("branch_name") or o.get("source_name") or "Khác"

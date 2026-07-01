@@ -1109,8 +1109,14 @@ if _page == PAGE_TTKH:
             sku = p.get("sku") or "N/A"
             qty = p.get("qty") or 0
             price = _money(p.get("price"))
+            line_total = _money(p.get("line_total") or ((p.get("qty") or 0) * (p.get("price") or 0)))
             title = str(p.get("title") or "").strip()
-            lines.append(f"{sku} | SL {qty} | Giá {price}" + (f" | {title[:70]}" if title else ""))
+            variant = str(p.get("variant") or "").strip()
+            desc = title[:70] if title else sku
+            if variant:
+                desc += f" | {variant[:50]}"
+            lines.append(f"{desc}")
+            lines.append(f"SKU {sku} | SL {qty} | Đơn giá {price} | Thành tiền {line_total}")
         lines.append(f"Tổng: {_money(row.get('order_value'))}")
         return "&#13;".join(_esc(x) for x in lines)
 
