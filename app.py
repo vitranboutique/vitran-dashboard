@@ -2467,6 +2467,7 @@ if _page == PAGE_RETURNS:
             if show_reason:
                 cols += ["Lý do vào KN"]
             cols += ["Ghi chú"]
+            _sticky_n = cols.index("Mã trả hàng") + 1   # cố định các cột đầu → hết "Mã trả hàng"
             thead = "".join(f"<th>{c}</th>" for c in cols)
             body = ""
             for i, d in enumerate(items, 1):
@@ -2503,7 +2504,7 @@ if _page == PAGE_RETURNS:
  body{{margin:0;font-family:Tahoma,Arial,sans-serif;color:#1f2937}}
  table{{border-collapse:collapse;font-size:12.5px;width:max-content;min-width:100%}}
  th,td{{border:1px solid #e2e6ec;padding:4px 8px;text-align:left;white-space:nowrap}}
- th{{background:#eef1f6;position:sticky;top:0;z-index:1;font-weight:700}}
+ th{{background:#eef1f6;position:sticky;top:0;z-index:4;font-weight:700}}
  td.r{{text-align:right}}
  td.note{{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:help}}
  a{{color:#1d4ed8;text-decoration:none}} a:hover{{text-decoration:underline}}
@@ -2514,6 +2515,20 @@ if _page == PAGE_RETURNS:
  function cp(t,el){{const a=document.createElement('textarea');a.value=t;a.style.position='fixed';a.style.opacity=0;
   document.body.appendChild(a);a.focus();a.select();try{{document.execCommand('copy');}}catch(e){{}}a.remove();
   if(el){{const o=el.textContent;el.textContent='✅';setTimeout(()=>{{el.textContent=o;}},900);}}}}
+ (function(){{  // CỐ ĐỊNH các cột đầu (đến hết "Mã trả hàng") khi cuộn ngang
+  var N={_sticky_n}, tbl=document.querySelector('table'); if(!tbl) return;
+  var head=tbl.querySelector('thead tr'); if(!head) return;
+  var offs=[]; for(var i=0;i<N;i++){{offs.push(head.children[i].offsetLeft);}}
+  tbl.querySelectorAll('tr').forEach(function(tr){{
+   var isHead=tr.parentElement.tagName==='THEAD';
+   for(var i=0;i<N && i<tr.children.length;i++){{
+    var c=tr.children[i];
+    c.style.position='sticky'; c.style.left=offs[i]+'px'; c.style.zIndex=isHead?6:3;
+    if(!isHead){{c.style.background=tr.style.backgroundColor||'#ffffff';}}
+    if(i===N-1){{c.style.boxShadow='2px 0 4px -1px rgba(0,0,0,.2)';}}
+   }}
+  }});
+ }})();
 </script>"""
             components.html(html, height=h, scrolling=True)
 
