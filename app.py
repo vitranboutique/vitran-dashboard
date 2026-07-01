@@ -1133,6 +1133,59 @@ if _page == PAGE_TTKH:
     def _ttkh_input_key(order_id):
         return f"ttkh_cell_{order_id}"
 
+    def _collect_ttkh_rows(source_rows):
+        out = []
+        for source in source_rows:
+            order_id = str(source.get("order_id"))
+            txt = str(st.session_state.get(_ttkh_input_key(order_id)) or "").strip()
+            if not txt:
+                continue
+            info, status = _parse_tiktok_ttkh(txt)
+            has_phone = bool(info.get("phone")) and bool(_phone_re.search(info.get("phone", "")))
+            out.append({
+                "order_id": order_id,
+                "code": source.get("name"),
+                "old_note": str(source.get("note") or "").strip(),
+                "ttkh": txt,
+                "info": info,
+                "status": status,
+                "has_phone": has_phone,
+            })
+        return out
+
+    def _write_ttkh_rows(rows_to_write):
+        session = build_session()
+        now_note = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%d/%m/%Y %H:%M")
+        results = []
+        ok_count = 0
+        written_ids = []
+        for r in rows_to_write:
+            if not r["has_phone"] or r["status"] != "Hợp lệ":
+                results.append({"Mã đơn": r["code"], "Kết quả": "Bỏ qua", "Lý do": r["status"]})
+                continue
+            old_note = r["old_note"]
+            info = r["info"]
+            block = (
+                f"📞 TTKH TikTok: sdt: {info['phone']}"
+                + (f" | user: {info['username']}" if info.get("username") else "")
+                + f"\n🕘 Cập nhật: {now_note}"
+            )
+            new_note = f"{block}\n📝 Ghi chú cũ SAPO:\n{old_note}".strip() if old_note else block
+            try:
+                update_order_customer_info(session, r["order_id"], info, new_note)
+                ok_count += 1
+                written_ids.append(str(r["order_id"]))
+                results.append({"Mã đơn": r["code"], "Kết quả": "Đã ghi", "Lý do": ""})
+            except Exception as e:
+                results.append({"Mã đơn": r["code"], "Kết quả": "Lỗi", "Lý do": str(e)[:220]})
+        st.session_state["ttkh_write_results"] = results
+        if ok_count:
+            for _oid in written_ids:
+                st.session_state["ttkh_pending_inputs"].pop(_oid, None)
+                st.session_state[_ttkh_input_key(_oid)] = ""
+            load_ttkh_candidates.clear()
+        st.rerun()
+
     def _ttkh_table(label, rows):
         st.markdown(f"#### {label} — {len(rows)} đơn")
         df = _ttkh_editor_rows(rows)
@@ -1174,41 +1227,25 @@ if _page == PAGE_TTKH:
             old_note = str(r.get("Ghi chú hiện tại") or "").strip()
             if old_note:
                 c[4].caption(f"Ghi chú cũ: {old_note[:120]}" + ("..." if len(old_note) > 120 else ""))
+        pending_here = _collect_ttkh_rows(rows)
+        ready_here = sum(1 for r in pending_here if r["has_phone"] and r["status"] == "Hợp lệ")
+        save_cols = st.columns([1.6, 1, 5])
+        if ready_here:
+            save_cols[0].caption(f"Sẵn sàng ghi: {ready_here} đơn trong bảng này")
+        if save_cols[1].button("💾 Ghi SAPO", key=f"ttkh_save_{label}", disabled=not pending_here, use_container_width=True):
+            _write_ttkh_rows(pending_here)
         return df
 
     st.caption("Dán nguyên block TTKH trực tiếp vào cột `TTKH dán vào` của đúng mã đơn. Rê chuột vào cột `SL SP` để xem SKU, SL, giá từng món và tổng tiền.")
+    if "ttkh_pending_inputs" not in st.session_state:
+        st.session_state["ttkh_pending_inputs"] = {}
     _df_multi = _ttkh_table("Đơn ≥ 2 SP", _tt["multi"])
     _df_single = _ttkh_table("Đơn 1 SP", _tt["single"])
     _all_rows = list(_tt["multi"]) + list(_tt["single"])
-    _row_by_order_id = {str(r.get("order_id")): r for r in _all_rows}
-
-    if "ttkh_pending_inputs" not in st.session_state:
-        st.session_state["ttkh_pending_inputs"] = {}
     if not _all_rows:
         st.caption("Không có đơn để dán TTKH.")
 
-    def _collect_ttkh_rows():
-        out = []
-        for source in _all_rows:
-            order_id = str(source.get("order_id"))
-            txt = str(st.session_state.get(_ttkh_input_key(order_id)) or "").strip()
-            txt = str(txt or "").strip()
-            if not txt:
-                continue
-            info, status = _parse_tiktok_ttkh(txt)
-            has_phone = bool(info.get("phone")) and bool(_phone_re.search(info.get("phone", "")))
-            out.append({
-                "order_id": order_id,
-                "code": source.get("name"),
-                "old_note": str(source.get("note") or "").strip(),
-                "ttkh": txt,
-                "info": info,
-                "status": status,
-                "has_phone": has_phone,
-            })
-        return out
-
-    _pending_write = _collect_ttkh_rows()
+    _pending_write = _collect_ttkh_rows(_all_rows)
     if _pending_write:
         _preview = pd.DataFrame([{
             "Mã đơn": r["code"],
@@ -1232,40 +1269,6 @@ if _page == PAGE_TTKH:
             for _src in _all_rows:
                 st.session_state[_ttkh_input_key(str(_src.get("order_id")))] = ""
             st.rerun()
-
-    _confirm = st.checkbox("Tôi xác nhận ghi TTKH các dòng hợp lệ vào thông tin giao hàng SAPO", key="ttkh_confirm_write")
-    if st.button("💾 Ghi TTKH vào SAPO", type="primary", disabled=not _confirm or not _pending_write):
-        session = build_session()
-        now_note = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%d/%m/%Y %H:%M")
-        results = []
-        ok_count = 0
-        written_ids = []
-        for r in _pending_write:
-            if not r["has_phone"] or r["status"] != "Hợp lệ":
-                results.append({"Mã đơn": r["code"], "Kết quả": "Bỏ qua", "Lý do": r["status"]})
-                continue
-            old_note = r["old_note"]
-            info = r["info"]
-            block = (
-                f"📞 TTKH TikTok: sdt: {info['phone']}"
-                + (f" | user: {info['username']}" if info.get("username") else "")
-                + f"\n🕘 Cập nhật: {now_note}"
-            )
-            new_note = f"{block}\n📝 Ghi chú cũ SAPO:\n{old_note}".strip() if old_note else block
-            try:
-                update_order_customer_info(session, r["order_id"], info, new_note)
-                ok_count += 1
-                written_ids.append(str(r["order_id"]))
-                results.append({"Mã đơn": r["code"], "Kết quả": "Đã ghi", "Lý do": ""})
-            except Exception as e:
-                results.append({"Mã đơn": r["code"], "Kết quả": "Lỗi", "Lý do": str(e)[:220]})
-        st.session_state["ttkh_write_results"] = results
-        if ok_count:
-            for _oid in written_ids:
-                st.session_state["ttkh_pending_inputs"].pop(_oid, None)
-                st.session_state[_ttkh_input_key(_oid)] = ""
-            load_ttkh_candidates.clear()
-        st.rerun()
 
     if st.session_state.get("ttkh_write_results"):
         st.markdown("#### Kết quả ghi SAPO")
