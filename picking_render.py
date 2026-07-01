@@ -27,7 +27,8 @@ RECEIPT_CSS = """
   .skutable{border:2px solid #111;border-top:0;margin-top:0;}
   .skurow{display:grid;grid-template-columns:1fr 52px;border-bottom:1px solid #777;font-size:13px;font-weight:800;}
   .skurow .qty{text-align:right;}
-  .skusep{border-top:2px dashed #111;margin:4px 0;}
+  .skusep{border-top:2px solid #111;margin:6px 0;}
+  .skusep2{border-top:1px dashed #111;margin:3px 0;}
   .footer-line{border-top:2px solid #111;margin:12px 0 8px;}
   .sign{display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px;font-weight:800;text-align:center;}
 """
@@ -52,7 +53,8 @@ PRINT_CSS = """
   .skutable{border:2px solid #111;border-top:0;margin-top:0;}
   .skurow{display:grid;grid-template-columns:1fr 52px;border-bottom:1px solid #777;font-size:13px;font-weight:800;page-break-inside:avoid;break-inside:avoid;}
   .skurow .qty{text-align:right;}
-  .skusep{border-top:2px dashed #111;margin:4px 0;page-break-after:avoid;break-after:avoid;}
+  .skusep{border-top:2px solid #111;margin:6px 0;page-break-after:avoid;break-after:avoid;}
+  .skusep2{border-top:1px dashed #111;margin:3px 0;page-break-after:avoid;break-after:avoid;}
   .footer-line{border-top:2px solid #111;margin:12px 0 8px;}
   .sign{display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px;font-weight:800;text-align:center;page-break-inside:avoid;break-inside:avoid;}
   *{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
@@ -69,36 +71,62 @@ def _natural_key(text):
     return [int(p) if p.isdigit() else p.lower() for p in re.split(r"(\d+)", str(text))]
 
 
-def _sku_group(sku):
-    first = str(sku or "N/A").strip().split("-", 1)[0].strip()
-    return first.upper() if first else "N/A"
+# Thứ tự SIZE để xếp trong 1 nhóm màu (nhỏ → lớn); size lạ/số xử lý riêng bên dưới.
+_SIZE_RANK = {"XS": 1, "S": 2, "M": 3, "L": 4, "XL": 5, "XXL": 6, "XXXL": 7,
+              "2XL": 6, "3XL": 7, "4XL": 8, "FREE": 9, "FREESIZE": 9, "F": 9}
+
+
+def _split_sku(sku):
+    """Tách SKU -> (NHÓM MÀU = mã hàng+màu, SIZE). Size = token CUỐI nếu là size (S/M/L/XL/số).
+    SKU thường 'mã-màu-size' (CVBC-XD-S -> CVBC-XD, S); có mã chỉ 'mã-size' (CVBC-S -> CVBC, S)."""
+    parts = str(sku or "N/A").strip().upper().split("-")
+    if len(parts) >= 2 and (parts[-1] in _SIZE_RANK or parts[-1].isdigit()):
+        return "-".join(parts[:-1]), parts[-1]
+    return "-".join(parts), ""            # không nhận ra size → cả SKU là 1 nhóm
+
+
+def _size_key(size):
+    if size in _SIZE_RANK:
+        return (0, _SIZE_RANK[size], size)
+    if size.isdigit():
+        return (1, int(size), size)       # size số (28/29…) sau size chữ
+    return (2, 0, size)                    # không có/không rõ size → cuối
 
 
 def _grouped_sku_rows(skus):
-    groups = {}
+    # Gom theo NHÓM MÀU (mã hàng + màu = SKU bỏ size). Các màu CÙNG MÃ HÀNG đứng cạnh nhau,
+    # trong 1 màu xếp theo SIZE (S→M→L→XL) cho dễ nhặt.
+    colors = {}
     for sku, qty in skus or []:
         try:
             q = int(qty)
         except Exception:
             q = qty or 0
-        group = _sku_group(sku)
-        groups.setdefault(group, {"total": 0, "rows": []})
-        groups[group]["total"] += q if isinstance(q, int) else 0
-        groups[group]["rows"].append((str(sku), q))
+        cg, size = _split_sku(sku)
+        prod = cg.split("-", 1)[0]         # MÃ HÀNG (token đầu) — để gom các màu cùng mã
+        c = colors.setdefault(cg, {"prod": prod, "total": 0, "rows": []})
+        c["total"] += q if isinstance(q, int) else 0
+        c["rows"].append((str(sku), q, size))
 
-    if not groups:
+    if not colors:
         return '<div class="skurow"><div>-</div><div class="qty">0</div></div>'
 
-    html = []
-    ordered_groups = sorted(groups.items(), key=lambda x: (-x[1]["total"], _natural_key(x[0])))
-    for idx, (_group, info) in enumerate(ordered_groups):
-        if idx:
-            html.append('<div class="skusep"></div>')
-        rows = sorted(info["rows"], key=lambda x: (-(x[1] if isinstance(x[1], int) else 0), _natural_key(x[0])))
-        html.extend(
-            f'<div class="skurow"><div>{_esc(sku)}</div><div class="qty">{qty}</div></div>'
-            for sku, qty in rows
-        )
+    prod_total = {}
+    for _cg, info in colors.items():
+        prod_total[info["prod"]] = prod_total.get(info["prod"], 0) + info["total"]
+    # MÃ HÀNG nhiều SP lên trên; trong 1 mã, MÀU nhiều SP lên trên; trong 1 màu, theo SIZE.
+    ordered = sorted(colors.items(),
+                     key=lambda x: (-prod_total[x[1]["prod"]], _natural_key(x[1]["prod"]),
+                                    -x[1]["total"], _natural_key(x[0])))
+    html, prev_prod = [], None
+    for cg, info in ordered:
+        if prev_prod is not None:
+            # đổi MÃ HÀNG → vạch ĐẬM; cùng mã đổi MÀU → vạch MẢNH
+            html.append('<div class="skusep"></div>' if info["prod"] != prev_prod
+                        else '<div class="skusep2"></div>')
+        prev_prod = info["prod"]
+        for sku, qty, _sz in sorted(info["rows"], key=lambda r: _size_key(r[2])):
+            html.append(f'<div class="skurow"><div>{_esc(sku)}</div><div class="qty">{qty}</div></div>')
     return "".join(html)
 
 
