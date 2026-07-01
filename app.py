@@ -1096,6 +1096,10 @@ if _page == PAGE_TTKH:
             return f"https://banhang.shopee.vn/portal/sale?search={quote_plus(code)}"
         return f"https://seller-vn.tiktok.com/order/detail?order_no={quote_plus(code)}&shop_region=VN"
 
+    def _sapo_order_url(order_id):
+        oid = str(order_id or "").strip()
+        return f"https://vitranboutiquehcm.mysapo.net/admin/orders/{quote_plus(oid)}" if oid else ""
+
     def _product_tip(row):
         products = row.get("products") or []
         if not products:
@@ -1135,7 +1139,10 @@ if _page == PAGE_TTKH:
             c[0].markdown(str(r.get("Ngày tạo") or ""))
             code = str(r.get("Mã đơn") or "")
             url = _ttkh_order_url(code, r.get("Gian hàng"))
-            c[1].markdown(f"[{code}]({url})" if url else code)
+            sapo_url = _sapo_order_url(oid)
+            code_link = f"[{code}]({url})" if url else code
+            sapo_link = f" · [Sapo]({sapo_url})" if sapo_url else ""
+            c[1].markdown(code_link + sapo_link)
             c[2].markdown(
                 f"<abbr title='{_product_tip(r)}' style='cursor:help;font-weight:800;text-decoration:underline dotted #6b7280'>{int(r.get('SL SP') or 0)} SP ⓘ</abbr>",
                 unsafe_allow_html=True,
