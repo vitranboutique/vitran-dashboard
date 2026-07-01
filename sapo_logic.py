@@ -266,6 +266,24 @@ def get_tt_customer_candidates(fetch_json, days: int = 15, max_pages: int = 30, 
             total_qty = int(round(sum((li.get("quantity") or 0) for li in line_items)))
             if total_qty <= 0:
                 continue
+            products = []
+            order_value = 0
+            for li in line_items:
+                q = int(round(li.get("quantity") or 0))
+                price = li.get("price")
+                if price in (None, ""):
+                    price = li.get("original_price") or li.get("base_price") or 0
+                try:
+                    price = int(round(float(price or 0)))
+                except Exception:
+                    price = 0
+                order_value += q * price
+                products.append({
+                    "sku": li.get("sku") or "N/A",
+                    "qty": q,
+                    "price": price,
+                    "title": li.get("title") or li.get("name") or "",
+                })
             cd = o.get("channel_definition") or {}
             store = cd.get("branch_name") or o.get("source_name") or "Khác"
             channel = cd.get("main_name") or o.get("source_name") or "Khác"
@@ -283,6 +301,8 @@ def get_tt_customer_candidates(fetch_json, days: int = 15, max_pages: int = 30, 
                 "store": store,
                 "channel": channel,
                 "note": note,
+                "products": products,
+                "order_value": order_value,
                 "shipping_phone": ((o.get("shipping_address") or {}).get("phone") or ""),
             })
 

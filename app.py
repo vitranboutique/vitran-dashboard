@@ -1076,8 +1076,16 @@ if _page == PAGE_TTKH:
             "SL SP": r.get("qty", 0),
             "Gian hàng": r.get("store", ""),
             "Ghi chú hiện tại": r.get("note", ""),
+            "products": r.get("products") or [],
+            "order_value": r.get("order_value") or 0,
             "_order_id": r.get("order_id"),
         } for r in rows])
+
+    def _money(v):
+        try:
+            return f"{int(round(float(v or 0))):,}".replace(",", ".") + "đ"
+        except Exception:
+            return "0đ"
 
     def _ttkh_order_url(order_code, store=""):
         code = str(order_code or "").strip()
@@ -1087,41 +1095,16 @@ if _page == PAGE_TTKH:
             return f"https://banhang.shopee.vn/portal/sale?search={quote_plus(code)}"
         return f"https://seller-vn.tiktok.com/order/detail?order_no={quote_plus(code)}&shop_region=VN"
 
-    def _ttkh_table_html(df):
-        if df.empty:
-            return ""
-        head = "".join(f"<th>{_esc(c)}</th>" for c in ["Ngày tạo", "Mã đơn", "SL SP", "Gian hàng", "Ghi chú hiện tại"])
-        rows_html = []
-        for _, r in df.iterrows():
-            code = str(r.get("Mã đơn") or "")
-            url = _ttkh_order_url(code, r.get("Gian hàng"))
-            code_html = f"<a href='{_esc(url)}' target='_blank'>{_esc(code)}</a>" if url else _esc(code)
-            note = str(r.get("Ghi chú hiện tại") or "")
-            rows_html.append(
-                "<tr>"
-                f"<td class='date'>{_esc(r.get('Ngày tạo') or '')}</td>"
-                f"<td class='code'>{code_html}</td>"
-                f"<td class='num'>{int(r.get('SL SP') or 0)}</td>"
-                f"<td class='store'>{_esc(r.get('Gian hàng') or '')}</td>"
-                f"<td class='note' title='{_esc(note)}'>{_esc(note)}</td>"
-                "</tr>"
-            )
-        return f"""
-<style>
-.ttkh-table{{width:100%;table-layout:fixed;border-collapse:collapse;background:#fff;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;font-size:13px}}
-.ttkh-table th{{background:#f3f4f6;text-align:left;padding:9px 10px;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:700}}
-.ttkh-table td{{padding:8px 10px;border-bottom:1px solid #eef0f2;vertical-align:top}}
-.ttkh-table th:nth-child(1),.ttkh-table td.date{{width:92px}}
-.ttkh-table th:nth-child(2),.ttkh-table td.code{{width:178px}}
-.ttkh-table th:nth-child(3),.ttkh-table td.num{{width:58px}}
-.ttkh-table th:nth-child(4),.ttkh-table td.store{{width:220px}}
-.ttkh-table td.num{{text-align:right;font-weight:700}}
-.ttkh-table td.code a{{color:#0068ff;text-decoration:none;font-weight:700}}
-.ttkh-table td.code a:hover{{text-decoration:underline}}
-.ttkh-table td.note{{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#6b7280}}
-</style>
-<table class="ttkh-table"><thead><tr>{head}</tr></thead><tbody>{''.join(rows_html)}</tbody></table>
-"""
+    def _product_tip(row):
+        products = row.get("products") or []
+        lines = []
+        for p in products:
+            lines.append(f"{p.get('sku') or 'N/A'} x{p.get('qty') or 0} - {_money(p.get('price'))}")
+        lines.append(f"Tổng: {_money(row.get('order_value'))}")
+        return "&#10;".join(_esc(x) for x in lines)
+
+    def _ttkh_input_key(order_id):
+        return f"ttkh_cell_{order_id}"
 
     def _ttkh_table(label, rows):
         st.markdown(f"#### {label} — {len(rows)} đơn")
@@ -1129,58 +1112,58 @@ if _page == PAGE_TTKH:
         if df.empty:
             st.caption("Không có đơn.")
             return df
-        st.markdown(_ttkh_table_html(df), unsafe_allow_html=True)
+        h = st.columns([1.0, 2.0, .7, 2.0, 5.3])
+        h[0].markdown("**Ngày tạo**")
+        h[1].markdown("**Mã đơn**")
+        h[2].markdown("**SL SP**")
+        h[3].markdown("**Gian hàng**")
+        h[4].markdown("**TTKH dán vào**")
+        st.markdown("<hr style='margin:4px 0 8px;border:0;border-top:1px solid #e5e7eb'>", unsafe_allow_html=True)
+        for _, r in df.iterrows():
+            oid = str(r.get("_order_id"))
+            key = _ttkh_input_key(oid)
+            if key not in st.session_state:
+                st.session_state[key] = (st.session_state.get("ttkh_pending_inputs") or {}).get(oid, "")
+            c = st.columns([1.0, 2.0, .7, 2.0, 5.3])
+            c[0].markdown(str(r.get("Ngày tạo") or ""))
+            code = str(r.get("Mã đơn") or "")
+            url = _ttkh_order_url(code, r.get("Gian hàng"))
+            c[1].markdown(f"[{code}]({url})" if url else code)
+            c[2].markdown(
+                f"<span title='{_product_tip(r)}' style='cursor:help;font-weight:700'>{int(r.get('SL SP') or 0)} SP</span>",
+                unsafe_allow_html=True,
+            )
+            c[3].markdown(str(r.get("Gian hàng") or ""))
+            c[4].text_area(
+                "TTKH dán vào",
+                key=key,
+                height=96,
+                label_visibility="collapsed",
+                placeholder="Dán nguyên block TTKH từ sàn vào đây",
+            )
+            old_note = str(r.get("Ghi chú hiện tại") or "").strip()
+            if old_note:
+                c[4].caption(f"Ghi chú cũ: {old_note[:120]}" + ("..." if len(old_note) > 120 else ""))
         return df
 
+    st.caption("Dán nguyên block TTKH trực tiếp vào cột `TTKH dán vào` của đúng mã đơn. Rê chuột vào cột `SL SP` để xem SKU, SL, giá từng món và tổng tiền.")
     _df_multi = _ttkh_table("Đơn ≥ 2 SP", _tt["multi"])
     _df_single = _ttkh_table("Đơn 1 SP", _tt["single"])
     _all_rows = list(_tt["multi"]) + list(_tt["single"])
     _row_by_order_id = {str(r.get("order_id")): r for r in _all_rows}
 
-    st.markdown("#### Dán TTKH vào đơn")
     if "ttkh_pending_inputs" not in st.session_state:
         st.session_state["ttkh_pending_inputs"] = {}
-    if _all_rows:
-        _opts = [
-            str(r.get("order_id")) for r in _all_rows
-        ]
-        _labels = {
-            str(r.get("order_id")): f"{r.get('name')} · {r.get('qty')} SP · {r.get('created_on')}"
-            for r in _all_rows
-        }
-        _pick_cols = st.columns([3, 1.2, 1.2, 4])
-        _selected_id = _pick_cols[0].selectbox(
-            "Chọn mã đơn",
-            _opts,
-            format_func=lambda x: _labels.get(str(x), str(x)),
-            key="ttkh_selected_order_id",
-        )
-        _paste_key = f"ttkh_paste_{_selected_id}"
-        _current_text = st.session_state["ttkh_pending_inputs"].get(str(_selected_id), "")
-        if _pick_cols[1].button("➕ Thêm/Sửa", use_container_width=True):
-            st.session_state["ttkh_pending_inputs"][str(_selected_id)] = st.session_state.get(_paste_key, "")
-            st.rerun()
-        if _pick_cols[2].button("🧹 Xóa đơn này", use_container_width=True):
-            st.session_state["ttkh_pending_inputs"].pop(str(_selected_id), None)
-            st.rerun()
-        _pasted_text = st.text_area(
-            "TTKH dán vào",
-            value=_current_text,
-            height=220,
-            key=_paste_key,
-            placeholder="Tên người dùng\n...\nĐịa chỉ vận chuyển\n...\n(+84)...\nĐịa chỉ...",
-        )
-    else:
+    if not _all_rows:
         st.caption("Không có đơn để dán TTKH.")
 
     def _collect_ttkh_rows():
         out = []
-        for order_id, txt in (st.session_state.get("ttkh_pending_inputs") or {}).items():
+        for source in _all_rows:
+            order_id = str(source.get("order_id"))
+            txt = str(st.session_state.get(_ttkh_input_key(order_id)) or "").strip()
             txt = str(txt or "").strip()
             if not txt:
-                continue
-            source = _row_by_order_id.get(str(order_id))
-            if not source:
                 continue
             info, status = _parse_tiktok_ttkh(txt)
             has_phone = bool(info.get("phone")) and bool(_phone_re.search(info.get("phone", "")))
@@ -1216,6 +1199,8 @@ if _page == PAGE_TTKH:
         st.markdown(f"**Sẵn sàng ghi:** {sum(1 for r in _pending_write if r['has_phone'] and r['status'] == 'Hợp lệ')} đơn")
         if st.button("🧹 Xóa toàn bộ danh sách chờ ghi"):
             st.session_state["ttkh_pending_inputs"] = {}
+            for _src in _all_rows:
+                st.session_state[_ttkh_input_key(str(_src.get("order_id")))] = ""
             st.rerun()
 
     _confirm = st.checkbox("Tôi xác nhận ghi TTKH các dòng hợp lệ vào thông tin giao hàng SAPO", key="ttkh_confirm_write")
@@ -1236,7 +1221,7 @@ if _page == PAGE_TTKH:
                 + (f" | user: {info['username']}" if info.get("username") else "")
                 + f"\n🕘 Cập nhật: {now_note}"
             )
-            new_note = f"{old_note}\n{block}".strip() if old_note else block
+            new_note = f"{block}\n📝 Ghi chú cũ SAPO:\n{old_note}".strip() if old_note else block
             try:
                 update_order_customer_info(session, r["order_id"], info, new_note)
                 ok_count += 1
@@ -1248,6 +1233,7 @@ if _page == PAGE_TTKH:
         if ok_count:
             for _oid in written_ids:
                 st.session_state["ttkh_pending_inputs"].pop(_oid, None)
+                st.session_state[_ttkh_input_key(_oid)] = ""
             load_ttkh_candidates.clear()
         st.rerun()
 
