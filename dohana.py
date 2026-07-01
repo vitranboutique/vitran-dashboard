@@ -76,9 +76,9 @@ def _fetch_videos(typ: str, cutoff_date, max_pages: int):
     vids = []
     for p in range(0, max_pages):        # ⚠️ 0-INDEXED: page=0 = MỚI NHẤT
         rows = None
-        # Dohana giới hạn theo GIÂY (429 + 'Retry-After: 1') → KHÔNG phải hết quota.
-        # Tải nhiều trang dồn dập sẽ dính → thử lại tối đa 5 lần, chờ đúng Retry-After.
-        for _try in range(5):
+        # Dohana chặn API rất gắt (429 dù quota CÒN 99/100) → CÀNG THỬ CÀNG BỊ PHẠT LÂU +
+        # báo cáo chậm. Chỉ thử lại 1 lần rồi bỏ (giữ None → cache dài để Dohana hết phạt).
+        for _try in range(2):
             try:
                 r = requests.get(_BASE, params={"page": p, "limit": 100, "type": typ},
                                  headers=headers, timeout=20)

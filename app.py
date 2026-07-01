@@ -598,13 +598,13 @@ def load_dohana_inbound():
     return dohana.inbound_videos()
 
 
-@st.cache_data(ttl=600, show_spinner=False)
+@st.cache_data(ttl=1800, show_spinner=False)  # video ngày cũ không đổi → cache dài, đỡ gọi Dohana
 def load_dohana_date(date_iso):
     from datetime import date as _date
     return dohana.today_package_videos(target_date=_date.fromisoformat(date_iso))
 
 
-@st.cache_data(ttl=600, show_spinner=False)
+@st.cache_data(ttl=1800, show_spinner=False)  # video ngày cũ không đổi → cache dài, đỡ gọi Dohana
 def load_dohana_inbound_date(date_iso):
     from datetime import date as _date
     return dohana.inbound_videos(target_date=_date.fromisoformat(date_iso))
