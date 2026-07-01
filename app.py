@@ -2455,13 +2455,15 @@ if _page == PAGE_RETURNS:
                 return
             def _safe(v, default=""):
                 return _esc(str(v if v not in (None, "") else default))
-            def _doisoat(d):   # Sapo API KHÔNG cho lấy số/ngày đối soát → mở NHANH trang đối soát
-                oc = d.get("order_code") or ""   # (đã điền sẵn mã, tab "Đã thanh toán") để xem tay
-                if oc and "tiktok" in (d.get("order_link") or "").lower():
-                    u = ("https://vitranboutiquehcm.mysapo.net/admin/apps/tiktok-channel/home/"
+            def _doisoat(d):   # Sapo API KHÔNG cho lấy số → mở NHANH trang đối soát. 2 tab tách biệt:
+                oc = d.get("order_code") or ""   # Chờ = "Chưa thanh toán" (chờ đối soát) · Đã = "Đã
+                if oc and "tiktok" in (d.get("order_link") or "").lower():   # thanh toán" (có kết quả)
+                    b = ("https://vitranboutiquehcm.mysapo.net/admin/apps/tiktok-channel/home/"
                          "automation-delivery-collations?query=" + oc +
-                         "&connection_ids=11589%2C12966%2C19313&channel_type=6&paid=true")
-                    return f"<a href='{_esc(u)}' target='_blank'>🔍 Xem</a>"
+                         "&connection_ids=11589%2C12966%2C19313&channel_type=6"
+                         "&created_on_min=2024-01-01&created_on_max=2027-12-31&paid=")
+                    return (f"<a href='{_esc(b + 'false')}' target='_blank' title='Chưa thanh toán = chờ đối soát'>Chờ</a>"
+                            f" · <a href='{_esc(b + 'true')}' target='_blank' title='Đã thanh toán = có kết quả đối soát'>Đã</a>")
                 return "<span style='color:#cbd5e1'>—</span>"
             cols = ["STT"]
             if show_location:
