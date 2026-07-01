@@ -170,8 +170,21 @@ st.markdown(
       .alert-pop .v { font-weight: 800; color: #9aa0a6; }
       .alert-pop .v.hot { color: #b3261e; }
       .alert-pop .ok { color: #1e7d3c; font-weight: 700; padding: 6px 2px; }
+      .st-key-ttkh_save_float {
+        position: fixed !important; right: 14px; bottom: 258px; z-index: 99998;
+        width: 260px !important; max-width: 72vw; background: #f7fbff;
+        border: 2px solid #378ADD; border-radius: 12px;
+        box-shadow: 0 6px 22px rgba(30,100,180,.22); padding: 0 10px 10px;
+      }
+      .st-key-ttkh_save_float .stButton button {
+        background: #378ADD !important; color: #fff !important; border-color: #378ADD !important;
+        font-weight: 800 !important; width: 100%;
+      }
+      .st-key-ttkh_save_float .stButton button p { color: #fff !important; }
       @media (max-width: 640px) { .alert-pop { width: 190px; right: 8px; bottom: 72px; } }
+      @media (max-width: 640px) { .st-key-ttkh_save_float { width: 210px !important; right: 8px; bottom: 220px; } }
       @media print { .alert-pop { display: none !important; } }
+      @media print { .st-key-ttkh_save_float { display: none !important; } }
     </style>
     """,
     unsafe_allow_html=True,
@@ -1247,6 +1260,16 @@ if _page == PAGE_TTKH:
         st.caption("Không có đơn để dán TTKH.")
 
     _pending_write = _collect_ttkh_rows(_all_rows)
+    _ready_all = sum(1 for r in _pending_write if r["has_phone"] and r["status"] == "Hợp lệ")
+    _invalid_all = len(_pending_write) - _ready_all
+    with st.container(key="ttkh_save_float"):
+        st.markdown("**💾 Lưu TTKH SAPO**")
+        st.caption(f"Hợp lệ: {_ready_all} · Chưa hợp lệ: {_invalid_all}")
+        if st.button("💾 Ghi SAPO", key="ttkh_float_save", disabled=not _pending_write, use_container_width=True):
+            _write_ttkh_rows(_pending_write)
+        if _pending_write:
+            st.caption("Nút này luôn nổi khi cuộn trang.")
+
     if _pending_write:
         _preview = pd.DataFrame([{
             "Mã đơn": r["code"],
