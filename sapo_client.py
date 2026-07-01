@@ -295,15 +295,20 @@ def _customer_payload(customer_id, info: dict, note: str) -> dict:
         "mobile": info.get("phone") or "",
         "address1": info.get("address1") or "",
         "ward": info.get("ward") or "",
+        "ward_name": info.get("ward") or "",
         "district": info.get("district") or "",
+        "district_name": info.get("district") or "",
         "province": info.get("province") or "",
+        "province_name": info.get("province") or "",
         "city": info.get("province") or "",
+        "city_name": info.get("province") or "",
         "country": "Vietnam",
         "country_code": "VN",
         "default": True,
     }
     if info.get("address_format") == "new":
         address.pop("district", None)
+        address.pop("district_name", None)
     customer = {
         "first_name": first_name,
         "last_name": last_name,
@@ -549,14 +554,19 @@ def update_order_customer_info(session: requests.Session, order_id, info: dict, 
         "mobile": info.get("phone") or "",
         "address1": info.get("address1") or "",
         "ward": info.get("ward") or "",
+        "ward_name": info.get("ward") or "",
         "district": info.get("district") or "",
+        "district_name": info.get("district") or "",
         "province": info.get("province") or "",
+        "province_name": info.get("province") or "",
         "city": info.get("province") or "",
+        "city_name": info.get("province") or "",
         "country": "Vietnam",
         "country_code": "VN",
     }
     if info.get("address_format") == "new":
         shipping.pop("district", None)
+        shipping.pop("district_name", None)
     order_payload = {
         "id": order_id,
         "note": note,

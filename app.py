@@ -1087,21 +1087,49 @@ if _page == PAGE_TTKH:
         addr_lines = []
         if phone_idx >= 0:
             addr_lines = [ln for ln in lines[phone_idx + 1:] if _ascii_code(ln) not in {"TENNGUOIDUNG", "DIACHIVANCHUYEN"}]
-        if addr_lines:
-            info["address1"] = addr_lines[0]
-        if len(addr_lines) >= 2:
-            parts = [p.strip() for p in re.split(r"[,，]", addr_lines[-1]) if p.strip()]
+
+        def _region_token(value):
+            s = re.sub(r"\([^)]*$", "", str(value or "")).strip(" ,")
+            return s.strip()
+
+        def _province_name(value):
+            key = _ascii_code(_region_token(value))
+            if key in {"TPHCM", "HCM", "HOCHIMINH", "THANHPHOHOCHIMINH"}:
+                return "Hồ Chí Minh"
+            if key in {"HN", "HANOI", "THANHPHOHANOI"}:
+                return "Hà Nội"
+            return _region_token(value)
+
+        def _apply_region(parts):
+            parts = [_region_token(p) for p in parts if _region_token(p)]
             country = _ascii_code(parts[-1]) if parts else ""
             region_parts = parts[:-1] if country == "VIETNAM" else parts
             if len(region_parts) >= 3 and _ascii_code(region_parts[-3]) == _ascii_code(region_parts[-2]):
-                info["ward"], info["district"], info["province"] = region_parts[-3], "", region_parts[-1]
+                info["ward"], info["district"], info["province"] = region_parts[-3], "", _province_name(region_parts[-1])
                 info["address_format"] = "new"
+                return 3 + (1 if country == "VIETNAM" else 0)
             elif len(region_parts) >= 3:
-                info["ward"], info["district"], info["province"] = region_parts[-3], region_parts[-2], region_parts[-1]
+                info["ward"], info["district"], info["province"] = region_parts[-3], region_parts[-2], _province_name(region_parts[-1])
                 info["address_format"] = "old"
-            elif len(parts) >= 3:
-                info["ward"], info["district"], info["province"] = parts[-3], parts[-2], parts[-1]
-                info["address_format"] = "old"
+                return 3 + (1 if country == "VIETNAM" else 0)
+            elif len(region_parts) >= 2:
+                info["ward"], info["district"], info["province"] = region_parts[-2], "", _province_name(region_parts[-1])
+                info["address_format"] = "new"
+                return 2 + (1 if country == "VIETNAM" else 0)
+            return 0
+
+        if addr_lines:
+            if len(addr_lines) >= 2:
+                info["address1"] = " ".join(addr_lines[:-1]).strip()
+                parts = [p.strip() for p in re.split(r"[,，]", addr_lines[-1]) if p.strip()]
+                _apply_region(parts)
+            else:
+                parts = [p.strip() for p in re.split(r"[,，]", addr_lines[0]) if p.strip()]
+                used_tail = _apply_region(parts)
+                if used_tail and len(parts) > used_tail:
+                    info["address1"] = ", ".join(parts[:-used_tail]).strip()
+                else:
+                    info["address1"] = addr_lines[0]
         if not info["name"] or not info["address1"]:
             return info, "Thiếu tên hoặc địa chỉ giao hàng"
         return info, "Hợp lệ"
