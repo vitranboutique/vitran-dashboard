@@ -1396,6 +1396,8 @@ if _page == PAGE_RETURNS:
     if st.button("🔄 Tải lại số liệu"):
         st.cache_data.clear()
         st.rerun()
+    _return_top_search_slot = st.container()
+    _return_top_drill_slot = st.container()
 
     def _note_has_result(note):
         pre = _ascii_code(str(note or "").split("|")[0])
@@ -2354,66 +2356,7 @@ if _page == PAGE_RETURNS:
             )
             st.plotly_chart(_outcome_fig, width="stretch")
 
-            with st.expander("🔍 Bấm xem lý do từng đơn theo tháng / trạng thái nhập kho", expanded=True):
-                _month_options = ["Tất cả"] + list(_month_df["Tháng"])
-                _drill_cols = st.columns(3)
-                _drill_month = _drill_cols[0].selectbox(
-                    "Tháng",
-                    _month_options,
-                    index=0,
-                    key="return_month_drill_month",
-                )
-                _drill_stock = _drill_cols[1].selectbox(
-                    "Trạng thái nhập kho",
-                    ["Tất cả", "Không nhập kho", "Nhập kho 1 phần", "Chưa nhập kho", "Đã nhập kho"],
-                    key="return_month_drill_stock",
-                )
-                _drill_outcome = _drill_cols[2].selectbox(
-                    "Kết quả",
-                    ["Tất cả", "Thắng", "Thua", "Hết hạn", "Không cần KN", "Cần KN", "Đang KN", "Chưa chốt", "Đã nhập kho"],
-                    key="return_month_drill_outcome",
-                )
-                _drill_rows = []
-                for _d in _all_returns_detail:
-                    _raw = str(_d.get("created_on") or "")
-                    try:
-                        _dt = datetime.fromisoformat(_raw.replace("Z", "").split(".")[0]) + timedelta(hours=7)
-                    except Exception:
-                        continue
-                    if _drill_month != "Tất cả" and _dt.strftime("%m/%Y") != _drill_month:
-                        continue
-                    _sg = _stock_group(_d)
-                    _outcome = _return_outcome(_d)
-                    if _drill_stock != "Tất cả" and _sg != _drill_stock:
-                        continue
-                    if _drill_outcome != "Tất cả" and _outcome != _drill_outcome:
-                        continue
-                    _drill_rows.append({
-                        "Ngày tạo": _d.get("created") or "",
-                        "Mã đơn": _d.get("order_code") or "",
-                        "Mã trả": _d.get("return_code") or "",
-                        "Loại trả": _d.get("loai_tra") or "",
-                        "VĐ đi": _d.get("vd_di") or "",
-                        "VĐ trả về": _d.get("vd_tra") or "",
-                        "Shipper hoàn": _d.get("return_shipper") or "Chưa có",
-                        "Kết quả": _outcome,
-                        "Nhập kho": _d.get("stock_status") or "",
-                        "Tổng tiền": _vnd(_d.get("money") or 0),
-                        "Ghi chú": _d.get("note") or "",
-                    })
-                _desc = []
-                if _drill_month != "Tất cả":
-                    _desc.append(f"tháng {_drill_month}")
-                if _drill_stock != "Tất cả":
-                    _desc.append(_drill_stock.lower())
-                if _drill_outcome != "Tất cả":
-                    _desc.append(f"kết quả {_drill_outcome.lower()}")
-                _filter_desc = ", ".join(_desc) if _desc else "tất cả đơn trả"
-                if _drill_rows:
-                    st.caption(f"{len(_drill_rows)} đơn: {_filter_desc}.")
-                    st.dataframe(pd.DataFrame(_drill_rows), use_container_width=True, hide_index=True)
-                else:
-                    st.caption(f"Không có đơn phù hợp: {_filter_desc}.")
+            # Drilldown filter is rendered near the top of the page via _return_top_drill_slot.
         st.markdown("##### 📊 Đang xử lý (chưa nhập kho)")
         _old_n = sum(1 for d in _rip["detail"] if (d.get("age") or 0) >= 7)
         _m = st.columns(5)
@@ -2585,40 +2528,104 @@ if _page == PAGE_RETURNS:
                 st.markdown(f"**🚫 Không có hàng hoàn về — {len(khong_hoan)} đơn**")
                 _sub_table(khong_hoan, 260)
 
-        st.markdown("##### 🔎 Tìm nhanh mã đơn / mã trả / vận đơn")
-        with st.form("return_detail_search_form", clear_on_submit=False):
-            _s_cols = st.columns([5, 1])
-            _search_input = _s_cols[0].text_input(
-                "Dán hoặc quét mã",
-                value=st.session_state.get("return_detail_search_code", ""),
-                placeholder="Quét mã đơn, mã trả hàng, VĐ đi hoặc VĐ trả về",
-                label_visibility="collapsed",
-            )
-            _search_submit = _s_cols[1].form_submit_button("🔎 Tìm", use_container_width=True)
-        if _search_submit:
-            st.session_state["return_detail_search_code"] = str(_search_input or "").strip()
-        _active_search = str(st.session_state.get("return_detail_search_code") or "").strip()
-        if _active_search:
-            _search_matches = []
-            for _d in (_rip.get("all_detail") or _rip["detail"]):
-                if _row_matches_code(_d, _active_search):
-                    _r = dict(_d)
-                    _r["_location"] = _row_location(_d)
-                    _search_matches.append(_r)
-            st.markdown('<div id="ket-qua-tim-ma"></div>', unsafe_allow_html=True)
-            if _search_matches:
-                st.success(f"Tìm thấy {len(_search_matches)} dòng khớp `{_active_search}`. Xem trạng thái ngay bên dưới.")
-                _merge_search_vd = all(d.get("loai_tra_code") == "delivery_failed" for d in _search_matches)
-                _sub_table(
-                    _search_matches,
-                    min(360, 86 + 42 * len(_search_matches)),
-                    show_type=True,
-                    show_reason=True,
-                    show_location=True,
-                    merge_delivery_vd=_merge_search_vd,
+        with _return_top_search_slot:
+            st.markdown("##### 🔎 Tìm nhanh mã đơn / mã trả / vận đơn")
+            with st.form("return_detail_search_form", clear_on_submit=False):
+                _s_cols = st.columns([5, 1])
+                _search_input = _s_cols[0].text_input(
+                    "Dán hoặc quét mã",
+                    value=st.session_state.get("return_detail_search_code", ""),
+                    placeholder="Quét mã đơn, mã trả hàng, VĐ đi hoặc VĐ trả về",
+                    label_visibility="collapsed",
                 )
-            else:
-                st.warning(f"Không tìm thấy mã `{_active_search}` trong danh sách đơn trả đang xử lý.")
+                _search_submit = _s_cols[1].form_submit_button("🔎 Tìm", use_container_width=True)
+            if _search_submit:
+                st.session_state["return_detail_search_code"] = str(_search_input or "").strip()
+            _active_search = str(st.session_state.get("return_detail_search_code") or "").strip()
+            if _active_search:
+                _search_matches = []
+                for _d in (_rip.get("all_detail") or _rip["detail"]):
+                    if _row_matches_code(_d, _active_search):
+                        _r = dict(_d)
+                        _r["_location"] = _row_location(_d)
+                        _search_matches.append(_r)
+                st.markdown('<div id="ket-qua-tim-ma"></div>', unsafe_allow_html=True)
+                if _search_matches:
+                    st.success(f"Tìm thấy {len(_search_matches)} dòng khớp `{_active_search}`. Xem trạng thái ngay bên dưới.")
+                    _merge_search_vd = all(d.get("loai_tra_code") == "delivery_failed" for d in _search_matches)
+                    _sub_table(
+                        _search_matches,
+                        min(360, 86 + 42 * len(_search_matches)),
+                        show_type=True,
+                        show_reason=True,
+                        show_location=True,
+                        merge_delivery_vd=_merge_search_vd,
+                    )
+                else:
+                    st.warning(f"Không tìm thấy mã `{_active_search}` trong danh sách đơn trả đang xử lý.")
+
+        with _return_top_drill_slot:
+            if _month_rows:
+                with st.expander("🔍 Bấm xem lý do từng đơn theo tháng / trạng thái nhập kho", expanded=False):
+                    _month_options = ["Tất cả"] + list(_month_df["Tháng"])
+                    _drill_cols = st.columns(3)
+                    _drill_month = _drill_cols[0].selectbox(
+                        "Tháng",
+                        _month_options,
+                        index=0,
+                        key="return_month_drill_month",
+                    )
+                    _drill_stock = _drill_cols[1].selectbox(
+                        "Trạng thái nhập kho",
+                        ["Tất cả", "Không nhập kho", "Nhập kho 1 phần", "Chưa nhập kho", "Đã nhập kho"],
+                        key="return_month_drill_stock",
+                    )
+                    _drill_outcome = _drill_cols[2].selectbox(
+                        "Kết quả",
+                        ["Tất cả", "Thắng", "Thua", "Hết hạn", "Không cần KN", "Cần KN", "Đang KN", "Chưa chốt", "Đã nhập kho"],
+                        key="return_month_drill_outcome",
+                    )
+                    _drill_rows = []
+                    for _d in _all_returns_detail:
+                        _raw = str(_d.get("created_on") or "")
+                        try:
+                            _dt = datetime.fromisoformat(_raw.replace("Z", "").split(".")[0]) + timedelta(hours=7)
+                        except Exception:
+                            continue
+                        if _drill_month != "Tất cả" and _dt.strftime("%m/%Y") != _drill_month:
+                            continue
+                        _sg = _stock_group(_d)
+                        _outcome = _return_outcome(_d)
+                        if _drill_stock != "Tất cả" and _sg != _drill_stock:
+                            continue
+                        if _drill_outcome != "Tất cả" and _outcome != _drill_outcome:
+                            continue
+                        _drill_rows.append({
+                            "Ngày tạo": _d.get("created") or "",
+                            "Mã đơn": _d.get("order_code") or "",
+                            "Mã trả": _d.get("return_code") or "",
+                            "Loại trả": _d.get("loai_tra") or "",
+                            "VĐ đi": _d.get("vd_di") or "",
+                            "VĐ trả về": _d.get("vd_tra") or "",
+                            "Shipper hoàn": _d.get("return_shipper") or "Chưa có",
+                            "Kết quả": _outcome,
+                            "Nhập kho": _d.get("stock_status") or "",
+                            "Tổng tiền": _vnd(_d.get("money") or 0),
+                            "Ghi chú": _d.get("note") or "",
+                        })
+                    _desc = []
+                    if _drill_month != "Tất cả":
+                        _desc.append(f"tháng {_drill_month}")
+                    if _drill_stock != "Tất cả":
+                        _desc.append(_drill_stock.lower())
+                    if _drill_outcome != "Tất cả":
+                        _desc.append(f"kết quả {_drill_outcome.lower()}")
+                    _filter_desc = ", ".join(_desc) if _desc else "tất cả đơn trả"
+                    if _drill_rows:
+                        st.caption(f"{len(_drill_rows)} đơn: {_filter_desc}.")
+                        st.dataframe(pd.DataFrame(_drill_rows), use_container_width=True, hide_index=True)
+                    else:
+                        st.caption(f"Không có đơn phù hợp: {_filter_desc}.")
 
         # ── VIDEO DOHANA (metadata tích luỹ ở Gist → LƯU CẢ NĂM; khui hàng có tag=cần KN, đóng hàng có tag=không) ──
         try:
