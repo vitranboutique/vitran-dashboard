@@ -589,15 +589,16 @@ def load_ttkh_candidates(days=15, channel_filter="tiktok"):
 
 
 def _dohana_slot():
-    """Khung giờ LẤY DOHANA — chỉ 3 lần/ngày (12h · 16h · 19h giờ VN) để tránh bị chặn 429.
-    Trả key = mốc GẦN NHẤT đã qua trong ngày (làm khoá cache); TRƯỚC 12h → None (chưa lấy)."""
+    """Khung giờ LẤY DOHANA — chỉ 3 lần/ngày (13h · 16h · 19h giờ VN) để tránh bị chặn 429.
+    Trả key = mốc GẦN NHẤT đã qua trong ngày (làm khoá cache); TRƯỚC 13h → None (chưa lấy;
+    muốn xem sớm hơn thì bấm "Tải lại số liệu")."""
     now = datetime.now(timezone.utc) + timedelta(hours=7)
-    passed = [h for h in (12, 16, 19) if now.hour >= h]
+    passed = [h for h in (13, 16, 19) if now.hour >= h]
     return f"{now.date().isoformat()}-{passed[-1]:02d}" if passed else None
 
 
-# Cache theo KHUNG GIỜ (slot) + TTL 24h: chỉ gọi Dohana khi BƯỚC SANG mốc 12/16/19, giữa các
-# mốc dùng lại kết quả → tối đa 3 lần/ngày, tránh 429. slot=None (trước 12h) → KHÔNG gọi.
+# Cache theo KHUNG GIỜ (slot) + TTL 24h: chỉ gọi Dohana khi BƯỚC SANG mốc 13/16/19, giữa các
+# mốc dùng lại kết quả → tối đa 3 lần/ngày, tránh 429. slot=None (trước 13h) → KHÔNG gọi.
 @st.cache_data(ttl=86400, show_spinner=False)
 def load_dohana(slot):
     return dohana.today_package_videos() if slot else None
@@ -1281,7 +1282,7 @@ if _page == PAGE_TTKH:
 if _page == PAGE_DAILY:
     st.title("📄 Báo cáo vận hành cuối ngày")
     st.caption("Tổng hợp tự động từ Sapo + Dohana — bấm **In báo cáo A4** trong khung để in/lưu PDF.  "
-               "🎥 *Video Dohana cập nhật 3 lần/ngày: 12h · 16h · 19h (tránh nghẽn API); trước 12h hiện “—”.*")
+               "🎥 *Video Dohana cập nhật 3 lần/ngày: 13h · 16h · 19h; lúc khác bấm “Tải lại số liệu”; trước 13h hiện “—”.*")
     if not credential_present():
         st.warning("⚠️ Cần kết nối Sapo (API LIVE).")
         st.stop()
