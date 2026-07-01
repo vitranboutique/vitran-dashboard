@@ -45,6 +45,33 @@ def _vn_dt(iso):
         return ""
 
 
+def _vn_time(iso):
+    """createdAt -> giờ VN 'HH:MM:SS'."""
+    s = str(iso).replace("Z", "").split(".")[0]
+    try:
+        return (datetime.fromisoformat(s) + timedelta(hours=7)).strftime("%H:%M:%S")
+    except Exception:
+        return ""
+
+
+def _records_from(vids, typ):
+    """Metadata MỌI video (khử trùng theo mã, giữ bản MỚI NHẤT) để tích luỹ lưu cả năm —
+    {code, type, status, date(VN yyyy-mm-dd), time(VN HH:MM:SS), dur(giây), tag_id}."""
+    seen, out = set(), []
+    for v in sorted(vids, key=lambda x: str(x.get("createdAt") or ""), reverse=True):
+        oc = v.get("orderCode")
+        if not oc or oc in seen:
+            continue
+        seen.add(oc)
+        dur = v.get("duration")
+        out.append({"code": oc, "type": typ, "status": v.get("status"),
+                    "date": str(_vnd(v.get("createdAt")) or ""),
+                    "time": _vn_time(v.get("createdAt")),
+                    "dur": int(dur) if isinstance(dur, (int, float)) else None,
+                    "tag_id": v.get("tagId")})
+    return out
+
+
 # tagId (UUID) -> TÊN TAG trên app đóng hàng. Partner API CHỈ trả tagId, KHÔNG trả tên tag,
 # nên phải map thủ công. Bổ sung/sửa tên trong Streamlit secrets (không cần đổi code):
 #   [dohana.tags]
@@ -143,11 +170,9 @@ def inbound_videos(days_match: int = 3, max_pages: int = 25, target_date=None):
         "today_codes": today_codes,
         "dup": {k: v for k, v in cnt.items() if v >= 2},
         "meta": meta,
-        # ĐƠN CÓ TAG (khui hàng): tráo/đã dùng/trả thiếu/hư hỏng → dùng cho mục CẦN KN
-        "tagged": [{"code": v.get("orderCode"), "tag_id": v.get("tagId"),
-                    "tag": _tag_name(v.get("tagId")), "type": "inbound",
-                    "recorded": _vn_dt(v.get("createdAt"))}
-                   for v in vids if v.get("tagId") and v.get("orderCode")],
+        # METADATA MỌI video khui hàng (lưu cả năm): trạng thái·ngày·giờ·thời lượng·tag.
+        # Đơn CÓ tag (tráo/đã dùng/trả thiếu/hư hỏng) → mục CẦN KN.
+        "records": _records_from(vids, "inbound"),
     }
 
 
@@ -168,9 +193,7 @@ def today_package_videos(days_match: int = 3, max_pages: int = 25, target_date=N
         "dup": {k: v for k, v in codes.items() if v >= 2},
         "match": {v.get("orderCode") for v in vids
                   if v.get("orderCode") and _in_window(v, cutoff, tdate)},
-        # ĐƠN CÓ TAG (đóng hàng): đóng thiếu SP → dùng cho mục KHÔNG CẦN KN
-        "tagged": [{"code": v.get("orderCode"), "tag_id": v.get("tagId"),
-                    "tag": _tag_name(v.get("tagId")), "type": "package",
-                    "recorded": _vn_dt(v.get("createdAt"))}
-                   for v in vids if v.get("tagId") and v.get("orderCode")],
+        # METADATA MỌI video đóng hàng (lưu cả năm): trạng thái·ngày·giờ·thời lượng·tag.
+        # Đơn CÓ tag (đóng thiếu SP) → mục KHÔNG CẦN KN.
+        "records": _records_from(vids, "package"),
     }

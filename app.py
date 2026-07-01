@@ -623,17 +623,17 @@ def load_dohana_inbound(slot):
 
 
 @st.cache_data(ttl=86400, show_spinner=False)
-def load_dohana_tags(slot):
-    """Đơn có tag Dohana (tráo/đã dùng/trả thiếu/hư hỏng · đóng thiếu SP) — TÍCH LUỸ ở Gist để
-    vượt giới hạn API: mỗi mốc (13/16/19h) gộp tag mới từ fetch; giữa mốc chỉ đọc kho tích luỹ."""
+def load_dohana_videos(slot):
+    """Metadata MỌI video Dohana (trạng thái·ngày·giờ·thời lượng·tag) — TÍCH LUỸ ở Gist để LƯU CẢ NĂM
+    (Dohana chỉ giữ 30 ngày). Mỗi mốc 13/16/19h gộp video mới từ fetch; giữa mốc chỉ đọc kho tích luỹ."""
     if not picklog.configured():
         return []
     new = []
     if slot:
         dvr = load_dohana(slot) or {}
         inb = load_dohana_inbound(slot) or {}
-        new = (dvr.get("tagged") or []) + (inb.get("tagged") or [])
-    return picklog.merge_dohana_tags(new)
+        new = (dvr.get("records") or []) + (inb.get("records") or [])
+    return picklog.merge_dohana_videos(new)
 
 
 @st.cache_data(ttl=1800, show_spinner=False)  # video ngày cũ không đổi → cache dài, đỡ gọi Dohana
@@ -2616,24 +2616,26 @@ if _page == PAGE_RETURNS:
             else:
                 st.warning(f"Không tìm thấy mã `{_active_search}` trong danh sách đơn trả đang xử lý.")
 
-        # ── ĐƠN DOHANA GẮN TAG (tích luỹ ở Gist → vượt giới hạn API; khui hàng=cần KN, đóng hàng=không) ──
+        # ── VIDEO DOHANA (metadata tích luỹ ở Gist → LƯU CẢ NĂM; khui hàng có tag=cần KN, đóng hàng có tag=không) ──
         try:
-            _dtags = load_dohana_tags(_dohana_slot())
+            _dvids = load_dohana_videos(_dohana_slot())
         except Exception:
-            _dtags = []
-        _dtag_kn = [t for t in _dtags if t.get("type") == "inbound"]     # khui hàng → CẦN KN
-        _dtag_nokn = [t for t in _dtags if t.get("type") == "package"]   # đóng hàng → KHÔNG cần KN
+            _dvids = []
+        _dtag_kn = [r for r in _dvids if r.get("tag_id") and r.get("type") == "inbound"]     # khui hàng có tag → CẦN KN
+        _dtag_nokn = [r for r in _dvids if r.get("tag_id") and r.get("type") == "package"]   # đóng hàng có tag → KHÔNG cần KN
 
         def _dohana_tag_tbl(items):
             if not items:
                 st.caption("— (Dohana) chưa ghi nhận đơn gắn tag —")
                 return
             st.dataframe(pd.DataFrame([{
-                "Mã đơn": t.get("code"),
-                "Tag": dohana._tag_name(t.get("tag_id")),
-                "Quay lúc": t.get("recorded") or "",
-                "Ghi nhận": t.get("first_seen") or "",
-            } for t in sorted(items, key=lambda x: x.get("first_seen", ""), reverse=True)]),
+                "Mã đơn": r.get("code"),
+                "Tag": dohana._tag_name(r.get("tag_id")),
+                "Ngày quay": r.get("date") or "",
+                "Giờ": r.get("time") or "",
+                "Thời lượng(s)": r.get("dur"),
+                "Ghi nhận": r.get("first_seen") or "",
+            } for r in sorted(items, key=lambda x: (x.get("date") or "", x.get("time") or ""), reverse=True)]),
                 width="stretch", hide_index=True)
 
         # ── DANH SÁCH ĐƠN CẦN KN (bấm ô "Cần KN" ở trên sẽ nhảy tới đây) ──
@@ -2660,6 +2662,28 @@ if _page == PAGE_RETURNS:
         if _other:
             st.markdown(f"### Khác — {len(_other)} đơn")
             _sub_table(_other, 200)
+
+        # ── 🎥 KHO VIDEO DOHANA (lưu CẢ NĂM, vượt hạn 30 ngày của Dohana) — tra cứu metadata ──
+        st.divider()
+        st.subheader("🎥 Kho video Dohana (lưu cả năm)")
+        st.caption(f"Đã lưu **{len(_dvids)}** video (đóng hàng + khui hàng): trạng thái · ngày quay · giờ · "
+                   "thời lượng · tag. Dohana chỉ giữ 30 ngày — kho này gom dần (13/16/19h) nên đọc được đến cuối năm.")
+        _vq = st.text_input("Tra video theo mã đơn", key="dohana_vid_q", placeholder="Dán/nhập mã đơn…")
+        if _vq and _vq.strip():
+            _q = _vq.strip()
+            _hits = [r for r in _dvids if _q in str(r.get("code") or "")]
+            if _hits:
+                st.dataframe(pd.DataFrame([{
+                    "Mã đơn": r.get("code"),
+                    "Loại": "Khui hàng" if r.get("type") == "inbound" else "Đóng hàng",
+                    "Trạng thái": r.get("status"),
+                    "Ngày quay": r.get("date"),
+                    "Giờ": r.get("time"),
+                    "Thời lượng(s)": r.get("dur"),
+                    "Tag": dohana._tag_name(r.get("tag_id")) if r.get("tag_id") else "",
+                } for r in _hits]), width="stretch", hide_index=True)
+            else:
+                st.caption("Không thấy trong kho (có thể chưa tới mốc lấy 13/16/19h, hoặc video ngoài phạm vi đã gom).")
     st.stop()
 
 

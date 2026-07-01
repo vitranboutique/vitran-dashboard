@@ -149,10 +149,10 @@ def read_date(day_iso: str) -> list:
     return [r for r in data.get("logs", []) if r.get("ngay") == day_iso]
 
 
-# ─── ĐƠN CÓ TAG DOHANA (tráo/đã dùng/trả thiếu/hư hỏng/đóng thiếu SP) ───
-# Tích luỹ dần qua các lần fetch 3 lần/ngày → vượt giới hạn API Dohana (không lo 1 lần bị 429).
-# Lưu cùng gist với picklog, file riêng. Mỗi mục: {code, tag_id, type(inbound/package), recorded, first_seen}.
-_DFILE = "vitran_dohana_tags.json"
+# ─── METADATA VIDEO DOHANA (đóng hàng + khui hàng) — LƯU CẢ NĂM ───
+# Dohana chỉ giữ 30 ngày rồi XOÁ số liệu. Tích luỹ dần qua các lần fetch 3×/ngày vào GIST (không tự
+# xoá) → cuối năm VẪN ĐỌC được: trạng thái · ngày quay · giờ · thời lượng · tag. Khử trùng (code,type).
+_DFILE = "vitran_dohana_videos.json"
 
 
 def _read_gist_file(fname):
@@ -176,31 +176,40 @@ def _read_gist_file(fname):
     return None
 
 
-def read_dohana_tags() -> list:
-    """Toàn bộ đơn có tag Dohana đã tích luỹ."""
+def read_dohana_videos() -> list:
+    """Toàn bộ metadata video Dohana đã tích luỹ: [{code,type,status,date,time,dur,tag_id,first_seen}]."""
     d = _read_gist_file(_DFILE)
-    return (d or {}).get("tags", []) if d else []
+    return (d or {}).get("videos", []) if d else []
 
 
-def merge_dohana_tags(new_list) -> list:
-    """Gộp tag mới (từ fetch) vào kho, khử trùng theo (code, type). Trả TOÀN BỘ danh sách tích luỹ."""
+def merge_dohana_videos(new_list) -> list:
+    """Gộp metadata video mới (từ fetch) vào kho, khử trùng (code,type); cập nhật tag nếu gắn muộn.
+    Trả TOÀN BỘ danh sách tích luỹ (lưu cả năm, không lo Dohana xoá sau 30 ngày)."""
     gid = _resolve_gid()
-    cur = read_dohana_tags()
+    cur = read_dohana_videos()
     if not gid:
         return cur
-    seen = {(t.get("code"), t.get("type")) for t in cur}
+    idx = {(r.get("code"), r.get("type")): r for r in cur}
     today = _today_vn()
-    added = False
-    for t in (new_list or []):
-        c, ty = t.get("code"), t.get("type")
-        if c and (c, ty) not in seen:
-            cur.append({"code": c, "tag_id": t.get("tag_id"), "type": ty,
-                        "recorded": t.get("recorded"), "first_seen": today})
-            seen.add((c, ty))
-            added = True
-    if added:
+    changed = False
+    for r in (new_list or []):
+        c, ty = r.get("code"), r.get("type")
+        if not c:
+            continue
+        old = idx.get((c, ty))
+        if old is None:
+            rec = {"code": c, "type": ty, "status": r.get("status"), "date": r.get("date"),
+                   "time": r.get("time"), "dur": r.get("dur"), "tag_id": r.get("tag_id"),
+                   "first_seen": today}
+            cur.append(rec)
+            idx[(c, ty)] = rec
+            changed = True
+        elif r.get("tag_id") and not old.get("tag_id"):   # tag gắn MUỘN (sau khi đã lưu) → cập nhật
+            old["tag_id"] = r.get("tag_id")
+            changed = True
+    if changed:
         try:
-            body = {"files": {_DFILE: {"content": json.dumps({"tags": cur}, ensure_ascii=False)}}}
+            body = {"files": {_DFILE: {"content": json.dumps({"videos": cur}, ensure_ascii=False)}}}
             requests.patch(f"{_API}/gists/{gid}", headers=_hdr(), data=json.dumps(body), timeout=15)
         except Exception:
             pass
