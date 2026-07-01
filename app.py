@@ -1075,7 +1075,7 @@ if _page == PAGE_TTKH:
             "Mã đơn": r.get("name", ""),
             "SL SP": r.get("qty", 0),
             "Gian hàng": r.get("store", ""),
-            "Ghi chú SAPO": r.get("note", ""),
+            "Ghi chú hiện tại": r.get("note", ""),
             "_order_id": r.get("order_id"),
         } for r in rows])
 
@@ -1090,31 +1090,35 @@ if _page == PAGE_TTKH:
     def _ttkh_table_html(df):
         if df.empty:
             return ""
-        head = "".join(f"<th>{_esc(c)}</th>" for c in ["Ngày tạo", "Mã đơn", "SL SP", "Gian hàng", "Ghi chú SAPO"])
+        head = "".join(f"<th>{_esc(c)}</th>" for c in ["Ngày tạo", "Mã đơn", "SL SP", "Gian hàng", "Ghi chú hiện tại"])
         rows_html = []
         for _, r in df.iterrows():
             code = str(r.get("Mã đơn") or "")
             url = _ttkh_order_url(code, r.get("Gian hàng"))
             code_html = f"<a href='{_esc(url)}' target='_blank'>{_esc(code)}</a>" if url else _esc(code)
-            note = str(r.get("Ghi chú SAPO") or "")
+            note = str(r.get("Ghi chú hiện tại") or "")
             rows_html.append(
                 "<tr>"
-                f"<td>{_esc(r.get('Ngày tạo') or '')}</td>"
+                f"<td class='date'>{_esc(r.get('Ngày tạo') or '')}</td>"
                 f"<td class='code'>{code_html}</td>"
                 f"<td class='num'>{int(r.get('SL SP') or 0)}</td>"
-                f"<td>{_esc(r.get('Gian hàng') or '')}</td>"
+                f"<td class='store'>{_esc(r.get('Gian hàng') or '')}</td>"
                 f"<td class='note' title='{_esc(note)}'>{_esc(note)}</td>"
                 "</tr>"
             )
         return f"""
 <style>
-.ttkh-table{{width:100%;border-collapse:collapse;background:#fff;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;font-size:13px}}
+.ttkh-table{{width:100%;table-layout:fixed;border-collapse:collapse;background:#fff;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;font-size:13px}}
 .ttkh-table th{{background:#f3f4f6;text-align:left;padding:9px 10px;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:700}}
 .ttkh-table td{{padding:8px 10px;border-bottom:1px solid #eef0f2;vertical-align:top}}
+.ttkh-table th:nth-child(1),.ttkh-table td.date{{width:92px}}
+.ttkh-table th:nth-child(2),.ttkh-table td.code{{width:178px}}
+.ttkh-table th:nth-child(3),.ttkh-table td.num{{width:58px}}
+.ttkh-table th:nth-child(4),.ttkh-table td.store{{width:220px}}
 .ttkh-table td.num{{text-align:right;font-weight:700}}
 .ttkh-table td.code a{{color:#0068ff;text-decoration:none;font-weight:700}}
 .ttkh-table td.code a:hover{{text-decoration:underline}}
-.ttkh-table td.note{{max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#6b7280}}
+.ttkh-table td.note{{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#6b7280}}
 </style>
 <table class="ttkh-table"><thead><tr>{head}</tr></thead><tbody>{''.join(rows_html)}</tbody></table>
 """
@@ -1144,8 +1148,8 @@ if _page == PAGE_TTKH:
             str(r.get("order_id")): f"{r.get('name')} · {r.get('qty')} SP · {r.get('created_on')}"
             for r in _all_rows
         }
-        _paste_cols = st.columns([2, 5, 1.2])
-        _selected_id = _paste_cols[0].selectbox(
+        _pick_cols = st.columns([3, 1.2, 1.2, 4])
+        _selected_id = _pick_cols[0].selectbox(
             "Chọn mã đơn",
             _opts,
             format_func=lambda x: _labels.get(str(x), str(x)),
@@ -1153,19 +1157,19 @@ if _page == PAGE_TTKH:
         )
         _paste_key = f"ttkh_paste_{_selected_id}"
         _current_text = st.session_state["ttkh_pending_inputs"].get(str(_selected_id), "")
-        _pasted_text = _paste_cols[1].text_area(
-            "Dán nguyên block TTKH từ sàn",
+        if _pick_cols[1].button("➕ Thêm/Sửa", use_container_width=True):
+            st.session_state["ttkh_pending_inputs"][str(_selected_id)] = st.session_state.get(_paste_key, "")
+            st.rerun()
+        if _pick_cols[2].button("🧹 Xóa đơn này", use_container_width=True):
+            st.session_state["ttkh_pending_inputs"].pop(str(_selected_id), None)
+            st.rerun()
+        _pasted_text = st.text_area(
+            "TTKH dán vào",
             value=_current_text,
-            height=170,
+            height=220,
             key=_paste_key,
             placeholder="Tên người dùng\n...\nĐịa chỉ vận chuyển\n...\n(+84)...\nĐịa chỉ...",
         )
-        if _paste_cols[2].button("➕ Thêm/Sửa", use_container_width=True):
-            st.session_state["ttkh_pending_inputs"][str(_selected_id)] = _pasted_text
-            st.rerun()
-        if _paste_cols[2].button("🧹 Xóa đơn này", use_container_width=True):
-            st.session_state["ttkh_pending_inputs"].pop(str(_selected_id), None)
-            st.rerun()
     else:
         st.caption("Không có đơn để dán TTKH.")
 
