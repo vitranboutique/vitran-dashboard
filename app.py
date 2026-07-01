@@ -588,14 +588,24 @@ def load_ttkh_candidates(days=15, channel_filter="tiktok"):
     return L.get_tt_customer_candidates(make_fetch_json(build_session()), days=days, channel_filter=channel_filter)
 
 
-@st.cache_data(ttl=1800, show_spinner=False)  # 30' — Dohana chặn API rất gắt, hạn chế gọi lại
-def load_dohana():
-    return dohana.today_package_videos()
+def _dohana_slot():
+    """Khung giờ LẤY DOHANA — chỉ 3 lần/ngày (12h · 16h · 19h giờ VN) để tránh bị chặn 429.
+    Trả key = mốc GẦN NHẤT đã qua trong ngày (làm khoá cache); TRƯỚC 12h → None (chưa lấy)."""
+    now = datetime.now(timezone.utc) + timedelta(hours=7)
+    passed = [h for h in (12, 16, 19) if now.hour >= h]
+    return f"{now.date().isoformat()}-{passed[-1]:02d}" if passed else None
 
 
-@st.cache_data(ttl=1800, show_spinner=False)  # 30' — Dohana chặn API rất gắt, hạn chế gọi lại
-def load_dohana_inbound():
-    return dohana.inbound_videos()
+# Cache theo KHUNG GIỜ (slot) + TTL 24h: chỉ gọi Dohana khi BƯỚC SANG mốc 12/16/19, giữa các
+# mốc dùng lại kết quả → tối đa 3 lần/ngày, tránh 429. slot=None (trước 12h) → KHÔNG gọi.
+@st.cache_data(ttl=86400, show_spinner=False)
+def load_dohana(slot):
+    return dohana.today_package_videos() if slot else None
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def load_dohana_inbound(slot):
+    return dohana.inbound_videos() if slot else None
 
 
 @st.cache_data(ttl=1800, show_spinner=False)  # video ngày cũ không đổi → cache dài, đỡ gọi Dohana
@@ -753,7 +763,7 @@ if _page == PAGE_OVERVIEW:
     # Số đơn cần giao ĐÃ CÓ video đóng hàng (khớp Dohana)
     _video_done = None
     if dohana.configured():
-        _dvh = load_dohana()
+        _dvh = load_dohana(_dohana_slot())
         if _dvh:
             _mset = _dvh.get("match", set())
             _video_done = sum(1 for ids in dl.get("order_ids", []) if set(ids) & _mset)
@@ -891,7 +901,7 @@ if _page == PAGE_PICK:
         with st.expander("⚙️ Cách bật (dán 1 dòng vào Secrets)"):
             st.markdown(_DOHANA_SETUP)
     else:
-        _dv = load_dohana() or {"total": 0, "codes": {}, "dup": {}, "match": set()}
+        _dv = load_dohana(_dohana_slot()) or {"total": 0, "codes": {}, "dup": {}, "match": set()}
         _packed_ids = pdata.get("packed_ids", [])
         _mset = _dv.get("match", set())
         # Khớp CHỊU LỖI PHÔNG (mã video méo/dính), thay vì giao tập tuyệt đối.
@@ -1267,7 +1277,8 @@ if _page == PAGE_TTKH:
 # ════════════════ TRANG BÁO CÁO CUỐI NGÀY (A4) ════════════════
 if _page == PAGE_DAILY:
     st.title("📄 Báo cáo vận hành cuối ngày")
-    st.caption("Tổng hợp tự động từ Sapo + Dohana — bấm **In báo cáo A4** trong khung để in/lưu PDF.")
+    st.caption("Tổng hợp tự động từ Sapo + Dohana — bấm **In báo cáo A4** trong khung để in/lưu PDF.  "
+               "🎥 *Video Dohana cập nhật 3 lần/ngày: 12h · 16h · 19h (tránh nghẽn API); trước 12h hiện “—”.*")
     if not credential_present():
         st.warning("⚠️ Cần kết nối Sapo (API LIVE).")
         st.stop()
@@ -1321,8 +1332,9 @@ if _page == PAGE_DAILY:
     except Exception as e:
         st.error(f"❌ Lỗi tổng hợp báo cáo: `{e}`")
         st.stop()
-    _dvr = load_dohana() if dohana.configured() else None
-    _inb = load_dohana_inbound() if dohana.configured() else None
+    _slot = _dohana_slot()
+    _dvr = load_dohana(_slot) if dohana.configured() else None
+    _inb = load_dohana_inbound(_slot) if dohana.configured() else None
     _enrich_daily(_rep, _dvr, _inb)   # gắn clip khui hàng + đối chiếu video đóng gói
     if picklog.configured() and isinstance(_rep.get("funnel"), dict):
         _pl = picklog.read_today()
