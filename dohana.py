@@ -143,6 +143,11 @@ def inbound_videos(days_match: int = 3, max_pages: int = 25, target_date=None):
         "today_codes": today_codes,
         "dup": {k: v for k, v in cnt.items() if v >= 2},
         "meta": meta,
+        # ĐƠN CÓ TAG (khui hàng): tráo/đã dùng/trả thiếu/hư hỏng → dùng cho mục CẦN KN
+        "tagged": [{"code": v.get("orderCode"), "tag_id": v.get("tagId"),
+                    "tag": _tag_name(v.get("tagId")), "type": "inbound",
+                    "recorded": _vn_dt(v.get("createdAt"))}
+                   for v in vids if v.get("tagId") and v.get("orderCode")],
     }
 
 
@@ -163,4 +168,9 @@ def today_package_videos(days_match: int = 3, max_pages: int = 25, target_date=N
         "dup": {k: v for k, v in codes.items() if v >= 2},
         "match": {v.get("orderCode") for v in vids
                   if v.get("orderCode") and _in_window(v, cutoff, tdate)},
+        # ĐƠN CÓ TAG (đóng hàng): đóng thiếu SP → dùng cho mục KHÔNG CẦN KN
+        "tagged": [{"code": v.get("orderCode"), "tag_id": v.get("tagId"),
+                    "tag": _tag_name(v.get("tagId")), "type": "package",
+                    "recorded": _vn_dt(v.get("createdAt"))}
+                   for v in vids if v.get("tagId") and v.get("orderCode")],
     }

@@ -622,6 +622,20 @@ def load_dohana_inbound(slot):
     return dohana.inbound_videos() if slot else None
 
 
+@st.cache_data(ttl=86400, show_spinner=False)
+def load_dohana_tags(slot):
+    """Đơn có tag Dohana (tráo/đã dùng/trả thiếu/hư hỏng · đóng thiếu SP) — TÍCH LUỸ ở Gist để
+    vượt giới hạn API: mỗi mốc (13/16/19h) gộp tag mới từ fetch; giữa mốc chỉ đọc kho tích luỹ."""
+    if not picklog.configured():
+        return []
+    new = []
+    if slot:
+        dvr = load_dohana(slot) or {}
+        inb = load_dohana_inbound(slot) or {}
+        new = (dvr.get("tagged") or []) + (inb.get("tagged") or [])
+    return picklog.merge_dohana_tags(new)
+
+
 @st.cache_data(ttl=1800, show_spinner=False)  # video ngày cũ không đổi → cache dài, đỡ gọi Dohana
 def load_dohana_date(date_iso):
     from datetime import date as _date
@@ -2602,15 +2616,39 @@ if _page == PAGE_RETURNS:
             else:
                 st.warning(f"Không tìm thấy mã `{_active_search}` trong danh sách đơn trả đang xử lý.")
 
+        # ── ĐƠN DOHANA GẮN TAG (tích luỹ ở Gist → vượt giới hạn API; khui hàng=cần KN, đóng hàng=không) ──
+        try:
+            _dtags = load_dohana_tags(_dohana_slot())
+        except Exception:
+            _dtags = []
+        _dtag_kn = [t for t in _dtags if t.get("type") == "inbound"]     # khui hàng → CẦN KN
+        _dtag_nokn = [t for t in _dtags if t.get("type") == "package"]   # đóng hàng → KHÔNG cần KN
+
+        def _dohana_tag_tbl(items):
+            if not items:
+                st.caption("— (Dohana) chưa ghi nhận đơn gắn tag —")
+                return
+            st.dataframe(pd.DataFrame([{
+                "Mã đơn": t.get("code"),
+                "Tag": dohana._tag_name(t.get("tag_id")),
+                "Quay lúc": t.get("recorded") or "",
+                "Ghi nhận": t.get("first_seen") or "",
+            } for t in sorted(items, key=lambda x: x.get("first_seen", ""), reverse=True)]),
+                width="stretch", hide_index=True)
+
         # ── DANH SÁCH ĐƠN CẦN KN (bấm ô "Cần KN" ở trên sẽ nhảy tới đây) ──
         st.subheader("🚨 Đơn cần KN — lấy làm khiếu nại", anchor="don-can-kn")
         st.caption("Gồm các đơn CHƯA có ghi chú kết quả chuẩn (THẮNG/THUA/KHÔNG CẦN KN/HẾT HẠN): "
                    "đã giao người bán chưa nhập kho, đang hoàn quá 7 ngày, hoặc chỉ hoàn tiền/không có hàng hoàn về. "
                    "Đây chính là các dòng tô vàng — NV lấy làm khiếu nại.")
         _sub_table(_ckn_list, 360, show_reason=True)
+        st.markdown(f"**🏷️ + Đơn Dohana gắn tag KHUI HÀNG (tráo · đã dùng · trả thiếu · hư hỏng) — {len(_dtag_kn)} đơn**")
+        _dohana_tag_tbl(_dtag_kn)
         st.subheader("⛔ Đơn không cần KN — đã có kết luận", anchor="don-khong-can-kn")
         st.caption("Các đơn trong bảng detail đã có ghi chú KHÔNG CẦN KN: đã nhận hàng, đã nhận/được đền tiền, hoặc shop đóng thiếu thật. Nhóm này không trộn vào danh sách CẦN KN.")
         _sub_table(_khong_can_kn_list, 300)
+        st.markdown(f"**🏷️ + Đơn Dohana gắn tag ĐÓNG HÀNG (đóng thiếu SP) — {len(_dtag_nokn)} đơn**")
+        _dohana_tag_tbl(_dtag_nokn)
         st.divider()
         st.markdown("### 📋 Chi tiết còn hàng hoàn về theo loại")
         _type_block("💸 Trả hàng hoàn tiền", "return_and_refund")

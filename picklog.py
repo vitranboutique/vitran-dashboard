@@ -147,3 +147,61 @@ def read_date(day_iso: str) -> list:
     if not data:
         return []
     return [r for r in data.get("logs", []) if r.get("ngay") == day_iso]
+
+
+# ─── ĐƠN CÓ TAG DOHANA (tráo/đã dùng/trả thiếu/hư hỏng/đóng thiếu SP) ───
+# Tích luỹ dần qua các lần fetch 3 lần/ngày → vượt giới hạn API Dohana (không lo 1 lần bị 429).
+# Lưu cùng gist với picklog, file riêng. Mỗi mục: {code, tag_id, type(inbound/package), recorded, first_seen}.
+_DFILE = "vitran_dohana_tags.json"
+
+
+def _read_gist_file(fname):
+    gid = _resolve_gid()
+    if not gid:
+        return None
+    try:
+        r = requests.get(f"{_API}/gists/{gid}", headers=_hdr(), timeout=15)
+        if r.status_code == 200:
+            f = (r.json().get("files") or {}).get(fname) or {}
+            content = f.get("content") or ""
+            if f.get("truncated") and f.get("raw_url"):
+                rr = requests.get(f["raw_url"], headers=_hdr(), timeout=15)
+                if rr.status_code == 200:
+                    content = rr.text
+            if content:
+                d = json.loads(content)
+                return d if isinstance(d, dict) else None
+    except Exception:
+        pass
+    return None
+
+
+def read_dohana_tags() -> list:
+    """Toàn bộ đơn có tag Dohana đã tích luỹ."""
+    d = _read_gist_file(_DFILE)
+    return (d or {}).get("tags", []) if d else []
+
+
+def merge_dohana_tags(new_list) -> list:
+    """Gộp tag mới (từ fetch) vào kho, khử trùng theo (code, type). Trả TOÀN BỘ danh sách tích luỹ."""
+    gid = _resolve_gid()
+    cur = read_dohana_tags()
+    if not gid:
+        return cur
+    seen = {(t.get("code"), t.get("type")) for t in cur}
+    today = _today_vn()
+    added = False
+    for t in (new_list or []):
+        c, ty = t.get("code"), t.get("type")
+        if c and (c, ty) not in seen:
+            cur.append({"code": c, "tag_id": t.get("tag_id"), "type": ty,
+                        "recorded": t.get("recorded"), "first_seen": today})
+            seen.add((c, ty))
+            added = True
+    if added:
+        try:
+            body = {"files": {_DFILE: {"content": json.dumps({"tags": cur}, ensure_ascii=False)}}}
+            requests.patch(f"{_API}/gists/{gid}", headers=_hdr(), data=json.dumps(body), timeout=15)
+        except Exception:
+            pass
+    return cur
