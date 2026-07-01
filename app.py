@@ -588,12 +588,12 @@ def load_ttkh_candidates(days=15, channel_filter="tiktok"):
     return L.get_tt_customer_candidates(make_fetch_json(build_session()), days=days, channel_filter=channel_filter)
 
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=1800, show_spinner=False)  # 30' — Dohana chặn API rất gắt, hạn chế gọi lại
 def load_dohana():
     return dohana.today_package_videos()
 
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=1800, show_spinner=False)  # 30' — Dohana chặn API rất gắt, hạn chế gọi lại
 def load_dohana_inbound():
     return dohana.inbound_videos()
 
