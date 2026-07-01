@@ -170,6 +170,14 @@ def get_order(session: requests.Session, order_id) -> dict:
     return data.get("order") or data
 
 
+def get_customer(session: requests.Session, customer_id) -> dict:
+    """Lấy chi tiết khách hàng theo id."""
+    resp = session.get(f"{BASE}/admin/customers/{customer_id}.json", timeout=30)
+    resp.raise_for_status()
+    data = _json_or_empty(resp)
+    return data.get("customer") or data
+
+
 def _saved_order_note(session: requests.Session, order_id, expected_note: str, attempts: list[str]) -> bool:
     expected = str(expected_note or "").strip()
     if not expected:
@@ -232,7 +240,7 @@ def update_order_note(session: requests.Session, order_id, note: str) -> dict:
     raise RuntimeError(f"SAPO có phản hồi nhưng đọc lại chưa thấy ghi chú được lưu cho đơn {order_id}. Đã thử: {tail}")
 
 
-def _saved_order_customer_info(session: requests.Session, order_id, info: dict, expected_note: str, attempts: list[str]) -> bool:
+def _saved_order_customer_info(session: requests.Session, order_id, info: dict, expected_note: str, attempts: list[str], customer_id=None) -> bool:
     try:
         row = get_order(session, order_id)
         addr = row.get("shipping_address") or {}
@@ -242,10 +250,108 @@ def _saved_order_customer_info(session: requests.Session, order_id, info: dict, 
         attempts.append(f"GET order customer verify -> phone:{bool(saved_phone)} note:{bool(saved_note)}")
         phone_ok = expected_phone and (saved_phone.endswith(expected_phone[-9:]) or expected_phone.endswith(saved_phone[-9:]))
         note_ok = (not expected_note) or expected_note.strip() in saved_note or saved_note.strip() == expected_note.strip()
-        return bool(phone_ok and note_ok)
+        customer_ok = True
+        linked_customer_id = (row.get("customer") or {}).get("id") if isinstance(row.get("customer"), dict) else row.get("customer_id")
+        linked_ok = (not customer_id) or (str(linked_customer_id or "") == str(customer_id))
+        check_customer_id = linked_customer_id or customer_id
+        if check_customer_id:
+            try:
+                customer_ok = _customer_phone_saved(get_customer(session, check_customer_id), info.get("phone"))
+                attempts.append(f"GET linked customer verify -> linked:{linked_ok} phone:{customer_ok}")
+            except Exception as e:
+                customer_ok = False
+                attempts.append(f"GET linked customer verify -> {type(e).__name__}: {e}")
+        return bool(phone_ok and note_ok and linked_ok and customer_ok)
     except Exception as e:
         attempts.append(f"GET order customer verify -> {type(e).__name__}: {e}")
         return False
+
+
+def _customer_payload(customer_id, info: dict, note: str) -> dict:
+    name = str(info.get("name") or "").strip()
+    parts = name.split()
+    first_name = parts[0] if parts else name
+    last_name = " ".join(parts[1:]) if len(parts) > 1 else ""
+    address = {
+        "name": name,
+        "phone": info.get("phone") or "",
+        "address1": info.get("address1") or "",
+        "ward": info.get("ward") or "",
+        "district": info.get("district") or "",
+        "province": info.get("province") or "",
+        "city": info.get("province") or "",
+        "country": "Vietnam",
+        "default": True,
+    }
+    customer = {
+        "first_name": first_name,
+        "last_name": last_name,
+        "name": name,
+        "phone": info.get("phone") or "",
+        "note": note,
+        "addresses": [address],
+        "default_address": address,
+    }
+    if customer_id:
+        customer["id"] = customer_id
+    return {"customer": customer}
+
+
+def _customer_phone_saved(customer: dict, expected_phone: str) -> bool:
+    expected = re.sub(r"\D+", "", str(expected_phone or ""))
+    phones = [customer.get("phone"), customer.get("mobile"), customer.get("phone_number")]
+    for addr in (customer.get("addresses") or []):
+        if isinstance(addr, dict):
+            phones.extend([addr.get("phone"), addr.get("mobile"), addr.get("phone_number")])
+    default_addr = customer.get("default_address") or {}
+    if isinstance(default_addr, dict):
+        phones.extend([default_addr.get("phone"), default_addr.get("mobile"), default_addr.get("phone_number")])
+    for phone in phones:
+        saved = re.sub(r"\D+", "", str(phone or ""))
+        if expected and saved and (saved.endswith(expected[-9:]) or expected.endswith(saved[-9:])):
+            return True
+    return False
+
+
+def _upsert_customer_info(session: requests.Session, order: dict, info: dict, note: str, attempts: list[str]):
+    customer = order.get("customer") if isinstance(order.get("customer"), dict) else {}
+    customer_id = customer.get("id") or order.get("customer_id")
+    token = _page_csrf_token(session, f"{BASE}/admin/customers/{customer_id}" if customer_id else f"{BASE}/admin/customers", attempts)
+    if customer_id:
+        url = f"{BASE}/admin/customers/{customer_id}.json"
+        for method in ("put", "patch"):
+            resp = getattr(session, method)(
+                url,
+                json=_customer_payload(customer_id, info, note),
+                headers=_json_headers(f"{BASE}/admin/customers/{customer_id}", token),
+                timeout=30,
+                allow_redirects=False,
+            )
+            attempts.append(_attempt_desc(resp))
+            if resp.status_code < 400:
+                try:
+                    saved = get_customer(session, customer_id)
+                    attempts.append("GET customer verify -> ok")
+                    if _customer_phone_saved(saved, info.get("phone")):
+                        return customer_id
+                except Exception as e:
+                    attempts.append(f"GET customer verify -> {type(e).__name__}: {e}")
+    create_url = f"{BASE}/admin/customers.json"
+    resp = session.post(
+        create_url,
+        json=_customer_payload(None, info, note),
+        headers=_json_headers(f"{BASE}/admin/customers", token),
+        timeout=30,
+        allow_redirects=False,
+    )
+    attempts.append(_attempt_desc(resp))
+    if resp.status_code < 400:
+        data = _json_or_empty(resp)
+        created = data.get("customer") or data
+        new_id = created.get("id")
+        if new_id:
+            return new_id
+    return customer_id
 
 
 def update_order_customer_info(session: requests.Session, order_id, info: dict, note: str) -> dict:
@@ -253,6 +359,9 @@ def update_order_customer_info(session: requests.Session, order_id, info: dict, 
     attempts = []
     page_url = f"{BASE}/admin/orders/{order_id}"
     token = _page_csrf_token(session, page_url, attempts)
+    current_order = get_order(session, order_id)
+    customer_note = f"TTKH từ sàn: {info.get('phone') or ''}".strip()
+    customer_id = _upsert_customer_info(session, current_order, info, customer_note, attempts)
     shipping = {
         "name": info.get("name") or "",
         "phone": info.get("phone") or "",
@@ -269,12 +378,17 @@ def update_order_customer_info(session: requests.Session, order_id, info: dict, 
         "shipping_address": shipping,
         "shipping_address_attributes": shipping,
     }
+    if customer_id:
+        order_payload["customer_id"] = customer_id
+        order_payload["customer"] = {"id": customer_id}
     paths = [f"{BASE}/admin/orders/{order_id}.json", page_url]
     payloads = [
         {"order": order_payload},
         {"order": {"note": note, "shipping_address": shipping}},
         {"order": {"note": note, "shipping_address_attributes": shipping}},
     ]
+    if customer_id:
+        payloads.append({"order": {"note": note, "customer_id": customer_id, "customer": {"id": customer_id}, "shipping_address": shipping}})
     for path in paths:
         for method in ("put", "patch", "post"):
             for payload in payloads:
@@ -286,9 +400,11 @@ def update_order_customer_info(session: requests.Session, order_id, info: dict, 
                     allow_redirects=False,
                 )
                 attempts.append(_attempt_desc(resp))
-                if resp.status_code < 400 and _saved_order_customer_info(session, order_id, info, note, attempts):
+                if resp.status_code < 400 and _saved_order_customer_info(session, order_id, info, note, attempts, customer_id):
                     return _json_or_empty(resp)
         form_data = {"_method": "put", "order[note]": note}
+        if customer_id:
+            form_data["order[customer_id]"] = customer_id
         for k, v in shipping.items():
             form_data[f"order[shipping_address][{k}]"] = v
             form_data[f"order[shipping_address_attributes][{k}]"] = v
@@ -300,7 +416,7 @@ def update_order_customer_info(session: requests.Session, order_id, info: dict, 
             allow_redirects=False,
         )
         attempts.append(_attempt_desc(resp))
-        if resp.status_code < 400 and _saved_order_customer_info(session, order_id, info, note, attempts):
+        if resp.status_code < 400 and _saved_order_customer_info(session, order_id, info, note, attempts, customer_id):
             return _json_or_empty(resp)
     tail = "; ".join(attempts[-16:])
     raise RuntimeError(f"SAPO có phản hồi nhưng đọc lại chưa thấy TTKH được lưu cho đơn {order_id}. Đã thử: {tail}")
