@@ -294,6 +294,7 @@ def get_tt_customer_candidates(fetch_json, days: int = 15, max_pages: int = 30, 
             rows.append({
                 "order_id": o.get("id"),
                 "created_on": created_vn.strftime("%d/%m %H:%M"),
+                "created_sort": created_vn.isoformat(),
                 "name": o.get("source_identifier") or o.get("name") or o.get("code") or o.get("id"),
                 "sapo_name": o.get("name") or o.get("code") or "",
                 "source_identifier": o.get("source_identifier") or "",
@@ -310,9 +311,14 @@ def get_tt_customer_candidates(fetch_json, days: int = 15, max_pages: int = 30, 
             stopped_by_old = True
             break
 
-    rows.sort(key=lambda x: (-x["qty"], x["created_on"], str(x["name"])))
-    multi = [r for r in rows if r["qty"] >= 2]
-    single = [r for r in rows if r["qty"] == 1]
+    multi = sorted(
+        [r for r in rows if r["qty"] >= 2],
+        key=lambda x: (-x["qty"], x.get("created_sort") or "", str(x["name"])),
+    )
+    single = sorted(
+        [r for r in rows if r["qty"] == 1],
+        key=lambda x: (x.get("created_sort") or "", str(x["name"])),
+    )
     return {
         "days": days,
         "channel_filter": channel_filter,

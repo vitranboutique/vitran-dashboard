@@ -1074,6 +1074,7 @@ if _page == PAGE_TTKH:
             "Ngày tạo": r.get("created_on", ""),
             "Mã đơn": r.get("name", ""),
             "SL SP": r.get("qty", 0),
+            "created_sort": r.get("created_sort", ""),
             "Gian hàng": r.get("store", ""),
             "Ghi chú hiện tại": r.get("note", ""),
             "products": r.get("products") or [],
@@ -1097,11 +1098,17 @@ if _page == PAGE_TTKH:
 
     def _product_tip(row):
         products = row.get("products") or []
+        if not products:
+            return "Chưa có chi tiết sản phẩm"
         lines = []
         for p in products:
-            lines.append(f"{p.get('sku') or 'N/A'} x{p.get('qty') or 0} - {_money(p.get('price'))}")
+            sku = p.get("sku") or "N/A"
+            qty = p.get("qty") or 0
+            price = _money(p.get("price"))
+            title = str(p.get("title") or "").strip()
+            lines.append(f"{sku} | SL {qty} | Giá {price}" + (f" | {title[:70]}" if title else ""))
         lines.append(f"Tổng: {_money(row.get('order_value'))}")
-        return "&#10;".join(_esc(x) for x in lines)
+        return "&#13;".join(_esc(x) for x in lines)
 
     def _ttkh_input_key(order_id):
         return f"ttkh_cell_{order_id}"
@@ -1130,7 +1137,7 @@ if _page == PAGE_TTKH:
             url = _ttkh_order_url(code, r.get("Gian hàng"))
             c[1].markdown(f"[{code}]({url})" if url else code)
             c[2].markdown(
-                f"<span title='{_product_tip(r)}' style='cursor:help;font-weight:700'>{int(r.get('SL SP') or 0)} SP</span>",
+                f"<abbr title='{_product_tip(r)}' style='cursor:help;font-weight:800;text-decoration:underline dotted #6b7280'>{int(r.get('SL SP') or 0)} SP ⓘ</abbr>",
                 unsafe_allow_html=True,
             )
             c[3].markdown(str(r.get("Gian hàng") or ""))
