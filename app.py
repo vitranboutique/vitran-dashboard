@@ -9,6 +9,7 @@ import re
 import unicodedata
 from datetime import datetime, timedelta, timezone
 from html import escape as _esc
+from urllib.parse import quote_plus
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -1072,13 +1073,51 @@ if _page == PAGE_TTKH:
         return pd.DataFrame([{
             "Ngày tạo": r.get("created_on", ""),
             "Mã đơn": r.get("name", ""),
-            "Mã SAPO": r.get("sapo_name", ""),
             "SL SP": r.get("qty", 0),
-            "Kênh": r.get("channel", ""),
             "Gian hàng": r.get("store", ""),
             "Ghi chú SAPO": r.get("note", ""),
             "_order_id": r.get("order_id"),
         } for r in rows])
+
+    def _ttkh_order_url(order_code, store=""):
+        code = str(order_code or "").strip()
+        if not code:
+            return ""
+        if "shopee" in str(store or "").lower():
+            return f"https://banhang.shopee.vn/portal/sale?search={quote_plus(code)}"
+        return f"https://seller-vn.tiktok.com/order?main_order_id[]={quote_plus(code)}&selected_sort=6&tab=all"
+
+    def _ttkh_table_html(df):
+        if df.empty:
+            return ""
+        head = "".join(f"<th>{_esc(c)}</th>" for c in ["Ngày tạo", "Mã đơn", "SL SP", "Gian hàng", "Ghi chú SAPO"])
+        rows_html = []
+        for _, r in df.iterrows():
+            code = str(r.get("Mã đơn") or "")
+            url = _ttkh_order_url(code, r.get("Gian hàng"))
+            code_html = f"<a href='{_esc(url)}' target='_blank'>{_esc(code)}</a>" if url else _esc(code)
+            note = str(r.get("Ghi chú SAPO") or "")
+            rows_html.append(
+                "<tr>"
+                f"<td>{_esc(r.get('Ngày tạo') or '')}</td>"
+                f"<td class='code'>{code_html}</td>"
+                f"<td class='num'>{int(r.get('SL SP') or 0)}</td>"
+                f"<td>{_esc(r.get('Gian hàng') or '')}</td>"
+                f"<td class='note' title='{_esc(note)}'>{_esc(note)}</td>"
+                "</tr>"
+            )
+        return f"""
+<style>
+.ttkh-table{{width:100%;border-collapse:collapse;background:#fff;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;font-size:13px}}
+.ttkh-table th{{background:#f3f4f6;text-align:left;padding:9px 10px;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:700}}
+.ttkh-table td{{padding:8px 10px;border-bottom:1px solid #eef0f2;vertical-align:top}}
+.ttkh-table td.num{{text-align:right;font-weight:700}}
+.ttkh-table td.code a{{color:#0068ff;text-decoration:none;font-weight:700}}
+.ttkh-table td.code a:hover{{text-decoration:underline}}
+.ttkh-table td.note{{max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#6b7280}}
+</style>
+<table class="ttkh-table"><thead><tr>{head}</tr></thead><tbody>{''.join(rows_html)}</tbody></table>
+"""
 
     def _ttkh_table(label, rows):
         st.markdown(f"#### {label} — {len(rows)} đơn")
@@ -1086,18 +1125,7 @@ if _page == PAGE_TTKH:
         if df.empty:
             st.caption("Không có đơn.")
             return df
-        st.dataframe(
-            df.drop(columns=["_order_id"], errors="ignore"),
-            hide_index=True,
-            width="stretch",
-            height=min(560, 92 + len(df) * 36),
-            column_config={
-                "Mã đơn": st.column_config.TextColumn("Mã đơn", width="medium"),
-                "Mã SAPO": st.column_config.TextColumn("Mã SAPO", width="medium"),
-                "SL SP": st.column_config.NumberColumn("SL SP", width="small"),
-                "Ghi chú SAPO": st.column_config.TextColumn("Ghi chú SAPO", width="large"),
-            },
-        )
+        st.markdown(_ttkh_table_html(df), unsafe_allow_html=True)
         return df
 
     _df_multi = _ttkh_table("Đơn ≥ 2 SP", _tt["multi"])
