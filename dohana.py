@@ -94,6 +94,17 @@ def _tag_name(tag_id):
     return _TAG_NAMES.get(tag_id) or "⚠️ Có tag"
 
 
+_LAST_REQ = [0.0]   # mốc request Dohana gần nhất (dùng chung mọi call) — giữ nhịp ≤ 10 req/s
+
+
+def _throttle(min_gap=0.14):
+    """Giãn nhịp gọi Dohana để KHÔNG vượt 10 request/giây (giới hạn Dohana xác nhận) → tránh 429."""
+    dt = time.monotonic() - _LAST_REQ[0]
+    if dt < min_gap:
+        time.sleep(min_gap - dt)
+    _LAST_REQ[0] = time.monotonic()
+
+
 def _fetch_videos(typ: str, cutoff_date, max_pages: int):
     """Lấy video theo type, lùi (page 0 = MỚI NHẤT) tới khi createdAt < cutoff_date. Khử trùng id."""
     key = _key()
@@ -103,9 +114,10 @@ def _fetch_videos(typ: str, cutoff_date, max_pages: int):
     vids = []
     for p in range(0, max_pages):        # ⚠️ 0-INDEXED: page=0 = MỚI NHẤT
         rows = None
-        # Dohana chặn API rất gắt (429 dù quota CÒN 99/100) → CÀNG THỬ CÀNG BỊ PHẠT LÂU +
-        # báo cáo chậm. Chỉ thử lại 1 lần rồi bỏ (giữ None → cache dài để Dohana hết phạt).
-        for _try in range(2):
+        # Dohana giới hạn 10 req/s (xác nhận từ Dohana). _throttle() giữ nhịp <10/s → hết 429.
+        # 429 lẻ (do consumer khác) → thử lại, cửa sổ reset <1s.
+        for _try in range(3):
+            _throttle()
             try:
                 r = requests.get(_BASE, params={"page": p, "limit": 100, "type": typ},
                                  headers=headers, timeout=20)
