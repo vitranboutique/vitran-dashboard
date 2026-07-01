@@ -1050,7 +1050,12 @@ if _page == PAGE_TTKH:
     def _clean_phone(raw):
         s = str(raw or "").strip()
         if "*" in s:
-            return ""
+            compact = re.sub(r"[\s().\-]+", "", s)
+            if compact.startswith("+84"):
+                compact = "0" + compact[3:]
+            elif compact.startswith("84"):
+                compact = "0" + compact[2:]
+            return compact if "*" in compact and compact.startswith("0") else ""
         digits = re.sub(r"\D+", "", s)
         if digits.startswith("84") and len(digits) >= 11:
             digits = "0" + digits[2:]
@@ -1064,8 +1069,6 @@ if _page == PAGE_TTKH:
         info = {"username": "", "name": "", "phone": "", "address1": "", "ward": "", "district": "", "province": "", "raw": raw}
         if not raw:
             return info, "Chưa dán TTKH"
-        if _masked_phone_re.search(raw) or "*" in raw:
-            return info, "SĐT đang bị ẩn, không hợp lệ"
 
         def _after_label(label):
             for i, line in enumerate(lines):
@@ -1158,7 +1161,7 @@ if _page == PAGE_TTKH:
             if not txt:
                 continue
             info, status = _parse_tiktok_ttkh(txt)
-            has_phone = bool(info.get("phone")) and bool(_phone_re.search(info.get("phone", "")))
+            has_phone = bool(info.get("phone")) and (bool(_phone_re.search(info.get("phone", ""))) or "*" in info.get("phone", ""))
             out.append({
                 "order_id": order_id,
                 "code": source.get("name"),

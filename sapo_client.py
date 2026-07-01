@@ -305,7 +305,15 @@ def _customer_payload(customer_id, info: dict, note: str) -> dict:
 
 
 def _norm_phone(value) -> str:
-    digits = re.sub(r"\D+", "", str(value or ""))
+    raw = str(value or "").strip()
+    if "*" in raw:
+        compact = re.sub(r"[\s().\-]+", "", raw)
+        if compact.startswith("+84"):
+            compact = "0" + compact[3:]
+        elif compact.startswith("84"):
+            compact = "0" + compact[2:]
+        return compact
+    digits = re.sub(r"\D+", "", raw)
     if digits.startswith("84") and len(digits) >= 11:
         digits = "0" + digits[2:]
     return digits
@@ -314,6 +322,8 @@ def _norm_phone(value) -> str:
 def _phone_matches(saved_value, expected_value) -> bool:
     expected = _norm_phone(expected_value)
     saved = _norm_phone(saved_value)
+    if "*" in expected:
+        return bool(expected and (saved == expected or expected in str(saved_value or "")))
     return bool(expected and saved and (saved.endswith(expected[-9:]) or expected.endswith(saved[-9:])))
 
 
