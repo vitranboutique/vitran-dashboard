@@ -1073,64 +1073,97 @@ if _page == PAGE_TTKH:
             "Ngày tạo": r.get("created_on", ""),
             "Mã đơn": r.get("name", ""),
             "Mã SAPO": r.get("sapo_name", ""),
-            "Mã tham chiếu": r.get("source_identifier", ""),
             "SL SP": r.get("qty", 0),
             "Kênh": r.get("channel", ""),
             "Gian hàng": r.get("store", ""),
             "Ghi chú SAPO": r.get("note", ""),
-            "TTKH dán vào": "",
             "_order_id": r.get("order_id"),
         } for r in rows])
 
-    def _ttkh_editor(label, rows, key):
+    def _ttkh_table(label, rows):
         st.markdown(f"#### {label} — {len(rows)} đơn")
         df = _ttkh_editor_rows(rows)
         if df.empty:
             st.caption("Không có đơn.")
             return df
-        return st.data_editor(
-            df,
-            key=key,
+        st.dataframe(
+            df.drop(columns=["_order_id"], errors="ignore"),
             hide_index=True,
             width="stretch",
             height=min(560, 92 + len(df) * 36),
-            column_order=["Ngày tạo", "Mã đơn", "Mã SAPO", "SL SP", "Kênh", "Gian hàng", "Ghi chú SAPO", "TTKH dán vào"],
-            disabled=["Ngày tạo", "Mã đơn", "Mã SAPO", "Mã tham chiếu", "SL SP", "Kênh", "Gian hàng", "Ghi chú SAPO"],
             column_config={
                 "Mã đơn": st.column_config.TextColumn("Mã đơn", width="medium"),
                 "Mã SAPO": st.column_config.TextColumn("Mã SAPO", width="medium"),
                 "SL SP": st.column_config.NumberColumn("SL SP", width="small"),
-                "Ghi chú SAPO": st.column_config.TextColumn("Ghi chú SAPO", width="medium"),
-                "TTKH dán vào": st.column_config.TextColumn("TTKH dán vào", width="large"),
+                "Ghi chú SAPO": st.column_config.TextColumn("Ghi chú SAPO", width="large"),
             },
         )
+        return df
 
-    _ed_multi = _ttkh_editor("Đơn ≥ 2 SP", _tt["multi"], "ttkh_editor_multi")
-    _ed_single = _ttkh_editor("Đơn 1 SP", _tt["single"], "ttkh_editor_single")
+    _df_multi = _ttkh_table("Đơn ≥ 2 SP", _tt["multi"])
+    _df_single = _ttkh_table("Đơn 1 SP", _tt["single"])
+    _all_rows = list(_tt["multi"]) + list(_tt["single"])
+    _row_by_order_id = {str(r.get("order_id")): r for r in _all_rows}
 
-    def _collect_ttkh_rows(*dfs):
+    st.markdown("#### Dán TTKH vào đơn")
+    if "ttkh_pending_inputs" not in st.session_state:
+        st.session_state["ttkh_pending_inputs"] = {}
+    if _all_rows:
+        _opts = [
+            str(r.get("order_id")) for r in _all_rows
+        ]
+        _labels = {
+            str(r.get("order_id")): f"{r.get('name')} · {r.get('qty')} SP · {r.get('created_on')}"
+            for r in _all_rows
+        }
+        _paste_cols = st.columns([2, 5, 1.2])
+        _selected_id = _paste_cols[0].selectbox(
+            "Chọn mã đơn",
+            _opts,
+            format_func=lambda x: _labels.get(str(x), str(x)),
+            key="ttkh_selected_order_id",
+        )
+        _paste_key = f"ttkh_paste_{_selected_id}"
+        _current_text = st.session_state["ttkh_pending_inputs"].get(str(_selected_id), "")
+        _pasted_text = _paste_cols[1].text_area(
+            "Dán nguyên block TTKH từ sàn",
+            value=_current_text,
+            height=170,
+            key=_paste_key,
+            placeholder="Tên người dùng\n...\nĐịa chỉ vận chuyển\n...\n(+84)...\nĐịa chỉ...",
+        )
+        if _paste_cols[2].button("➕ Thêm/Sửa", use_container_width=True):
+            st.session_state["ttkh_pending_inputs"][str(_selected_id)] = _pasted_text
+            st.rerun()
+        if _paste_cols[2].button("🧹 Xóa đơn này", use_container_width=True):
+            st.session_state["ttkh_pending_inputs"].pop(str(_selected_id), None)
+            st.rerun()
+    else:
+        st.caption("Không có đơn để dán TTKH.")
+
+    def _collect_ttkh_rows():
         out = []
-        for df in dfs:
-            if df is None or df.empty:
+        for order_id, txt in (st.session_state.get("ttkh_pending_inputs") or {}).items():
+            txt = str(txt or "").strip()
+            if not txt:
                 continue
-            for _, row in df.iterrows():
-                txt = str(row.get("TTKH dán vào") or "").strip()
-                if not txt:
-                    continue
-                info, status = _parse_tiktok_ttkh(txt)
-                has_phone = bool(info.get("phone")) and bool(_phone_re.search(info.get("phone", "")))
-                out.append({
-                    "order_id": row.get("_order_id"),
-                    "code": row.get("Mã đơn"),
-                    "old_note": str(row.get("Ghi chú SAPO") or "").strip(),
-                    "ttkh": txt,
-                    "info": info,
-                    "status": status,
-                    "has_phone": has_phone,
-                })
+            source = _row_by_order_id.get(str(order_id))
+            if not source:
+                continue
+            info, status = _parse_tiktok_ttkh(txt)
+            has_phone = bool(info.get("phone")) and bool(_phone_re.search(info.get("phone", "")))
+            out.append({
+                "order_id": order_id,
+                "code": source.get("name"),
+                "old_note": str(source.get("note") or "").strip(),
+                "ttkh": txt,
+                "info": info,
+                "status": status,
+                "has_phone": has_phone,
+            })
         return out
 
-    _pending_write = _collect_ttkh_rows(_ed_multi, _ed_single)
+    _pending_write = _collect_ttkh_rows()
     if _pending_write:
         _preview = pd.DataFrame([{
             "Mã đơn": r["code"],
@@ -1149,6 +1182,9 @@ if _page == PAGE_TTKH:
             st.warning("Một số dòng đã dán TTKH nhưng chưa hợp lệ, app sẽ chưa ghi các dòng đó: "
                        + ", ".join(str(r["code"]) for r in _bad[:10]))
         st.markdown(f"**Sẵn sàng ghi:** {sum(1 for r in _pending_write if r['has_phone'] and r['status'] == 'Hợp lệ')} đơn")
+        if st.button("🧹 Xóa toàn bộ danh sách chờ ghi"):
+            st.session_state["ttkh_pending_inputs"] = {}
+            st.rerun()
 
     _confirm = st.checkbox("Tôi xác nhận ghi TTKH các dòng hợp lệ vào thông tin giao hàng SAPO", key="ttkh_confirm_write")
     if st.button("💾 Ghi TTKH vào SAPO", type="primary", disabled=not _confirm or not _pending_write):
@@ -1156,6 +1192,7 @@ if _page == PAGE_TTKH:
         now_note = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%d/%m/%Y %H:%M")
         results = []
         ok_count = 0
+        written_ids = []
         for r in _pending_write:
             if not r["has_phone"] or r["status"] != "Hợp lệ":
                 results.append({"Mã đơn": r["code"], "Kết quả": "Bỏ qua", "Lý do": r["status"]})
@@ -1171,11 +1208,14 @@ if _page == PAGE_TTKH:
             try:
                 update_order_customer_info(session, r["order_id"], info, new_note)
                 ok_count += 1
+                written_ids.append(str(r["order_id"]))
                 results.append({"Mã đơn": r["code"], "Kết quả": "Đã ghi", "Lý do": ""})
             except Exception as e:
                 results.append({"Mã đơn": r["code"], "Kết quả": "Lỗi", "Lý do": str(e)[:220]})
         st.session_state["ttkh_write_results"] = results
         if ok_count:
+            for _oid in written_ids:
+                st.session_state["ttkh_pending_inputs"].pop(_oid, None)
             load_ttkh_candidates.clear()
         st.rerun()
 
