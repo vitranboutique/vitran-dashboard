@@ -502,7 +502,12 @@ def update_order_customer_info(session: requests.Session, order_id, info: dict, 
     page_url = f"{BASE}/admin/orders/{order_id}"
     token = _page_csrf_token(session, page_url, attempts)
     current_order = get_order(session, order_id)
-    customer_note = f"TTKH từ sàn: {info.get('phone') or ''}".strip()
+    customer_note_parts = []
+    if info.get("username"):
+        customer_note_parts.append(str(info.get("username") or "").strip())
+    if info.get("phone"):
+        customer_note_parts.append(f"sdt: {info.get('phone')}")
+    customer_note = "\n".join(customer_note_parts) or "TTKH từ sàn"
     customer_id = _upsert_customer_info(session, current_order, info, customer_note, attempts)
     name = str(info.get("name") or "").strip()
     parts = name.split()

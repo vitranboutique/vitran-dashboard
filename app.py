@@ -1182,17 +1182,17 @@ if _page == PAGE_TTKH:
                 continue
             old_note = r["old_note"]
             info = r["info"]
-            block = (
-                f"📞 TTKH TikTok: sdt: {info['phone']}"
-                + (f" | user: {info['username']}" if info.get("username") else "")
-                + f"\n🕘 Cập nhật: {now_note}"
-            )
+            block_lines = []
+            if info.get("username"):
+                block_lines.append(str(info["username"]).strip())
+            block_lines.append(f"sdt: {info['phone']}")
+            block = "\n".join(block_lines)
             new_note = f"{block}\n📝 Ghi chú cũ SAPO:\n{old_note}".strip() if old_note else block
             try:
                 update_order_customer_info(session, r["order_id"], info, new_note)
                 ok_count += 1
                 written_ids.append(str(r["order_id"]))
-                results.append({"Mã đơn": r["code"], "Kết quả": "Đã ghi", "Lý do": ""})
+                results.append({"Mã đơn": r["code"], "Kết quả": "Đã ghi đơn + khách hàng", "Lý do": ""})
             except Exception as e:
                 results.append({"Mã đơn": r["code"], "Kết quả": "Lỗi", "Lý do": str(e)[:220]})
         st.session_state["ttkh_write_results"] = results
