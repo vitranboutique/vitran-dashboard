@@ -23,7 +23,8 @@ import dohana
 import daily_report
 from sapo_client import (
     SapoAuthError, build_session, credential_present, make_fetch_json,
-    find_order_returns_by_codes, get_order_return, parse_codes, update_order_note, update_order_return_note,
+    find_order_returns_by_codes, get_order_return, parse_codes,
+    update_order_customer_info, update_order_note, update_order_return_note,
 )
 from picking_render import picking_html
 
@@ -1013,14 +1014,65 @@ if _page == PAGE_TTKH:
     _m[2].metric("Đơn 1 SP", len(_tt["single"]))
     _m[3].metric("Cập nhật", _tt["generated_at_vn"])
 
-    st.info("Điều kiện lọc: đơn trong `Tất cả`, không hủy, tạo trong số ngày chọn, ghi chú SAPO chưa có `sdt`/số điện thoại.")
+    st.info("Điều kiện lọc: đơn trong `Tất cả`, không hủy, tạo trong số ngày chọn, ghi chú/địa chỉ SAPO chưa có SĐT.")
 
     _phone_re = re.compile(r"\b(?:\+?84|0)\d[\d\s.\-]{8,12}\b")
+    _masked_phone_re = re.compile(r"(?:\+?84|0)?\d[\d\s().\-]*\*+[\d\s().\-]*\d")
+
+    def _clean_phone(raw):
+        s = str(raw or "").strip()
+        if "*" in s:
+            return ""
+        digits = re.sub(r"\D+", "", s)
+        if digits.startswith("84") and len(digits) >= 11:
+            digits = "0" + digits[2:]
+        if len(digits) < 10 or len(digits) > 11 or not digits.startswith("0"):
+            return ""
+        return digits
+
+    def _parse_tiktok_ttkh(text):
+        raw = str(text or "").replace("\r", "\n").strip()
+        lines = [x.strip() for x in raw.splitlines() if x.strip()]
+        info = {"username": "", "name": "", "phone": "", "address1": "", "ward": "", "district": "", "province": "", "raw": raw}
+        if not raw:
+            return info, "Chưa dán TTKH"
+        if _masked_phone_re.search(raw) or "*" in raw:
+            return info, "SĐT đang bị ẩn, không hợp lệ"
+
+        def _after_label(label):
+            for i, line in enumerate(lines):
+                if _ascii_code(line) == _ascii_code(label) and i + 1 < len(lines):
+                    return lines[i + 1]
+            return ""
+
+        info["username"] = _after_label("Tên người dùng")
+        info["name"] = _after_label("Địa chỉ vận chuyển")
+        phone_line = next((ln for ln in lines if _clean_phone(ln)), "")
+        info["phone"] = _clean_phone(phone_line)
+        if not info["phone"]:
+            return info, "Không tìm thấy SĐT hợp lệ"
+
+        phone_idx = lines.index(phone_line) if phone_line in lines else -1
+        addr_lines = []
+        if phone_idx >= 0:
+            addr_lines = [ln for ln in lines[phone_idx + 1:] if _ascii_code(ln) not in {"TENNGUOIDUNG", "DIACHIVANCHUYEN"}]
+        if addr_lines:
+            info["address1"] = addr_lines[0]
+        if len(addr_lines) >= 2:
+            parts = [p.strip() for p in re.split(r"[,，]", addr_lines[-1]) if p.strip()]
+            if len(parts) >= 4:
+                info["ward"], info["district"], info["province"] = parts[-4], parts[-3], parts[-2]
+            elif len(parts) >= 3:
+                info["ward"], info["district"], info["province"] = parts[-3], parts[-2], parts[-1]
+        if not info["name"] or not info["address1"]:
+            return info, "Thiếu tên hoặc địa chỉ giao hàng"
+        return info, "Hợp lệ"
 
     def _ttkh_editor_rows(rows):
         return pd.DataFrame([{
             "Ngày tạo": r.get("created_on", ""),
             "Mã đơn": r.get("name", ""),
+            "Mã SAPO": r.get("sapo_name", ""),
             "Mã tham chiếu": r.get("source_identifier", ""),
             "SL SP": r.get("qty", 0),
             "Kênh": r.get("channel", ""),
@@ -1042,11 +1094,11 @@ if _page == PAGE_TTKH:
             hide_index=True,
             width="stretch",
             height=min(560, 92 + len(df) * 36),
-            column_order=["Ngày tạo", "Mã đơn", "Mã tham chiếu", "SL SP", "Kênh", "Gian hàng", "Ghi chú SAPO", "TTKH dán vào"],
-            disabled=["Ngày tạo", "Mã đơn", "Mã tham chiếu", "SL SP", "Kênh", "Gian hàng", "Ghi chú SAPO"],
+            column_order=["Ngày tạo", "Mã đơn", "Mã SAPO", "SL SP", "Kênh", "Gian hàng", "Ghi chú SAPO", "TTKH dán vào"],
+            disabled=["Ngày tạo", "Mã đơn", "Mã SAPO", "Mã tham chiếu", "SL SP", "Kênh", "Gian hàng", "Ghi chú SAPO"],
             column_config={
                 "Mã đơn": st.column_config.TextColumn("Mã đơn", width="medium"),
-                "Mã tham chiếu": st.column_config.TextColumn("Mã tham chiếu", width="medium"),
+                "Mã SAPO": st.column_config.TextColumn("Mã SAPO", width="medium"),
                 "SL SP": st.column_config.NumberColumn("SL SP", width="small"),
                 "Ghi chú SAPO": st.column_config.TextColumn("Ghi chú SAPO", width="medium"),
                 "TTKH dán vào": st.column_config.TextColumn("TTKH dán vào", width="large"),
@@ -1065,39 +1117,59 @@ if _page == PAGE_TTKH:
                 txt = str(row.get("TTKH dán vào") or "").strip()
                 if not txt:
                     continue
-                has_phone = bool(_phone_re.search(txt))
+                info, status = _parse_tiktok_ttkh(txt)
+                has_phone = bool(info.get("phone")) and bool(_phone_re.search(info.get("phone", "")))
                 out.append({
                     "order_id": row.get("_order_id"),
                     "code": row.get("Mã đơn"),
                     "old_note": str(row.get("Ghi chú SAPO") or "").strip(),
                     "ttkh": txt,
+                    "info": info,
+                    "status": status,
                     "has_phone": has_phone,
                 })
         return out
 
     _pending_write = _collect_ttkh_rows(_ed_multi, _ed_single)
     if _pending_write:
-        _bad = [r for r in _pending_write if not r["has_phone"]]
+        _preview = pd.DataFrame([{
+            "Mã đơn": r["code"],
+            "Trạng thái": r["status"],
+            "Tên": r["info"].get("name", ""),
+            "SĐT": r["info"].get("phone", ""),
+            "Địa chỉ": ", ".join(x for x in [
+                r["info"].get("address1", ""), r["info"].get("ward", ""),
+                r["info"].get("district", ""), r["info"].get("province", "")
+            ] if x),
+        } for r in _pending_write])
+        st.markdown("#### Kiểm tra TTKH đã dán")
+        st.dataframe(_preview, hide_index=True, width="stretch")
+        _bad = [r for r in _pending_write if not r["has_phone"] or r["status"] != "Hợp lệ"]
         if _bad:
-            st.warning("Một số dòng đã dán TTKH nhưng chưa thấy số điện thoại, app sẽ chưa ghi các dòng đó: "
+            st.warning("Một số dòng đã dán TTKH nhưng chưa hợp lệ, app sẽ chưa ghi các dòng đó: "
                        + ", ".join(str(r["code"]) for r in _bad[:10]))
-        st.markdown(f"**Sẵn sàng ghi:** {sum(1 for r in _pending_write if r['has_phone'])} đơn")
+        st.markdown(f"**Sẵn sàng ghi:** {sum(1 for r in _pending_write if r['has_phone'] and r['status'] == 'Hợp lệ')} đơn")
 
-    _confirm = st.checkbox("Tôi xác nhận ghi TTKH các dòng đã dán vào ghi chú SAPO", key="ttkh_confirm_write")
+    _confirm = st.checkbox("Tôi xác nhận ghi TTKH các dòng hợp lệ vào thông tin giao hàng SAPO", key="ttkh_confirm_write")
     if st.button("💾 Ghi TTKH vào SAPO", type="primary", disabled=not _confirm or not _pending_write):
         session = build_session()
         now_note = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%d/%m/%Y %H:%M")
         results = []
         ok_count = 0
         for r in _pending_write:
-            if not r["has_phone"]:
-                results.append({"Mã đơn": r["code"], "Kết quả": "Bỏ qua", "Lý do": "TTKH chưa có SĐT"})
+            if not r["has_phone"] or r["status"] != "Hợp lệ":
+                results.append({"Mã đơn": r["code"], "Kết quả": "Bỏ qua", "Lý do": r["status"]})
                 continue
             old_note = r["old_note"]
-            block = f"📞 TTKH TikTok:\n{r['ttkh']}\n🕘 Cập nhật: {now_note}"
+            info = r["info"]
+            block = (
+                f"📞 TTKH TikTok: sdt: {info['phone']}"
+                + (f" | user: {info['username']}" if info.get("username") else "")
+                + f"\n🕘 Cập nhật: {now_note}"
+            )
             new_note = f"{old_note}\n{block}".strip() if old_note else block
             try:
-                update_order_note(session, r["order_id"], new_note)
+                update_order_customer_info(session, r["order_id"], info, new_note)
                 ok_count += 1
                 results.append({"Mã đơn": r["code"], "Kết quả": "Đã ghi", "Lý do": ""})
             except Exception as e:

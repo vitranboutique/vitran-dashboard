@@ -160,6 +160,19 @@ def _has_customer_phone(note) -> bool:
     return bool(_PHONE_RE.search(str(note or "")))
 
 
+def _order_has_customer_phone(order) -> bool:
+    parts = [
+        order.get("note"),
+        order.get("phone"),
+        order.get("customer", {}).get("phone") if isinstance(order.get("customer"), dict) else "",
+    ]
+    for key in ("shipping_address", "billing_address"):
+        addr = order.get(key) or {}
+        if isinstance(addr, dict):
+            parts.extend([addr.get("phone"), addr.get("phone_number"), addr.get("mobile")])
+    return any(_has_customer_phone(x) for x in parts if x)
+
+
 def _picking_deadline_vn(created_vn):
     """Hạn xác nhận: 18h ngày đặt; nếu đặt từ 18h trở đi -> 18h hôm sau."""
     cutoff = created_vn.replace(hour=18, minute=0, second=0, microsecond=0)
@@ -229,11 +242,9 @@ def get_tt_customer_candidates(fetch_json, days: int = 15, max_pages: int = 30, 
     rows = []
     stopped_by_old = False
 
+    created_min = cutoff_vn.isoformat()
     for page in range(1, int(max_pages) + 1):
-        try:
-            data = fetch_json("/admin/orders.json", limit=250, page=page, status="any")
-        except Exception:
-            data = fetch_json("/admin/orders.json", limit=250, page=page)
+        data = fetch_json("/admin/orders.json", limit=250, page=page, created_on_min=created_min)
         orders = data.get("orders", []) or []
         if not orders:
             break
@@ -249,7 +260,7 @@ def get_tt_customer_candidates(fetch_json, days: int = 15, max_pages: int = 30, 
             if str(o.get("status") or "").lower() == "cancelled" or o.get("cancelled_on"):
                 continue
             note = o.get("note") or ""
-            if _has_customer_phone(note):
+            if _order_has_customer_phone(o):
                 continue
             line_items = o.get("line_items") or []
             total_qty = int(round(sum((li.get("quantity") or 0) for li in line_items)))
@@ -265,12 +276,14 @@ def get_tt_customer_candidates(fetch_json, days: int = 15, max_pages: int = 30, 
             rows.append({
                 "order_id": o.get("id"),
                 "created_on": created_vn.strftime("%d/%m %H:%M"),
-                "name": o.get("name") or o.get("code") or o.get("source_identifier") or o.get("id"),
+                "name": o.get("source_identifier") or o.get("name") or o.get("code") or o.get("id"),
+                "sapo_name": o.get("name") or o.get("code") or "",
                 "source_identifier": o.get("source_identifier") or "",
                 "qty": total_qty,
                 "store": store,
                 "channel": channel,
                 "note": note,
+                "shipping_phone": ((o.get("shipping_address") or {}).get("phone") or ""),
             })
 
         if not page_has_recent:

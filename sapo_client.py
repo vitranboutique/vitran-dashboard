@@ -232,6 +232,80 @@ def update_order_note(session: requests.Session, order_id, note: str) -> dict:
     raise RuntimeError(f"SAPO có phản hồi nhưng đọc lại chưa thấy ghi chú được lưu cho đơn {order_id}. Đã thử: {tail}")
 
 
+def _saved_order_customer_info(session: requests.Session, order_id, info: dict, expected_note: str, attempts: list[str]) -> bool:
+    try:
+        row = get_order(session, order_id)
+        addr = row.get("shipping_address") or {}
+        saved_note = str(row.get("note") or "")
+        saved_phone = re.sub(r"\D+", "", str(addr.get("phone") or addr.get("phone_number") or ""))
+        expected_phone = re.sub(r"\D+", "", str(info.get("phone") or ""))
+        attempts.append(f"GET order customer verify -> phone:{bool(saved_phone)} note:{bool(saved_note)}")
+        phone_ok = expected_phone and (saved_phone.endswith(expected_phone[-9:]) or expected_phone.endswith(saved_phone[-9:]))
+        note_ok = (not expected_note) or expected_note.strip() in saved_note or saved_note.strip() == expected_note.strip()
+        return bool(phone_ok and note_ok)
+    except Exception as e:
+        attempts.append(f"GET order customer verify -> {type(e).__name__}: {e}")
+        return False
+
+
+def update_order_customer_info(session: requests.Session, order_id, info: dict, note: str) -> dict:
+    """Cập nhật thông tin giao hàng của đơn và ghi note đánh dấu đã lấy TTKH."""
+    attempts = []
+    page_url = f"{BASE}/admin/orders/{order_id}"
+    token = _page_csrf_token(session, page_url, attempts)
+    shipping = {
+        "name": info.get("name") or "",
+        "phone": info.get("phone") or "",
+        "address1": info.get("address1") or "",
+        "ward": info.get("ward") or "",
+        "district": info.get("district") or "",
+        "province": info.get("province") or "",
+        "city": info.get("province") or "",
+        "country": "Vietnam",
+    }
+    order_payload = {
+        "id": order_id,
+        "note": note,
+        "shipping_address": shipping,
+        "shipping_address_attributes": shipping,
+    }
+    paths = [f"{BASE}/admin/orders/{order_id}.json", page_url]
+    payloads = [
+        {"order": order_payload},
+        {"order": {"note": note, "shipping_address": shipping}},
+        {"order": {"note": note, "shipping_address_attributes": shipping}},
+    ]
+    for path in paths:
+        for method in ("put", "patch", "post"):
+            for payload in payloads:
+                resp = getattr(session, method)(
+                    path,
+                    json=payload,
+                    headers=_json_headers(page_url, token),
+                    timeout=30,
+                    allow_redirects=False,
+                )
+                attempts.append(_attempt_desc(resp))
+                if resp.status_code < 400 and _saved_order_customer_info(session, order_id, info, note, attempts):
+                    return _json_or_empty(resp)
+        form_data = {"_method": "put", "order[note]": note}
+        for k, v in shipping.items():
+            form_data[f"order[shipping_address][{k}]"] = v
+            form_data[f"order[shipping_address_attributes][{k}]"] = v
+        resp = session.post(
+            path,
+            data=form_data,
+            headers=_json_headers(page_url, token),
+            timeout=30,
+            allow_redirects=False,
+        )
+        attempts.append(_attempt_desc(resp))
+        if resp.status_code < 400 and _saved_order_customer_info(session, order_id, info, note, attempts):
+            return _json_or_empty(resp)
+    tail = "; ".join(attempts[-16:])
+    raise RuntimeError(f"SAPO có phản hồi nhưng đọc lại chưa thấy TTKH được lưu cho đơn {order_id}. Đã thử: {tail}")
+
+
 def _saved_return_note(session: requests.Session, return_id, expected_note: str, attempts: list[str]) -> bool:
     expected = str(expected_note or "").strip()
     if not expected:
