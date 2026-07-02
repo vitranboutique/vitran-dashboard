@@ -2619,12 +2619,13 @@ if _page == PAGE_RETURNS:
                               [("STT", ""), ("Shipper", ""), ("SĐT", ""), ("ĐVVC", ""),
                                ("Mã vận đơn", ""), ("Ngày", ""), ("KQ", ""), ("Tiền mất", ";text-align:right")]),
                       "</tr></thead><tbody>"]
-                _prev = None
-                for _i, o in enumerate(_ords, 1):
+                _prev, _sn = None, 0
+                for o in _ords:
                     _grp = (o["shipper"] != _prev)
+                    _sn = 1 if _grp else _sn + 1          # STT reset theo từng shipper (biết mỗi người mấy đơn)
                     _clr = _dvc.get(o["dvvc"], "#94A3B8")
                     _bg = _dvbg.get(o["dvvc"], "#F8FAFC")
-                    _sep = "border-top:2px solid #334155;" if (_grp and _i > 1) else ""
+                    _sep = "border-top:2px solid #334155;" if (_grp and _prev is not None) else ""
                     _wb = o.get("waybill") or "—"
                     _lk = o.get("link") or ""
                     _wbc = (f"<a href='{_lk}' target='_blank' style='color:#1d4ed8;font-weight:600'>{_wb}</a>"
@@ -2632,7 +2633,7 @@ if _page == PAGE_RETURNS:
                     _kqc = "#DC2626" if o["kind"] == "Thua" else "#6B7280"
                     _h.append(
                         f"<tr style='{_sep}background:{_bg};border-left:4px solid {_clr}'>"
-                        f"<td style='padding:5px 8px;color:#64748b'>{_i}</td>"
+                        f"<td style='padding:5px 8px;color:#64748b'>{_sn}</td>"
                         f"<td style='padding:5px 8px;font-weight:700'>{o['shipper'] if _grp else ''}</td>"
                         f"<td style='padding:5px 8px'>{(o['phone'] or '—') if _grp else ''}</td>"
                         f"<td style='padding:5px 8px;color:{_clr};font-weight:600'>{o['dvvc'] if _grp else ''}</td>"
@@ -2643,7 +2644,7 @@ if _page == PAGE_RETURNS:
                     _prev = o["shipper"]
                 _h.append("</tbody></table></div>")
                 st.markdown("".join(_h), unsafe_allow_html=True)
-            st.caption("🔗 Bấm **mã VĐ** để mở đơn trên sàn làm KN · viền/nền màu = theo ĐVVC · vạch ngang = đổi shipper. "
+            st.caption("🔗 Bấm **mã VĐ** → mở trang Trả hàng trên sàn (search sẵn mã đơn) làm KN · STT đếm theo TỪNG shipper · màu = ĐVVC · vạch = đổi shipper. "
                        "⚠️ Shopee/SPX không ghi tên shipper → cột Shipper hiện ĐVVC; mã VĐ lấy từ 'VĐ về' trong ghi chú "
                        "nếu field trống; vài đơn Shopee sàn ẩn → '—'.")
             st.divider()

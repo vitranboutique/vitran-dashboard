@@ -1076,12 +1076,15 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120) -> dict:
         if _ph and not a["phone"]:
             a["phone"] = _ph
         _wb = _lost_waybill(x)
-        _oc = (x.get("order") or {}).get("name") or x.get("name") or ""
+        _oc = (x.get("order") or {}).get("name") or x.get("name") or ""   # mã đơn (dùng để search)
+        _rc = x.get("name") or ""                                          # có mã trả → link trang Trả hàng
         _src = (x.get("order_source") or "").lower()
         if "tiktok" in _src:
-            _lk = f"https://seller-vn.tiktok.com/order?main_order_id[]={_oc}&selected_sort=6&tab=all"
+            _lk = (f"https://seller-vn.tiktok.com/order/return?order_sort_comp=OrderSort_UPADTE_TIME_DESC&tab=100&keyword={_oc}"
+                   if _rc else f"https://seller-vn.tiktok.com/order?main_order_id[]={_oc}&selected_sort=6&tab=all")
         elif "shopee" in _src:
-            _lk = f"https://banhang.shopee.vn/portal/sale?search={_oc}"
+            _lk = (f"https://banhang.shopee.vn/portal/sale/returnrefundcancel?keyword={_oc}"
+                   if _rc else f"https://banhang.shopee.vn/portal/sale?search={_oc}")
         else:
             _lk = ""
         _lorders.append({"shipper": _name or _dv, "phone": _ph, "dvvc": _dv, "waybill": _wb,
