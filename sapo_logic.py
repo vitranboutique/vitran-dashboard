@@ -1022,11 +1022,12 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120) -> dict:
         oc["can_kn"]["n"] += 1
         oc["can_kn"]["money"] += amt if amt is not None else int(d.get("money") or 0)
 
-    # THỐNG KÊ MẤT HÀNG (THUA + HẾT HẠN) theo ĐVVC + shipper — cho mục thống kê riêng.
+    # THỐNG KÊ MẤT HÀNG (THUA + HẾT HẠN) theo ĐVVC + shipper.
+    # CHỈ đơn ĐANG xử lý (inprog = hàng CHƯA về kho) → đúng nghĩa "mất hàng" + khớp card "Kết quả khiếu nại".
     from collections import defaultdict as _dd
     _ldv = _dd(lambda: {"n": 0, "money": 0, "thua": 0, "het": 0})
     _lsp, _ltot = {}, {"n": 0, "money": 0}
-    for x in all_returns:
+    for x in inprog:
         _p = _asc((x.get("note") or "").split("|")[0])
         _k = "thua" if "THUA" in _p else ("het" if "HET HAN" in _p else None)
         if not _k:

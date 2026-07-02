@@ -2538,14 +2538,15 @@ if _page == PAGE_RETURNS:
             st.plotly_chart(_outcome_fig, width="stretch")
 
             # Drilldown filter is rendered near the top of the page via _return_top_drill_slot.
-        # 🚨 THỐNG KÊ MẤT HÀNG theo ĐVVC + Shipper (Thua + Hết hạn — cả năm)
+        # 🚨 THỐNG KÊ MẤT HÀNG theo ĐVVC + Shipper (Thua + Hết hạn — CHỈ hàng chưa về kho, khớp card)
         _ls = _rip.get("lost_stats") or {}
         _lt = _ls.get("total") or {}
         if _lt.get("n"):
             def _fm(v):
                 return f"{int(v or 0):,}".replace(",", ".") + "đ"
             st.markdown("##### 🚨 Mất hàng theo ĐVVC / Shipper (Thua + Hết hạn)")
-            st.markdown(f"Năm nay: **{_lt['n']} đơn** · thất thoát **{_fm(_lt['money'])}**")
+            st.markdown(f"**{_lt['n']} đơn** hàng CHƯA về kho · thất thoát **{_fm(_lt['money'])}** "
+                        f"_(năm nay — khớp Thua+Hết hạn ở card trên)_")
             _lc1, _lc2 = st.columns(2)
             with _lc1:
                 st.caption("🚚 Theo ĐVVC")
