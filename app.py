@@ -1443,11 +1443,6 @@ if _page == PAGE_TTKH:
                 unsafe_allow_html=True,
             )
             c[3].markdown(str(r.get("Gian hàng") or ""))
-            row_pending = _collect_ttkh_rows([{
-                "order_id": oid,
-                "name": code,
-                "note": r.get("Ghi chú hiện tại") or "",
-            }])
             if row_pending:
                 rp = row_pending[0]
                 preview = _ttkh_address_preview(rp["info"], rp["status"])
@@ -1535,8 +1530,10 @@ if _page == PAGE_TTKH:
         st.markdown(f"**Sẵn sàng ghi:** {sum(1 for r in _pending_write if r['has_phone'] and r['status'] == 'Hợp lệ')} đơn")
         if st.button("🧹 Xóa toàn bộ danh sách chờ ghi"):
             st.session_state["ttkh_pending_inputs"] = {}
+            _clear_ids = set(st.session_state.get("ttkh_clear_ids") or [])
             for _src in _all_rows:
-                st.session_state[_ttkh_input_key(str(_src.get("order_id")))] = ""
+                _clear_ids.add(str(_src.get("order_id")))
+            st.session_state["ttkh_clear_ids"] = sorted(_clear_ids)
             st.rerun()
 
     st.stop()
@@ -2620,17 +2617,6 @@ if _page == PAGE_RETURNS:
             st.caption("⚠️ Shopee/SPX không ghi tên shipper → cột Shipper hiện ĐVVC. "
                        "Mã VĐ lấy từ 'VĐ về' trong ghi chú nếu field trống (giao thất bại: mã đi = mã về); "
                        "vài đơn Shopee sàn ẩn VĐ → '—'.")
-            _bm = _ls.get("by_month") or {}
-            if _bm.get("labels"):
-                st.caption("📅 Mỗi tháng — SHIPPER làm mất bao nhiêu ĐƠN & TIỀN (rê chuột xem chi tiết)")
-                _mfig = go.Figure()
-                for _s in _bm["series"]:
-                    _mfig.add_bar(name=_s["name"], x=_bm["labels"], y=_s["money"], customdata=_s["n"],
-                                  text=[_fm(m) if m else "" for m in _s["money"]], textposition="inside",
-                                  hovertemplate="%{fullData.name}<br>%{x}: %{customdata} đơn · %{text}<extra></extra>")
-                _mfig.update_layout(barmode="stack", height=360, margin=dict(l=6, r=6, t=6, b=6),
-                                    legend=dict(orientation="h", y=1.12, x=0), yaxis_title="Tiền mất (đ)")
-                st.plotly_chart(_mfig, width="stretch")
             st.divider()
         st.markdown("##### 📊 Đang xử lý (chưa nhập kho)")
         _old_n = sum(1 for d in _rip["detail"] if (d.get("age") or 0) > 5)
