@@ -2609,19 +2609,43 @@ if _page == PAGE_RETURNS:
             st.caption("🧍 Từng shipper & các đơn làm mất (gộp nhóm theo shipper; trong nhóm: mới → cũ)")
             _ords = _ls.get("orders") or []
             if _ords:
-                _rows, _prev = [], None
-                for o in _ords:
-                    _same = (o["shipper"] == _prev)
-                    _rows.append({"Shipper": "" if _same else o["shipper"],
-                                  "SĐT": "" if _same else (o["phone"] or "—"),
-                                  "ĐVVC": "" if _same else o["dvvc"],
-                                  "Mã vận đơn": o["waybill"] or "—", "Ngày tạo": o["date"],
-                                  "KQ": o["kind"], "Tiền mất": _fm(o["money"])})
+                _dvc = {"J&T Express": "#DC2626", "SPX (Shopee)": "#F97316", "Viettel Post": "#7C3AED",
+                        "GHN": "#2563EB", "GHTK": "#16A34A", "Ninja Van": "#DB2777"}
+                _dvbg = {"J&T Express": "#FEF2F2", "SPX (Shopee)": "#FFF7ED", "Viettel Post": "#F5F3FF",
+                         "GHN": "#EFF6FF", "GHTK": "#F0FDF4", "Ninja Van": "#FDF2F8"}
+                _h = ["<div style='overflow-x:auto'><table style='width:100%;border-collapse:collapse;font-size:.82rem'>",
+                      "<thead><tr style='background:#e2e8f0;text-align:left'>",
+                      "".join(f"<th style='padding:5px 8px{s}'>{c}</th>" for c, s in
+                              [("STT", ""), ("Shipper", ""), ("SĐT", ""), ("ĐVVC", ""),
+                               ("Mã vận đơn", ""), ("Ngày", ""), ("KQ", ""), ("Tiền mất", ";text-align:right")]),
+                      "</tr></thead><tbody>"]
+                _prev = None
+                for _i, o in enumerate(_ords, 1):
+                    _grp = (o["shipper"] != _prev)
+                    _clr = _dvc.get(o["dvvc"], "#94A3B8")
+                    _bg = _dvbg.get(o["dvvc"], "#F8FAFC")
+                    _sep = "border-top:2px solid #334155;" if (_grp and _i > 1) else ""
+                    _wb = o.get("waybill") or "—"
+                    _lk = o.get("link") or ""
+                    _wbc = (f"<a href='{_lk}' target='_blank' style='color:#1d4ed8;font-weight:600'>{_wb}</a>"
+                            if (_lk and _wb != "—") else _wb)
+                    _kqc = "#DC2626" if o["kind"] == "Thua" else "#6B7280"
+                    _h.append(
+                        f"<tr style='{_sep}background:{_bg};border-left:4px solid {_clr}'>"
+                        f"<td style='padding:5px 8px;color:#64748b'>{_i}</td>"
+                        f"<td style='padding:5px 8px;font-weight:700'>{o['shipper'] if _grp else ''}</td>"
+                        f"<td style='padding:5px 8px'>{(o['phone'] or '—') if _grp else ''}</td>"
+                        f"<td style='padding:5px 8px;color:{_clr};font-weight:600'>{o['dvvc'] if _grp else ''}</td>"
+                        f"<td style='padding:5px 8px'>{_wbc}</td>"
+                        f"<td style='padding:5px 8px'>{o['date']}</td>"
+                        f"<td style='padding:5px 8px;color:{_kqc};font-weight:600'>{o['kind']}</td>"
+                        f"<td style='padding:5px 8px;text-align:right;font-weight:600'>{_fm(o['money'])}</td></tr>")
                     _prev = o["shipper"]
-                st.dataframe(pd.DataFrame(_rows), hide_index=True, width="stretch")
-            st.caption("⚠️ Shopee/SPX không ghi tên shipper → cột Shipper hiện ĐVVC. "
-                       "Mã VĐ lấy từ 'VĐ về' trong ghi chú nếu field trống (giao thất bại: mã đi = mã về); "
-                       "vài đơn Shopee sàn ẩn VĐ → '—'.")
+                _h.append("</tbody></table></div>")
+                st.markdown("".join(_h), unsafe_allow_html=True)
+            st.caption("🔗 Bấm **mã VĐ** để mở đơn trên sàn làm KN · viền/nền màu = theo ĐVVC · vạch ngang = đổi shipper. "
+                       "⚠️ Shopee/SPX không ghi tên shipper → cột Shipper hiện ĐVVC; mã VĐ lấy từ 'VĐ về' trong ghi chú "
+                       "nếu field trống; vài đơn Shopee sàn ẩn → '—'.")
             st.divider()
         st.markdown("##### 📊 Đang xử lý (chưa nhập kho)")
         _old_n = sum(1 for d in _rip["detail"] if (d.get("age") or 0) > 5)
