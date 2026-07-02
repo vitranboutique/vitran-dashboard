@@ -920,10 +920,20 @@ def _create_customer_via_html(session: requests.Session, info: dict, note: str, 
 def _upsert_customer_info(session: requests.Session, order: dict, info: dict, note: str, attempts: list[str]):
     customer = order.get("customer") if isinstance(order.get("customer"), dict) else {}
     phone = str(info.get("phone") or "").strip()
-    found_by_phone = _find_customer_by_phone(session, phone, attempts) if phone and not _is_masked_phone(phone) else None
+    found_by_phone = None
+    phone_candidate = _find_customer_by_phone(session, phone, attempts) if phone and not _is_masked_phone(phone) else None
+    if phone_candidate:
+        try:
+            candidate = get_customer(session, phone_candidate)
+            if _customer_identity_saved(candidate, info, note):
+                found_by_phone = phone_candidate
+            else:
+                attempts.append(f"GET customer phone candidate -> different identity:{phone_candidate}")
+        except Exception as e:
+            attempts.append(f"GET customer phone candidate -> {type(e).__name__}: {e}")
     found_by_identity = _find_customer_by_identity(session, info, note, attempts)
-    # Real phone is the source of truth. If it is not found, create a new
-    # customer instead of overwriting a possibly unrelated customer on the order.
+    # Phone is only a search hint. If the same phone has a different name/address,
+    # create a separate customer instead of overwriting the old profile.
     if phone and not _is_masked_phone(phone):
         customer_id = found_by_phone or found_by_identity
     else:
