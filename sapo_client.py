@@ -198,6 +198,43 @@ def update_order_note(session: requests.Session, order_id, note: str) -> dict:
     attempts = []
     page_url = f"{BASE}/admin/orders/{order_id}"
     token = _page_csrf_token(session, page_url, attempts)
+    for url in (
+        f"{page_url}/edit_note.json",
+        f"{page_url}/update_note.json",
+        f"{page_url}/note.json",
+        f"{page_url}/notes.json",
+    ):
+        for payload in (
+            {"order": {"id": order_id, "note": note}},
+            {"order": {"note": note}},
+            {"note": note},
+        ):
+            resp = session.put(
+                url,
+                json=payload,
+                headers=_json_headers(page_url, token),
+                timeout=30,
+                allow_redirects=False,
+            )
+            attempts.append(_attempt_desc(resp))
+            if resp.status_code < 400 and _saved_order_note(session, order_id, note, attempts):
+                return _json_or_empty(resp)
+        for data in (
+            {"_method": "put", "order[note]": note},
+            {"_method": "patch", "order[note]": note},
+            {"order[note]": note},
+            {"note": note},
+        ):
+            resp = session.post(
+                url,
+                data=data,
+                headers=_json_headers(page_url, token),
+                timeout=30,
+                allow_redirects=False,
+            )
+            attempts.append(_attempt_desc(resp))
+            if resp.status_code < 400 and _saved_order_note(session, order_id, note, attempts):
+                return _json_or_empty(resp)
     paths = [
         f"{BASE}/admin/orders/{order_id}.json",
         page_url,

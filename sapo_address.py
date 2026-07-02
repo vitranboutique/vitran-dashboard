@@ -49,25 +49,6 @@ def resolve_address(info: dict) -> dict:
     district_key = norm_key(out.get("district"))
     province_key = norm_key(out.get("province"))
 
-    # Current Sapo address form defaults to "Địa chỉ mới" and does not expose district.
-    # Prefer the new ward/province catalog whenever it can identify the ward.
-    ward = _find_one(
-        data.get("new", {}).get("wards", []),
-        key=ward_key,
-        province_key=province_key,
-    ) or _find_one(data.get("new", {}).get("wards", []), key=ward_key)
-    if ward:
-        out.update({
-            "address_format": "new",
-            "ward": ward.get("name") or out.get("ward"),
-            "ward_code": ward.get("code") or "",
-            "district": "",
-            "district_code": "",
-            "province": ward.get("province") or out.get("province"),
-            "province_code": ward.get("province_code") or "",
-        })
-        return out
-
     if fmt == "old":
         ward = _find_one(
             data.get("old", {}).get("wards", []),
@@ -86,6 +67,25 @@ def resolve_address(info: dict) -> dict:
                 "province_code": ward.get("province_code") or "",
             })
             return out
+
+    # If TikTok gives a new-format address, or the old catalog cannot match it,
+    # fall back to the new ward/province catalog.
+    ward = _find_one(
+        data.get("new", {}).get("wards", []),
+        key=ward_key,
+        province_key=province_key,
+    ) or _find_one(data.get("new", {}).get("wards", []), key=ward_key)
+    if ward:
+        out.update({
+            "address_format": "new",
+            "ward": ward.get("name") or out.get("ward"),
+            "ward_code": ward.get("code") or "",
+            "district": "",
+            "district_code": "",
+            "province": ward.get("province") or out.get("province"),
+            "province_code": ward.get("province_code") or "",
+        })
+        return out
 
     provinces = data.get(fmt, {}).get("provinces", [])
     province = _find_one(provinces, key=province_key)
