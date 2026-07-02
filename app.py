@@ -174,7 +174,7 @@ st.markdown(
       .alert-pop .v.hot { color: #b3261e; }
       .alert-pop .ok { color: #1e7d3c; font-weight: 700; padding: 6px 2px; }
       .st-key-ttkh_save_float {
-        position: fixed !important; right: 14px; bottom: 258px; z-index: 99998;
+        position: fixed !important; right: 14px; bottom: 184px; z-index: 100000;
         width: 260px !important; max-width: 72vw; background: #f7fbff;
         border: 2px solid #378ADD; border-radius: 12px;
         box-shadow: 0 6px 22px rgba(30,100,180,.22); padding: 0 10px 10px;
@@ -185,7 +185,7 @@ st.markdown(
       }
       .st-key-ttkh_save_float .stButton button p { color: #fff !important; }
       @media (max-width: 640px) { .alert-pop { width: 190px; right: 8px; bottom: 72px; } }
-      @media (max-width: 640px) { .st-key-ttkh_save_float { width: 210px !important; right: 8px; bottom: 220px; } }
+      @media (max-width: 640px) { .st-key-ttkh_save_float { width: 210px !important; right: 8px; bottom: 180px; } }
       @media print { .alert-pop { display: none !important; } }
       @media print { .st-key-ttkh_save_float { display: none !important; } }
     </style>
@@ -1339,8 +1339,11 @@ if _page == PAGE_TTKH:
         save_cols = st.columns([1.6, 1, 5])
         if ready_here:
             save_cols[0].caption(f"Sẵn sàng ghi: {ready_here} đơn trong bảng này")
-        if save_cols[1].button("💾 Ghi SAPO", key=f"ttkh_save_{label}", disabled=not pending_here, use_container_width=True):
-            _write_ttkh_rows(pending_here)
+        if save_cols[1].button("💾 Ghi SAPO", key=f"ttkh_save_{label}", use_container_width=True):
+            if pending_here:
+                _write_ttkh_rows(pending_here)
+            else:
+                st.warning("Chưa có dòng TTKH nào được dán trong bảng này.")
         return df
 
     st.caption("Dán nguyên block TTKH trực tiếp vào cột `TTKH dán vào` của đúng mã đơn. Rê chuột vào cột `SL SP` để xem SKU, SL, giá từng món và tổng tiền.")
@@ -1358,10 +1361,12 @@ if _page == PAGE_TTKH:
     with st.container(key="ttkh_save_float"):
         st.markdown("**💾 Lưu TTKH SAPO**")
         st.caption(f"Hợp lệ: {_ready_all} · Chưa hợp lệ: {_invalid_all}")
-        if st.button("💾 Ghi SAPO", key="ttkh_float_save", disabled=not _pending_write, use_container_width=True):
-            _write_ttkh_rows(_pending_write)
-        if _pending_write:
-            st.caption("Nút này luôn nổi khi cuộn trang.")
+        if st.button("💾 Ghi SAPO", key="ttkh_float_save", use_container_width=True):
+            if _pending_write:
+                _write_ttkh_rows(_pending_write)
+            else:
+                st.warning("Chưa có dòng TTKH nào được dán.")
+        st.caption("Nút này luôn nổi khi cuộn trang.")
 
     if _pending_write:
         _preview = pd.DataFrame([{
