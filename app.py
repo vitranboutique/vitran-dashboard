@@ -2570,6 +2570,18 @@ if _page == PAGE_RETURNS:
                 else:
                     st.caption("Chưa có shipper ghi rõ SĐT.")
                 st.caption("⚠️ Shopee/SPX thường không ghi tên shipper → chỉ gom theo ĐVVC.")
+            _bm = _ls.get("by_month") or {}
+            if _bm.get("labels"):
+                st.caption("📅 Mất hàng theo THÁNG (cột chồng theo ĐVVC)")
+                _LC = {"J&T Express": "#DC2626", "SPX (Shopee)": "#F97316", "Viettel Post": "#7C3AED",
+                       "GHN": "#2563EB", "GHTK": "#16A34A", "Ninja Van": "#DB2777", "(không rõ)": "#94A3B8"}
+                _mfig = go.Figure()
+                for _s in _bm["series"]:
+                    _mfig.add_bar(name=_s["dvvc"], x=_bm["labels"], y=_s["money"],
+                                  marker_color=_LC.get(_s["dvvc"], "#94A3B8"))
+                _mfig.update_layout(barmode="stack", height=300, margin=dict(l=6, r=6, t=6, b=6),
+                                    legend=dict(orientation="h", y=1.18, x=0), yaxis_title="Tiền mất (đ)")
+                st.plotly_chart(_mfig, width="stretch")
             st.divider()
         st.markdown("##### 📊 Đang xử lý (chưa nhập kho)")
         _old_n = sum(1 for d in _rip["detail"] if (d.get("age") or 0) > 5)

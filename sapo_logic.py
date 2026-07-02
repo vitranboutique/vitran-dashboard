@@ -1027,6 +1027,7 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120) -> dict:
     from collections import defaultdict as _dd
     _ldv = _dd(lambda: {"n": 0, "money": 0, "thua": 0, "het": 0})
     _lsp, _ltot = {}, {"n": 0, "money": 0}
+    _lmon = _dd(lambda: _dd(int))   # tháng -> ĐVVC -> tiền mất
     for x in inprog:
         _p = _asc((x.get("note") or "").split("|")[0])
         _k = "thua" if "THUA" in _p else ("het" if "HET HAN" in _p else None)
@@ -1038,15 +1039,24 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120) -> dict:
         _dv = _lost_dvvc(x)
         _ldv[_dv]["n"] += 1; _ldv[_dv]["money"] += _mo; _ldv[_dv][_k] += 1
         _ltot["n"] += 1; _ltot["money"] += _mo
+        _md = _vn_date_of(x.get("created_on"))
+        if _md:
+            _lmon[_md.month][_dv] += _mo
         _ph = _lost_phone(x.get("note"))
         if _ph:
             s = _lsp.setdefault(_ph, {"phone": _ph, "name": "", "dvvc": "", "n": 0, "money": 0, "thua": 0, "het": 0})
             s["n"] += 1; s["money"] += _mo; s[_k] += 1
             s["name"] = s["name"] or _lost_person(x.get("note"))
             s["dvvc"] = s["dvvc"] or _dv
-    lost_stats = {"total": _ltot,
-                  "by_dvvc": sorted(({"dvvc": k, **v} for k, v in _ldv.items()), key=lambda d: -d["money"]),
-                  "by_shipper": sorted(_lsp.values(), key=lambda d: -d["money"])}
+    _by_dvvc = sorted(({"dvvc": k, **v} for k, v in _ldv.items()), key=lambda d: -d["money"])
+    _months = list(range(min(_lmon), today.month + 1)) if _lmon else []   # liền mạch tới tháng hiện tại
+    _dvorder = [d["dvvc"] for d in _by_dvvc]
+    lost_stats = {"total": _ltot, "by_dvvc": _by_dvvc,
+                  "by_shipper": sorted(_lsp.values(), key=lambda d: -d["money"]),
+                  "by_month": {"labels": [f"T{m}" for m in _months],
+                               "series": [{"dvvc": dv, "money": [int(_lmon[m].get(dv, 0)) for m in _months]}
+                                          for dv in _dvorder],
+                               "total": [int(sum(_lmon[m].values())) for m in _months]}}
 
     return {
         "total": len(inprog), "total_returns": len(all_returns), "capped": capped, "n_complaint": n_complaint,
