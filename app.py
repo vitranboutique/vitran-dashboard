@@ -1269,6 +1269,23 @@ if _page == PAGE_TTKH:
             })
         return out
 
+    def _show_ttkh_write_results():
+        results = st.session_state.get("ttkh_write_results") or []
+        if not results:
+            return
+        ok = sum(1 for r in results if str(r.get("Kết quả") or "").startswith("Đã ghi ghi chú + khách"))
+        partial = sum(1 for r in results if str(r.get("Kết quả") or "").startswith("Đã ghi ghi chú,"))
+        failed = sum(1 for r in results if str(r.get("Kết quả") or "").startswith("Lỗi"))
+        skipped = sum(1 for r in results if str(r.get("Kết quả") or "").startswith("Bỏ qua"))
+        box = st.success if failed == 0 and partial == 0 else st.warning
+        box(f"Kết quả ghi SAPO: thành công {ok}, ghi chú OK nhưng khách/contact chưa OK {partial}, lỗi {failed}, bỏ qua {skipped}.")
+        st.dataframe(
+            pd.DataFrame(results),
+            hide_index=True,
+            width="stretch",
+            column_config={"Link khách": st.column_config.LinkColumn("Link khách", display_text="Mở khách")},
+        )
+
     def _write_ttkh_rows(rows_to_write):
         session = build_session()
         now_note = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%d/%m/%Y %H:%M")
@@ -1277,7 +1294,7 @@ if _page == PAGE_TTKH:
         written_ids = []
         for r in rows_to_write:
             if not r["has_phone"] or r["status"] != "Hợp lệ":
-                results.append({"Mã đơn": r["code"], "Kết quả": "Bỏ qua", "Lý do": r["status"]})
+                results.append({"Mã đơn": r["code"], "Kết quả": "Bỏ qua", "Link khách": "", "Lý do": r["status"]})
                 continue
             old_note = r["old_note"]
             info = r["info"]
@@ -1287,19 +1304,43 @@ if _page == PAGE_TTKH:
             block_lines.append(f"sdt: {info['phone']}")
             block = "\n".join(block_lines)
             new_note = f"{block}\n📝 Ghi chú cũ SAPO:\n{old_note}".strip() if old_note else block
+            note_saved = False
+            note_error = ""
+            customer_url = ""
+            customer_tail = ""
+            try:
+                update_order_note(session, r["order_id"], new_note)
+                note_saved = True
+            except Exception as e:
+                note_error = str(e)[:900]
             try:
                 saved = update_order_customer_info(session, r["order_id"], info, new_note)
-                ok_count += 1
-                written_ids.append(str(r["order_id"]))
+                note_saved = bool(note_saved or (isinstance(saved, dict) and saved.get("_ttkh_order_saved")))
                 customer_id = saved.get("_ttkh_customer_id") if isinstance(saved, dict) else ""
                 customer_url = _sapo_customer_url(customer_id)
                 if isinstance(saved, dict) and saved.get("_ttkh_customer_saved"):
-                    results.append({"Mã đơn": r["code"], "Kết quả": "Đã ghi đơn + khách hàng", "Link khách": customer_url, "Lý do": ""})
+                    ok_count += 1
+                    written_ids.append(str(r["order_id"]))
+                    results.append({"Mã đơn": r["code"], "Kết quả": "Đã ghi ghi chú + khách hàng", "Link khách": customer_url, "Lý do": ""})
                 else:
-                    tail = "; ".join(saved.get("_ttkh_attempts", [])[-8:]) if isinstance(saved, dict) else ""
-                    results.append({"Mã đơn": r["code"], "Kết quả": "Đã ghi đơn, chưa thấy khách hàng", "Link khách": customer_url, "Lý do": tail[:1200]})
+                    customer_tail = "; ".join(saved.get("_ttkh_attempts", [])[-8:]) if isinstance(saved, dict) else ""
             except Exception as e:
-                results.append({"Mã đơn": r["code"], "Kết quả": "Lỗi", "Link khách": "", "Lý do": str(e)[:1600]})
+                customer_tail = str(e)[:1200]
+            if not any(x.get("Mã đơn") == r["code"] for x in results):
+                if note_saved:
+                    results.append({
+                        "Mã đơn": r["code"],
+                        "Kết quả": "Đã ghi ghi chú, chưa ghi được khách/contact",
+                        "Link khách": customer_url,
+                        "Lý do": (customer_tail or note_error)[:1600],
+                    })
+                else:
+                    results.append({
+                        "Mã đơn": r["code"],
+                        "Kết quả": "Lỗi",
+                        "Link khách": customer_url,
+                        "Lý do": ("Ghi chú đơn hàng chưa lưu. " + note_error + " | " + customer_tail).strip(" |")[:1600],
+                    })
         st.session_state["ttkh_write_results"] = results
         if ok_count:
             for _oid in written_ids:
@@ -1381,6 +1422,7 @@ if _page == PAGE_TTKH:
     st.caption("Dán nguyên block TTKH trực tiếp vào cột `TTKH dán vào` của đúng mã đơn. Rê chuột vào cột `SL SP` để xem SKU, SL, giá từng món và tổng tiền.")
     if "ttkh_pending_inputs" not in st.session_state:
         st.session_state["ttkh_pending_inputs"] = {}
+    _show_ttkh_write_results()
     _df_multi = _ttkh_table("Đơn ≥ 2 SP", _tt["multi"])
     _df_single = _ttkh_table("Đơn 1 SP", _tt["single"])
     _all_rows = list(_tt["multi"]) + list(_tt["single"])
@@ -1423,15 +1465,6 @@ if _page == PAGE_TTKH:
             for _src in _all_rows:
                 st.session_state[_ttkh_input_key(str(_src.get("order_id")))] = ""
             st.rerun()
-
-    if st.session_state.get("ttkh_write_results"):
-        st.markdown("#### Kết quả ghi SAPO")
-        st.dataframe(
-            pd.DataFrame(st.session_state["ttkh_write_results"]),
-            hide_index=True,
-            width="stretch",
-            column_config={"Link khách": st.column_config.LinkColumn("Link khách", display_text="Mở khách")},
-        )
 
     st.stop()
 
