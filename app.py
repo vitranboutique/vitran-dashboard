@@ -2606,6 +2606,11 @@ if _page == PAGE_RETURNS:
             st.dataframe(pd.DataFrame([{"ĐVVC": r["dvvc"], "Đơn": r["n"],
                 "Thua/Hết": f"{r['thua']}/{r['het']}", "Tiền mất": _fm(r["money"])}
                 for r in _dvr]), hide_index=True, width="stretch")
+            st.caption("🧍 Tổng theo shipper (mỗi người/ĐVVC mất bao nhiêu đơn & tiền)")
+            _spa = _ls.get("by_shipper_all") or []
+            st.dataframe(pd.DataFrame([{"Shipper": r["name"], "SĐT": r["phone"] or "—",
+                "ĐVVC": r["dvvc"], "Đơn": r["n"], "Tiền mất": _fm(r["money"])}
+                for r in _spa]), hide_index=True, width="stretch")
             st.caption("📋 Chi tiết từng đơn mất hàng (không có tên shipper → cột Shipper hiện ĐVVC)")
             _ords = _ls.get("orders") or []
             if _ords:

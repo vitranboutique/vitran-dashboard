@@ -1046,6 +1046,7 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120) -> dict:
     _lsp, _ltot = {}, {"n": 0, "money": 0}
     _lmon = _dd(lambda: _dd(lambda: {"n": 0, "money": 0}))   # tháng -> shipper -> {n, money}
     _lorders = []                                            # chi tiết từng đơn mất hàng
+    _lship = {}                                              # gộp theo shipper (tên hoặc ĐVVC)
     for x in inprog:
         _p = _asc((x.get("note") or "").split("|")[0])
         _k = "thua" if "THUA" in _p else ("het" if "HET HAN" in _p else None)
@@ -1069,6 +1070,11 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120) -> dict:
             s["n"] += 1; s["money"] += _mo; s[_k] += 1
             s["name"] = s["name"] or _name
             s["dvvc"] = s["dvvc"] or _dv
+        _lbl = _name or _dv                    # gộp theo shipper: tên, hoặc ĐVVC nếu không tên
+        a = _lship.setdefault(_lbl, {"name": _lbl, "phone": "", "dvvc": _dv, "n": 0, "money": 0})
+        a["n"] += 1; a["money"] += _mo
+        if _ph and not a["phone"]:
+            a["phone"] = _ph
         _wb = _lost_waybill(x)
         _lorders.append({"shipper": _name or _dv, "phone": _ph, "dvvc": _dv, "waybill": _wb,
                          "date": _md.strftime("%d/%m/%Y") if _md else "", "money": _mo,
@@ -1082,6 +1088,7 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120) -> dict:
     _shorder = [lab for lab, _ in sorted(_shtot.items(), key=lambda kv: -kv[1])]
     lost_stats = {"total": _ltot, "by_dvvc": _by_dvvc,
                   "by_shipper": sorted(_lsp.values(), key=lambda d: -d["money"]),
+                  "by_shipper_all": sorted(_lship.values(), key=lambda d: -d["money"]),
                   "by_month": {"labels": [f"T{m}" for m in _months],
                                "series": [{"name": lab,
                                            "money": [int(_lmon[m].get(lab, {}).get("money", 0)) for m in _months],
