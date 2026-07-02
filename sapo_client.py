@@ -430,7 +430,7 @@ def _customer_payload(customer_id, info: dict, note: str) -> dict:
     parts = name.split()
     first_name = parts[0] if parts else name
     last_name = " ".join(parts[1:]) if len(parts) > 1 else ""
-    phone_value = "" if _is_masked_phone(info.get("phone")) else (info.get("phone") or "")
+    phone_value = str(info.get("phone") or "").strip()
     province_code = str(info.get("province_code") or "").strip()
     district_code = str(info.get("district_code") or "").strip()
     ward_code = str(info.get("ward_code") or "").strip()
@@ -568,7 +568,8 @@ def _address_code_saved(addr: dict, expected_code: str, keys: tuple[str, ...]) -
 
 
 def _customer_info_saved(customer: dict, info: dict) -> bool:
-    if not _customer_phone_saved(customer, info.get("phone")):
+    expected_phone = str(info.get("phone") or "").strip()
+    if expected_phone and not _is_masked_phone(expected_phone) and not _customer_phone_saved(customer, expected_phone):
         return False
     expected_addr = str(info.get("address1") or "").strip().lower()
     if not expected_addr:
@@ -699,6 +700,9 @@ def _save_customer_address(session: requests.Session, customer_id, info: dict, a
 
 
 def _find_customer_by_phone(session: requests.Session, phone: str, attempts: list[str]):
+    if _is_masked_phone(phone):
+        attempts.append("GET customer search -> skip masked phone")
+        return None
     expected = _norm_phone(phone)
     if not expected:
         return None
@@ -729,7 +733,14 @@ def _find_customer_by_phone(session: requests.Session, phone: str, attempts: lis
 
 def _upsert_customer_info(session: requests.Session, order: dict, info: dict, note: str, attempts: list[str]):
     customer = order.get("customer") if isinstance(order.get("customer"), dict) else {}
-    customer_id = customer.get("id") or order.get("customer_id") or _find_customer_by_phone(session, info.get("phone"), attempts)
+    phone = str(info.get("phone") or "").strip()
+    found_by_phone = _find_customer_by_phone(session, phone, attempts) if phone and not _is_masked_phone(phone) else None
+    # Real phone is the source of truth. If it is not found, create a new
+    # customer instead of overwriting a possibly unrelated customer on the order.
+    if phone and not _is_masked_phone(phone):
+        customer_id = found_by_phone
+    else:
+        customer_id = customer.get("id") or order.get("customer_id")
     token = _page_csrf_token(session, f"{BASE}/admin/customers/{customer_id}" if customer_id else f"{BASE}/admin/customers", attempts)
     if customer_id:
         url = f"{BASE}/admin/customers/{customer_id}.json"
@@ -787,7 +798,7 @@ def update_order_customer_info(session: requests.Session, order_id, info: dict, 
     parts = name.split()
     first_name = parts[0] if parts else name
     last_name = " ".join(parts[1:]) if len(parts) > 1 else ""
-    phone_value = "" if _is_masked_phone(info.get("phone")) else (info.get("phone") or "")
+    phone_value = str(info.get("phone") or "").strip()
     province_code = str(info.get("province_code") or "").strip()
     district_code = str(info.get("district_code") or "").strip()
     ward_code = str(info.get("ward_code") or "").strip()
@@ -915,6 +926,26 @@ def update_order_customer_info(session: requests.Session, order_id, info: dict, 
         data["_ttkh_attempts"] = attempts[-24:]
         return data
 
+    def _partial_data():
+        customer_saved = False
+        saved_customer_id = customer_id
+        if customer_id:
+            try:
+                customer_saved = _customer_info_saved(get_customer(session, customer_id), info)
+                attempts.append(f"GET customer final verify -> info:{customer_saved}")
+            except Exception as e:
+                attempts.append(f"GET customer final verify -> {type(e).__name__}: {e}")
+            linked_saved, linked_customer_id = _linked_customer_info_saved(session, order_id, info, customer_id, attempts)
+            saved_customer_id = linked_customer_id or saved_customer_id
+            customer_saved = bool(customer_saved or linked_saved)
+        return {
+            "_ttkh_order_saved": False,
+            "_ttkh_address_saved": False,
+            "_ttkh_customer_saved": customer_saved,
+            "_ttkh_customer_id": saved_customer_id,
+            "_ttkh_attempts": attempts[-32:],
+        }
+
     for path in address_paths:
         for method in ("put", "patch", "post"):
             for payload in address_wrappers:
@@ -980,6 +1011,9 @@ def update_order_customer_info(session: requests.Session, order_id, info: dict, 
         attempts.append(_attempt_desc(resp))
         if resp.status_code < 400 and _saved_order_address_info(session, order_id, info, attempts):
             return _success_data(resp)
+    partial = _partial_data()
+    if partial.get("_ttkh_customer_saved"):
+        return partial
     tail = "; ".join(attempts[-16:])
     raise RuntimeError(f"SAPO có phản hồi nhưng đọc lại chưa thấy TTKH được lưu cho đơn {order_id}. Đã thử: {tail}")
 

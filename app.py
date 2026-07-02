@@ -1352,10 +1352,20 @@ if _page == PAGE_TTKH:
                 note_saved = bool(note_saved or (isinstance(saved, dict) and saved.get("_ttkh_order_saved")))
                 customer_id = saved.get("_ttkh_customer_id") if isinstance(saved, dict) else ""
                 customer_url = _sapo_customer_url(customer_id)
-                if isinstance(saved, dict) and saved.get("_ttkh_customer_saved"):
+                if isinstance(saved, dict) and saved.get("_ttkh_customer_saved") and saved.get("_ttkh_address_saved") and saved.get("_ttkh_order_saved"):
                     ok_count += 1
                     written_ids.append(str(r["order_id"]))
                     results.append({"Mã đơn": r["code"], "Kết quả": "Đã ghi ghi chú + khách hàng", "Link khách": customer_url, "Lý do": ""})
+                elif isinstance(saved, dict) and saved.get("_ttkh_customer_saved"):
+                    ok_count += 1
+                    written_ids.append(str(r["order_id"]))
+                    customer_tail = "; ".join(saved.get("_ttkh_attempts", [])[-10:])
+                    results.append({
+                        "Mã đơn": r["code"],
+                        "Kết quả": "Da ghi/tao khach, can kiem tra dia chi don",
+                        "Link khách": customer_url,
+                        "Lý do": customer_tail[:1600],
+                    })
                 else:
                     customer_tail = "; ".join(saved.get("_ttkh_attempts", [])[-8:]) if isinstance(saved, dict) else ""
             except Exception as e:
