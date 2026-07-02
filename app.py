@@ -22,6 +22,8 @@ import sapo_logic as L
 import picklog
 import dohana
 import daily_report
+import cham_cong
+import cham_cong_ui
 from sapo_address import resolve_address
 from sapo_client import (
     SapoAuthError, build_session, credential_present, make_fetch_json,
@@ -552,8 +554,32 @@ PAGE_PICK = "🧾 Phiếu nhặt hàng"
 PAGE_TTKH = "📞 Lấy - lưu TTKH"
 PAGE_DAILY = "📄 Báo cáo cuối ngày"
 PAGE_RETURNS = "📦 Đơn trả hàng đang xử lý"
-_page = st.sidebar.radio("Trang", [PAGE_OVERVIEW, PAGE_REPORT, PAGE_PICK, PAGE_TTKH, PAGE_DAILY, PAGE_RETURNS], index=0)
+PAGE_CHAMCONG = "🕘 Chấm công"
+PAGE_LUONG = "💰 Lương của tôi"
+PAGE_QRSHOP = "📲 QR chấm công (shop)"
+PAGE_QLCC = "🛠️ Quản lý chấm công"
+
+# Phân quyền theo tài khoản: NV chỉ thấy Chấm công + Lương mình; admin thấy hết + QR/quản lý
+_cc_role = cham_cong.role_of(CUR_USER)
+if _cc_role == "nv":
+    _opts = [PAGE_CHAMCONG, PAGE_LUONG]
+elif _cc_role == "admin":
+    _opts = [PAGE_OVERVIEW, PAGE_REPORT, PAGE_PICK, PAGE_TTKH, PAGE_DAILY, PAGE_RETURNS,
+             PAGE_QRSHOP, PAGE_QLCC]
+else:
+    _opts = [PAGE_OVERVIEW, PAGE_REPORT, PAGE_PICK, PAGE_TTKH, PAGE_DAILY, PAGE_RETURNS]
+_page = st.sidebar.radio("Trang", _opts, index=0)
 st.sidebar.divider()
+
+# ── Trang CHẤM CÔNG (tách riêng — không cần dữ liệu Sapo) ──
+if _page == PAGE_CHAMCONG:
+    cham_cong_ui.render_checkin(CUR_USER); st.stop()
+if _page == PAGE_LUONG:
+    cham_cong_ui.render_my_salary(CUR_USER); st.stop()
+if _page == PAGE_QRSHOP:
+    cham_cong_ui.render_shop_qr(); st.stop()
+if _page == PAGE_QLCC:
+    cham_cong_ui.render_admin(); st.stop()
 
 
 # ── Biểu đồ dùng chung ──
