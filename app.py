@@ -1293,6 +1293,11 @@ if _page == PAGE_TTKH:
         results = []
         ok_count = 0
         written_ids = []
+
+        def _note_phone_key(value):
+            raw = str(value or "").strip()
+            return re.sub(r"[^0-9*]+", "", raw)
+
         for r in rows_to_write:
             if not r["has_phone"] or r["status"] != "Hợp lệ":
                 results.append({"Mã đơn": r["code"], "Kết quả": "Bỏ qua", "Link khách": "", "Lý do": r["status"]})
@@ -1304,7 +1309,17 @@ if _page == PAGE_TTKH:
                 block_lines.append(str(info["username"]).strip())
             block_lines.append(f"sdt: {info['phone']}")
             block = "\n".join(block_lines)
-            new_note = f"{block}\n📝 Ghi chú cũ SAPO:\n{old_note}".strip() if old_note else block
+            old_note_phone = _note_phone_key(old_note)
+            phone_norm = _note_phone_key(info["phone"])
+            if phone_norm and phone_norm in old_note_phone:
+                new_note = old_note
+            else:
+                clean_old_note = re.sub(
+                    r"(?is)\n?📝\s*Ghi chú cũ SAPO:\s*(?:.*?)(?=\n\S|\Z)",
+                    "",
+                    old_note,
+                ).strip()
+                new_note = f"{block}\n📝 Ghi chú cũ SAPO:\n{clean_old_note}".strip() if clean_old_note else block
             note_saved = False
             note_error = ""
             customer_url = ""

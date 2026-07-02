@@ -351,6 +351,62 @@ def _saved_order_ttkh_info(session: requests.Session, order_id, info: dict, expe
         return False
 
 
+def _saved_order_address_info(session: requests.Session, order_id, info: dict, attempts: list[str]) -> bool:
+    try:
+        row = get_order(session, order_id)
+        addr = row.get("shipping_address") or {}
+        billing = row.get("billing_address") or {}
+        candidates = [x for x in (addr, billing) if isinstance(x, dict)]
+        expected_addr = str(info.get("address1") or "").strip().lower()
+        expected_name = str(info.get("name") or "").strip().lower()
+        expected_phone = str(info.get("phone") or "").strip()
+        expected_ward = str(info.get("ward") or "").strip().lower()
+        expected_ward_code = str(info.get("ward_code") or "").strip()
+        expected_district = str(info.get("district") or "").strip().lower()
+        expected_district_code = str(info.get("district_code") or "").strip()
+        expected_province = str(info.get("province") or "").strip().lower()
+        expected_province_code = str(info.get("province_code") or "").strip()
+        for candidate in candidates:
+            text = _address_text(candidate)
+            name_ok = (not expected_name) or expected_name in text
+            phone_ok = (not expected_phone) or any(
+                _phone_matches(candidate.get(k), expected_phone)
+                for k in ("phone", "phone_number", "mobile")
+            )
+            if "*" in expected_phone and not phone_ok:
+                phone_ok = expected_phone in text
+            addr_ok = (not expected_addr) or expected_addr in text
+            ward_ok = (
+                not expected_ward and not expected_ward_code
+            ) or _address_code_saved(
+                candidate,
+                expected_ward_code,
+                ("ward", "ward_code", "ward_id", "wardId", "commune_code", "commune_id", "location_id", "new_ward_id"),
+            ) or (expected_ward and expected_ward in text)
+            district_ok = (
+                not expected_district and not expected_district_code
+            ) or _address_code_saved(
+                candidate,
+                expected_district_code,
+                ("district", "district_code", "district_id"),
+            ) or (expected_district and expected_district in text)
+            province_ok = (
+                not expected_province and not expected_province_code
+            ) or _address_code_saved(
+                candidate,
+                expected_province_code,
+                ("province", "province_code", "province_id", "city_id", "municipality_id"),
+            ) or (expected_province and expected_province in text)
+            if name_ok and phone_ok and addr_ok and ward_ok and district_ok and province_ok:
+                attempts.append("GET order address verify -> ok")
+                return True
+        attempts.append("GET order address verify -> false")
+        return False
+    except Exception as e:
+        attempts.append(f"GET order address verify -> {type(e).__name__}: {e}")
+        return False
+
+
 def _linked_customer_info_saved(session: requests.Session, order_id, info: dict, customer_id, attempts: list[str]) -> tuple[bool, object]:
     check_customer_id = customer_id
     try:
@@ -763,6 +819,14 @@ def update_order_customer_info(session: requests.Session, order_id, info: dict, 
         shipping.pop("district_name", None)
         shipping.pop("district_code", None)
         shipping.pop("district_id", None)
+    address_wrappers = [
+        {"shipping_address": shipping},
+        {"shipping_address_attributes": shipping},
+        {"order": {"shipping_address": shipping}},
+        {"order": {"shipping_address_attributes": shipping}},
+        {"order": {"shipping_address": shipping, "billing_address": shipping}},
+        {"order": {"shipping_address_attributes": shipping, "billing_address_attributes": shipping}},
+    ]
     order_payload = {
         "id": order_id,
         "note": note,
@@ -785,6 +849,13 @@ def update_order_customer_info(session: requests.Session, order_id, info: dict, 
         }
         order_payload["customer_attributes"] = order_payload["customer"]
     paths = [f"{BASE}/admin/orders/{order_id}.json", page_url]
+    address_paths = [
+        f"{page_url}/shipping_address.json",
+        f"{page_url}/edit_shipping_address.json",
+        f"{page_url}/update_shipping_address.json",
+        f"{page_url}/shipping_addresses.json",
+        f"{page_url}/address.json",
+    ]
     payloads = [
         {"order": order_payload},
         {"order": {"note": note, "phone": info.get("phone") or "", "shipping_address": shipping, "billing_address": shipping}},
@@ -802,6 +873,32 @@ def update_order_customer_info(session: requests.Session, order_id, info: dict, 
                 "billing_address": shipping,
             }
         })
+    def _success_data(resp):
+        customer_saved, saved_customer_id = _linked_customer_info_saved(session, order_id, info, customer_id, attempts)
+        data = _json_or_empty(resp)
+        if not isinstance(data, dict):
+            data = {"response": data}
+        data["_ttkh_order_saved"] = True
+        data["_ttkh_address_saved"] = True
+        data["_ttkh_customer_saved"] = customer_saved
+        data["_ttkh_customer_id"] = saved_customer_id
+        data["_ttkh_attempts"] = attempts[-24:]
+        return data
+
+    for path in address_paths:
+        for method in ("put", "patch", "post"):
+            for payload in address_wrappers:
+                resp = getattr(session, method)(
+                    path,
+                    json=payload,
+                    headers=_json_headers(page_url, token),
+                    timeout=30,
+                    allow_redirects=False,
+                )
+                attempts.append(_attempt_desc(resp))
+                if resp.status_code < 400 and _saved_order_address_info(session, order_id, info, attempts):
+                    return _success_data(resp)
+
     for path in paths:
         for method in ("put", "patch", "post"):
             for payload in payloads:
@@ -813,16 +910,8 @@ def update_order_customer_info(session: requests.Session, order_id, info: dict, 
                     allow_redirects=False,
                 )
                 attempts.append(_attempt_desc(resp))
-                if resp.status_code < 400 and _saved_order_ttkh_info(session, order_id, info, note, attempts):
-                    customer_saved, saved_customer_id = _linked_customer_info_saved(session, order_id, info, customer_id, attempts)
-                    data = _json_or_empty(resp)
-                    if not isinstance(data, dict):
-                        data = {"response": data}
-                    data["_ttkh_order_saved"] = True
-                    data["_ttkh_customer_saved"] = customer_saved
-                    data["_ttkh_customer_id"] = saved_customer_id
-                    data["_ttkh_attempts"] = attempts[-20:]
-                    return data
+                if resp.status_code < 400 and _saved_order_address_info(session, order_id, info, attempts):
+                    return _success_data(resp)
         form_data = {
             "_method": "put",
             "order[note]": note,
@@ -855,16 +944,8 @@ def update_order_customer_info(session: requests.Session, order_id, info: dict, 
             allow_redirects=False,
         )
         attempts.append(_attempt_desc(resp))
-        if resp.status_code < 400 and _saved_order_ttkh_info(session, order_id, info, note, attempts):
-            customer_saved, saved_customer_id = _linked_customer_info_saved(session, order_id, info, customer_id, attempts)
-            data = _json_or_empty(resp)
-            if not isinstance(data, dict):
-                data = {"response": data}
-            data["_ttkh_order_saved"] = True
-            data["_ttkh_customer_saved"] = customer_saved
-            data["_ttkh_customer_id"] = saved_customer_id
-            data["_ttkh_attempts"] = attempts[-20:]
-            return data
+        if resp.status_code < 400 and _saved_order_address_info(session, order_id, info, attempts):
+            return _success_data(resp)
     tail = "; ".join(attempts[-16:])
     raise RuntimeError(f"SAPO có phản hồi nhưng đọc lại chưa thấy TTKH được lưu cho đơn {order_id}. Đã thử: {tail}")
 
