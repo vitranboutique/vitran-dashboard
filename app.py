@@ -1197,6 +1197,7 @@ if _page == PAGE_TTKH:
             "products": r.get("products") or [],
             "order_value": r.get("order_value") or 0,
             "_order_id": r.get("order_id"),
+            "_customer_id": r.get("customer_id"),
         } for r in rows])
 
     def _money(v):
@@ -1216,6 +1217,10 @@ if _page == PAGE_TTKH:
     def _sapo_order_url(order_id):
         oid = str(order_id or "").strip()
         return f"https://vitranboutiquehcm.mysapo.net/admin/orders/{quote_plus(oid)}" if oid else ""
+
+    def _sapo_customer_url(customer_id):
+        cid = str(customer_id or "").strip()
+        return f"https://vitranboutiquehcm.mysapo.net/admin/customers/{quote_plus(cid)}" if cid else ""
 
     def _product_tip(row):
         products = row.get("products") or []
@@ -1279,12 +1284,18 @@ if _page == PAGE_TTKH:
             block = "\n".join(block_lines)
             new_note = f"{block}\n📝 Ghi chú cũ SAPO:\n{old_note}".strip() if old_note else block
             try:
-                update_order_customer_info(session, r["order_id"], info, new_note)
+                saved = update_order_customer_info(session, r["order_id"], info, new_note)
                 ok_count += 1
                 written_ids.append(str(r["order_id"]))
-                results.append({"Mã đơn": r["code"], "Kết quả": "Đã ghi đơn + khách hàng", "Lý do": ""})
+                customer_id = saved.get("_ttkh_customer_id") if isinstance(saved, dict) else ""
+                customer_url = _sapo_customer_url(customer_id)
+                if isinstance(saved, dict) and saved.get("_ttkh_customer_saved"):
+                    results.append({"Mã đơn": r["code"], "Kết quả": "Đã ghi đơn + khách hàng", "Link khách": customer_url, "Lý do": ""})
+                else:
+                    tail = "; ".join(saved.get("_ttkh_attempts", [])[-8:]) if isinstance(saved, dict) else ""
+                    results.append({"Mã đơn": r["code"], "Kết quả": "Đã ghi đơn, chưa thấy khách hàng", "Link khách": customer_url, "Lý do": tail[:1200]})
             except Exception as e:
-                results.append({"Mã đơn": r["code"], "Kết quả": "Lỗi", "Lý do": str(e)[:1600]})
+                results.append({"Mã đơn": r["code"], "Kết quả": "Lỗi", "Link khách": "", "Lý do": str(e)[:1600]})
         st.session_state["ttkh_write_results"] = results
         if ok_count:
             for _oid in written_ids:
@@ -1316,9 +1327,11 @@ if _page == PAGE_TTKH:
             code = str(r.get("Mã đơn") or "")
             url = _ttkh_order_url(code, r.get("Gian hàng"))
             sapo_url = _sapo_order_url(oid)
+            customer_url = _sapo_customer_url(r.get("_customer_id"))
             code_link = f"[{code}]({url})" if url else code
             sapo_link = f" · [Sapo]({sapo_url})" if sapo_url else ""
-            c[1].markdown(code_link + sapo_link)
+            customer_link = f" · [Khách]({customer_url})" if customer_url else ""
+            c[1].markdown(code_link + sapo_link + customer_link)
             c[2].markdown(
                 f"<abbr title='{_product_tip(r)}' style='cursor:help;font-weight:800;text-decoration:underline dotted #6b7280'>{int(r.get('SL SP') or 0)} SP ⓘ</abbr>",
                 unsafe_allow_html=True,
@@ -1394,7 +1407,12 @@ if _page == PAGE_TTKH:
 
     if st.session_state.get("ttkh_write_results"):
         st.markdown("#### Kết quả ghi SAPO")
-        st.dataframe(pd.DataFrame(st.session_state["ttkh_write_results"]), hide_index=True, width="stretch")
+        st.dataframe(
+            pd.DataFrame(st.session_state["ttkh_write_results"]),
+            hide_index=True,
+            width="stretch",
+            column_config={"Link khách": st.column_config.LinkColumn("Link khách", display_text="Mở khách")},
+        )
 
     st.stop()
 

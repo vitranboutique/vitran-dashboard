@@ -331,6 +331,7 @@ def get_tt_customer_candidates(fetch_json, days: int = 15, max_pages: int = 30, 
                 continue
             rows.append({
                 "order_id": o.get("id"),
+                "customer_id": (o.get("customer") or {}).get("id") if isinstance(o.get("customer"), dict) else o.get("customer_id"),
                 "created_on": created_vn.strftime("%d/%m %H:%M"),
                 "created_sort": created_vn.isoformat(),
                 "name": o.get("source_identifier") or o.get("name") or o.get("code") or o.get("id"),

@@ -281,6 +281,57 @@ def _saved_order_customer_info(session: requests.Session, order_id, info: dict, 
         return False
 
 
+def _saved_order_ttkh_info(session: requests.Session, order_id, info: dict, expected_note: str, attempts: list[str]) -> bool:
+    try:
+        row = get_order(session, order_id)
+        addr = row.get("shipping_address") or {}
+        billing = row.get("billing_address") or {}
+        customer = row.get("customer") if isinstance(row.get("customer"), dict) else {}
+        saved_note = str(row.get("note") or "")
+        saved_phones = [
+            row.get("phone"),
+            row.get("mobile"),
+            row.get("phone_number"),
+            addr.get("phone"),
+            addr.get("phone_number"),
+            addr.get("mobile"),
+            billing.get("phone"),
+            billing.get("phone_number"),
+            billing.get("mobile"),
+            customer.get("phone"),
+            customer.get("phone_number"),
+            customer.get("mobile"),
+        ]
+        expected_phone = str(info.get("phone") or "").strip()
+        phone_ok = any(_phone_matches(phone, expected_phone) for phone in saved_phones)
+        if not phone_ok and "*" in expected_phone:
+            phone_ok = expected_phone in saved_note
+        note_ok = (not expected_note) or expected_note.strip() in saved_note or saved_note.strip() == expected_note.strip()
+        attempts.append(f"GET order TTKH verify -> phone:{phone_ok} note:{note_ok}")
+        return bool(phone_ok and note_ok)
+    except Exception as e:
+        attempts.append(f"GET order TTKH verify -> {type(e).__name__}: {e}")
+        return False
+
+
+def _linked_customer_info_saved(session: requests.Session, order_id, info: dict, customer_id, attempts: list[str]) -> tuple[bool, object]:
+    check_customer_id = customer_id
+    try:
+        row = get_order(session, order_id)
+        linked_customer_id = (row.get("customer") or {}).get("id") if isinstance(row.get("customer"), dict) else row.get("customer_id")
+        check_customer_id = linked_customer_id or customer_id
+        linked_ok = (not customer_id) or (str(check_customer_id or "") == str(customer_id))
+        if not check_customer_id:
+            attempts.append("GET linked customer verify -> no customer id")
+            return False, check_customer_id
+        info_ok = _customer_info_saved(get_customer(session, check_customer_id), info)
+        attempts.append(f"GET linked customer verify -> linked:{linked_ok} info:{info_ok}")
+        return bool(linked_ok and info_ok), check_customer_id
+    except Exception as e:
+        attempts.append(f"GET linked customer verify -> {type(e).__name__}: {e}")
+        return False, check_customer_id
+
+
 def _customer_payload(customer_id, info: dict, note: str) -> dict:
     name = str(info.get("name") or "").strip()
     parts = name.split()
@@ -725,8 +776,16 @@ def update_order_customer_info(session: requests.Session, order_id, info: dict, 
                     allow_redirects=False,
                 )
                 attempts.append(_attempt_desc(resp))
-                if resp.status_code < 400 and _saved_order_customer_info(session, order_id, info, note, attempts, customer_id):
-                    return _json_or_empty(resp)
+                if resp.status_code < 400 and _saved_order_ttkh_info(session, order_id, info, note, attempts):
+                    customer_saved, saved_customer_id = _linked_customer_info_saved(session, order_id, info, customer_id, attempts)
+                    data = _json_or_empty(resp)
+                    if not isinstance(data, dict):
+                        data = {"response": data}
+                    data["_ttkh_order_saved"] = True
+                    data["_ttkh_customer_saved"] = customer_saved
+                    data["_ttkh_customer_id"] = saved_customer_id
+                    data["_ttkh_attempts"] = attempts[-20:]
+                    return data
         form_data = {
             "_method": "put",
             "order[note]": note,
@@ -759,8 +818,16 @@ def update_order_customer_info(session: requests.Session, order_id, info: dict, 
             allow_redirects=False,
         )
         attempts.append(_attempt_desc(resp))
-        if resp.status_code < 400 and _saved_order_customer_info(session, order_id, info, note, attempts, customer_id):
-            return _json_or_empty(resp)
+        if resp.status_code < 400 and _saved_order_ttkh_info(session, order_id, info, note, attempts):
+            customer_saved, saved_customer_id = _linked_customer_info_saved(session, order_id, info, customer_id, attempts)
+            data = _json_or_empty(resp)
+            if not isinstance(data, dict):
+                data = {"response": data}
+            data["_ttkh_order_saved"] = True
+            data["_ttkh_customer_saved"] = customer_saved
+            data["_ttkh_customer_id"] = saved_customer_id
+            data["_ttkh_attempts"] = attempts[-20:]
+            return data
     tail = "; ".join(attempts[-16:])
     raise RuntimeError(f"SAPO có phản hồi nhưng đọc lại chưa thấy TTKH được lưu cho đơn {order_id}. Đã thử: {tail}")
 
