@@ -2644,7 +2644,7 @@ if _page == PAGE_RETURNS:
                     _prev = o["shipper"]
                 _h.append("</tbody></table></div>")
                 st.markdown("".join(_h), unsafe_allow_html=True)
-            st.caption("🔗 Bấm **mã VĐ** → mở trang Trả hàng trên sàn (search sẵn mã đơn) làm KN · STT đếm theo TỪNG shipper · màu = ĐVVC · vạch = đổi shipper. "
+            st.caption("🔗 Bấm **mã VĐ** → mở đơn trên sàn (giống link ở bảng chi tiết) làm KN · STT đếm theo TỪNG shipper · màu = ĐVVC · vạch = đổi shipper. "
                        "⚠️ Shopee/SPX không ghi tên shipper → cột Shipper hiện ĐVVC; mã VĐ lấy từ 'VĐ về' trong ghi chú "
                        "nếu field trống; vài đơn Shopee sàn ẩn → '—'.")
             st.divider()
