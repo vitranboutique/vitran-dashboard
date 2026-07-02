@@ -1270,6 +1270,24 @@ if _page == PAGE_TTKH:
             })
         return out
 
+    def _ttkh_address_preview(info, status):
+        if status != "Hợp lệ":
+            return status or "Chưa hợp lệ"
+        fmt = "Địa chỉ mới" if info.get("address_format") == "new" else "Địa chỉ cũ"
+        line_parts = [
+            info.get("name") or "",
+            info.get("address1") or "",
+            info.get("ward") or "",
+        ]
+        if info.get("address_format") != "new":
+            line_parts.append(info.get("district") or "")
+        line_parts.extend([info.get("province") or "", "Việt Nam"])
+        line = ", ".join(str(x).strip() for x in line_parts if str(x or "").strip())
+        codes = ""
+        if info.get("address_format") != "new":
+            codes = f" | mã: P/T {info.get('province_code') or '-'} - Q/H {info.get('district_code') or '-'} - X/P {info.get('ward_code') or '-'}"
+        return f"{fmt}: {line}{codes}"
+
     def _show_ttkh_write_results():
         results = st.session_state.get("ttkh_write_results") or []
         if not results:
@@ -1371,19 +1389,20 @@ if _page == PAGE_TTKH:
         if df.empty:
             st.caption("Không có đơn.")
             return df
-        h = st.columns([1.0, 2.0, .7, 2.0, 5.3])
+        h = st.columns([1.0, 1.8, .7, 1.7, 3.2, 4.2])
         h[0].markdown("**Ngày tạo**")
         h[1].markdown("**Mã đơn**")
         h[2].markdown("**SL SP**")
         h[3].markdown("**Gian hàng**")
-        h[4].markdown("**TTKH dán vào**")
+        h[4].markdown("**Địa chỉ chuẩn SAPO**")
+        h[5].markdown("**TTKH dán vào**")
         st.markdown("<hr style='margin:4px 0 8px;border:0;border-top:1px solid #e5e7eb'>", unsafe_allow_html=True)
         for _, r in df.iterrows():
             oid = str(r.get("_order_id"))
             key = _ttkh_input_key(oid)
             if key not in st.session_state:
                 st.session_state[key] = (st.session_state.get("ttkh_pending_inputs") or {}).get(oid, "")
-            c = st.columns([1.0, 2.0, .7, 2.0, 5.3])
+            c = st.columns([1.0, 1.8, .7, 1.7, 3.2, 4.2])
             c[0].markdown(str(r.get("Ngày tạo") or ""))
             code = str(r.get("Mã đơn") or "")
             url = _ttkh_order_url(code, r.get("Gian hàng"))
@@ -1398,19 +1417,29 @@ if _page == PAGE_TTKH:
                 unsafe_allow_html=True,
             )
             c[3].markdown(str(r.get("Gian hàng") or ""))
-            c[4].text_area(
+            row_pending = _collect_ttkh_rows([{
+                "order_id": oid,
+                "name": code,
+                "note": r.get("Ghi chú hiện tại") or "",
+            }])
+            if row_pending:
+                rp = row_pending[0]
+                preview = _ttkh_address_preview(rp["info"], rp["status"])
+                color = "#0f766e" if rp["status"] == "Hợp lệ" else "#b45309"
+                c[4].markdown(
+                    f"<div style='font-size:.82rem;line-height:1.35;color:{color};font-weight:700'>{_esc(preview)}</div>",
+                    unsafe_allow_html=True,
+                )
+            else:
+                c[4].caption("Dán TTKH để app phân loại địa chỉ cũ/mới.")
+            c[5].text_area(
                 "TTKH dán vào",
                 key=key,
                 height=96,
                 label_visibility="collapsed",
                 placeholder="Dán nguyên block TTKH từ sàn vào đây",
             )
-            row_pending = _collect_ttkh_rows([{
-                "order_id": oid,
-                "name": code,
-                "note": r.get("Ghi chú hiện tại") or "",
-            }])
-            btn_cols = c[4].columns([1.1, 4])
+            btn_cols = c[5].columns([1.1, 4])
             if btn_cols[0].button("💾 Ghi dòng này", key=f"ttkh_save_row_{oid}", use_container_width=True):
                 if row_pending:
                     _write_ttkh_rows(row_pending)
@@ -1422,7 +1451,7 @@ if _page == PAGE_TTKH:
                 btn_cols[1].caption(f"Trạng thái dòng: {_label}")
             old_note = str(r.get("Ghi chú hiện tại") or "").strip()
             if old_note:
-                c[4].caption(f"Ghi chú cũ: {old_note[:120]}" + ("..." if len(old_note) > 120 else ""))
+                c[5].caption(f"Ghi chú cũ: {old_note[:120]}" + ("..." if len(old_note) > 120 else ""))
         pending_here = _collect_ttkh_rows(rows)
         ready_here = sum(1 for r in pending_here if r["has_phone"] and r["status"] == "Hợp lệ")
         save_cols = st.columns([1.6, 1, 5])
@@ -1464,6 +1493,8 @@ if _page == PAGE_TTKH:
             "Trạng thái": r["status"],
             "Tên": r["info"].get("name", ""),
             "SĐT": r["info"].get("phone", ""),
+            "Loại địa chỉ": "Mới" if r["info"].get("address_format") == "new" else "Cũ",
+            "Địa chỉ chuẩn SAPO": _ttkh_address_preview(r["info"], r["status"]),
             "Địa chỉ": ", ".join(x for x in [
                 r["info"].get("address1", ""), r["info"].get("ward", ""),
                 r["info"].get("district", ""), r["info"].get("province", "")
