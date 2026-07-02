@@ -2585,12 +2585,6 @@ if _page == PAGE_RETURNS:
                 st.dataframe(pd.DataFrame([{"ĐVVC": r["dvvc"], "Đơn": r["n"],
                     "Thua/Hết": f"{r['thua']}/{r['het']}", "Tiền mất": _fm(r["money"])}
                     for r in _dvr]), hide_index=True, width="stretch")
-                if _dvr:
-                    _f = go.Figure(go.Bar(x=[r["money"] for r in _dvr][::-1],
-                        y=[r["dvvc"] for r in _dvr][::-1], orientation="h", marker_color="#E11D48",
-                        text=[_fm(r["money"]) for r in _dvr][::-1], textposition="auto"))
-                    _f.update_layout(height=220, margin=dict(l=6, r=6, t=6, b=6), showlegend=False)
-                    st.plotly_chart(_f, width="stretch")
             with _lc2:
                 st.caption("🧍 Theo shipper (đơn có SĐT)")
                 _spr = _ls.get("by_shipper") or []
@@ -2603,15 +2597,14 @@ if _page == PAGE_RETURNS:
                 st.caption("⚠️ Shopee/SPX thường không ghi tên shipper → chỉ gom theo ĐVVC.")
             _bm = _ls.get("by_month") or {}
             if _bm.get("labels"):
-                st.caption("📅 Mất hàng theo THÁNG (cột chồng theo ĐVVC)")
-                _LC = {"J&T Express": "#DC2626", "SPX (Shopee)": "#F97316", "Viettel Post": "#7C3AED",
-                       "GHN": "#2563EB", "GHTK": "#16A34A", "Ninja Van": "#DB2777", "(không rõ)": "#94A3B8"}
+                st.caption("📅 Mỗi tháng — SHIPPER làm mất bao nhiêu ĐƠN & TIỀN (rê chuột xem chi tiết)")
                 _mfig = go.Figure()
                 for _s in _bm["series"]:
-                    _mfig.add_bar(name=_s["dvvc"], x=_bm["labels"], y=_s["money"],
-                                  marker_color=_LC.get(_s["dvvc"], "#94A3B8"))
-                _mfig.update_layout(barmode="stack", height=300, margin=dict(l=6, r=6, t=6, b=6),
-                                    legend=dict(orientation="h", y=1.18, x=0), yaxis_title="Tiền mất (đ)")
+                    _mfig.add_bar(name=_s["name"], x=_bm["labels"], y=_s["money"], customdata=_s["n"],
+                                  text=[_fm(m) if m else "" for m in _s["money"]], textposition="inside",
+                                  hovertemplate="%{fullData.name}<br>%{x}: %{customdata} đơn · %{text}<extra></extra>")
+                _mfig.update_layout(barmode="stack", height=360, margin=dict(l=6, r=6, t=6, b=6),
+                                    legend=dict(orientation="h", y=1.12, x=0), yaxis_title="Tiền mất (đ)")
                 st.plotly_chart(_mfig, width="stretch")
             st.divider()
         st.markdown("##### 📊 Đang xử lý (chưa nhập kho)")
