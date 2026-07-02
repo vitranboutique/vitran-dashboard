@@ -559,16 +559,25 @@ PAGE_LUONG = "💰 Lương của tôi"
 PAGE_QRSHOP = "📲 QR chấm công (shop)"
 PAGE_QLCC = "🛠️ Quản lý chấm công"
 
-# Phân quyền theo tài khoản: NV chỉ thấy Chấm công + Lương mình; admin thấy hết + QR/quản lý
+# Phân quyền theo tài khoản.
+#  · Tổng quan + Báo cáo cuối ngày: AI CŨNG xem được.
+#  · Kho: thêm Phiếu nhặt + Đơn trả.  · CSKH: thêm Lấy-lưu TTKH.
+#  · Chấm công/Lương: của ai người nấy.  · Admin: xem hết + QR shop + quản lý chấm công.
 _cc_role = cham_cong.role_of(CUR_USER)
+_cc_emp = cham_cong.emp_of(CUR_USER)
 if _cc_role == "nv":
-    _opts = [PAGE_CHAMCONG, PAGE_LUONG]
+    _rolepg = [PAGE_PICK, PAGE_RETURNS] if _cc_emp == "kho" else [PAGE_TTKH]
+    _opts = [PAGE_DAILY, PAGE_OVERVIEW] + _rolepg + [PAGE_CHAMCONG, PAGE_LUONG]
+    _default = PAGE_CHAMCONG if st.query_params.get("tk") else PAGE_DAILY   # quét QR → về Chấm công
 elif _cc_role == "admin":
     _opts = [PAGE_OVERVIEW, PAGE_REPORT, PAGE_PICK, PAGE_TTKH, PAGE_DAILY, PAGE_RETURNS,
              PAGE_QRSHOP, PAGE_QLCC]
+    _default = PAGE_OVERVIEW
 else:
     _opts = [PAGE_OVERVIEW, PAGE_REPORT, PAGE_PICK, PAGE_TTKH, PAGE_DAILY, PAGE_RETURNS]
-_page = st.sidebar.radio("Trang", _opts, index=0)
+    _default = PAGE_OVERVIEW
+_idx = _opts.index(_default) if _default in _opts else 0
+_page = st.sidebar.radio("Trang", _opts, index=_idx)
 st.sidebar.divider()
 
 # ── Trang CHẤM CÔNG (tách riêng — không cần dữ liệu Sapo) ──
