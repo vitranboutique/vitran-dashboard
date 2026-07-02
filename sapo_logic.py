@@ -1077,7 +1077,8 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120) -> dict:
             a["phone"] = _ph
         _wb = _lost_waybill(x)
         _lorders.append({"shipper": _name or _dv, "phone": _ph, "dvvc": _dv, "waybill": _wb,
-                         "date": _md.strftime("%d/%m/%Y") if _md else "", "money": _mo,
+                         "date": _md.strftime("%d/%m/%Y") if _md else "",
+                         "_sort": _md.isoformat() if _md else "", "money": _mo,
                          "kind": "Thua" if _k == "thua" else "Hết hạn"})
     _by_dvvc = sorted(({"dvvc": k, **v} for k, v in _ldv.items()), key=lambda d: -d["money"])
     _months = list(range(min(_lmon), today.month + 1)) if _lmon else []   # liền mạch tới tháng hiện tại
@@ -1086,6 +1087,8 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120) -> dict:
         for _lab, _vv in _lmon[_mm].items():
             _shtot[_lab] += _vv["money"]
     _shorder = [lab for lab, _ in sorted(_shtot.items(), key=lambda kv: -kv[1])]
+    _lorders.sort(key=lambda o: o.get("_sort", ""), reverse=True)                             # ngày mới → cũ
+    _lorders.sort(key=lambda o: _lship.get(o["shipper"], {}).get("money", 0), reverse=True)   # shipper mất nhiều → ít (gộp nhóm)
     lost_stats = {"total": _ltot, "by_dvvc": _by_dvvc,
                   "by_shipper": sorted(_lsp.values(), key=lambda d: -d["money"]),
                   "by_shipper_all": sorted(_lship.values(), key=lambda d: -d["money"]),
@@ -1095,7 +1098,7 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120) -> dict:
                                            "n": [int(_lmon[m].get(lab, {}).get("n", 0)) for m in _months]}
                                           for lab in _shorder],
                                "total": [int(sum(v["money"] for v in _lmon[m].values())) for m in _months]},
-                  "orders": sorted(_lorders, key=lambda o: -o["money"])}
+                  "orders": _lorders}
 
     return {
         "total": len(inprog), "total_returns": len(all_returns), "capped": capped, "n_complaint": n_complaint,

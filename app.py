@@ -2606,19 +2606,19 @@ if _page == PAGE_RETURNS:
             st.dataframe(pd.DataFrame([{"ĐVVC": r["dvvc"], "Đơn": r["n"],
                 "Thua/Hết": f"{r['thua']}/{r['het']}", "Tiền mất": _fm(r["money"])}
                 for r in _dvr]), hide_index=True, width="stretch")
-            st.caption("🧍 Tổng theo shipper (mỗi người/ĐVVC mất bao nhiêu đơn & tiền)")
-            _spa = _ls.get("by_shipper_all") or []
-            st.dataframe(pd.DataFrame([{"Shipper": r["name"], "SĐT": r["phone"] or "—",
-                "ĐVVC": r["dvvc"], "Đơn": r["n"], "Tiền mất": _fm(r["money"])}
-                for r in _spa]), hide_index=True, width="stretch")
-            st.caption("📋 Chi tiết từng đơn mất hàng (không có tên shipper → cột Shipper hiện ĐVVC)")
+            st.caption("🧍 Từng shipper & các đơn làm mất (gộp nhóm theo shipper; trong nhóm: mới → cũ)")
             _ords = _ls.get("orders") or []
             if _ords:
-                st.dataframe(pd.DataFrame([{
-                    "Shipper": o["shipper"], "SĐT": o["phone"] or "—", "ĐVVC": o["dvvc"],
-                    "Mã vận đơn": o["waybill"] or "—", "Ngày tạo": o["date"],
-                    "KQ": o["kind"], "Tiền mất": _fm(o["money"])}
-                    for o in _ords]), hide_index=True, width="stretch")
+                _rows, _prev = [], None
+                for o in _ords:
+                    _same = (o["shipper"] == _prev)
+                    _rows.append({"Shipper": "" if _same else o["shipper"],
+                                  "SĐT": "" if _same else (o["phone"] or "—"),
+                                  "ĐVVC": "" if _same else o["dvvc"],
+                                  "Mã vận đơn": o["waybill"] or "—", "Ngày tạo": o["date"],
+                                  "KQ": o["kind"], "Tiền mất": _fm(o["money"])})
+                    _prev = o["shipper"]
+                st.dataframe(pd.DataFrame(_rows), hide_index=True, width="stretch")
             st.caption("⚠️ Shopee/SPX không ghi tên shipper → cột Shipper hiện ĐVVC. "
                        "Mã VĐ lấy từ 'VĐ về' trong ghi chú nếu field trống (giao thất bại: mã đi = mã về); "
                        "vài đơn Shopee sàn ẩn VĐ → '—'.")
