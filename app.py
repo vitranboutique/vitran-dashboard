@@ -1222,6 +1222,10 @@ if _page == PAGE_TTKH:
         cid = str(customer_id or "").strip()
         return f"https://vitranboutiquehcm.mysapo.net/admin/customers/{quote_plus(cid)}" if cid else ""
 
+    def _sapo_customer_search_url(query):
+        q = str(query or "").strip()
+        return f"https://vitranboutiquehcm.mysapo.net/admin/customers?query={quote_plus(q)}" if q else "https://vitranboutiquehcm.mysapo.net/admin/customers"
+
     def _product_tip(row):
         products = row.get("products") or []
         if not products:
@@ -1330,7 +1334,7 @@ if _page == PAGE_TTKH:
             customer_url = _sapo_customer_url(r.get("_customer_id"))
             code_link = f"[{code}]({url})" if url else code
             sapo_link = f" · [Sapo]({sapo_url})" if sapo_url else ""
-            customer_link = f" · [Khách]({customer_url})" if customer_url else ""
+            customer_link = f" · [Khách]({customer_url})" if customer_url else f" · [Tìm khách]({_sapo_customer_search_url(code)})"
             c[1].markdown(code_link + sapo_link + customer_link)
             c[2].markdown(
                 f"<abbr title='{_product_tip(r)}' style='cursor:help;font-weight:800;text-decoration:underline dotted #6b7280'>{int(r.get('SL SP') or 0)} SP ⓘ</abbr>",
@@ -1344,6 +1348,21 @@ if _page == PAGE_TTKH:
                 label_visibility="collapsed",
                 placeholder="Dán nguyên block TTKH từ sàn vào đây",
             )
+            row_pending = _collect_ttkh_rows([{
+                "order_id": oid,
+                "name": code,
+                "note": r.get("Ghi chú hiện tại") or "",
+            }])
+            btn_cols = c[4].columns([1.1, 4])
+            if btn_cols[0].button("💾 Ghi dòng này", key=f"ttkh_save_row_{oid}", use_container_width=True):
+                if row_pending:
+                    _write_ttkh_rows(row_pending)
+                else:
+                    st.warning(f"Chưa dán TTKH cho đơn {code}.")
+            if row_pending:
+                _st = row_pending[0]["status"]
+                _label = "Hợp lệ" if row_pending[0]["has_phone"] and _st == "Hợp lệ" else _st
+                btn_cols[1].caption(f"Trạng thái dòng: {_label}")
             old_note = str(r.get("Ghi chú hiện tại") or "").strip()
             if old_note:
                 c[4].caption(f"Ghi chú cũ: {old_note[:120]}" + ("..." if len(old_note) > 120 else ""))
