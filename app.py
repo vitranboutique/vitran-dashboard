@@ -1362,7 +1362,7 @@ if _page == PAGE_TTKH:
                     customer_tail = "; ".join(saved.get("_ttkh_attempts", [])[-10:])
                     results.append({
                         "Mã đơn": r["code"],
-                        "Kết quả": "Da ghi/tao khach, can kiem tra dia chi don",
+                        "Kết quả": "Đã tạo/cập nhật khách, kiểm tra lại địa chỉ đơn",
                         "Link khách": customer_url,
                         "Lý do": customer_tail[:1600],
                     })
