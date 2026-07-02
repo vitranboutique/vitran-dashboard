@@ -714,6 +714,42 @@ def get_week_summary(fetch_json, days: int = 7) -> list:
     return out
 
 
+# ── Thống kê MẤT HÀNG (THUA/HẾT HẠN): trích ĐVVC + shipper từ carrier_name/ghi chú ──
+_LOST_CARRIERS = [("j&t", "J&T Express"), ("jnt", "J&T Express"), ("spx", "SPX (Shopee)"),
+                  ("shopee", "SPX (Shopee)"), ("viettel", "Viettel Post"), ("vtp", "Viettel Post"),
+                  ("ghn", "GHN"), ("giao hàng nhanh", "GHN"), ("ghtk", "GHTK"),
+                  ("tiết kiệm", "GHTK"), ("ninja", "Ninja Van"), ("best", "BEST"), ("ahamove", "Ahamove")]
+
+
+def _norm_dvvc(s):
+    s = str(s or "").lower()
+    for k, v in _LOST_CARRIERS:
+        if k in s:
+            return v
+    return ""
+
+
+def _lost_dvvc(x):
+    return (_norm_dvvc((x.get("shipping_info") or {}).get("carrier_name"))
+            or _norm_dvvc(x.get("note")) or "(không rõ)")
+
+
+def _lost_phone(note):
+    m = re.search(r"(?<!\d)0\d{9}(?!\d)", re.sub(r"[.\s\-]", "", str(note or "")))
+    return m.group(0) if m else ""
+
+
+def _lost_person(note):
+    m = re.search(r"ho[aà]n\s*:\s*([^\n\r|]+)", str(note or ""), flags=re.I)
+    if not m:
+        return ""
+    s = re.sub(r"\(.*", "", m.group(1))
+    s = re.sub(r"\d.*", "", s)
+    for h in ("J&T Express", "SPX Express", "Viettel Post", "SPXVN", "Shopee"):
+        s = s.replace(h, "")
+    return s.strip(" ,-")
+
+
 def get_returns_in_progress(fetch_json, max_pages: int = 120) -> dict:
     """ĐƠN TRẢ HÀNG ĐANG XỬ LÝ — CHƯA nhập kho (bổ sung cho mục 'đã nhận hàng trả').
     Tổng đơn trả lấy theo tab TẤT CẢ của phiếu trả trong NĂM NAY, loại phiếu hủy/gạch ngang.
@@ -986,8 +1022,34 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120) -> dict:
         oc["can_kn"]["n"] += 1
         oc["can_kn"]["money"] += amt if amt is not None else int(d.get("money") or 0)
 
+    # THỐNG KÊ MẤT HÀNG (THUA + HẾT HẠN) theo ĐVVC + shipper — cho mục thống kê riêng.
+    from collections import defaultdict as _dd
+    _ldv = _dd(lambda: {"n": 0, "money": 0, "thua": 0, "het": 0})
+    _lsp, _ltot = {}, {"n": 0, "money": 0}
+    for x in all_returns:
+        _p = _asc((x.get("note") or "").split("|")[0])
+        _k = "thua" if "THUA" in _p else ("het" if "HET HAN" in _p else None)
+        if not _k:
+            continue
+        _mo = _amt(x.get("note"))
+        if _mo is None:
+            _mo = int(round(x.get("total_price") or 0))
+        _dv = _lost_dvvc(x)
+        _ldv[_dv]["n"] += 1; _ldv[_dv]["money"] += _mo; _ldv[_dv][_k] += 1
+        _ltot["n"] += 1; _ltot["money"] += _mo
+        _ph = _lost_phone(x.get("note"))
+        if _ph:
+            s = _lsp.setdefault(_ph, {"phone": _ph, "name": "", "dvvc": "", "n": 0, "money": 0, "thua": 0, "het": 0})
+            s["n"] += 1; s["money"] += _mo; s[_k] += 1
+            s["name"] = s["name"] or _lost_person(x.get("note"))
+            s["dvvc"] = s["dvvc"] or _dv
+    lost_stats = {"total": _ltot,
+                  "by_dvvc": sorted(({"dvvc": k, **v} for k, v in _ldv.items()), key=lambda d: -d["money"]),
+                  "by_shipper": sorted(_lsp.values(), key=lambda d: -d["money"])}
+
     return {
         "total": len(inprog), "total_returns": len(all_returns), "capped": capped, "n_complaint": n_complaint,
+        "lost_stats": lost_stats,
         "outcomes": oc,
         "all_outcomes": all_oc,
         "refund": cnt.get("return_and_refund", {"returning": 0, "returned": 0}),

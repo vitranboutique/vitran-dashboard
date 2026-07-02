@@ -2522,6 +2522,38 @@ if _page == PAGE_RETURNS:
             st.plotly_chart(_outcome_fig, width="stretch")
 
             # Drilldown filter is rendered near the top of the page via _return_top_drill_slot.
+        # 🚨 THỐNG KÊ MẤT HÀNG theo ĐVVC + Shipper (Thua + Hết hạn — cả năm)
+        _ls = _rip.get("lost_stats") or {}
+        _lt = _ls.get("total") or {}
+        if _lt.get("n"):
+            def _fm(v):
+                return f"{int(v or 0):,}".replace(",", ".") + "đ"
+            st.markdown("##### 🚨 Mất hàng theo ĐVVC / Shipper (Thua + Hết hạn)")
+            st.markdown(f"Năm nay: **{_lt['n']} đơn** · thất thoát **{_fm(_lt['money'])}**")
+            _lc1, _lc2 = st.columns(2)
+            with _lc1:
+                st.caption("🚚 Theo ĐVVC")
+                _dvr = _ls.get("by_dvvc") or []
+                st.dataframe(pd.DataFrame([{"ĐVVC": r["dvvc"], "Đơn": r["n"],
+                    "Thua/Hết": f"{r['thua']}/{r['het']}", "Tiền mất": _fm(r["money"])}
+                    for r in _dvr]), hide_index=True, width="stretch")
+                if _dvr:
+                    _f = go.Figure(go.Bar(x=[r["money"] for r in _dvr][::-1],
+                        y=[r["dvvc"] for r in _dvr][::-1], orientation="h", marker_color="#E11D48",
+                        text=[_fm(r["money"]) for r in _dvr][::-1], textposition="auto"))
+                    _f.update_layout(height=220, margin=dict(l=6, r=6, t=6, b=6), showlegend=False)
+                    st.plotly_chart(_f, width="stretch")
+            with _lc2:
+                st.caption("🧍 Theo shipper (đơn có SĐT)")
+                _spr = _ls.get("by_shipper") or []
+                if _spr:
+                    st.dataframe(pd.DataFrame([{"Shipper": r["name"] or "?", "SĐT": r["phone"],
+                        "ĐVVC": r["dvvc"], "Đơn": r["n"], "Tiền mất": _fm(r["money"])}
+                        for r in _spr]), hide_index=True, width="stretch")
+                else:
+                    st.caption("Chưa có shipper ghi rõ SĐT.")
+                st.caption("⚠️ Shopee/SPX thường không ghi tên shipper → chỉ gom theo ĐVVC.")
+            st.divider()
         st.markdown("##### 📊 Đang xử lý (chưa nhập kho)")
         _old_n = sum(1 for d in _rip["detail"] if (d.get("age") or 0) > 5)
         _m = st.columns(5)
