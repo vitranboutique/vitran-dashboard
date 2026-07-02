@@ -89,3 +89,126 @@ def calc_month(emp_key, records, y, mth, upto=None):
         "nghi_phut": tot_miss, "chuyen_can": cc,
         "tong": tot_sal + tot_meal + cc,
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# GIAI ĐOẠN 2 — Phân quyền · Mã QR động · Lưu chấm công (Gist)
+# ═══════════════════════════════════════════════════════════════════════════
+import hmac as _hmac
+import hashlib as _hashlib
+import time as _time
+from datetime import datetime as _dt, timezone as _tz
+
+# Tài khoản đăng nhập → nhân viên + quyền (user cung cấp 01/07)
+ACCOUNTS = {
+    "mun.inventory@gmail.com": {"emp": "kho",  "role": "nv"},
+    "official024@gmail.com":   {"emp": "cskh", "role": "nv"},
+    "vitran2291@gmail.com":    {"emp": None,   "role": "admin"},
+}
+
+
+def role_of(username):
+    return (ACCOUNTS.get(str(username or "").strip().lower()) or {}).get("role", "guest")
+
+
+def emp_of(username):
+    return (ACCOUNTS.get(str(username or "").strip().lower()) or {}).get("emp")
+
+
+# ─── Mã QR động (HMAC theo cửa sổ thời gian) ───
+QR_WINDOW = 60   # mỗi mã sống 60 giây
+
+
+def _qr_secret():
+    """Bí mật ký mã QR. Ưu tiên secrets[cham_cong].qr_secret; không có thì DẪN XUẤT từ token
+    picklog (đã có trong secrets) → khỏi thêm secret. Cuối cùng mới dùng hằng dự phòng."""
+    try:
+        import streamlit as st
+        s = st.secrets["cham_cong"]["qr_secret"]
+        if s:
+            return str(s)
+    except Exception:
+        pass
+    try:
+        import picklog
+        t = picklog._token()
+        if t:
+            return _hashlib.sha256((t + "|cc-qr").encode()).hexdigest()
+    except Exception:
+        pass
+    return "vitran-cham-cong-qr-fallback"
+
+
+def qr_token(now=None):
+    """Mã QR hiện tại (8 ký tự) — đổi mỗi 60s."""
+    w = int((now if now is not None else _time.time()) // QR_WINDOW)
+    return _hmac.new(_qr_secret().encode(), str(w).encode(), _hashlib.sha256).hexdigest()[:8]
+
+
+def verify_token(tok, now=None):
+    """True nếu mã khớp cửa sổ hiện tại HOẶC ngay trước (bù thời gian quét ~ tối đa 2')."""
+    if not tok:
+        return False
+    n = now if now is not None else _time.time()
+    base = int(n // QR_WINDOW)
+    for w in (base, base - 1):
+        good = _hmac.new(_qr_secret().encode(), str(w).encode(), _hashlib.sha256).hexdigest()[:8]
+        if _hmac.compare_digest(str(tok), good):
+            return True
+    return False
+
+
+# ─── Lưu / đọc chấm công (Gist — mỗi tháng 1 file vitran_cong_YYYY-MM.json) ───
+def _vn_now():
+    return _dt.now(_tz.utc) + timedelta(hours=7)
+
+
+def _cong_file(y, mth):
+    return f"vitran_cong_{y:04d}-{mth:02d}.json"
+
+
+def save_check(emp, kind, selfie_b64=""):
+    """Ghi 1 lần chấm (kind='in'|'out') với GIỜ HIỆN TẠI + selfie vào Gist. Trả (ok, msg, hhmm)."""
+    import picklog
+    now = _vn_now()
+    fname = _cong_file(now.year, now.month)
+    d = picklog._read_gist_file(fname) or {"records": {}}
+    recs = d.setdefault("records", {})
+    day = recs.setdefault(emp, {}).setdefault(now.strftime("%Y-%m-%d"), {})
+    hhmm = now.strftime("%H:%M")
+    day[kind] = hhmm
+    if selfie_b64:
+        day[kind + "_selfie"] = selfie_b64
+    ok = picklog._write_gist_file(fname, d)
+    lbl = "VÀO ca" if kind == "in" else "TAN ca"
+    return ok, (f"✅ Đã chấm {lbl} lúc {hhmm}" if ok else "❌ Lỗi lưu, thử lại"), hhmm
+
+
+def day_record(emp, day_iso=None):
+    """Bản ghi 1 ngày của NV: {'in','out','in_selfie','out_selfie'} (rỗng nếu chưa chấm)."""
+    import picklog
+    now = _vn_now()
+    day_iso = day_iso or now.strftime("%Y-%m-%d")
+    y, mth = int(day_iso[:4]), int(day_iso[5:7])
+    d = picklog._read_gist_file(_cong_file(y, mth)) or {}
+    return ((d.get("records") or {}).get(emp, {}) or {}).get(day_iso, {}) or {}
+
+
+def month_records(emp, y, mth):
+    """{ngày_iso: (in, out)} của NV trong tháng — nạp cho calc_month."""
+    import picklog
+    d = picklog._read_gist_file(_cong_file(y, mth)) or {}
+    recs = (d.get("records") or {}).get(emp, {})
+    return {day: (v.get("in"), v.get("out")) for day, v in recs.items()}
+
+
+def month_selfies(emp, y, mth):
+    """{ngày_iso: {in,out,in_selfie,out_selfie}} — cho quản lý duyệt."""
+    import picklog
+    d = picklog._read_gist_file(_cong_file(y, mth)) or {}
+    return (d.get("records") or {}).get(emp, {})
+
+
+def salary_report(emp_key, y, mth, upto=None):
+    """Báo cáo lương tháng 1 NV (đọc Gist → tính)."""
+    return calc_month(emp_key, month_records(emp_key, y, mth), y, mth, upto)

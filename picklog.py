@@ -176,6 +176,19 @@ def _read_gist_file(fname):
     return None
 
 
+def _write_gist_file(fname, data):
+    """Ghi (PATCH) 1 file JSON vào gist. Trả True nếu OK."""
+    gid = _resolve_gid()
+    if not gid:
+        return False
+    try:
+        body = {"files": {fname: {"content": json.dumps(data, ensure_ascii=False)}}}
+        r = requests.patch(f"{_API}/gists/{gid}", headers=_hdr(), data=json.dumps(body), timeout=15)
+        return r.status_code == 200
+    except Exception:
+        return False
+
+
 def read_dohana_videos() -> list:
     """Toàn bộ metadata video Dohana đã tích luỹ: [{code,type,status,date,time,dur,tag_id,first_seen}]."""
     d = _read_gist_file(_DFILE)
