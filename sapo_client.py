@@ -286,6 +286,9 @@ def _customer_payload(customer_id, info: dict, note: str) -> dict:
     parts = name.split()
     first_name = parts[0] if parts else name
     last_name = " ".join(parts[1:]) if len(parts) > 1 else ""
+    province_code = str(info.get("province_code") or "").strip()
+    district_code = str(info.get("district_code") or "").strip()
+    ward_code = str(info.get("ward_code") or "").strip()
     address = {
         "first_name": first_name,
         "last_name": last_name,
@@ -294,28 +297,29 @@ def _customer_payload(customer_id, info: dict, note: str) -> dict:
         "phone_number": info.get("phone") or "",
         "mobile": info.get("phone") or "",
         "address1": info.get("address1") or "",
-        "ward": info.get("ward") or "",
+        "ward": ward_code or info.get("ward") or "",
         "ward_name": info.get("ward") or "",
-        "ward_code": info.get("ward_code") or "",
-        "ward_id": info.get("ward_code") or "",
-        "commune_code": info.get("ward_code") or "",
-        "commune_id": info.get("ward_code") or "",
-        "location_id": info.get("ward_code") or "",
-        "new_ward_id": info.get("ward_code") or "",
-        "district": info.get("district") or "",
+        "ward_code": ward_code,
+        "ward_id": ward_code,
+        "commune_code": ward_code,
+        "commune_id": ward_code,
+        "location_id": ward_code,
+        "new_ward_id": ward_code,
+        "district": district_code or info.get("district") or "",
         "district_name": info.get("district") or "",
-        "district_code": info.get("district_code") or "",
-        "district_id": info.get("district_code") or "",
-        "province": info.get("province") or "",
+        "district_code": district_code,
+        "district_id": district_code,
+        "province": province_code or info.get("province") or "",
         "province_name": info.get("province") or "",
-        "province_code": info.get("province_code") or "",
-        "province_id": info.get("province_code") or "",
-        "city_id": info.get("province_code") or "",
-        "municipality_id": info.get("province_code") or "",
+        "province_code": province_code,
+        "province_id": province_code,
+        "city_id": province_code,
+        "municipality_id": province_code,
         "city": info.get("province") or "",
         "city_name": info.get("province") or "",
-        "country": "Vietnam",
+        "country": "VN",
         "country_code": "VN",
+        "zip": "",
         "default": True,
     }
     if info.get("address_format") == "new":
@@ -405,6 +409,16 @@ def _address_text(value) -> str:
     return " ".join(str(x or "").strip().lower() for x in parts if str(x or "").strip())
 
 
+def _address_code_saved(addr: dict, expected_code: str, keys: tuple[str, ...]) -> bool:
+    if not isinstance(addr, dict) or not expected_code:
+        return False
+    expected = str(expected_code or "").strip()
+    for key in keys:
+        if str(addr.get(key) or "").strip() == expected:
+            return True
+    return False
+
+
 def _customer_info_saved(customer: dict, info: dict) -> bool:
     if not _customer_phone_saved(customer, info.get("phone")):
         return False
@@ -424,17 +438,23 @@ def _customer_info_saved(customer: dict, info: dict) -> bool:
         return False
     expected_ward = str(info.get("ward") or "").strip().lower()
     expected_ward_code = str(info.get("ward_code") or "").strip()
+    expected_province_code = str(info.get("province_code") or "").strip()
     if not expected_ward and not expected_ward_code:
         return True
     for addr in candidates:
         text = _address_text(addr)
-        code_ok = expected_ward_code and expected_ward_code in {
-            str(addr.get("ward_code") or ""),
-            str(addr.get("ward_id") or ""),
-            str(addr.get("wardId") or ""),
-        }
+        province_ok = (not expected_province_code) or _address_code_saved(
+            addr,
+            expected_province_code,
+            ("province", "province_code", "province_id", "city_id", "municipality_id"),
+        )
+        code_ok = _address_code_saved(
+            addr,
+            expected_ward_code,
+            ("ward", "ward_code", "ward_id", "wardId", "commune_code", "commune_id", "location_id", "new_ward_id"),
+        )
         name_ok = expected_ward and expected_ward in text
-        if code_ok or name_ok:
+        if province_ok and (code_ok or (not expected_ward_code and name_ok)):
             return True
     return False
 
@@ -453,6 +473,21 @@ def _customer_address_payloads(info: dict) -> list[dict]:
         {"customer_address": payload},
         payload,
     ]
+
+
+def _set_customer_default_address(session: requests.Session, customer_id, address_id, attempts: list[str], token: str | None) -> bool:
+    if not customer_id or not address_id:
+        return False
+    url = f"{BASE}/admin/customers/{customer_id}/addresses/{address_id}/default.json"
+    resp = session.put(
+        url,
+        json={},
+        headers=_json_headers(f"{BASE}/admin/customers/{customer_id}", token),
+        timeout=30,
+        allow_redirects=False,
+    )
+    attempts.append(_attempt_desc(resp))
+    return resp.status_code < 400
 
 
 def _save_customer_address(session: requests.Session, customer_id, info: dict, attempts: list[str], token: str | None) -> bool:
@@ -486,6 +521,7 @@ def _save_customer_address(session: requests.Session, customer_id, info: dict, a
                 )
                 attempts.append(_attempt_desc(resp))
                 if resp.status_code < 400:
+                    _set_customer_default_address(session, customer_id, address_id, attempts, token)
                     try:
                         if _customer_info_saved(get_customer(session, customer_id), info):
                             return True
@@ -503,6 +539,10 @@ def _save_customer_address(session: requests.Session, customer_id, info: dict, a
         )
         attempts.append(_attempt_desc(resp))
         if resp.status_code < 400:
+            data = _json_or_empty(resp)
+            created = data.get("address") or data.get("customer_address") or data
+            if isinstance(created, dict) and created.get("id"):
+                _set_customer_default_address(session, customer_id, created.get("id"), attempts, token)
             try:
                 return _customer_info_saved(get_customer(session, customer_id), info)
             except Exception as e:

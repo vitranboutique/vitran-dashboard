@@ -1284,7 +1284,7 @@ if _page == PAGE_TTKH:
                 written_ids.append(str(r["order_id"]))
                 results.append({"Mã đơn": r["code"], "Kết quả": "Đã ghi đơn + khách hàng", "Lý do": ""})
             except Exception as e:
-                results.append({"Mã đơn": r["code"], "Kết quả": "Lỗi", "Lý do": str(e)[:220]})
+                results.append({"Mã đơn": r["code"], "Kết quả": "Lỗi", "Lý do": str(e)[:1600]})
         st.session_state["ttkh_write_results"] = results
         if ok_count:
             for _oid in written_ids:
