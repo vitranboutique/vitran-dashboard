@@ -369,11 +369,11 @@ def _saved_order_address_info(session: requests.Session, order_id, info: dict, a
         for candidate in candidates:
             text = _address_text(candidate)
             name_ok = (not expected_name) or expected_name in text
-            phone_ok = (not expected_phone) or any(
+            phone_ok = (not expected_phone) or _is_masked_phone(expected_phone) or any(
                 _phone_matches(candidate.get(k), expected_phone)
                 for k in ("phone", "phone_number", "mobile")
             )
-            if "*" in expected_phone and not phone_ok:
+            if _is_masked_phone(expected_phone) and not phone_ok:
                 phone_ok = expected_phone in text
             addr_ok = (not expected_addr) or expected_addr in text
             ward_ok = (
@@ -430,35 +430,34 @@ def _customer_payload(customer_id, info: dict, note: str) -> dict:
     parts = name.split()
     first_name = parts[0] if parts else name
     last_name = " ".join(parts[1:]) if len(parts) > 1 else ""
+    phone_value = "" if _is_masked_phone(info.get("phone")) else (info.get("phone") or "")
     province_code = str(info.get("province_code") or "").strip()
     district_code = str(info.get("district_code") or "").strip()
     ward_code = str(info.get("ward_code") or "").strip()
+    use_address_codes = info.get("address_format") != "new"
     address = {
         "first_name": first_name,
         "last_name": last_name,
         "name": name,
-        "phone": info.get("phone") or "",
-        "phone_number": info.get("phone") or "",
-        "mobile": info.get("phone") or "",
         "address1": info.get("address1") or "",
-        "ward": ward_code or info.get("ward") or "",
+        "ward": (ward_code if use_address_codes else "") or info.get("ward") or "",
         "ward_name": info.get("ward") or "",
-        "ward_code": ward_code,
-        "ward_id": ward_code,
-        "commune_code": ward_code,
-        "commune_id": ward_code,
-        "location_id": ward_code,
-        "new_ward_id": ward_code,
-        "district": district_code or info.get("district") or "",
+        "ward_code": ward_code if use_address_codes else "",
+        "ward_id": ward_code if use_address_codes else "",
+        "commune_code": ward_code if use_address_codes else "",
+        "commune_id": ward_code if use_address_codes else "",
+        "location_id": ward_code if use_address_codes else "",
+        "new_ward_id": ward_code if use_address_codes else "",
+        "district": (district_code if use_address_codes else "") or info.get("district") or "",
         "district_name": info.get("district") or "",
-        "district_code": district_code,
-        "district_id": district_code,
-        "province": province_code or info.get("province") or "",
+        "district_code": district_code if use_address_codes else "",
+        "district_id": district_code if use_address_codes else "",
+        "province": (province_code if use_address_codes else "") or info.get("province") or "",
         "province_name": info.get("province") or "",
-        "province_code": province_code,
-        "province_id": province_code,
-        "city_id": province_code,
-        "municipality_id": province_code,
+        "province_code": province_code if use_address_codes else "",
+        "province_id": province_code if use_address_codes else "",
+        "city_id": province_code if use_address_codes else "",
+        "municipality_id": province_code if use_address_codes else "",
         "city": info.get("province") or "",
         "city_name": info.get("province") or "",
         "country": "VN",
@@ -466,6 +465,8 @@ def _customer_payload(customer_id, info: dict, note: str) -> dict:
         "zip": "",
         "default": True,
     }
+    if phone_value:
+        address.update({"phone": phone_value, "phone_number": phone_value, "mobile": phone_value})
     if info.get("address_format") == "new":
         address.pop("district", None)
         address.pop("district_name", None)
@@ -475,9 +476,6 @@ def _customer_payload(customer_id, info: dict, note: str) -> dict:
         "first_name": first_name,
         "last_name": last_name,
         "name": name,
-        "phone": info.get("phone") or "",
-        "phone_number": info.get("phone") or "",
-        "mobile": info.get("phone") or "",
         "note": note,
         "addresses": [address],
         "addresses_attributes": [address],
@@ -485,6 +483,8 @@ def _customer_payload(customer_id, info: dict, note: str) -> dict:
         "default_address_attributes": address,
         "accepts_marketing": False,
     }
+    if phone_value:
+        customer.update({"phone": phone_value, "phone_number": phone_value, "mobile": phone_value})
     if customer_id:
         customer["id"] = customer_id
     return {"customer": customer}
@@ -511,6 +511,10 @@ def _phone_matches(saved_value, expected_value) -> bool:
     if "*" in expected:
         return bool(expected and (saved == expected or expected in str(saved_value or "")))
     return bool(expected and saved and (saved.endswith(expected[-9:]) or expected.endswith(saved[-9:])))
+
+
+def _is_masked_phone(value) -> bool:
+    return "*" in str(value or "")
 
 
 def _customer_phone_saved(customer: dict, expected_phone: str) -> bool:
@@ -783,70 +787,88 @@ def update_order_customer_info(session: requests.Session, order_id, info: dict, 
     parts = name.split()
     first_name = parts[0] if parts else name
     last_name = " ".join(parts[1:]) if len(parts) > 1 else ""
+    phone_value = "" if _is_masked_phone(info.get("phone")) else (info.get("phone") or "")
+    province_code = str(info.get("province_code") or "").strip()
+    district_code = str(info.get("district_code") or "").strip()
+    ward_code = str(info.get("ward_code") or "").strip()
+    use_address_codes = info.get("address_format") != "new"
     shipping = {
         "first_name": first_name,
         "last_name": last_name,
         "name": info.get("name") or "",
-        "phone": info.get("phone") or "",
-        "phone_number": info.get("phone") or "",
-        "mobile": info.get("phone") or "",
         "address1": info.get("address1") or "",
-        "ward": info.get("ward") or "",
+        "ward": (ward_code if use_address_codes else "") or info.get("ward") or "",
         "ward_name": info.get("ward") or "",
-        "ward_code": info.get("ward_code") or "",
-        "ward_id": info.get("ward_code") or "",
-        "commune_code": info.get("ward_code") or "",
-        "commune_id": info.get("ward_code") or "",
-        "location_id": info.get("ward_code") or "",
-        "new_ward_id": info.get("ward_code") or "",
-        "district": info.get("district") or "",
+        "ward_code": ward_code if use_address_codes else "",
+        "ward_id": ward_code if use_address_codes else "",
+        "commune_code": ward_code if use_address_codes else "",
+        "commune_id": ward_code if use_address_codes else "",
+        "location_id": ward_code if use_address_codes else "",
+        "new_ward_id": ward_code if use_address_codes else "",
+        "district": (district_code if use_address_codes else "") or info.get("district") or "",
         "district_name": info.get("district") or "",
-        "district_code": info.get("district_code") or "",
-        "district_id": info.get("district_code") or "",
-        "province": info.get("province") or "",
+        "district_code": district_code if use_address_codes else "",
+        "district_id": district_code if use_address_codes else "",
+        "province": (province_code if use_address_codes else "") or info.get("province") or "",
         "province_name": info.get("province") or "",
-        "province_code": info.get("province_code") or "",
-        "province_id": info.get("province_code") or "",
-        "city_id": info.get("province_code") or "",
-        "municipality_id": info.get("province_code") or "",
+        "province_code": province_code if use_address_codes else "",
+        "province_id": province_code if use_address_codes else "",
+        "city_id": province_code if use_address_codes else "",
+        "municipality_id": province_code if use_address_codes else "",
         "city": info.get("province") or "",
         "city_name": info.get("province") or "",
-        "country": "Vietnam",
+        "country": "VN",
         "country_code": "VN",
+        "zip": "",
     }
+    if phone_value:
+        shipping.update({"phone": phone_value, "phone_number": phone_value, "mobile": phone_value})
     if info.get("address_format") == "new":
         shipping.pop("district", None)
         shipping.pop("district_name", None)
         shipping.pop("district_code", None)
         shipping.pop("district_id", None)
+    shipping_names = dict(shipping)
+    shipping_names.update({
+        "ward": info.get("ward") or shipping.get("ward") or "",
+        "district": info.get("district") or shipping.get("district") or "",
+        "province": info.get("province") or shipping.get("province") or "",
+        "country": "Vietnam",
+    })
+    if info.get("address_format") == "new":
+        shipping_names.pop("district", None)
     address_wrappers = [
         {"shipping_address": shipping},
         {"shipping_address_attributes": shipping},
+        {"shipping_address": shipping_names},
+        {"shipping_address_attributes": shipping_names},
         {"order": {"shipping_address": shipping}},
         {"order": {"shipping_address_attributes": shipping}},
+        {"order": {"shipping_address": shipping_names}},
+        {"order": {"shipping_address_attributes": shipping_names}},
         {"order": {"shipping_address": shipping, "billing_address": shipping}},
         {"order": {"shipping_address_attributes": shipping, "billing_address_attributes": shipping}},
+        {"order": {"shipping_address": shipping_names, "billing_address": shipping_names}},
+        {"order": {"shipping_address_attributes": shipping_names, "billing_address_attributes": shipping_names}},
     ]
     order_payload = {
         "id": order_id,
         "note": note,
-        "phone": info.get("phone") or "",
-        "phone_number": info.get("phone") or "",
-        "mobile": info.get("phone") or "",
         "shipping_address": shipping,
         "shipping_address_attributes": shipping,
         "billing_address": shipping,
         "billing_address_attributes": shipping,
     }
+    if phone_value:
+        order_payload.update({"phone": phone_value, "phone_number": phone_value, "mobile": phone_value})
     if customer_id:
         order_payload["customer_id"] = customer_id
         order_payload["customer"] = {
             "id": customer_id,
             "name": info.get("name") or "",
-            "phone": info.get("phone") or "",
-            "phone_number": info.get("phone") or "",
-            "mobile": info.get("phone") or "",
         }
+        if phone_value:
+            order_payload["customer"].update({"phone": phone_value, "phone_number": phone_value, "mobile": phone_value})
         order_payload["customer_attributes"] = order_payload["customer"]
     paths = [f"{BASE}/admin/orders/{order_id}.json", page_url]
     address_paths = [
@@ -858,14 +880,20 @@ def update_order_customer_info(session: requests.Session, order_id, info: dict, 
     ]
     payloads = [
         {"order": order_payload},
-        {"order": {"note": note, "phone": info.get("phone") or "", "shipping_address": shipping, "billing_address": shipping}},
-        {"order": {"note": note, "phone": info.get("phone") or "", "shipping_address_attributes": shipping, "billing_address_attributes": shipping}},
+        {"order": {"note": note, "shipping_address": shipping, "billing_address": shipping}},
+        {"order": {"note": note, "shipping_address": shipping_names, "billing_address": shipping_names}},
+        {"order": {"note": note, "shipping_address_attributes": shipping, "billing_address_attributes": shipping}},
+        {"order": {"note": note, "shipping_address_attributes": shipping_names, "billing_address_attributes": shipping_names}},
     ]
+    if phone_value:
+        payloads.extend([
+            {"order": {"note": note, "phone": phone_value, "shipping_address": shipping, "billing_address": shipping}},
+            {"order": {"note": note, "phone": phone_value, "shipping_address_attributes": shipping, "billing_address_attributes": shipping}},
+        ])
     if customer_id:
         payloads.append({
             "order": {
                 "note": note,
-                "phone": info.get("phone") or "",
                 "customer_id": customer_id,
                 "customer": order_payload["customer"],
                 "customer_attributes": order_payload["customer"],
@@ -873,6 +901,8 @@ def update_order_customer_info(session: requests.Session, order_id, info: dict, 
                 "billing_address": shipping,
             }
         })
+        if phone_value:
+            payloads[-1]["order"]["phone"] = phone_value
     def _success_data(resp):
         customer_saved, saved_customer_id = _linked_customer_info_saved(session, order_id, info, customer_id, attempts)
         data = _json_or_empty(resp)
@@ -915,22 +945,26 @@ def update_order_customer_info(session: requests.Session, order_id, info: dict, 
         form_data = {
             "_method": "put",
             "order[note]": note,
-            "order[phone]": info.get("phone") or "",
-            "order[phone_number]": info.get("phone") or "",
-            "order[mobile]": info.get("phone") or "",
-            "order[customer_phone]": info.get("phone") or "",
-            "order[contact_phone]": info.get("phone") or "",
-            "customer[phone]": info.get("phone") or "",
-            "customer[phone_number]": info.get("phone") or "",
-            "customer[mobile]": info.get("phone") or "",
         }
+        if phone_value:
+            form_data.update({
+                "order[phone]": phone_value,
+                "order[phone_number]": phone_value,
+                "order[mobile]": phone_value,
+                "order[customer_phone]": phone_value,
+                "order[contact_phone]": phone_value,
+                "customer[phone]": phone_value,
+                "customer[phone_number]": phone_value,
+                "customer[mobile]": phone_value,
+            })
         if customer_id:
             form_data["order[customer_id]"] = customer_id
             form_data["order[customer][id]"] = customer_id
             form_data["order[customer][name]"] = info.get("name") or ""
-            form_data["order[customer][phone]"] = info.get("phone") or ""
-            form_data["order[customer][phone_number]"] = info.get("phone") or ""
-            form_data["order[customer][mobile]"] = info.get("phone") or ""
+            if phone_value:
+                form_data["order[customer][phone]"] = phone_value
+                form_data["order[customer][phone_number]"] = phone_value
+                form_data["order[customer][mobile]"] = phone_value
         for k, v in shipping.items():
             form_data[f"order[shipping_address][{k}]"] = v
             form_data[f"order[shipping_address_attributes][{k}]"] = v

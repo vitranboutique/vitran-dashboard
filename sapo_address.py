@@ -49,6 +49,11 @@ def resolve_address(info: dict) -> dict:
     district_key = norm_key(out.get("district"))
     province_key = norm_key(out.get("province"))
 
+    # Old SAPO address: has district. Ward can be numbered ("Phường 22")
+    # or named. New SAPO address has no district and keeps ward as a name.
+    if out.get("district"):
+        fmt = "old"
+
     if fmt == "old":
         ward = _find_one(
             data.get("old", {}).get("wards", []),
@@ -68,8 +73,8 @@ def resolve_address(info: dict) -> dict:
             })
             return out
 
-    # If TikTok gives a new-format address, or the old catalog cannot match it,
-    # fall back to the new ward/province catalog.
+    # New SAPO address keeps ward/province as names; codes are only retained for
+    # diagnostics and fallback, not used as the primary submitted value.
     ward = _find_one(
         data.get("new", {}).get("wards", []),
         key=ward_key,
