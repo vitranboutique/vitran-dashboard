@@ -1054,6 +1054,7 @@ if _page == PAGE_PICK:
 if _page == PAGE_TTKH:
     st.title("📞 Lấy - lưu TTKH")
     st.caption("Lọc đơn chưa có SĐT trong ghi chú SAPO để nhân viên lấy TTKH từ TikTok, dán vào app rồi ghi ngược vào SAPO.")
+    st.caption("Phiên bản TTKH: 2026-07-02-ttkh-v4")
     if not credential_present():
         st.warning("⚠️ Trang này cần kết nối Sapo (API LIVE).")
         st.stop()
