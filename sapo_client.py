@@ -298,6 +298,10 @@ def _customer_payload(customer_id, info: dict, note: str) -> dict:
         "ward_name": info.get("ward") or "",
         "ward_code": info.get("ward_code") or "",
         "ward_id": info.get("ward_code") or "",
+        "commune_code": info.get("ward_code") or "",
+        "commune_id": info.get("ward_code") or "",
+        "location_id": info.get("ward_code") or "",
+        "new_ward_id": info.get("ward_code") or "",
         "district": info.get("district") or "",
         "district_name": info.get("district") or "",
         "district_code": info.get("district_code") or "",
@@ -306,6 +310,8 @@ def _customer_payload(customer_id, info: dict, note: str) -> dict:
         "province_name": info.get("province") or "",
         "province_code": info.get("province_code") or "",
         "province_id": info.get("province_code") or "",
+        "city_id": info.get("province_code") or "",
+        "municipality_id": info.get("province_code") or "",
         "city": info.get("province") or "",
         "city_name": info.get("province") or "",
         "country": "Vietnam",
@@ -326,7 +332,9 @@ def _customer_payload(customer_id, info: dict, note: str) -> dict:
         "mobile": info.get("phone") or "",
         "note": note,
         "addresses": [address],
+        "addresses_attributes": [address],
         "default_address": address,
+        "default_address_attributes": address,
         "accepts_marketing": False,
     }
     if customer_id:
@@ -381,8 +389,17 @@ def _address_text(value) -> str:
         value.get("mobile"),
         value.get("address1"),
         value.get("ward"),
+        value.get("ward_name"),
+        value.get("ward_code"),
+        value.get("ward_id"),
         value.get("district"),
+        value.get("district_name"),
+        value.get("district_code"),
+        value.get("district_id"),
         value.get("province"),
+        value.get("province_name"),
+        value.get("province_code"),
+        value.get("province_id"),
         value.get("city"),
     ]
     return " ".join(str(x or "").strip().lower() for x in parts if str(x or "").strip())
@@ -402,13 +419,40 @@ def _customer_info_saved(customer: dict, info: dict) -> bool:
         if isinstance(addr, dict):
             candidates.append(addr)
     customer_text = _address_text(customer)
-    return any(expected_addr in _address_text(addr) for addr in candidates) or expected_addr in customer_text
+    address_ok = any(expected_addr in _address_text(addr) for addr in candidates) or expected_addr in customer_text
+    if not address_ok:
+        return False
+    expected_ward = str(info.get("ward") or "").strip().lower()
+    expected_ward_code = str(info.get("ward_code") or "").strip()
+    if not expected_ward and not expected_ward_code:
+        return True
+    for addr in candidates:
+        text = _address_text(addr)
+        code_ok = expected_ward_code and expected_ward_code in {
+            str(addr.get("ward_code") or ""),
+            str(addr.get("ward_id") or ""),
+            str(addr.get("wardId") or ""),
+        }
+        name_ok = expected_ward and expected_ward in text
+        if code_ok or name_ok:
+            return True
+    return False
 
 
 def _customer_address_payload(info: dict) -> dict:
     payload = _customer_payload(None, info, "").get("customer", {}).get("default_address") or {}
     payload.pop("default", None)
     return {"address": payload}
+
+
+def _customer_address_payloads(info: dict) -> list[dict]:
+    payload = _customer_payload(None, info, "").get("customer", {}).get("default_address") or {}
+    payload.pop("default", None)
+    return [
+        {"address": payload},
+        {"customer_address": payload},
+        payload,
+    ]
 
 
 def _save_customer_address(session: requests.Session, customer_id, info: dict, attempts: list[str], token: str | None) -> bool:
@@ -429,39 +473,40 @@ def _save_customer_address(session: requests.Session, customer_id, info: dict, a
         if isinstance(addr, dict) and addr.get("id") and addr.get("id") not in address_ids:
             address_ids.append(addr.get("id"))
 
-    payload = _customer_address_payload(info)
     for address_id in address_ids[:3]:
         url = f"{BASE}/admin/customers/{customer_id}/addresses/{address_id}.json"
         for method in ("put", "patch"):
-            resp = getattr(session, method)(
-                url,
-                json=payload,
-                headers=_json_headers(page_url, token),
-                timeout=30,
-                allow_redirects=False,
-            )
-            attempts.append(_attempt_desc(resp))
-            if resp.status_code < 400:
-                try:
-                    if _customer_info_saved(get_customer(session, customer_id), info):
-                        return True
-                except Exception as e:
-                    attempts.append(f"GET customer after address update -> {type(e).__name__}: {e}")
+            for payload in _customer_address_payloads(info):
+                resp = getattr(session, method)(
+                    url,
+                    json=payload,
+                    headers=_json_headers(page_url, token),
+                    timeout=30,
+                    allow_redirects=False,
+                )
+                attempts.append(_attempt_desc(resp))
+                if resp.status_code < 400:
+                    try:
+                        if _customer_info_saved(get_customer(session, customer_id), info):
+                            return True
+                    except Exception as e:
+                        attempts.append(f"GET customer after address update -> {type(e).__name__}: {e}")
 
     url = f"{BASE}/admin/customers/{customer_id}/addresses.json"
-    resp = session.post(
-        url,
-        json=payload,
-        headers=_json_headers(page_url, token),
-        timeout=30,
-        allow_redirects=False,
-    )
-    attempts.append(_attempt_desc(resp))
-    if resp.status_code < 400:
-        try:
-            return _customer_info_saved(get_customer(session, customer_id), info)
-        except Exception as e:
-            attempts.append(f"GET customer after address create -> {type(e).__name__}: {e}")
+    for payload in _customer_address_payloads(info):
+        resp = session.post(
+            url,
+            json=payload,
+            headers=_json_headers(page_url, token),
+            timeout=30,
+            allow_redirects=False,
+        )
+        attempts.append(_attempt_desc(resp))
+        if resp.status_code < 400:
+            try:
+                return _customer_info_saved(get_customer(session, customer_id), info)
+            except Exception as e:
+                attempts.append(f"GET customer after address create -> {type(e).__name__}: {e}")
     return False
 
 
@@ -513,7 +558,8 @@ def _upsert_customer_info(session: requests.Session, order: dict, info: dict, no
                 try:
                     saved = get_customer(session, customer_id)
                     attempts.append("GET customer verify -> ok")
-                    if _customer_info_saved(saved, info) or _save_customer_address(session, customer_id, info, attempts, token):
+                    address_saved = _save_customer_address(session, customer_id, info, attempts, token)
+                    if address_saved or _customer_info_saved(saved, info):
                         return customer_id
                 except Exception as e:
                     attempts.append(f"GET customer verify -> {type(e).__name__}: {e}")
@@ -565,6 +611,10 @@ def update_order_customer_info(session: requests.Session, order_id, info: dict, 
         "ward_name": info.get("ward") or "",
         "ward_code": info.get("ward_code") or "",
         "ward_id": info.get("ward_code") or "",
+        "commune_code": info.get("ward_code") or "",
+        "commune_id": info.get("ward_code") or "",
+        "location_id": info.get("ward_code") or "",
+        "new_ward_id": info.get("ward_code") or "",
         "district": info.get("district") or "",
         "district_name": info.get("district") or "",
         "district_code": info.get("district_code") or "",
@@ -573,6 +623,8 @@ def update_order_customer_info(session: requests.Session, order_id, info: dict, 
         "province_name": info.get("province") or "",
         "province_code": info.get("province_code") or "",
         "province_id": info.get("province_code") or "",
+        "city_id": info.get("province_code") or "",
+        "municipality_id": info.get("province_code") or "",
         "city": info.get("province") or "",
         "city_name": info.get("province") or "",
         "country": "Vietnam",
