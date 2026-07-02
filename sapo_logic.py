@@ -1034,6 +1034,7 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120) -> dict:
     _ldv = _dd(lambda: {"n": 0, "money": 0, "thua": 0, "het": 0})
     _lsp, _ltot = {}, {"n": 0, "money": 0}
     _lmon = _dd(lambda: _dd(lambda: {"n": 0, "money": 0}))   # tháng -> shipper -> {n, money}
+    _lorders = []                                            # chi tiết từng đơn mất hàng
     for x in inprog:
         _p = _asc((x.get("note") or "").split("|")[0])
         _k = "thua" if "THUA" in _p else ("het" if "HET HAN" in _p else None)
@@ -1057,6 +1058,11 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120) -> dict:
             s["n"] += 1; s["money"] += _mo; s[_k] += 1
             s["name"] = s["name"] or _name
             s["dvvc"] = s["dvvc"] or _dv
+        _si = x.get("shipping_info") or {}
+        _wb = _si.get("tracking_number") or (_si.get("fulfillment_tracking_numbers") or [None])[0] or ""
+        _lorders.append({"shipper": _name or _dv, "phone": _ph, "dvvc": _dv, "waybill": _wb,
+                         "date": _md.strftime("%d/%m/%Y") if _md else "", "money": _mo,
+                         "kind": "Thua" if _k == "thua" else "Hết hạn"})
     _by_dvvc = sorted(({"dvvc": k, **v} for k, v in _ldv.items()), key=lambda d: -d["money"])
     _months = list(range(min(_lmon), today.month + 1)) if _lmon else []   # liền mạch tới tháng hiện tại
     _shtot = _dd(int)
@@ -1071,7 +1077,8 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120) -> dict:
                                            "money": [int(_lmon[m].get(lab, {}).get("money", 0)) for m in _months],
                                            "n": [int(_lmon[m].get(lab, {}).get("n", 0)) for m in _months]}
                                           for lab in _shorder],
-                               "total": [int(sum(v["money"] for v in _lmon[m].values())) for m in _months]}}
+                               "total": [int(sum(v["money"] for v in _lmon[m].values())) for m in _months]},
+                  "orders": sorted(_lorders, key=lambda o: -o["money"])}
 
     return {
         "total": len(inprog), "total_returns": len(all_returns), "capped": capped, "n_complaint": n_complaint,

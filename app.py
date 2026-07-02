@@ -1387,9 +1387,11 @@ if _page == PAGE_TTKH:
                     })
         st.session_state["ttkh_write_results"] = results
         if ok_count:
+            _clear_ids = set(st.session_state.get("ttkh_clear_ids") or [])
             for _oid in written_ids:
                 st.session_state["ttkh_pending_inputs"].pop(_oid, None)
-                st.session_state[_ttkh_input_key(_oid)] = ""
+                _clear_ids.add(_oid)
+            st.session_state["ttkh_clear_ids"] = sorted(_clear_ids)
             load_ttkh_candidates.clear()
         st.rerun()
 
@@ -1410,17 +1412,31 @@ if _page == PAGE_TTKH:
         for _, r in df.iterrows():
             oid = str(r.get("_order_id"))
             key = _ttkh_input_key(oid)
+            _clear_ids = set(st.session_state.get("ttkh_clear_ids") or [])
+            if oid in _clear_ids:
+                st.session_state[key] = ""
+                _clear_ids.discard(oid)
+                st.session_state["ttkh_clear_ids"] = sorted(_clear_ids)
             if key not in st.session_state:
                 st.session_state[key] = (st.session_state.get("ttkh_pending_inputs") or {}).get(oid, "")
             c = st.columns([1.0, 1.8, .7, 1.7, 3.2, 4.2])
             c[0].markdown(str(r.get("Ngày tạo") or ""))
             code = str(r.get("Mã đơn") or "")
+            row_pending = _collect_ttkh_rows([{
+                "order_id": oid,
+                "name": code,
+                "note": r.get("Ghi chú hiện tại") or "",
+            }])
             url = _ttkh_order_url(code, r.get("Gian hàng"))
             sapo_url = _sapo_order_url(oid)
             customer_url = _sapo_customer_url(r.get("_customer_id"))
+            customer_query = code
+            if row_pending:
+                _info = row_pending[0].get("info") or {}
+                customer_query = _info.get("phone") or _info.get("name") or code
             code_link = f"[{code}]({url})" if url else code
             sapo_link = f" · [Sapo]({sapo_url})" if sapo_url else ""
-            customer_link = f" · [Khách]({customer_url})" if customer_url else f" · [Tìm khách]({_sapo_customer_search_url(code)})"
+            customer_link = f" · [Khách]({customer_url})" if customer_url else f" · [Tìm khách]({_sapo_customer_search_url(customer_query)})"
             c[1].markdown(code_link + sapo_link + customer_link)
             c[2].markdown(
                 f"<abbr title='{_product_tip(r)}' style='cursor:help;font-weight:800;text-decoration:underline dotted #6b7280'>{int(r.get('SL SP') or 0)} SP ⓘ</abbr>",
@@ -2588,23 +2604,20 @@ if _page == PAGE_RETURNS:
             st.markdown("##### 🚨 Mất hàng theo ĐVVC / Shipper (Thua + Hết hạn)")
             st.markdown(f"**{_lt['n']} đơn** hàng CHƯA về kho · thất thoát **{_fm(_lt['money'])}** "
                         f"_(năm nay — khớp Thua+Hết hạn ở card trên)_")
-            _lc1, _lc2 = st.columns(2)
-            with _lc1:
-                st.caption("🚚 Theo ĐVVC")
-                _dvr = _ls.get("by_dvvc") or []
-                st.dataframe(pd.DataFrame([{"ĐVVC": r["dvvc"], "Đơn": r["n"],
-                    "Thua/Hết": f"{r['thua']}/{r['het']}", "Tiền mất": _fm(r["money"])}
-                    for r in _dvr]), hide_index=True, width="stretch")
-            with _lc2:
-                st.caption("🧍 Theo shipper (đơn có SĐT)")
-                _spr = _ls.get("by_shipper") or []
-                if _spr:
-                    st.dataframe(pd.DataFrame([{"Shipper": r["name"] or "?", "SĐT": r["phone"],
-                        "ĐVVC": r["dvvc"], "Đơn": r["n"], "Tiền mất": _fm(r["money"])}
-                        for r in _spr]), hide_index=True, width="stretch")
-                else:
-                    st.caption("Chưa có shipper ghi rõ SĐT.")
-                st.caption("⚠️ Shopee/SPX thường không ghi tên shipper → chỉ gom theo ĐVVC.")
+            st.caption("🚚 Tổng theo ĐVVC")
+            _dvr = _ls.get("by_dvvc") or []
+            st.dataframe(pd.DataFrame([{"ĐVVC": r["dvvc"], "Đơn": r["n"],
+                "Thua/Hết": f"{r['thua']}/{r['het']}", "Tiền mất": _fm(r["money"])}
+                for r in _dvr]), hide_index=True, width="stretch")
+            st.caption("📋 Chi tiết từng đơn mất hàng (không có tên shipper → cột Shipper hiện ĐVVC)")
+            _ords = _ls.get("orders") or []
+            if _ords:
+                st.dataframe(pd.DataFrame([{
+                    "Shipper": o["shipper"], "SĐT": o["phone"] or "—", "ĐVVC": o["dvvc"],
+                    "Mã vận đơn": o["waybill"] or "—", "Ngày tạo": o["date"],
+                    "KQ": o["kind"], "Tiền mất": _fm(o["money"])}
+                    for o in _ords]), hide_index=True, width="stretch")
+            st.caption("⚠️ Shopee/SPX thường không ghi tên shipper → cột Shipper hiện ĐVVC.")
             _bm = _ls.get("by_month") or {}
             if _bm.get("labels"):
                 st.caption("📅 Mỗi tháng — SHIPPER làm mất bao nhiêu ĐƠN & TIỀN (rê chuột xem chi tiết)")
