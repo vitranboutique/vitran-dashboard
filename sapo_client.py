@@ -823,10 +823,12 @@ def _customer_identity_saved(customer: dict, info: dict, note: str) -> bool:
     expected_name = str(info.get("name") or "").strip().lower()
     expected_addr = str(info.get("address1") or "").strip().lower()
     expected_note = str(note or "").strip().lower()
+    expected_phone = str(info.get("phone") or "").strip().lower()
     name_ok = (not expected_name) or expected_name in text
     addr_ok = (not expected_addr) or expected_addr in text
     note_ok = (not expected_note) or expected_note in text
-    return bool(name_ok and (addr_ok or note_ok))
+    phone_ok = (not expected_phone) or expected_phone in text
+    return bool(name_ok and (addr_ok or note_ok or phone_ok))
 
 
 def _find_customer_by_identity(session: requests.Session, info: dict, note: str, attempts: list[str]):
@@ -909,6 +911,7 @@ def _create_customer_via_html(session: requests.Session, info: dict, note: str, 
                 found_id = _find_customer_by_identity(session, info, note, attempts)
                 if found_id:
                     return found_id
+                return None
     except Exception as e:
         attempts.append(f"POST customer html -> {type(e).__name__}: {e}")
     return None
@@ -918,12 +921,13 @@ def _upsert_customer_info(session: requests.Session, order: dict, info: dict, no
     customer = order.get("customer") if isinstance(order.get("customer"), dict) else {}
     phone = str(info.get("phone") or "").strip()
     found_by_phone = _find_customer_by_phone(session, phone, attempts) if phone and not _is_masked_phone(phone) else None
+    found_by_identity = _find_customer_by_identity(session, info, note, attempts)
     # Real phone is the source of truth. If it is not found, create a new
     # customer instead of overwriting a possibly unrelated customer on the order.
     if phone and not _is_masked_phone(phone):
-        customer_id = found_by_phone
+        customer_id = found_by_phone or found_by_identity
     else:
-        customer_id = customer.get("id") or order.get("customer_id")
+        customer_id = found_by_identity or customer.get("id") or order.get("customer_id")
     token = _page_csrf_token(session, f"{BASE}/admin/customers/{customer_id}" if customer_id else f"{BASE}/admin/customers", attempts)
     if customer_id:
         url = f"{BASE}/admin/customers/{customer_id}.json"
