@@ -2238,7 +2238,7 @@ if _page == PAGE_RETURNS:
         st.warning(f"Chưa lấy được đơn trả đang xử lý: `{_e}`")
     if _rip:
         # KẾT QUẢ KHIẾU NẠI (đang xử lý năm nay): Thắng/Thua/Không cần KN/Hết hạn theo prefix note;
-        # CẦN KN = TỰ TÍNH (đơn đang xử lý quá 7 ngày, chưa có ghi chú kết quả).
+        # CẦN KN = TỰ TÍNH (đơn đang xử lý hơn 5 ngày, chưa có ghi chú kết quả).
         _oc = _rip.get("outcomes") or {}
 
         def _vnd(m):
@@ -2453,14 +2453,14 @@ if _page == PAGE_RETURNS:
 
             # Drilldown filter is rendered near the top of the page via _return_top_drill_slot.
         st.markdown("##### 📊 Đang xử lý (chưa nhập kho)")
-        _old_n = sum(1 for d in _rip["detail"] if (d.get("age") or 0) >= 7)
+        _old_n = sum(1 for d in _rip["detail"] if (d.get("age") or 0) > 5)
         _m = st.columns(5)
         _m[0].metric("Tổng đang xử lý", f"{_rip['total']:,}")
         _m[1].metric("🚚 Đang hoàn hàng", f"{_rip['tot_returning']:,}")
         _m[2].metric("📥 Đã giao người bán", f"{_rip['tot_returned']:,}")
         _m[3].metric("🚫 Không có hàng hoàn về", f"{len(_no_return_list):,}")
-        _m[4].metric("🟡 Quá 1 tuần", f"{_old_n:,}")
-        st.caption("🟡 **Dòng tô vàng = đơn CẦN KN** (quá 1 tuần & CHƯA có ghi chú kết quả).  "
+        _m[4].metric("🟡 Hơn 5 ngày", f"{_old_n:,}")
+        st.caption("🟡 **Dòng tô vàng = đơn CẦN KN** (hơn 5 ngày & CHƯA có ghi chú kết quả).  "
                 "VĐ đi = mã vận đơn giao đi · VĐ trả về = mã vận đơn hoàn về "
                 "(giao thất bại: 2 mã trùng nhau; chỉ hoàn tiền: không có kiện hàng hoàn về)."
                 + ("  ·  ⚠️ đã chạm giới hạn quét — có thể còn đơn cũ hơn" if _rip.get("capped") else ""))
@@ -2747,7 +2747,7 @@ if _page == PAGE_RETURNS:
         # ── DANH SÁCH ĐƠN CẦN KN (bấm ô "Cần KN" ở trên sẽ nhảy tới đây) ──
         st.subheader("🚨 Đơn cần KN — lấy làm khiếu nại", anchor="don-can-kn")
         st.caption("Gồm các đơn CHƯA có ghi chú kết quả chuẩn (THẮNG/THUA/KHÔNG CẦN KN/HẾT HẠN): "
-                   "đã giao người bán chưa nhập kho, đang hoàn quá 7 ngày, hoặc chỉ hoàn tiền/không có hàng hoàn về. "
+                   "đã giao người bán chưa nhập kho, đang hoàn hơn 5 ngày, hoặc chỉ hoàn tiền/không có hàng hoàn về. "
                    "Đây chính là các dòng tô vàng — NV lấy làm khiếu nại.")
         _sub_table(_ckn_list, 360, show_reason=True)
         st.markdown(f"**🏷️ + Đơn Dohana gắn tag KHUI HÀNG (tráo · đã dùng · trả thiếu · hư hỏng) — {len(_dtag_kn)} đơn**")
