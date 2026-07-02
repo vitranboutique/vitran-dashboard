@@ -2617,7 +2617,9 @@ if _page == PAGE_RETURNS:
                     "Mã vận đơn": o["waybill"] or "—", "Ngày tạo": o["date"],
                     "KQ": o["kind"], "Tiền mất": _fm(o["money"])}
                     for o in _ords]), hide_index=True, width="stretch")
-            st.caption("⚠️ Shopee/SPX thường không ghi tên shipper → cột Shipper hiện ĐVVC.")
+            st.caption("⚠️ Shopee/SPX không ghi tên shipper → cột Shipper hiện ĐVVC. "
+                       "Mã VĐ lấy từ 'VĐ về' trong ghi chú nếu field trống (giao thất bại: mã đi = mã về); "
+                       "vài đơn Shopee sàn ẩn VĐ → '—'.")
             _bm = _ls.get("by_month") or {}
             if _bm.get("labels"):
                 st.caption("📅 Mỗi tháng — SHIPPER làm mất bao nhiêu ĐƠN & TIỀN (rê chuột xem chi tiết)")

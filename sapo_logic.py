@@ -756,6 +756,17 @@ def _lost_person(note):
     return s
 
 
+def _lost_waybill(x):
+    """Mã VĐ: ưu tiên field; không có thì lấy 'VĐ về <mã>' trong ghi chú (giao thất bại: mã đi=mã về)."""
+    si = x.get("shipping_info") or {}
+    wb = si.get("tracking_number") or (si.get("fulfillment_tracking_numbers") or [None])[0]
+    if wb:
+        return str(wb)
+    m = re.search(r"v[đd]\s*v[ềe]\s*:?\s*([A-Za-z]{0,6}\d{6,}[A-Za-z]{0,2})",
+                  str(x.get("note") or ""), flags=re.I)
+    return m.group(1) if m else ""
+
+
 def get_returns_in_progress(fetch_json, max_pages: int = 120) -> dict:
     """ĐƠN TRẢ HÀNG ĐANG XỬ LÝ — CHƯA nhập kho (bổ sung cho mục 'đã nhận hàng trả').
     Tổng đơn trả lấy theo tab TẤT CẢ của phiếu trả trong NĂM NAY, loại phiếu hủy/gạch ngang.
@@ -1058,8 +1069,7 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120) -> dict:
             s["n"] += 1; s["money"] += _mo; s[_k] += 1
             s["name"] = s["name"] or _name
             s["dvvc"] = s["dvvc"] or _dv
-        _si = x.get("shipping_info") or {}
-        _wb = _si.get("tracking_number") or (_si.get("fulfillment_tracking_numbers") or [None])[0] or ""
+        _wb = _lost_waybill(x)
         _lorders.append({"shipper": _name or _dv, "phone": _ph, "dvvc": _dv, "waybill": _wb,
                          "date": _md.strftime("%d/%m/%Y") if _md else "", "money": _mo,
                          "kind": "Thua" if _k == "thua" else "Hết hạn"})
