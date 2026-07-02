@@ -2617,7 +2617,7 @@ if _page == PAGE_RETURNS:
                       "<thead><tr style='background:#e2e8f0;text-align:left'>",
                       "".join(f"<th style='padding:5px 8px{s}'>{c}</th>" for c, s in
                               [("STT", ""), ("Shipper", ""), ("SĐT", ""), ("ĐVVC", ""),
-                               ("Mã vận đơn", ""), ("Ngày", ""), ("KQ", ""), ("Tiền mất", ";text-align:right")]),
+                               ("Mã trả", ""), ("Mã vận đơn", ""), ("Ngày", ""), ("KQ", ""), ("Tiền mất", ";text-align:right")]),
                       "</tr></thead><tbody>"]
                 _prev, _sn = None, 0
                 for o in _ords:
@@ -2627,9 +2627,10 @@ if _page == PAGE_RETURNS:
                     _bg = _dvbg.get(o["dvvc"], "#F8FAFC")
                     _sep = "border-top:2px solid #334155;" if (_grp and _prev is not None) else ""
                     _wb = o.get("waybill") or "—"
+                    _rc = o.get("return_code") or "—"
                     _lk = o.get("link") or ""
-                    _wbc = (f"<a href='{_lk}' target='_blank' style='color:#1d4ed8;font-weight:600'>{_wb}</a>"
-                            if (_lk and _wb != "—") else _wb)
+                    _rcc = (f"<a href='{_lk}' target='_blank' style='color:#1d4ed8;font-weight:600'>{_rc}</a>"
+                            if (_lk and _rc != "—") else _rc)
                     _kqc = "#DC2626" if o["kind"] == "Thua" else "#6B7280"
                     _h.append(
                         f"<tr style='{_sep}background:{_bg};border-left:4px solid {_clr}'>"
@@ -2637,14 +2638,15 @@ if _page == PAGE_RETURNS:
                         f"<td style='padding:5px 8px;font-weight:700'>{o['shipper'] if _grp else ''}</td>"
                         f"<td style='padding:5px 8px'>{(o['phone'] or '—') if _grp else ''}</td>"
                         f"<td style='padding:5px 8px;color:{_clr};font-weight:600'>{o['dvvc'] if _grp else ''}</td>"
-                        f"<td style='padding:5px 8px'>{_wbc}</td>"
+                        f"<td style='padding:5px 8px'>{_rcc}</td>"
+                        f"<td style='padding:5px 8px'>{_wb}</td>"
                         f"<td style='padding:5px 8px'>{o['date']}</td>"
                         f"<td style='padding:5px 8px;color:{_kqc};font-weight:600'>{o['kind']}</td>"
                         f"<td style='padding:5px 8px;text-align:right;font-weight:600'>{_fm(o['money'])}</td></tr>")
                     _prev = o["shipper"]
                 _h.append("</tbody></table></div>")
                 st.markdown("".join(_h), unsafe_allow_html=True)
-            st.caption("🔗 Bấm **mã VĐ** → mở đơn trên sàn (giống link ở bảng chi tiết) làm KN · STT đếm theo TỪNG shipper · màu = ĐVVC · vạch = đổi shipper. "
+            st.caption("🔗 Bấm **mã trả** → mở đơn trên sàn (giống bảng chi tiết) làm KN · Mã VĐ để copy · STT đếm theo TỪNG shipper · màu = ĐVVC · vạch = đổi shipper. "
                        "⚠️ Shopee/SPX không ghi tên shipper → cột Shipper hiện ĐVVC; mã VĐ lấy từ 'VĐ về' trong ghi chú "
                        "nếu field trống; vài đơn Shopee sàn ẩn → '—'.")
             st.divider()

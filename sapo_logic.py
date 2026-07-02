@@ -1085,7 +1085,7 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120) -> dict:
         else:
             _lk = ""
         _lorders.append({"shipper": _name or _dv, "phone": _ph, "dvvc": _dv, "waybill": _wb,
-                         "code": _oc, "link": _lk,
+                         "return_code": x.get("name") or "", "code": _oc, "link": _lk,
                          "date": _md.strftime("%d/%m/%Y") if _md else "",
                          "_sort": _md.isoformat() if _md else "", "money": _mo,
                          "kind": "Thua" if _k == "thua" else "Hết hạn"})
