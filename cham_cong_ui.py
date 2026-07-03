@@ -204,4 +204,6 @@ def render_admin():
         for emp in CC.EMPLOYEES:
             st.markdown(f"**{CC.EMPLOYEES[emp]['name']}** — mở trên máy của {CC.EMPLOYEES[emp]['name']}:")
             st.code(f"{APP_URL}/?nv={emp}&k={CC.device_key(emp)}", language=None)
+        st.markdown("**📲 Máy SHOP (hiện mã)** — mở trên điện thoại để ở shop (khỏi đăng nhập):")
+        st.code(f"{APP_URL}/?nv=shop&k={CC.device_key('shop')}", language=None)
         st.caption("⚠️ Giữ kín link (như mật khẩu). Lỡ lộ, kẻ khác vẫn phải qua **selfie + mã ở shop** nên khó chấm bậy.")

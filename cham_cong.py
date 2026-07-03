@@ -168,8 +168,8 @@ def device_key(emp):
 
 
 def verify_device(nv, k):
-    """True nếu nv hợp lệ và k khớp mã thiết bị của nv."""
-    return bool(nv) and nv in EMPLOYEES and bool(k) and _hmac.compare_digest(str(k), device_key(nv))
+    """True nếu nv hợp lệ (NV hoặc 'shop') và k khớp mã thiết bị của nv."""
+    return bool(nv) and (nv in EMPLOYEES or nv == "shop") and bool(k) and _hmac.compare_digest(str(k), device_key(nv))
 
 
 # ─── Lưu / đọc chấm công (Gist — mỗi tháng 1 file vitran_cong_YYYY-MM.json) ───

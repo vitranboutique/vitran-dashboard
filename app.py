@@ -547,7 +547,10 @@ def require_login():
 # ── Chế độ THIẾT BỊ: NV mở link ?nv=kho&k=... → vào THẲNG chấm công, khỏi đăng nhập ──
 _dv_nv = st.query_params.get("nv")
 if _dv_nv and cham_cong.verify_device(_dv_nv, st.query_params.get("k")):
-    cham_cong_ui.render_checkin_dev(_dv_nv)
+    if _dv_nv == "shop":
+        cham_cong_ui.render_shop_qr()      # máy shop: link riêng → thẳng trang mã, khỏi đăng nhập
+    else:
+        cham_cong_ui.render_checkin_dev(_dv_nv)
     st.stop()
 
 CUR_NAME, CUR_USER, CUR_ROLE = require_login()
