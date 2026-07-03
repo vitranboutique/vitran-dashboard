@@ -5,7 +5,7 @@ Quy tắc lương (user chốt 01/07):
 - 2 NV, 30.000đ/GIỜ, 8h/ngày (đã trừ nghỉ trưa 1h). Làm T2–T7, NGHỈ Chủ nhật.
   · Kho : ca 09:30 → 18:30   · CSKH: ca 10:00 → 19:00
 - Chấm 2 lần/ngày: Vào (sáng) + Ra (chiều); nghỉ trưa 1h TỰ TRỪ.
-- Đi trễ: miễn 5' đầu; trễ quá 5' → tính theo giờ thực (ít giờ = ít lương). KHÔNG tăng ca (>8h vẫn 8h).
+- Đi trễ / về sớm: miễn 5'; quá 5' → tính theo giờ thực (ít giờ = ít lương). KHÔNG tăng ca (>8h vẫn 8h).
 - Thiếu ≥4h/ngày → MẤT suất ăn ngày đó. Nghỉ hẳn 1 ngày → 0 lương + 0 ăn (dù có phép hay không).
 - Cả tháng nghỉ >8h → MẤT chuyên cần 500k; nghỉ ≤8h → +500k.
 - Tiền ăn 30k/ngày công. Lương tháng = Σ(giờ×30k + ăn) + chuyên cần (nếu đạt).
@@ -42,7 +42,8 @@ def calc_day(start, end, ci, co):
     ci, co = _m(ci), _m(co)
     eff_ci = ss if ci <= ss + GRACE_MIN else ci      # trễ ≤5' coi như đúng giờ
     eff_ci = max(eff_ci, ss)                          # tới sớm tính từ giờ ca
-    eff_co = min(co, se)                              # về trễ KHÔNG tính tăng ca
+    eff_co = se if co >= se - GRACE_MIN else co       # về sớm ≤5' coi như đủ giờ tan (đối xứng đi trễ)
+    eff_co = min(eff_co, se)                           # về trễ KHÔNG tính tăng ca
     worked = max(0, min((eff_co - eff_ci) - LUNCH_MIN, FULL_DAY_MIN))
     missed = FULL_DAY_MIN - worked
     late = (ci - ss) if ci > ss + GRACE_MIN else 0   # phút trễ THỰC (trễ ≤5' được miễn = 0)
