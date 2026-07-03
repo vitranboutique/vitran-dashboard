@@ -79,7 +79,7 @@ def calc_month(emp_key, records, y, mth, upto=None):
             days_w += 1
         else:
             days_off += 1
-        rows.append({"ngay": d.isoformat(), **r})
+        rows.append({"ngay": d.isoformat(), "vao": ci, "ra": co, **r})
     cc = CHUYEN_CAN if tot_miss <= CHUYEN_CAN_MAX_MISS else 0
     return {
         "nv": e["name"], "rows": rows,

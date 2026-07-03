@@ -87,11 +87,21 @@ def _checkin_body(emp):
     if flag:
         _success_alert(*flag)
 
-    today = _vn_now().strftime("%Y-%m-%d")
-    rec = CC.day_record(emp, today)
+    now = _vn_now()
+    today = now.strftime("%Y-%m-%d")
+    recs = CC.month_selfies(emp, now.year, now.month)      # đọc cả tháng 1 lần
+    rec = recs.get(today, {}) or {}
     c1, c2 = st.columns(2)
     c1.metric("Vào ca hôm nay", rec.get("in") or "—")
     c2.metric("Tan ca hôm nay", rec.get("out") or "—")
+    with st.expander("📅 Lịch sử chấm công tháng này"):
+        if not recs:
+            st.caption("Chưa có lần chấm nào trong tháng.")
+        else:
+            hist = pd.DataFrame([{"Ngày": dd, "Vào": (recs[dd].get("in") or "—"),
+                                  "Ra": (recs[dd].get("out") or "—")}
+                                 for dd in sorted(recs, reverse=True)])
+            st.dataframe(hist, width="stretch", hide_index=True)
 
     done_in, done_out = bool(rec.get("in")), bool(rec.get("out"))
     if done_in and done_out:
@@ -168,7 +178,8 @@ def _salary_block(emp, y, mth, upto):
     st.caption(f"Lương giờ {_vnd(rep['luong_gio'])} + ăn {_vnd(rep['tien_an'])} "
                f"+ chuyên cần {_vnd(rep['chuyen_can'])}")
     df = pd.DataFrame([{
-        "Ngày": r["ngay"], "Trạng thái": r["status"],
+        "Ngày": r["ngay"], "Vào": r.get("vao") or "—", "Ra": r.get("ra") or "—",
+        "Trạng thái": r["status"],
         "Giờ công": round(r["worked"] / 60, 2), "Trễ (phút)": r["late"],
         "Lương ngày": _vnd(r["salary"]), "Tiền ăn": _vnd(r["meal"]),
     } for r in rep["rows"]])
