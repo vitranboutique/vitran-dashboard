@@ -575,6 +575,9 @@ if _cc_role == "nv":
     _rolepg = [PAGE_PICK, PAGE_RETURNS] if _cc_emp == "kho" else [PAGE_TTKH]
     _opts = [PAGE_DAILY, PAGE_OVERVIEW] + _rolepg + [PAGE_CHAMCONG, PAGE_LUONG]
     _default = PAGE_CHAMCONG if st.query_params.get("tk") else PAGE_DAILY   # quét QR → về Chấm công
+elif _cc_role == "shop":                    # máy shop: CHỈ thấy trang hiện mã QR chấm công
+    _opts = [PAGE_QRSHOP]
+    _default = PAGE_QRSHOP
 elif _cc_role == "admin":
     _opts = [PAGE_OVERVIEW, PAGE_REPORT, PAGE_PICK, PAGE_TTKH, PAGE_DAILY, PAGE_RETURNS,
              PAGE_QRSHOP, PAGE_QLCC]
