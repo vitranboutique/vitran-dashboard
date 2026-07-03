@@ -47,10 +47,9 @@ def _qr_png_b64(text):
 
 
 # ══════════════════ NHÂN VIÊN — CHẤM CÔNG ══════════════════
-def render_checkin(username):
-    emp = CC.emp_of(username)
-    if not emp:
-        st.error("Tài khoản này không phải nhân viên chấm công.")
+def _checkin_body(emp):
+    if not emp or emp not in CC.EMPLOYEES:
+        st.error("Không xác định được nhân viên.")
         return
     st.header(f"🕘 Chấm công — {CC.EMPLOYEES[emp]['name']}")
 
@@ -61,16 +60,17 @@ def render_checkin(username):
     c2.metric("Tan ca hôm nay", rec.get("out") or "—")
     st.divider()
 
-    tk = st.query_params.get("tk")
+    tk = st.query_params.get("tk")            # quét QR (nếu có) → tự điền mã
+    if not CC.verify_token(tk):               # chưa/không quét → NHẬP TAY mã ở màn hình shop
+        code = st.text_input("🔑 Nhập MÃ đang hiện trên màn hình shop (đổi mỗi phút)",
+                             max_chars=12, key=f"cc_code_{emp}")
+        tk = code.strip() if code else None
     if not CC.verify_token(tk):
-        st.warning("📲 **Chưa có mã QR hợp lệ.**\n\n"
-                   "Dùng **camera điện thoại quét mã QR đang hiện ở shop** (mã đổi mỗi phút). "
-                   "Quét xong trang này mở lại kèm mã → chụp selfie → chấm.")
-        st.caption("⚠️ Không gõ tay mã được — bắt buộc quét QR tại shop (chống chấm từ xa).")
+        st.info("Nhập đúng mã ở màn hình shop để xác nhận **đang có mặt tại shop**, rồi chụp selfie.")
         return
 
-    st.success("✅ Xác nhận **đang ở shop** (mã QR hợp lệ). Chụp selfie để chấm:")
-    selfie = st.camera_input("Selfie xác nhận chính chủ")
+    st.success("✅ Xác nhận **đang ở shop**. Chụp selfie để chấm:")
+    selfie = st.camera_input("Selfie xác nhận chính chủ", key=f"cc_selfie_{emp}")
     if selfie is None:
         st.info("Chụp selfie xong mới bấm nút chấm được.")
         return
@@ -80,12 +80,20 @@ def render_checkin(username):
         ok, msg, _ = CC.save_check(emp, "in", _thumb_b64(selfie))
         (st.success if ok else st.error)(msg)
         if ok:
-            st.query_params.clear(); st.rerun()
+            st.rerun()
     if b2.button("🔴 TAN CA", use_container_width=True, disabled=bool(rec.get("out"))):
         ok, msg, _ = CC.save_check(emp, "out", _thumb_b64(selfie))
         (st.success if ok else st.error)(msg)
         if ok:
-            st.query_params.clear(); st.rerun()
+            st.rerun()
+
+
+def render_checkin(username):
+    _checkin_body(CC.emp_of(username))
+
+
+def render_checkin_dev(emp):     # chế độ THIẾT BỊ: mở link riêng → vào thẳng, khỏi đăng nhập
+    _checkin_body(emp)
 
 
 # ══════════════════ LƯƠNG ══════════════════
@@ -129,8 +137,8 @@ def render_my_salary(username):
 # ══════════════════ SHOP — HIỆN QR ══════════════════
 def render_shop_qr():
     st.header("📲 QR chấm công (màn hình SHOP)")
-    st.caption("Để điện thoại này ở shop. NV cần chấm → bấm **Hiện QR** cho NV quét bằng máy họ. "
-               "Mã đổi mỗi phút, đừng để lộ ra ngoài.")
+    st.caption("Để điện thoại này ở shop. NV cần chấm → NV **nhập MÃ** (hoặc quét QR) trên máy mình. "
+               "Mã đổi mỗi phút, đừng để lộ ra ngoài shop.")
     st.session_state.setdefault("cc_show_qr", False)
     if not st.session_state["cc_show_qr"]:
         if st.button("🔓 Hiện QR chấm công", use_container_width=True, type="primary"):
@@ -146,7 +154,10 @@ def render_shop_qr():
                     unsafe_allow_html=True)
     except Exception as e:
         st.error(f"Chưa tạo được QR ({e}) — cần thư viện 'qrcode' trong requirements.")
-    st.info(f"Mã: **{tok}** · còn hạn ~1–2 phút. NV quét trễ thì bấm **Làm mới**.")
+    st.markdown(f"<div style='text-align:center;font-size:2.1rem;font-weight:800;letter-spacing:3px;"
+                f"background:#fef3c7;border-radius:10px;padding:8px;margin-top:8px'>{tok}</div>",
+                unsafe_allow_html=True)
+    st.caption("👆 NV **nhập mã này** vào máy để chấm (hoặc quét QR). Còn hạn ~1–2 phút; trễ thì **Làm mới**.")
     c1, c2 = st.columns(2)
     if c1.button("🔄 Làm mới QR", use_container_width=True):
         st.rerun()
@@ -159,7 +170,7 @@ def render_shop_qr():
 def render_admin():
     st.header("🛠️ Quản lý chấm công")
     y, mth, upto = _month_picker("adm")
-    tab1, tab2 = st.tabs(["💰 Bảng lương 2 NV", "📸 Duyệt selfie"])
+    tab1, tab2, tab3 = st.tabs(["💰 Bảng lương 2 NV", "📸 Duyệt selfie", "🔗 Link máy NV"])
     with tab1:
         for emp in CC.EMPLOYEES:
             st.subheader(CC.EMPLOYEES[emp]["name"])
@@ -185,3 +196,10 @@ def render_admin():
                     else:
                         cols[i + 1].caption("—")
                 st.divider()
+    with tab3:
+        st.caption("Mở link tương ứng trên ĐÚNG máy từng NV → menu trình duyệt **'Thêm vào màn hình chính'** → "
+                   "từ đó bấm icon vào THẲNG chấm công, khỏi đăng nhập.")
+        for emp in CC.EMPLOYEES:
+            st.markdown(f"**{CC.EMPLOYEES[emp]['name']}** — mở trên máy của {CC.EMPLOYEES[emp]['name']}:")
+            st.code(f"{APP_URL}/?nv={emp}&k={CC.device_key(emp)}", language=None)
+        st.caption("⚠️ Giữ kín link (như mật khẩu). Lỡ lộ, kẻ khác vẫn phải qua **selfie + mã ở shop** nên khó chấm bậy.")

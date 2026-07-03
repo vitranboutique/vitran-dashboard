@@ -544,6 +544,12 @@ def require_login():
     return (name, username, roles[0])
 
 
+# ── Chế độ THIẾT BỊ: NV mở link ?nv=kho&k=... → vào THẲNG chấm công, khỏi đăng nhập ──
+_dv_nv = st.query_params.get("nv")
+if _dv_nv and cham_cong.verify_device(_dv_nv, st.query_params.get("k")):
+    cham_cong_ui.render_checkin_dev(_dv_nv)
+    st.stop()
+
 CUR_NAME, CUR_USER, CUR_ROLE = require_login()
 
 

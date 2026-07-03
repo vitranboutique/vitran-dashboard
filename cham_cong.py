@@ -158,6 +158,16 @@ def verify_token(tok, now=None):
     return False
 
 
+def device_key(emp):
+    """Mã thiết bị CỐ ĐỊNH cho mỗi NV — nhúng vào link riêng để máy tự nhận diện (khỏi đăng nhập)."""
+    return _hmac.new(_qr_secret().encode(), ("device:" + str(emp)).encode(), _hashlib.sha256).hexdigest()[:12]
+
+
+def verify_device(nv, k):
+    """True nếu nv hợp lệ và k khớp mã thiết bị của nv."""
+    return bool(nv) and nv in EMPLOYEES and bool(k) and _hmac.compare_digest(str(k), device_key(nv))
+
+
 # ─── Lưu / đọc chấm công (Gist — mỗi tháng 1 file vitran_cong_YYYY-MM.json) ───
 def _vn_now():
     return _dt.now(_tz.utc) + timedelta(hours=7)
