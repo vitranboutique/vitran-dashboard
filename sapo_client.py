@@ -435,7 +435,7 @@ def _customer_payload(customer_id, info: dict, note: str) -> dict:
     parts = name.split()
     first_name = parts[0] if parts else name
     last_name = " ".join(parts[1:]) if len(parts) > 1 else ""
-    phone_value = "" if _is_masked_phone(info.get("phone")) else str(info.get("phone") or "").strip()
+    phone_value = str(info.get("phone") or "").strip()
     province_code = str(info.get("province_code") or "").strip()
     district_code = str(info.get("district_code") or "").strip()
     ward_code = str(info.get("ward_code") or "").strip()
@@ -1001,7 +1001,7 @@ def update_order_customer_info(session: requests.Session, order_id, info: dict, 
     parts = name.split()
     first_name = parts[0] if parts else name
     last_name = " ".join(parts[1:]) if len(parts) > 1 else ""
-    phone_value = "" if _is_masked_phone(info.get("phone")) else str(info.get("phone") or "").strip()
+    phone_value = str(info.get("phone") or "").strip()
     province_code = str(info.get("province_code") or "").strip()
     district_code = str(info.get("district_code") or "").strip()
     ward_code = str(info.get("ward_code") or "").strip()
