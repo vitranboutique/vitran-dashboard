@@ -133,6 +133,11 @@ def render_my_salary(username):
 
 # ══════════════════ SHOP — HIỆN QR ══════════════════
 def render_shop_qr():
+    try:   # tự làm mới mỗi 50s → mã luôn mới + giữ kết nối, KHÔNG bị văng/ngủ khi để yên
+        from streamlit_autorefresh import st_autorefresh
+        st_autorefresh(interval=50000, key="shop_qr_keepalive")
+    except Exception:
+        pass
     st.header("📲 QR chấm công (màn hình SHOP)")
     st.caption("Để điện thoại này ở shop. NV cần chấm → NV **nhập MÃ** (hoặc quét QR) trên máy mình. "
                "Mã đổi mỗi phút, đừng để lộ ra ngoài shop.")
