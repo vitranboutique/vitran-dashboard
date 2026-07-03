@@ -5,7 +5,7 @@ Quy tắc lương (user chốt 01/07):
 - 2 NV, 30.000đ/GIỜ, 8h/ngày (đã trừ nghỉ trưa 1h). Làm T2–T7, NGHỈ Chủ nhật.
   · Kho : ca 09:30 → 18:30   · CSKH: ca 10:00 → 19:00
 - Chấm 2 lần/ngày: Vào (sáng) + Ra (chiều); nghỉ trưa 1h TỰ TRỪ.
-- Đi trễ / về sớm: miễn 5'; quá 5' → tính theo giờ thực (ít giờ = ít lương). KHÔNG tăng ca (>8h vẫn 8h).
+- Về ĐÚNG giờ tan (về sớm bị trừ). Mỗi ngày hụt TỔNG (đi trễ + về sớm) ≤5' → bỏ qua; quá 5' → trừ giờ thực. KHÔNG tăng ca (>8h vẫn 8h).
 - Thiếu ≥4h/ngày → MẤT suất ăn ngày đó. Nghỉ hẳn 1 ngày → 0 lương + 0 ăn (dù có phép hay không).
 - Cả tháng nghỉ >8h → MẤT chuyên cần 500k; nghỉ ≤8h → +500k.
 - Tiền ăn 30k/ngày công. Lương tháng = Σ(giờ×30k + ăn) + chuyên cần (nếu đạt).
@@ -40,13 +40,13 @@ def calc_day(start, end, ci, co):
         return {"status": "Nghỉ", "worked": 0, "missed": FULL_DAY_MIN,
                 "late": 0, "salary": 0, "meal": 0}
     ci, co = _m(ci), _m(co)
-    eff_ci = ss if ci <= ss + GRACE_MIN else ci      # trễ ≤5' coi như đúng giờ
-    eff_ci = max(eff_ci, ss)                          # tới sớm tính từ giờ ca
-    eff_co = se if co >= se - GRACE_MIN else co       # về sớm ≤5' coi như đủ giờ tan (đối xứng đi trễ)
-    eff_co = min(eff_co, se)                           # về trễ KHÔNG tính tăng ca
+    eff_ci = max(ci, ss)                             # tới sớm tính từ giờ ca; đi trễ tính thực
+    eff_co = min(co, se)                             # về ĐÚNG giờ (về sớm bị trừ); về trễ KHÔNG tính tăng ca
     worked = max(0, min((eff_co - eff_ci) - LUNCH_MIN, FULL_DAY_MIN))
     missed = FULL_DAY_MIN - worked
-    late = (ci - ss) if ci > ss + GRACE_MIN else 0   # phút trễ THỰC (trễ ≤5' được miễn = 0)
+    if 0 < missed <= GRACE_MIN:                      # cả ngày hụt TỔNG (đi trễ + về sớm) ≤5' → bỏ qua
+        worked, missed = FULL_DAY_MIN, 0
+    late = max(0, ci - ss)                           # phút đi trễ thực (để hiển thị)
     salary = round(worked / 60 * RATE)
     meal = MEAL if missed < NO_MEAL_IF_MISS else 0
     status = "Đủ công" if missed == 0 else ("Thiếu giờ" if worked > 0 else "Nghỉ")
