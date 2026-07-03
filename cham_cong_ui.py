@@ -138,32 +138,24 @@ def render_shop_qr():
         st_autorefresh(interval=50000, key="shop_qr_keepalive")
     except Exception:
         pass
-    st.header("📲 QR chấm công (màn hình SHOP)")
-    st.caption("Để điện thoại này ở shop. NV cần chấm → NV **nhập MÃ** (hoặc quét QR) trên máy mình. "
+    st.header("📟 Mã chấm công (màn hình SHOP)")
+    st.caption("Để điện thoại này ở shop. NV **nhập MÃ** dưới đây vào máy mình để chấm. "
                "Mã đổi mỗi phút, đừng để lộ ra ngoài shop.")
     st.session_state.setdefault("cc_show_qr", False)
     if not st.session_state["cc_show_qr"]:
-        if st.button("🔓 Hiện QR chấm công", use_container_width=True, type="primary"):
+        if st.button("🔓 Hiện MÃ chấm công", use_container_width=True, type="primary"):
             st.session_state["cc_show_qr"] = True
             st.rerun()
         return
     tok = CC.qr_token()
-    url = f"{APP_URL}/?tk={tok}"
-    try:
-        png = _qr_png_b64(url)
-        st.markdown(f'<div style="text-align:center;background:#fff;padding:16px;border-radius:12px">'
-                    f'<img src="data:image/png;base64,{png}" style="width:260px;height:260px"/></div>',
-                    unsafe_allow_html=True)
-    except Exception as e:
-        st.error(f"Chưa tạo được QR ({e}) — cần thư viện 'qrcode' trong requirements.")
-    st.markdown(f"<div style='text-align:center;font-size:2.1rem;font-weight:800;letter-spacing:3px;"
-                f"background:#fef3c7;border-radius:10px;padding:8px;margin-top:8px'>{tok}</div>",
+    st.markdown(f"<div style='text-align:center;font-size:3rem;font-weight:800;letter-spacing:6px;"
+                f"background:#fef3c7;border-radius:14px;padding:18px;margin:8px 0'>{tok}</div>",
                 unsafe_allow_html=True)
-    st.caption("👆 NV **nhập mã này** vào máy để chấm (hoặc quét QR). Còn hạn ~1–2 phút; trễ thì **Làm mới**.")
+    st.caption("👆 NV **nhập mã này** vào máy mình để chấm — **KHÔNG quét** (quét sẽ bắt đăng nhập). Đổi mỗi phút.")
     c1, c2 = st.columns(2)
-    if c1.button("🔄 Làm mới QR", use_container_width=True):
+    if c1.button("🔄 Làm mới", use_container_width=True):
         st.rerun()
-    if c2.button("🙈 Ẩn QR", use_container_width=True):
+    if c2.button("🙈 Ẩn mã", use_container_width=True):
         st.session_state["cc_show_qr"] = False
         st.rerun()
 
