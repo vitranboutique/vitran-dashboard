@@ -207,6 +207,53 @@ def save_check(emp, kind, selfie_b64=""):
         return False, f"❌ Lỗi lưu: {str(e)[:60]}. Thử lại.", hhmm
 
 
+def _valid_hhmm(s):
+    try:
+        h, m = str(s).strip().split(":")
+        return len(m) == 2 and 0 <= int(h) <= 23 and 0 <= int(m) <= 59
+    except Exception:
+        return False
+
+
+def set_check(emp, day_iso, in_hhmm=None, out_hhmm=None):
+    """Admin sửa/điền giờ Vào–Ra cho 1 ngày (khi NV quên chấm). Trống = xóa giờ đó. Trả (ok, msg)."""
+    import picklog, requests, json
+    in_v, out_v = (in_hhmm or "").strip(), (out_hhmm or "").strip()
+    if in_v and not _valid_hhmm(in_v):
+        return False, "❌ Giờ VÀO sai định dạng (phải HH:MM, ví dụ 09:30)."
+    if out_v and not _valid_hhmm(out_v):
+        return False, "❌ Giờ RA sai định dạng (phải HH:MM, ví dụ 18:30)."
+    if in_v and out_v and _m(out_v) <= _m(in_v):
+        return False, "❌ Giờ RA phải sau giờ VÀO."
+    y, mth = int(day_iso[:4]), int(day_iso[5:7])
+    fname = _cong_file(y, mth)
+    try:
+        d = picklog._read_gist_file(fname) or {"records": {}}
+        recs = d.setdefault("records", {}).setdefault(emp, {})
+        day = recs.setdefault(day_iso, {})
+        if in_v:
+            day["in"] = in_v
+        else:
+            day.pop("in", None); day.pop("in_selfie", None)
+        if out_v:
+            day["out"] = out_v
+        else:
+            day.pop("out", None); day.pop("out_selfie", None)
+        if not day:                       # ngày trống hẳn → bỏ bản ghi
+            recs.pop(day_iso, None)
+        gid = picklog._resolve_gid()
+        if not gid:
+            return False, "❌ Thiếu token picklog (chưa cấu hình kho lưu)."
+        body = {"files": {fname: {"content": json.dumps(d, ensure_ascii=False)}}}
+        r = requests.patch(f"{picklog._API}/gists/{gid}", headers=picklog._hdr(),
+                           data=json.dumps(body), timeout=30)
+        if r.status_code == 200:
+            return True, f"✅ Đã lưu ngày {day_iso}: Vào {in_v or '—'} · Ra {out_v or '—'}"
+        return False, f"❌ Lỗi lưu (mã {r.status_code}). Thử lại."
+    except Exception as e:
+        return False, f"❌ Lỗi: {str(e)[:60]}"
+
+
 def day_record(emp, day_iso=None):
     """Bản ghi 1 ngày của NV: {'in','out','in_selfie','out_selfie'} (rỗng nếu chưa chấm)."""
     import picklog
