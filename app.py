@@ -1886,12 +1886,12 @@ if _page == PAGE_RETURNS:
             })
         return out
 
-    def _build_full_note_editor_rows(rows):
+    def _build_full_note_editor_rows(rows, allow_final=False):
         out = []
         for row in rows:
             if row.get("Kết quả") != "Tìm thấy":
                 continue
-            if _note_has_final_result(row.get("Ghi chú hiện tại")):
+            if not allow_final and _note_has_final_result(row.get("Ghi chú hiện tại")):
                 continue
             out.append({
                 "Ghi": True,
@@ -2012,6 +2012,7 @@ if _page == PAGE_RETURNS:
             st.warning("Phải bấm 🔎 Dò trước cho danh sách mã hiện tại rồi mới ghi chú SAPO.")
         _full_note_plan, _full_note_valid = {}, True
         _full_note_mode = False
+        _allow_final = False
         if _preview_ready and st.session_state.get("return_note_preview_rows"):
             _lookup_rows = st.session_state["return_note_preview_rows"]
             _hidden_final_count = sum(
@@ -2026,17 +2027,31 @@ if _page == PAGE_RETURNS:
                 disabled=not _preview_ready,
                 key="return_note_full_note_mode",
             )
+            _allow_final = False
+            if _full_note_mode:
+                _allow_final = st.checkbox(
+                    "🔓 Cho ghi chú lại cả phiếu ĐÃ có kết quả cuối (thắng / thua / hết hạn…)",
+                    value=False,
+                    key="return_note_allow_final",
+                    help="Mặc định ẩn phiếu đã có kết quả để khỏi ghi đè nhầm. Bật để sửa / ghi chú lại các phiếu đó.",
+                )
             _notice = []
             if _hidden_final_count:
-                _notice.append(f"ẩn {_hidden_final_count} phiếu đã có kết quả cuối")
+                if _allow_final:
+                    _notice.append(f"cho ghi lại {_hidden_final_count} phiếu đã có kết quả cuối")
+                else:
+                    _notice.append(f"ẩn {_hidden_final_count} phiếu đã có kết quả cuối (tick 🔓 để ghi lại)")
             if _not_found_count:
                 _notice.append(f"{_not_found_count} mã không tìm thấy")
             _notice.append("tắt checkbox này nếu muốn dùng phần tạo ghi chú theo mẫu bên dưới")
             st.caption(" · ".join(_notice))
             if _full_note_mode:
-                _full_seed_rows = _build_full_note_editor_rows(_lookup_rows)
+                _full_seed_rows = _build_full_note_editor_rows(_lookup_rows, _allow_final)
                 if not _full_seed_rows:
-                    st.info("Không còn phiếu nào cần nhập ghi chú mới: tất cả đã có kết quả cuối hoặc không tìm thấy.")
+                    _msg = "Không còn phiếu nào cần nhập ghi chú mới: tất cả đã có kết quả cuối hoặc không tìm thấy."
+                    if _hidden_final_count and not _allow_final:
+                        _msg += " 👉 Tick ô 🔓 ở trên để ghi chú lại các phiếu đã có kết quả."
+                    st.info(_msg)
                 else:
                     st.caption("Dán nguyên ghi chú chuẩn vào cột `Ghi chú mới`. Mỗi dòng ghi đúng một hồ sơ trả, không gom chung.")
                     _full_editor_df = st.data_editor(
@@ -2044,7 +2059,7 @@ if _page == PAGE_RETURNS:
                         use_container_width=True,
                         hide_index=True,
                         height=min(520, 50 * (len(_full_seed_rows) + 1) + 40),
-                        key=f"return_note_full_editor_{_ascii_code(_codes_key)[:50]}",
+                        key=f"return_note_full_editor_{int(_allow_final)}_{_ascii_code(_codes_key)[:50]}",
                         disabled=["Ngày tạo", "Mã đơn", "Mã trả", "VĐ đi", "VĐ trả về", "Hồ sơ", "Ghi chú hiện tại", "_return_id", "_requires_shipper"],
                         column_config={
                             "Ghi": st.column_config.CheckboxColumn("Ghi", width="small"),
@@ -2181,7 +2196,7 @@ if _page == PAGE_RETURNS:
         _note_valid = _note_is_bulk_write_result(_note_text)
         _shipper_valid = (not _return_has_code) or bool(str(_shipper_return or "").strip())
         if _full_note_mode or not _preview_ready:
-            _replace_result = False
+            _replace_result = bool(_full_note_mode and _allow_final)   # full-note: theo ô 🔓 "cho ghi lại"
             _individual_mode = False
         else:
             _replace_result = st.checkbox("Cho phép đổi các ghi chú kết quả cũ sang ghi chú mới", value=False,
