@@ -1431,11 +1431,26 @@ if _page == PAGE_TTKH:
             c = st.columns([1.0, 1.8, .7, 1.7, 3.2, 4.2])
             c[0].markdown(str(r.get("Ngày tạo") or ""))
             code = str(r.get("Mã đơn") or "")
-            row_pending = _collect_ttkh_rows([{
-                "order_id": oid,
-                "name": code,
-                "note": r.get("Ghi chú hiện tại") or "",
-            }])
+            typed_ttkh = c[5].text_area(
+                "TTKH dán vào",
+                key=key,
+                height=96,
+                label_visibility="collapsed",
+                placeholder="Dán nguyên block TTKH từ sàn vào đây",
+            )
+            row_pending = []
+            if str(typed_ttkh or "").strip():
+                _info, _status = _parse_tiktok_ttkh(typed_ttkh)
+                _has_phone = bool(_info.get("phone")) and (bool(_phone_re.search(_info.get("phone", ""))) or "*" in _info.get("phone", ""))
+                row_pending = [{
+                    "order_id": oid,
+                    "code": code,
+                    "old_note": str(r.get("Ghi chú hiện tại") or "").strip(),
+                    "ttkh": typed_ttkh,
+                    "info": _info,
+                    "status": _status,
+                    "has_phone": _has_phone,
+                }]
             url = _ttkh_order_url(code, r.get("Gian hàng"))
             sapo_url = _sapo_order_url(oid)
             customer_url = _sapo_customer_url(r.get("_customer_id"))
@@ -1462,13 +1477,6 @@ if _page == PAGE_TTKH:
                 )
             else:
                 c[4].caption("Dán TTKH để app phân loại địa chỉ cũ/mới.")
-            c[5].text_area(
-                "TTKH dán vào",
-                key=key,
-                height=96,
-                label_visibility="collapsed",
-                placeholder="Dán nguyên block TTKH từ sàn vào đây",
-            )
             btn_cols = c[5].columns([1.1, 4])
             if btn_cols[0].button("💾 Ghi dòng này", key=f"ttkh_save_row_{oid}", use_container_width=True):
                 if row_pending:
