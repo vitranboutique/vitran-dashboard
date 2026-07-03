@@ -207,22 +207,37 @@ def save_check(emp, kind, selfie_b64=""):
         return False, f"❌ Lỗi lưu: {str(e)[:60]}. Thử lại.", hhmm
 
 
-def _valid_hhmm(s):
-    try:
-        h, m = str(s).strip().split(":")
-        return len(m) == 2 and 0 <= int(h) <= 23 and 0 <= int(m) <= 59
-    except Exception:
-        return False
+def _norm_hhmm(s):
+    """Chuẩn hóa giờ người gõ → 'HH:MM'. Nhận 9:30 · 9h30 · 9.30 · 9 30 · 930 · 0930 · 9 · 9h.
+    Trả '' nếu để trống (xóa), None nếu không hiểu."""
+    import re
+    s = str(s or "").strip().lower()
+    if not s:
+        return ""
+    m = re.match(r'^(\d{1,2})\s*[:hg.,\s]\s*(\d{1,2})$', s)   # có phân tách: 9:30 9h30 9.30 "9 30"
+    if m:
+        h, mm = int(m.group(1)), int(m.group(2))
+    elif re.match(r'^\d{1,2}[hg]?$', s):                      # chỉ giờ: 9 · 9h
+        h, mm = int(re.sub(r'\D', '', s)), 0
+    else:
+        dg = re.sub(r'\D', '', s)
+        if len(dg) == 3:                                      # 930  → 9:30
+            h, mm = int(dg[0]), int(dg[1:])
+        elif len(dg) == 4:                                    # 0930 → 09:30
+            h, mm = int(dg[:2]), int(dg[2:])
+        else:
+            return None
+    return f"{h:02d}:{mm:02d}" if (0 <= h <= 23 and 0 <= mm <= 59) else None
 
 
 def set_check(emp, day_iso, in_hhmm=None, out_hhmm=None):
     """Admin sửa/điền giờ Vào–Ra cho 1 ngày (khi NV quên chấm). Trống = xóa giờ đó. Trả (ok, msg)."""
     import picklog, requests, json
-    in_v, out_v = (in_hhmm or "").strip(), (out_hhmm or "").strip()
-    if in_v and not _valid_hhmm(in_v):
-        return False, "❌ Giờ VÀO sai định dạng (phải HH:MM, ví dụ 09:30)."
-    if out_v and not _valid_hhmm(out_v):
-        return False, "❌ Giờ RA sai định dạng (phải HH:MM, ví dụ 18:30)."
+    in_v, out_v = _norm_hhmm(in_hhmm), _norm_hhmm(out_hhmm)
+    if in_v is None:
+        return False, "❌ Giờ VÀO chưa hiểu — gõ kiểu: 9:30 · 9h30 · 0930."
+    if out_v is None:
+        return False, "❌ Giờ RA chưa hiểu — gõ kiểu: 18:30 · 18h30 · 1830."
     if in_v and out_v and _m(out_v) <= _m(in_v):
         return False, "❌ Giờ RA phải sau giờ VÀO."
     y, mth = int(day_iso[:4]), int(day_iso[5:7])

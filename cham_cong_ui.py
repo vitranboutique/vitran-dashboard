@@ -226,8 +226,9 @@ def render_admin():
             _salary_block(emp, y, mth, upto)
             st.divider()
     with tab_edit:
-        st.caption("Khi NV **quên chấm**: chọn NV + ngày rồi điền lại giờ (HH:MM, ví dụ 09:30). "
-                   "Để **trống = nghỉ/xóa** giờ đó. Lưu xong bảng lương tự tính lại.")
+        st.caption("Khi NV **quên chấm**: chọn NV + ngày rồi điền lại giờ. "
+                   "Gõ kiểu **9:30** hay **9h30** hay **0930** đều được · để **trống = nghỉ/xóa**. "
+                   "Lưu xong bảng lương tự tính lại.")
         e = st.selectbox("Nhân viên", list(CC.EMPLOYEES),
                          format_func=lambda k: CC.EMPLOYEES[k]["name"], key="edit_emp")
         d = st.date_input("Ngày", value=_vn_now().date(), key="edit_day")
@@ -235,10 +236,10 @@ def render_admin():
         cur = CC.day_record(e, day_iso)
         st.info(f"Ngày **{day_iso}** hiện tại — Vào **{cur.get('in') or '—'}** · Ra **{cur.get('out') or '—'}**")
         cc1, cc2 = st.columns(2)
-        vin = cc1.text_input("Giờ VÀO (HH:MM)", value=cur.get("in") or "",
-                             key=f"edit_in_{e}_{day_iso}", placeholder="09:30")
-        vout = cc2.text_input("Giờ RA (HH:MM)", value=cur.get("out") or "",
-                              key=f"edit_out_{e}_{day_iso}", placeholder="18:30")
+        vin = cc1.text_input("Giờ VÀO", value=cur.get("in") or "",
+                             key=f"edit_in_{e}_{day_iso}", placeholder="9:30 hoặc 9h30")
+        vout = cc2.text_input("Giờ RA", value=cur.get("out") or "",
+                              key=f"edit_out_{e}_{day_iso}", placeholder="18:30 hoặc 18h30")
         if st.button("💾 Lưu giờ công", type="primary", key="edit_save"):
             ok, msg = CC.set_check(e, day_iso, vin, vout)
             if ok:
@@ -258,14 +259,18 @@ def render_admin():
                 cA, cB, cC = st.columns([1.3, 1, 1])
                 cA.markdown(f"**{day}**")
                 cA.caption(f"Vào {v.get('in') or '—'} · Ra {v.get('out') or '—'}")
-                for col, k, lbl in ((cB, "in_selfie", "Vào"), (cC, "out_selfie", "Ra")):
+                for col, k, lbl, tt, clr in (
+                        (cB, "in_selfie", "🟢 VÀO", v.get("in"), "#16a34a"),
+                        (cC, "out_selfie", "🔴 RA", v.get("out"), "#dc2626")):
+                    col.markdown(f"<div style='text-align:center;font-weight:800;color:{clr}'>"
+                                 f"{lbl} {tt or '—'}</div>", unsafe_allow_html=True)
                     if v.get(k):
                         try:
-                            col.image(base64.b64decode(v[k]), caption=lbl, width=120)
+                            col.image(base64.b64decode(v[k]), width=140)
                         except Exception:
-                            col.caption(f"{lbl}: ảnh lỗi")
+                            col.caption("(ảnh lỗi)")
                     else:
-                        col.caption(f"{lbl}: — (không ảnh)")
+                        col.caption("(không có ảnh)")
                 st.divider()
     with tab3:
         st.caption("Mở link tương ứng trên ĐÚNG máy từng NV → menu trình duyệt **'Thêm vào màn hình chính'** → "
