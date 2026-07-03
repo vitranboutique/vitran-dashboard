@@ -2613,40 +2613,46 @@ if _page == PAGE_RETURNS:
                         "GHN": "#2563EB", "GHTK": "#16A34A", "Ninja Van": "#DB2777"}
                 _dvbg = {"J&T Express": "#FEF2F2", "SPX (Shopee)": "#FFF7ED", "Viettel Post": "#F5F3FF",
                          "GHN": "#EFF6FF", "GHTK": "#F0FDF4", "Ninja Van": "#FDF2F8"}
-                _h = ["<div style='overflow-x:auto'><table style='width:100%;border-collapse:collapse;font-size:.82rem'>",
-                      "<thead><tr style='background:#e2e8f0;text-align:left'>",
-                      "".join(f"<th style='padding:5px 8px{s}'>{c}</th>" for c, s in
-                              [("STT", ""), ("Shipper", ""), ("SĐT", ""), ("ĐVVC", ""),
-                               ("Mã trả", ""), ("Mã vận đơn", ""), ("Ngày", ""), ("KQ", ""), ("Tiền mất", ";text-align:right")]),
-                      "</tr></thead><tbody>"]
-                _prev, _sn = None, 0
+                _thead = "".join(f"<th{s}>{c}</th>" for c, s in
+                                 [("STT", ""), ("Shipper", ""), ("SĐT", ""), ("ĐVVC", ""), ("Mã trả", ""),
+                                  ("Mã VĐ", ""), ("Ngày", ""), ("KQ", ""), ("Tiền mất", " style='text-align:right'")])
+                _body, _prev, _sn = [], None, 0
                 for o in _ords:
                     _grp = (o["shipper"] != _prev)
                     _sn = 1 if _grp else _sn + 1          # STT reset theo từng shipper (biết mỗi người mấy đơn)
                     _clr = _dvc.get(o["dvvc"], "#94A3B8")
                     _bg = _dvbg.get(o["dvvc"], "#F8FAFC")
                     _sep = "border-top:2px solid #334155;" if (_grp and _prev is not None) else ""
-                    _wb = o.get("waybill") or "—"
-                    _rc = o.get("return_code") or "—"
-                    _lk = o.get("link") or ""
-                    _rcc = (f"<a href='{_lk}' target='_blank' style='color:#1d4ed8;font-weight:600'>{_rc}</a>"
-                            if (_lk and _rc != "—") else _rc)
+                    _rc = o.get("return_code") or ""
+                    _wb = o.get("waybill") or ""
+                    _rccell = (f"{_rc} <span class='cp' onclick=\"cpx('{_rc}',this)\">📋</span>") if _rc else "—"
+                    _wbcell = (f"{_wb} <span class='cp' onclick=\"cpx('{_wb}',this)\">📋</span>") if _wb else "—"
                     _kqc = "#DC2626" if o["kind"] == "Thua" else "#6B7280"
-                    _h.append(
+                    _body.append(
                         f"<tr style='{_sep}background:{_bg};border-left:4px solid {_clr}'>"
-                        f"<td style='padding:5px 8px;color:#64748b'>{_sn}</td>"
-                        f"<td style='padding:5px 8px;font-weight:700'>{o['shipper'] if _grp else ''}</td>"
-                        f"<td style='padding:5px 8px'>{(o['phone'] or '—') if _grp else ''}</td>"
-                        f"<td style='padding:5px 8px;color:{_clr};font-weight:600'>{o['dvvc'] if _grp else ''}</td>"
-                        f"<td style='padding:5px 8px'>{_rcc}</td>"
-                        f"<td style='padding:5px 8px'>{_wb}</td>"
-                        f"<td style='padding:5px 8px'>{o['date']}</td>"
-                        f"<td style='padding:5px 8px;color:{_kqc};font-weight:600'>{o['kind']}</td>"
-                        f"<td style='padding:5px 8px;text-align:right;font-weight:600'>{_fm(o['money'])}</td></tr>")
+                        f"<td style='color:#64748b'>{_sn}</td>"
+                        f"<td style='font-weight:700'>{o['shipper'] if _grp else ''}</td>"
+                        f"<td>{(o['phone'] or '—') if _grp else ''}</td>"
+                        f"<td style='color:{_clr};font-weight:600'>{o['dvvc'] if _grp else ''}</td>"
+                        f"<td>{_rccell}</td><td>{_wbcell}</td>"
+                        f"<td>{o['date']}</td>"
+                        f"<td style='color:{_kqc};font-weight:600'>{o['kind']}</td>"
+                        f"<td style='text-align:right;font-weight:600'>{_fm(o['money'])}</td></tr>")
                     _prev = o["shipper"]
-                _h.append("</tbody></table></div>")
-                st.markdown("".join(_h), unsafe_allow_html=True)
-            st.caption("🔗 Bấm **mã trả** → mở THẲNG đơn trên sàn (xem lịch sử trả hàng/KN) · Mã VĐ để copy · STT đếm theo TỪNG shipper · màu = ĐVVC · vạch = đổi shipper. "
+                _css = ("<style>body{margin:0;font-family:Tahoma,Arial,sans-serif;color:#1f2937}"
+                        "table{border-collapse:collapse;font-size:12.5px;width:100%}"
+                        "th,td{border:1px solid #e2e6ec;padding:5px 8px;text-align:left;white-space:nowrap}"
+                        "th{background:#e2e8f0;font-weight:700}"
+                        ".cp{cursor:pointer;opacity:.5;font-size:11px;user-select:none}.cp:hover{opacity:1}</style>")
+                _js = ("<script>function cpx(t,el){var a=document.createElement('textarea');a.value=t;"
+                       "a.style.position='fixed';a.style.opacity=0;document.body.appendChild(a);a.focus();a.select();"
+                       "try{document.execCommand('copy');}catch(e){}a.remove();"
+                       "if(el){var o=el.textContent;el.textContent='✅';setTimeout(function(){el.textContent=o;},900);}}</script>")
+                _doc = ("<!DOCTYPE html><html><head><meta charset='utf-8'>" + _css + "</head><body>"
+                        "<div style='overflow-x:auto'><table><thead><tr>" + _thead + "</tr></thead><tbody>"
+                        + "".join(_body) + "</tbody></table></div>" + _js + "</body></html>")
+                components.html(_doc, height=min(70 + len(_ords) * 33, 900), scrolling=True)
+            st.caption("📋 Bấm nút **📋** để copy mã trả / mã VĐ · STT đếm theo TỪNG shipper · màu = ĐVVC · vạch = đổi shipper. "
                        "⚠️ Shopee/SPX không ghi tên shipper → cột Shipper hiện ĐVVC; mã VĐ lấy từ 'VĐ về' trong ghi chú "
                        "nếu field trống; vài đơn Shopee sàn ẩn → '—'.")
             st.divider()
