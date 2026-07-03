@@ -142,20 +142,22 @@ def _qr_secret():
 
 
 def qr_token(now=None):
-    """Mã QR hiện tại (8 ký tự) — đổi mỗi 60s."""
+    """Mã hiện tại — 6 CHỮ SỐ (dễ gõ), đổi mỗi 60s."""
     w = int((now if now is not None else _time.time()) // QR_WINDOW)
-    return _hmac.new(_qr_secret().encode(), str(w).encode(), _hashlib.sha256).hexdigest()[:8]
+    h = _hmac.new(_qr_secret().encode(), str(w).encode(), _hashlib.sha256).hexdigest()
+    return f"{int(h[:8], 16) % 1000000:06d}"
 
 
 def verify_token(tok, now=None):
-    """True nếu mã khớp cửa sổ hiện tại HOẶC ngay trước (bù thời gian quét ~ tối đa 2')."""
+    """True nếu mã (6 số) khớp cửa sổ hiện tại HOẶC ngay trước (~2 phút)."""
     if not tok:
         return False
+    tok = str(tok).strip()
     n = now if now is not None else _time.time()
     base = int(n // QR_WINDOW)
     for w in (base, base - 1):
-        good = _hmac.new(_qr_secret().encode(), str(w).encode(), _hashlib.sha256).hexdigest()[:8]
-        if _hmac.compare_digest(str(tok), good):
+        h = _hmac.new(_qr_secret().encode(), str(w).encode(), _hashlib.sha256).hexdigest()
+        if _hmac.compare_digest(tok, f"{int(h[:8], 16) % 1000000:06d}"):
             return True
     return False
 
@@ -181,19 +183,28 @@ def _cong_file(y, mth):
 
 def save_check(emp, kind, selfie_b64=""):
     """Ghi 1 lần chấm (kind='in'|'out') với GIỜ HIỆN TẠI + selfie vào Gist. Trả (ok, msg, hhmm)."""
-    import picklog
+    import picklog, requests, json
     now = _vn_now()
-    fname = _cong_file(now.year, now.month)
-    d = picklog._read_gist_file(fname) or {"records": {}}
-    recs = d.setdefault("records", {})
-    day = recs.setdefault(emp, {}).setdefault(now.strftime("%Y-%m-%d"), {})
     hhmm = now.strftime("%H:%M")
-    day[kind] = hhmm
-    if selfie_b64:
-        day[kind + "_selfie"] = selfie_b64
-    ok = picklog._write_gist_file(fname, d)
-    lbl = "VÀO ca" if kind == "in" else "TAN ca"
-    return ok, (f"✅ Đã chấm {lbl} lúc {hhmm}" if ok else "❌ Lỗi lưu, thử lại"), hhmm
+    fname = _cong_file(now.year, now.month)
+    try:
+        d = picklog._read_gist_file(fname) or {"records": {}}
+        day = d.setdefault("records", {}).setdefault(emp, {}).setdefault(now.strftime("%Y-%m-%d"), {})
+        day[kind] = hhmm
+        if selfie_b64:
+            day[kind + "_selfie"] = selfie_b64
+        gid = picklog._resolve_gid()
+        if not gid:
+            return False, "❌ Chưa cấu hình kho lưu (thiếu token picklog).", hhmm
+        body = {"files": {fname: {"content": json.dumps(d, ensure_ascii=False)}}}
+        r = requests.patch(f"{picklog._API}/gists/{gid}", headers=picklog._hdr(),
+                           data=json.dumps(body), timeout=30)
+        if r.status_code == 200:
+            lbl = "VÀO ca" if kind == "in" else "TAN ca"
+            return True, f"✅ Đã chấm {lbl} lúc {hhmm}", hhmm
+        return False, f"❌ Lỗi lưu (mã {r.status_code}). Thử lại.", hhmm
+    except Exception as e:
+        return False, f"❌ Lỗi lưu: {str(e)[:60]}. Thử lại.", hhmm
 
 
 def day_record(emp, day_iso=None):

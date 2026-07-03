@@ -32,10 +32,7 @@ def _thumb_b64(uploaded, px=240, q=55):
         im.save(buf, format="JPEG", quality=q)
         return base64.b64encode(buf.getvalue()).decode()
     except Exception:
-        try:
-            return base64.b64encode(uploaded.getvalue()).decode()
-        except Exception:
-            return ""
+        return ""    # không có PIL → bỏ selfie (tránh ảnh gốc quá to gây lỗi lưu Gist)
 
 
 def _qr_png_b64(text):
