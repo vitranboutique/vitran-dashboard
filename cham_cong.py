@@ -104,7 +104,8 @@ ACCOUNTS = {
     "mun.inventory@gmail.com": {"emp": "kho",  "role": "nv"},
     "official024@gmail.com":   {"emp": "cskh", "role": "nv"},
     "vitran2291@gmail.com":    {"emp": None,   "role": "admin"},
-    "073902291":               {"emp": None,   "role": "shop"},   # máy shop: chỉ thấy trang QR/mã
+    "0703902291":              {"emp": None,   "role": "shop"},   # máy shop: chỉ thấy trang QR/mã
+    "073902291":               {"emp": None,   "role": "shop"},   # (phòng hờ số cũ)
 }
 
 
