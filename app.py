@@ -2381,7 +2381,7 @@ if _page == PAGE_RETURNS:
                     results.append({"Mã đơn": code, "Mã trả": "", "Link hồ sơ trả": "", "Kết quả": "Không tìm thấy"})
                 st.session_state["return_note_write_rows"] = results
                 st.cache_data.clear()
-                st.success(f"Đã xử lý {len(results)} dòng. Số phiếu ghi thành công: {sum(1 for x in results if x['Kết quả'] == 'Đã ghi và xác nhận')}.")
+                st.toast(f"Đã xử lý {len(results)} dòng — xem bảng 📋 Kết quả ghi SAPO.", icon="✅")
             except Exception as e:
                 st.error(f"Ghi SAPO lỗi: {e}")
         if (not _full_note_mode) and _preview_ready and st.session_state.get("return_note_preview_rows"):
@@ -2399,12 +2399,49 @@ if _page == PAGE_RETURNS:
                                  "Đối chiếu": st.column_config.TextColumn("Đối chiếu", width="medium"),
                              })
         if st.session_state.get("return_note_write_rows"):
-            _write_df = pd.DataFrame(st.session_state["return_note_write_rows"])
-            if "Link hồ sơ trả" in _write_df.columns:
-                _write_df = _write_df.rename(columns={"Link hồ sơ trả": "Hồ sơ"})
+            _res = st.session_state["return_note_write_rows"]
+
+            def _res_icon(k):
+                k = str(k or "")
+                if k == "Đã ghi và xác nhận":
+                    return "✅"
+                if k.startswith("Lỗi"):
+                    return "❌"
+                if k == "Không tìm thấy":
+                    return "🔍"
+                return "⏭️"
+            _n_ok = sum(1 for x in _res if x.get("Kết quả") == "Đã ghi và xác nhận")
+            _n_err = sum(1 for x in _res if str(x.get("Kết quả") or "").startswith("Lỗi"))
+            _n_nf = sum(1 for x in _res if x.get("Kết quả") == "Không tìm thấy")
+            _n_skip = len(_res) - _n_ok - _n_err - _n_nf
+            st.markdown("### 📋 Kết quả ghi SAPO")
+            _k1, _k2, _k3, _k4 = st.columns(4)
+            _k1.metric("✅ Đã ghi", _n_ok)
+            _k2.metric("⏭️ Bỏ qua", _n_skip)
+            _k3.metric("🔍 Không thấy", _n_nf)
+            _k4.metric("❌ Lỗi", _n_err)
+            if _n_ok:
+                st.success(f"✅ Đã ghi thành công **{_n_ok}** phiếu vào SAPO.")
+            if _n_skip:
+                st.info(f"⏭️ Bỏ qua **{_n_skip}** phiếu (đã khớp / đã có kết quả mà chưa tick 🔓 / chưa tick Ghi).")
+            if _n_nf:
+                st.warning(f"🔍 **{_n_nf}** mã không tìm thấy (thử tăng 'Số trang dò' hoặc kiểm tra lại mã).")
+            if _n_err:
+                st.error(f"❌ **{_n_err}** phiếu ghi LỖI — xem cột Kết quả bên dưới.")
+            _write_df = pd.DataFrame([{
+                "": _res_icon(x.get("Kết quả")),
+                "Mã đơn": x.get("Mã đơn", ""),
+                "Mã trả": x.get("Mã trả", ""),
+                "Kết quả": x.get("Kết quả", ""),
+                "Hồ sơ": x.get("Link hồ sơ trả", "") or x.get("Hồ sơ", ""),
+            } for x in _res])
             st.dataframe(_write_df,
                          use_container_width=True, hide_index=True,
-                         column_config={"Hồ sơ": st.column_config.LinkColumn("Mở", width="small", display_text="Mở")})
+                         column_config={
+                             "": st.column_config.TextColumn("", width="small"),
+                             "Kết quả": st.column_config.TextColumn("Kết quả", width="large"),
+                             "Hồ sơ": st.column_config.LinkColumn("Mở", width="small", display_text="Mở"),
+                         })
 
     try:
         _rip = load_returns_inprogress()
