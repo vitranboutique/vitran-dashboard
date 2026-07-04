@@ -68,7 +68,8 @@ def _records_from(vids, typ):
                     "date": str(_vnd(v.get("createdAt")) or ""),
                     "time": _vn_time(v.get("createdAt")),
                     "dur": int(dur) if isinstance(dur, (int, float)) else None,
-                    "tag_id": v.get("tagId")})
+                    "tag_id": v.get("tagId"),
+                    "staff": ((v.get("user") or {}).get("firstName") or "").strip()})
     return out
 
 

@@ -213,7 +213,7 @@ def merge_dohana_videos(new_list) -> list:
         if old is None:
             rec = {"code": c, "type": ty, "status": r.get("status"), "date": r.get("date"),
                    "time": r.get("time"), "dur": r.get("dur"), "tag_id": r.get("tag_id"),
-                   "first_seen": today}
+                   "staff": r.get("staff"), "first_seen": today}
             cur.append(rec)
             idx[(c, ty)] = rec
             changed = True
