@@ -1688,9 +1688,10 @@ if _page == PAGE_DAILY:
         st.warning("⚠️ Dohana tạm không phản hồi — đang dùng **video đã lưu trong kho** (có thể thiếu clip "
                    "quay trong vài phút gần nhất). Bấm **🔄 Tải lại số liệu** để thử lấy trực tiếp lại.")
     with st.expander("🔌 Kiểm tra kết nối Dohana (bấm khi video không lên)"):
-        st.caption("Gửi **1 request** thử tới Dohana để biết lý do THẬT: key sai / quá tốc độ / mạng / hay chỉ cần reboot.")
-        if st.button("Gửi thử 1 request tới Dohana", key="dohana_ping_btn"):
-            import requests as _rq
+        st.caption("Bấm để dò Dohana theo TỪNG loại (inbound/package) + xem loại THẬT Dohana trả về.")
+        if st.button("Gửi thử tới Dohana", key="dohana_ping_btn"):
+            import requests as _rq, time as _tm
+            from collections import Counter as _Ct
             try:
                 _dk = st.secrets["dohana"]["x_api_key"]
             except Exception:
@@ -1698,26 +1699,36 @@ if _page == PAGE_DAILY:
             if not _dk:
                 st.error("❌ Chưa có key Dohana trong Secrets `[dohana].x_api_key`.")
             else:
-                st.caption(f"Đang thử với key …{str(_dk)[-6:]}")
-                try:
-                    _pr = _rq.get("https://backend.dhn.io.vn/dpm/v1/partner/video/search",
-                                  params={"page": 0, "limit": 1, "type": "package"},
-                                  headers={"x-api-key": _dk}, timeout=20)
-                    _sc = _pr.status_code
-                    if _sc == 200:
-                        _nn = len((_pr.json() or {}).get("data") or [])
-                        st.success(f"✅ Kết nối OK (200) — Dohana trả về {_nn} video mẫu → app LẤY ĐƯỢC. "
-                                   "Báo cáo vẫn trống = đang chạy code cũ (**Reboot**) hoặc cache (**🔄 Tải lại số liệu**).")
-                    elif _sc in (401, 403):
-                        st.error(f"❌ KEY SAI / HẾT HẠN (mã {_sc}). Vào Dohana → Cài đặt → API Keys → Regenerate → "
-                                 "dán key mới vào Streamlit Secrets `[dohana].x_api_key`.")
-                    elif _sc == 429:
-                        st.warning("⚠️ QUÁ TỐC ĐỘ (429). Đợi ~1 phút rồi bấm lại. Nếu LÚC NÀO CŨNG 429 → key bị "
-                                   "phạt nặng / xài chung → nhờ Dohana cấp key riêng hoặc nới giới hạn.")
-                    else:
-                        st.warning(f"⚠️ Dohana trả mã {_sc}: {_pr.text[:200]}")
-                except Exception as _pe:
-                    st.error(f"❌ Không gọi được Dohana (mạng/timeout): {_pe}")
+                st.caption(f"Key …{str(_dk)[-6:]}")
+                _rows, _all_types = [], None
+                for _ty in ("inbound", "package", None):
+                    _params = {"page": 0, "limit": 30}
+                    if _ty:
+                        _params["type"] = _ty
+                    try:
+                        _tm.sleep(0.2)
+                        _pr = _rq.get("https://backend.dhn.io.vn/dpm/v1/partner/video/search",
+                                      params=_params, headers={"x-api-key": _dk}, timeout=20)
+                        if _pr.status_code == 200:
+                            _data = (_pr.json() or {}).get("data") or []
+                            _codes = ", ".join(str(v.get("orderCode") or "?") for v in _data[:3])
+                            _dts = ", ".join(sorted({str(v.get("createdAt") or "")[:10] for v in _data}, reverse=True)[:3])
+                            _rows.append({"Lọc type": _ty or "(không lọc)", "HTTP": 200,
+                                          "Số video": len(_data), "Mã mẫu": _codes, "Ngày mới": _dts})
+                            if _ty is None:
+                                _all_types = _Ct(str(v.get("type")) for v in _data)
+                        else:
+                            _rows.append({"Lọc type": _ty or "(không lọc)", "HTTP": _pr.status_code,
+                                          "Số video": "—", "Mã mẫu": _pr.text[:50], "Ngày mới": ""})
+                    except Exception as _pe:
+                        _rows.append({"Lọc type": _ty or "(không lọc)", "HTTP": "lỗi",
+                                      "Số video": "—", "Mã mẫu": str(_pe)[:50], "Ngày mới": ""})
+                st.dataframe(pd.DataFrame(_rows), hide_index=True, use_container_width=True)
+                if _all_types:
+                    st.info("Loại `type` Dohana đang trả (không lọc): " +
+                            " · ".join(f"**{_k}** ×{_v}" for _k, _v in _all_types.items()))
+                st.caption("📸 Chụp bảng + dòng xanh gửi Claude. inbound=0 mà package/không-lọc>0 → clip khui hàng "
+                           "nằm ở loại KHÁC → sửa cách lấy. Toàn 401/429 → key/tốc độ.")
     _enrich_daily(_rep, _dvr, _inb)   # gắn clip khui hàng + đối chiếu video đóng gói
     if picklog.configured() and isinstance(_rep.get("funnel"), dict):
         _pl = picklog.read_today()
