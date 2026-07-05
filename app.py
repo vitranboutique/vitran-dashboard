@@ -704,7 +704,7 @@ def _today_iso_vn():
     return (datetime.now(timezone.utc) + timedelta(hours=7)).date().isoformat()
 
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)   # 1 GIỜ: gọi Dohana thật thưa để khỏi bị phạt 429
 def load_dohana():
     live = dohana.today_package_videos()
     if live is not None:
@@ -712,7 +712,7 @@ def load_dohana():
     return _dohana_pkg_from_store(_today_iso_vn()) if picklog.configured() else None
 
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)   # 1 GIỜ: gọi Dohana thật thưa để khỏi bị phạt 429
 def load_dohana_inbound():
     live = dohana.inbound_videos()
     if live is not None:
@@ -720,7 +720,7 @@ def load_dohana_inbound():
     return _dohana_inb_from_store(_today_iso_vn()) if picklog.configured() else None
 
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)
 def load_dohana_videos():
     """Metadata MỌI video Dohana (trạng thái·ngày·giờ·thời lượng·tag) — TÍCH LUỸ vào Gist để LƯU
     CẢ NĂM (Dohana chỉ giữ 30 ngày; kho Gist là bản lưu bền)."""

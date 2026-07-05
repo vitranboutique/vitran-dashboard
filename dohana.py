@@ -98,8 +98,8 @@ def _tag_name(tag_id):
 _LAST_REQ = [0.0]   # mốc request Dohana gần nhất (dùng chung mọi call) — giữ nhịp ≤ 10 req/s
 
 
-def _throttle(min_gap=0.14):
-    """Giãn nhịp gọi Dohana để KHÔNG vượt 10 request/giây (giới hạn Dohana xác nhận) → tránh 429."""
+def _throttle(min_gap=0.34):
+    """Giãn nhịp gọi Dohana (~3 req/s, dư an toàn dưới 10/s) → tránh bị phạt 429 tích luỹ."""
     dt = time.monotonic() - _LAST_REQ[0]
     if dt < min_gap:
         time.sleep(min_gap - dt)
