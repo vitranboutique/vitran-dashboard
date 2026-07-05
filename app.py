@@ -2544,380 +2544,383 @@ if _page == PAGE_RETURNS:
                                   for d in _khong_can_kn_list)
         _oc = dict(_oc)
         _oc["khong_kn"] = {"n": len(_khong_can_kn_list), "money": _khong_can_kn_money}
-        st.markdown("##### 🧾 Kết quả khiếu nại (đang xử lý năm nay)")
-        _mo = st.columns(5)
-        _ocard(_mo[0], "🟢 Thắng (thu hồi)", "thang")
-        _ocard(_mo[1], "🔴 Thua (mất tiền)", "thua")
-        _ocard(_mo[2], "⛔ Không cần KN (đã xử lý)", "khong_kn")
-        _ocard(_mo[3], "🚨 Cần KN (tự tính)", "can_kn")
-        _ocard(_mo[4], "⚫ Hết hạn (mất tiền)", "het_han")
-        _mo[2].markdown(f"[👉 Xem {len(_khong_can_kn_list)} đơn](#don-khong-can-kn)")
-        _mo[3].markdown(f"[👉 Lấy {len(_ckn_list)} đơn KN](#don-can-kn)")
-        _total_returns = int(_rip.get("total_returns") or _rip.get("total") or len(_rip.get("detail") or []))
+        _tabs = st.tabs(["📊 Đang xử lý", "📈 Thống kê", "🎥 Kho video"])
+        with _tabs[1]:
+            st.markdown("##### 🧾 Kết quả khiếu nại (đang xử lý năm nay)")
+            _mo = st.columns(5)
+            _ocard(_mo[0], "🟢 Thắng (thu hồi)", "thang")
+            _ocard(_mo[1], "🔴 Thua (mất tiền)", "thua")
+            _ocard(_mo[2], "⛔ Không cần KN (đã xử lý)", "khong_kn")
+            _ocard(_mo[3], "🚨 Cần KN (tự tính)", "can_kn")
+            _ocard(_mo[4], "⚫ Hết hạn (mất tiền)", "het_han")
+            _mo[2].markdown(f"[👉 Xem {len(_khong_can_kn_list)} đơn](#don-khong-can-kn)")
+            _mo[3].markdown(f"[👉 Lấy {len(_ckn_list)} đơn KN](#don-can-kn)")
+            _total_returns = int(_rip.get("total_returns") or _rip.get("total") or len(_rip.get("detail") or []))
 
-        def _note_amount(note, fallback=0):
-            import re
-            m = re.search(r"(\d[\d.]*)\s*đ", str(note or ""))
-            if not m:
-                return int(fallback or 0)
-            try:
-                return int(m.group(1).replace(".", ""))
-            except Exception:
-                return int(fallback or 0)
+            def _note_amount(note, fallback=0):
+                import re
+                m = re.search(r"(\d[\d.]*)\s*đ", str(note or ""))
+                if not m:
+                    return int(fallback or 0)
+                try:
+                    return int(m.group(1).replace(".", ""))
+                except Exception:
+                    return int(fallback or 0)
 
-        def _stock_group(d):
-            sc = str(d.get("stock_code") or "").lower()
-            if sc in ("stocked", "restocked"):
-                return "Đã nhập kho"
-            if "partial" in sc or "partially" in sc:
-                return "Nhập kho 1 phần"
-            if sc in ("unstocked", "unrestock", "not_stocked", "not_restocked", "no_stock", "no_restock"):
-                return "Không nhập kho"
-            return "Chưa nhập kho"
+            def _stock_group(d):
+                sc = str(d.get("stock_code") or "").lower()
+                if sc in ("stocked", "restocked"):
+                    return "Đã nhập kho"
+                if "partial" in sc or "partially" in sc:
+                    return "Nhập kho 1 phần"
+                if sc in ("unstocked", "unrestock", "not_stocked", "not_restocked", "no_stock", "no_restock"):
+                    return "Không nhập kho"
+                return "Chưa nhập kho"
 
-        def _note_compact(d):
-            pre = _ascii_code(str(d.get("note") or "").split("|")[0])
-            return "".join(ch for ch in pre if ch.isalnum())
+            def _note_compact(d):
+                pre = _ascii_code(str(d.get("note") or "").split("|")[0])
+                return "".join(ch for ch in pre if ch.isalnum())
 
-        def _return_outcome(d):
-            if _stock_group(d) == "Đã nhập kho":
-                return "Đã nhập kho"
-            compact = _note_compact(d)
-            if "THANG" in compact:
-                return "Thắng"
-            if "THUA" in compact:
-                return "Thua"
-            if "HETHAN" in compact:
-                return "Hết hạn"
-            if "KHONGCANKN" in compact or "KHONGCANKHIEUNAI" in compact:
-                return "Không cần KN"
-            if "DANGKN" in compact or "DANGKHANGNGHI" in compact or "DANGXULY" in compact:
-                return "Đang KN"
-            if d.get("need_kn"):
-                return "Cần KN"
-            return "Chưa chốt"
+            def _return_outcome(d):
+                if _stock_group(d) == "Đã nhập kho":
+                    return "Đã nhập kho"
+                compact = _note_compact(d)
+                if "THANG" in compact:
+                    return "Thắng"
+                if "THUA" in compact:
+                    return "Thua"
+                if "HETHAN" in compact:
+                    return "Hết hạn"
+                if "KHONGCANKN" in compact or "KHONGCANKHIEUNAI" in compact:
+                    return "Không cần KN"
+                if "DANGKN" in compact or "DANGKHANGNGHI" in compact or "DANGXULY" in compact:
+                    return "Đang KN"
+                if d.get("need_kn"):
+                    return "Cần KN"
+                return "Chưa chốt"
 
-        _all_returns_detail = _rip.get("all_detail") or _rip.get("detail") or []
-        _stock_order = ["Đã nhập kho", "Chưa nhập kho", "Nhập kho 1 phần", "Không nhập kho"]
-        _stock_colors = {
-            "Đã nhập kho": "#1D9E75",
-            "Chưa nhập kho": "#F59E0B",
-            "Nhập kho 1 phần": "#378ADD",
-            "Không nhập kho": "#E24B4A",
-        }
-        _stock_rows = []
-        for _label in _stock_order:
-            _n = sum(1 for d in _all_returns_detail if _stock_group(d) == _label)
-            _stock_rows.append({
-                "Nhóm": _label,
-                "Số đơn": _n,
-                "Tỉ lệ": (_n / _total_returns * 100) if _total_returns else 0,
-                "Màu": _stock_colors[_label],
-            })
-        _stock_df = pd.DataFrame(_stock_rows)
-        st.markdown("##### 📈 Cơ cấu tổng đơn trả")
-        _summary_cols = st.columns(5)
-        _summary_cols[0].metric("Tổng đơn trả (tab Tất cả)", f"{_total_returns:,} đơn")
-        _summary_cols[0].caption("Lấy toàn bộ phiếu trả năm nay trong tab Tất cả, loại phiếu hủy/gạch ngang và loại năm 2025.")
-        if not _stock_df.empty:
-            for _idx, _row in enumerate(_stock_rows, start=1):
-                _summary_cols[_idx].metric(_row["Nhóm"], f"{_row['Số đơn']:,} đơn")
-                _summary_cols[_idx].caption(f"{_row['Tỉ lệ']:.1f}% tổng đơn trả")
+            _all_returns_detail = _rip.get("all_detail") or _rip.get("detail") or []
+            _stock_order = ["Đã nhập kho", "Chưa nhập kho", "Nhập kho 1 phần", "Không nhập kho"]
+            _stock_colors = {
+                "Đã nhập kho": "#1D9E75",
+                "Chưa nhập kho": "#F59E0B",
+                "Nhập kho 1 phần": "#378ADD",
+                "Không nhập kho": "#E24B4A",
+            }
+            _stock_rows = []
+            for _label in _stock_order:
+                _n = sum(1 for d in _all_returns_detail if _stock_group(d) == _label)
+                _stock_rows.append({
+                    "Nhóm": _label,
+                    "Số đơn": _n,
+                    "Tỉ lệ": (_n / _total_returns * 100) if _total_returns else 0,
+                    "Màu": _stock_colors[_label],
+                })
+            _stock_df = pd.DataFrame(_stock_rows)
+            st.markdown("##### 📈 Cơ cấu tổng đơn trả")
+            _summary_cols = st.columns(5)
+            _summary_cols[0].metric("Tổng đơn trả (tab Tất cả)", f"{_total_returns:,} đơn")
+            _summary_cols[0].caption("Lấy toàn bộ phiếu trả năm nay trong tab Tất cả, loại phiếu hủy/gạch ngang và loại năm 2025.")
+            if not _stock_df.empty:
+                for _idx, _row in enumerate(_stock_rows, start=1):
+                    _summary_cols[_idx].metric(_row["Nhóm"], f"{_row['Số đơn']:,} đơn")
+                    _summary_cols[_idx].caption(f"{_row['Tỉ lệ']:.1f}% tổng đơn trả")
 
-        _month_map = {}
-        for _d in _all_returns_detail:
-            _raw = str(_d.get("created_on") or "")
-            try:
-                _dt = datetime.fromisoformat(_raw.replace("Z", "").split(".")[0]) + timedelta(hours=7)
-            except Exception:
-                continue
-            _key = _dt.strftime("%Y-%m")
-            _label = _dt.strftime("%m/%Y")
-            _mrow = _month_map.setdefault(_key, {
-                "Tháng": _label,
-                "Tổng đơn trả": 0,
-                "Đã nhập kho": 0,
-                "Chưa nhận/chưa nhập đủ": 0,
-                "Chưa nhập kho": 0,
-                "Nhập kho 1 phần": 0,
-                "Không nhập kho": 0,
-                "Thắng": 0,
-                "Thua": 0,
-                "Hết hạn": 0,
-                "Không cần KN": 0,
-                "Cần KN": 0,
-                "Đang KN": 0,
-                "Chưa chốt": 0,
-                "Mất tiền": 0,
-            })
-            _mrow["Tổng đơn trả"] += 1
-            _sg = _stock_group(_d)
-            _mrow[_sg] += 1
-            if _sg != "Đã nhập kho":
-                _mrow["Chưa nhận/chưa nhập đủ"] += 1
-                _outcome = _return_outcome(_d)
-                if _outcome in _mrow:
-                    _mrow[_outcome] += 1
-                if _outcome in ("Thua", "Hết hạn"):
-                    _mrow["Mất tiền"] += _note_amount(_d.get("note"), _d.get("money") or 0)
-        _month_rows = [_month_map[k] for k in sorted(_month_map)]
-        if _month_rows:
-            st.markdown("##### 📅 Thống kê đơn trả theo tháng")
-            _month_df = pd.DataFrame(_month_rows)
-            _month_show_df = _month_df.copy()
-            _month_show_df["Mất tiền"] = _month_show_df["Mất tiền"].map(_vnd)
-            st.dataframe(
-                _month_show_df,
-                use_container_width=True,
-                hide_index=True,
-            )
-            _volume_fig = go.Figure()
-            _total_pct = ["100%" for _ in _month_df["Tổng đơn trả"]]
-            _received_pct = [
-                f"{(v / t * 100):.1f}%" if t else ""
-                for v, t in zip(_month_df["Đã nhập kho"], _month_df["Tổng đơn trả"])
-            ]
-            _open_pct = [
-                f"{(v / t * 100):.1f}%" if t else ""
-                for v, t in zip(_month_df["Chưa nhận/chưa nhập đủ"], _month_df["Tổng đơn trả"])
-            ]
-            _volume_fig.add_bar(
-                x=_month_df["Tháng"], y=_month_df["Tổng đơn trả"], name="Tổng đơn trả",
-                marker_color="#94A3B8", text=_total_pct, textposition="outside",
-            )
-            _volume_fig.add_bar(
-                x=_month_df["Tháng"], y=_month_df["Đã nhập kho"], name="Đã nhận/đã nhập kho",
-                marker_color="#1D9E75", text=_received_pct, textposition="outside",
-            )
-            _volume_fig.add_bar(
-                x=_month_df["Tháng"], y=_month_df["Chưa nhận/chưa nhập đủ"], name="Chưa nhận/chưa nhập đủ",
-                marker_color="#F59E0B", text=_open_pct, textposition="outside",
-            )
-            _volume_fig.update_layout(
-                title="Sản lượng đơn trả theo tháng",
-                height=340,
-                barmode="group",
-                margin=dict(t=54, b=20, l=10, r=10),
-                yaxis=dict(title="Số đơn"),
-                legend=dict(orientation="h", y=1.12, x=0),
-            )
-            st.plotly_chart(_volume_fig, width="stretch")
-
-            _outcome_fig = go.Figure()
-            _outcome_fig.add_bar(x=_month_df["Tháng"], y=_month_df["Thắng"], name="Thắng", marker_color="#1D9E75")
-            _outcome_fig.add_bar(x=_month_df["Tháng"], y=_month_df["Thua"], name="Thua", marker_color="#E24B4A")
-            _outcome_fig.add_bar(x=_month_df["Tháng"], y=_month_df["Hết hạn"], name="Hết hạn", marker_color="#6B7280")
-            _outcome_fig.add_bar(x=_month_df["Tháng"], y=_month_df["Không cần KN"], name="Không cần KN", marker_color="#534AB7")
-            _outcome_fig.add_bar(x=_month_df["Tháng"], y=_month_df["Cần KN"], name="Cần KN", marker_color="#F59E0B")
-            _outcome_fig.add_bar(x=_month_df["Tháng"], y=_month_df["Đang KN"], name="Đang KN", marker_color="#378ADD")
-            _outcome_fig.add_bar(x=_month_df["Tháng"], y=_month_df["Chưa chốt"], name="Chưa chốt", marker_color="#CBD5E1")
-            _outcome_fig.add_scatter(
-                x=_month_df["Tháng"], y=_month_df["Mất tiền"], name="Mất tiền",
-                mode="lines+markers+text",
-                text=[_vnd(v) if v else "" for v in _month_df["Mất tiền"]],
-                textposition="top center",
-                yaxis="y2",
-                line=dict(color="#7F1D1D", width=3),
-                marker=dict(size=8),
-            )
-            _outcome_fig.update_layout(
-                title="Kết quả KN và tiền mất theo tháng",
-                height=390,
-                barmode="stack",
-                margin=dict(t=42, b=20, l=10, r=10),
-                yaxis=dict(title="Số đơn", rangemode="tozero"),
-                yaxis2=dict(title="Mất tiền", overlaying="y", side="right", showgrid=False, rangemode="tozero"),
-                legend=dict(orientation="h", y=1.14, x=0),
-            )
-            st.plotly_chart(_outcome_fig, width="stretch")
-
-            # Drilldown filter is rendered near the top of the page via _return_top_drill_slot.
-        # 🚨 THỐNG KÊ MẤT HÀNG theo ĐVVC + Shipper (Thua + Hết hạn — CHỈ hàng chưa về kho, khớp card)
-        _ls = _rip.get("lost_stats") or {}
-        _lt = _ls.get("total") or {}
-        if _lt.get("n"):
-            def _fm(v):
-                return f"{int(v or 0):,}".replace(",", ".") + "đ"
-            st.markdown("##### 🚨 Mất hàng theo ĐVVC / Shipper (Thua + Hết hạn)")
-            st.markdown(f"**{_lt['n']} đơn** hàng CHƯA về kho · thất thoát **{_fm(_lt['money'])}** "
-                        f"_(năm nay — khớp Thua+Hết hạn ở card trên)_")
-            st.caption("🚚 Tổng theo ĐVVC")
-            _dvr = _ls.get("by_dvvc") or []
-            st.dataframe(pd.DataFrame([{"ĐVVC": r["dvvc"], "Đơn": r["n"],
-                "Thua/Hết": f"{r['thua']}/{r['het']}", "Tiền mất": _fm(r["money"])}
-                for r in _dvr]), hide_index=True, width="stretch")
-            st.caption("🧍 Từng shipper & các đơn làm mất (gộp nhóm theo shipper; trong nhóm: mới → cũ)")
-            _ords = _ls.get("orders") or []
-            if _ords:
-                _dvc = {"J&T Express": "#DC2626", "SPX (Shopee)": "#F97316", "Viettel Post": "#7C3AED",
-                        "GHN": "#2563EB", "GHTK": "#16A34A", "Ninja Van": "#DB2777"}
-                _dvbg = {"J&T Express": "#FEF2F2", "SPX (Shopee)": "#FFF7ED", "Viettel Post": "#F5F3FF",
-                         "GHN": "#EFF6FF", "GHTK": "#F0FDF4", "Ninja Van": "#FDF2F8"}
-                _thead = "".join(f"<th{s}>{c}</th>" for c, s in
-                                 [("STT", ""), ("Shipper", ""), ("SĐT", ""), ("ĐVVC", ""), ("Mã trả", ""),
-                                  ("Mã VĐ", ""), ("Ngày", ""), ("KQ", ""), ("Tiền mất", " style='text-align:right'")])
-                _body, _prev, _sn = [], None, 0
-                for o in _ords:
-                    _grp = (o["shipper"] != _prev)
-                    _sn = 1 if _grp else _sn + 1          # STT reset theo từng shipper (biết mỗi người mấy đơn)
-                    _clr = _dvc.get(o["dvvc"], "#94A3B8")
-                    _bg = _dvbg.get(o["dvvc"], "#F8FAFC")
-                    _sep = "border-top:2px solid #334155;" if (_grp and _prev is not None) else ""
-                    _rc = o.get("return_code") or ""
-                    _wb = o.get("waybill") or ""
-                    _rccell = (f"{_rc} <span class='cp' onclick=\"cpx('{_rc}',this)\">📋</span>") if _rc else "—"
-                    _wbcell = (f"{_wb} <span class='cp' onclick=\"cpx('{_wb}',this)\">📋</span>") if _wb else "—"
-                    _kqc = "#DC2626" if o["kind"] == "Thua" else "#6B7280"
-                    _body.append(
-                        f"<tr style='{_sep}background:{_bg};border-left:4px solid {_clr}'>"
-                        f"<td style='color:#64748b'>{_sn}</td>"
-                        f"<td style='font-weight:700'>{o['shipper'] if _grp else ''}</td>"
-                        f"<td>{(o['phone'] or '—') if _grp else ''}</td>"
-                        f"<td style='color:{_clr};font-weight:600'>{o['dvvc'] if _grp else ''}</td>"
-                        f"<td>{_rccell}</td><td>{_wbcell}</td>"
-                        f"<td>{o['date']}</td>"
-                        f"<td style='color:{_kqc};font-weight:600'>{o['kind']}</td>"
-                        f"<td style='text-align:right;font-weight:600'>{_fm(o['money'])}</td></tr>")
-                    _prev = o["shipper"]
-                _css = ("<style>body{margin:0;font-family:Tahoma,Arial,sans-serif;color:#1f2937}"
-                        "table{border-collapse:collapse;font-size:12.5px;width:100%}"
-                        "th,td{border:1px solid #e2e6ec;padding:5px 8px;text-align:left;white-space:nowrap}"
-                        "th{background:#e2e8f0;font-weight:700}"
-                        ".cp{cursor:pointer;opacity:.5;font-size:11px;user-select:none}.cp:hover{opacity:1}</style>")
-                _js = ("<script>function cpx(t,el){var a=document.createElement('textarea');a.value=t;"
-                       "a.style.position='fixed';a.style.opacity=0;document.body.appendChild(a);a.focus();a.select();"
-                       "try{document.execCommand('copy');}catch(e){}a.remove();"
-                       "if(el){var o=el.textContent;el.textContent='✅';setTimeout(function(){el.textContent=o;},900);}}</script>")
-                _doc = ("<!DOCTYPE html><html><head><meta charset='utf-8'>" + _css + "</head><body>"
-                        "<div style='overflow-x:auto'><table><thead><tr>" + _thead + "</tr></thead><tbody>"
-                        + "".join(_body) + "</tbody></table></div>" + _js + "</body></html>")
-                components.html(_doc, height=min(70 + len(_ords) * 33, 900), scrolling=True)
-            st.caption("📋 Bấm nút **📋** để copy mã trả / mã VĐ · STT đếm theo TỪNG shipper · màu = ĐVVC · vạch = đổi shipper. "
-                       "⚠️ Shopee/SPX không ghi tên shipper → cột Shipper hiện ĐVVC; mã VĐ lấy từ 'VĐ về' trong ghi chú "
-                       "nếu field trống; vài đơn Shopee sàn ẩn → '—'.")
-            st.divider()
-        st.markdown("##### 📊 Đang xử lý (chưa nhập kho)")
-        _old_n = sum(1 for d in _rip["detail"] if (d.get("age") or 0) > 5)
-        _m = st.columns(5)
-        _m[0].metric("Tổng đang xử lý", f"{_rip['total']:,}")
-        _m[1].metric("🚚 Đang hoàn hàng", f"{_rip['tot_returning']:,}")
-        _m[2].metric("📥 Đã giao người bán", f"{_rip['tot_returned']:,}")
-        _m[3].metric("🚫 Không có hàng hoàn về", f"{len(_no_return_list):,}")
-        _m[4].metric("🟡 Hơn 5 ngày", f"{_old_n:,}")
-        st.caption("🟡 **Dòng tô vàng = đơn CẦN KN** (hơn 5 ngày & CHƯA có ghi chú kết quả).  "
-                "VĐ đi = mã vận đơn giao đi · VĐ trả về = mã vận đơn hoàn về "
-                "(giao thất bại: 2 mã trùng nhau; chỉ hoàn tiền: không có kiện hàng hoàn về)."
-                + ("  ·  ⚠️ đã chạm giới hạn quét — có thể còn đơn cũ hơn" if _rip.get("capped") else ""))
-
-        def _jss(s):       # escape chuỗi cho onclick JS
-            return str(s or "").replace("\\", "\\\\").replace("'", "\\'")
-
-        def _cp(val):      # nút copy 📋 (bấm 1 phát copy mã)
-            return (f"<span class='cp' onclick=\"cp('{_jss(val)}',this)\" title='Copy mã'>📋</span>"
-                    if val else "")
-
-        def _code_cell(val, link=None):    # mã + nút copy (kèm link nếu có)
-            v = _esc(str(val or ""))
-            disp = f"<a href='{_esc(link)}' target='_blank'>{v}</a>" if link else v
-            return f"{disp} {_cp(val)}" if val else ""
-
-        def _search_norm(s):
-            return "".join(ch for ch in _ascii_code(s) if ch.isalnum())
-
-        def _row_matches_code(d, needle):
-            q = _search_norm(needle)
-            if not q:
-                return False
-            fields = [
-                d.get("order_code"), d.get("return_code"), d.get("vd_di"), d.get("vd_tra"),
-                d.get("sku"), d.get("note"), d.get("return_shipper"),
-            ]
-            return any(q in _search_norm(x) for x in fields if x)
-
-        def _row_location(d):
-            if str(d.get("stock_code") or "").lower() in ("stocked", "restocked"):
-                return "Đã nhận/đã nhập kho"
-            if d.get("need_kn"):
-                return "Cần KN"
-            if _note_is_khong_can_kn(d):
-                return "Không cần KN"
-            if d.get("ship_code") == "no_return":
-                return "Không có hàng hoàn về / chỉ hoàn tiền"
-            if d.get("loai_tra_code") == "return_and_refund":
-                return "Trả hàng hoàn tiền"
-            if d.get("loai_tra_code") == "delivery_failed":
-                return "Giao hàng thất bại"
-            return "Khác"
-
-        def _sub_table(items, h, show_type=False, show_reason=False, merge_delivery_vd=False, show_location=False):
-            if not items:
-                st.caption("— Không có —")
-                return
-            def _safe(v, default=""):
-                return _esc(str(v if v not in (None, "") else default))
-            def _doisoat(d):   # 1 LINK đối soát TikTok/Shopee, tự chọn tab: note CÓ kết quả KN
-                oc = d.get("order_code") or ""              # (🟢✅🔴❌⛔⚪⚫) → "Đã thanh toán"; còn lại → "Chưa thanh toán"
-                _lk = (d.get("order_link") or "").lower()
-                if oc and "tiktok" in _lk:                  # channel_type/connection_ids account-specific
-                    app, conn, ch = "tiktok-channel", "11589%2C12966%2C19313", "6"
-                elif oc and "shopee" in _lk:
-                    app, conn, ch = "shopee-channel", "11588%2C12082%2C12405", "1"
-                else:
-                    return "<span style='color:#cbd5e1'>—</span>"
-                _done = any(m in (d.get("note") or "") for m in ("🟢", "✅", "🔴", "❌", "⛔", "⚪", "⚫"))
-                paid, tab = ("true", "Đã") if _done else ("false", "Chờ")
-                u = (f"https://vitranboutiquehcm.mysapo.net/admin/apps/{app}/home/"
-                     "automation-delivery-collations?query=" + oc +
-                     "&connection_ids=" + conn + "&channel_type=" + ch +
-                     "&created_on_min=2024-01-01&created_on_max=2027-12-31&paid=" + paid)
-                return f"<a href='{_esc(u)}' target='_blank' title='Mở đối soát — tab {tab} thanh toán'>🔍 {tab}</a>"
-            cols = ["STT"]
-            if show_location:
-                cols += ["Vị trí"]
-            cols += ["Ngày tạo", "Mã đơn", "Mã trả hàng"]
-            cols += ["Vận đơn"] if merge_delivery_vd else ["VĐ đi", "VĐ trả về"]
-            cols += ["Shipper hoàn", "Gian hàng"]
-            if show_type:
-                cols += ["Loại trả"]
-            cols += ["SKU", "SL", "Tổng tiền", "Nhập kho"]
-            if show_reason:
-                cols += ["Lý do vào KN"]
-            cols += ["Đối soát", "Ghi chú"]
-            _sticky_n = cols.index("Mã trả hàng") + 1   # cố định các cột đầu → hết "Mã trả hàng"
-            thead = "".join(f"<th>{c}</th>" for c in cols)
-            body = ""
-            for i, d in enumerate(items, 1):
-                bg = "background:#fff3cd" if d.get("need_kn") else ""
-                note = d.get("note") or ""
-                tds = [f"<td class='r'>{i}</td>"]
-                if show_location:
-                    tds.append(f"<td>{_safe(d.get('_location') or _row_location(d))}</td>")
-                tds += [
-                    f"<td>{_safe(d.get('created'))}</td>",
-                    f"<td>{_code_cell(d['order_code'], d.get('order_link'))}</td>",
-                    f"<td>{_code_cell(d.get('return_code'))}</td>",
-                ]   # KHÔNG link, chỉ copy
-                if merge_delivery_vd:
-                    tds.append(f"<td>{_code_cell(d.get('vd_di') or d.get('vd_tra'))}</td>")
-                else:
-                    tds.append(f"<td>{_code_cell(d['vd_di'])}</td>")
-                    tds.append(f"<td>{_code_cell(d['vd_tra'])}</td>")
-                tds += [
-                    f"<td>{_safe(d.get('return_shipper'), 'Chưa có')}</td>",
-                    f"<td>{_safe(d.get('gian_hang'))}</td>",
+            _month_map = {}
+            for _d in _all_returns_detail:
+                _raw = str(_d.get("created_on") or "")
+                try:
+                    _dt = datetime.fromisoformat(_raw.replace("Z", "").split(".")[0]) + timedelta(hours=7)
+                except Exception:
+                    continue
+                _key = _dt.strftime("%Y-%m")
+                _label = _dt.strftime("%m/%Y")
+                _mrow = _month_map.setdefault(_key, {
+                    "Tháng": _label,
+                    "Tổng đơn trả": 0,
+                    "Đã nhập kho": 0,
+                    "Chưa nhận/chưa nhập đủ": 0,
+                    "Chưa nhập kho": 0,
+                    "Nhập kho 1 phần": 0,
+                    "Không nhập kho": 0,
+                    "Thắng": 0,
+                    "Thua": 0,
+                    "Hết hạn": 0,
+                    "Không cần KN": 0,
+                    "Cần KN": 0,
+                    "Đang KN": 0,
+                    "Chưa chốt": 0,
+                    "Mất tiền": 0,
+                })
+                _mrow["Tổng đơn trả"] += 1
+                _sg = _stock_group(_d)
+                _mrow[_sg] += 1
+                if _sg != "Đã nhập kho":
+                    _mrow["Chưa nhận/chưa nhập đủ"] += 1
+                    _outcome = _return_outcome(_d)
+                    if _outcome in _mrow:
+                        _mrow[_outcome] += 1
+                    if _outcome in ("Thua", "Hết hạn"):
+                        _mrow["Mất tiền"] += _note_amount(_d.get("note"), _d.get("money") or 0)
+            _month_rows = [_month_map[k] for k in sorted(_month_map)]
+            if _month_rows:
+                st.markdown("##### 📅 Thống kê đơn trả theo tháng")
+                _month_df = pd.DataFrame(_month_rows)
+                _month_show_df = _month_df.copy()
+                _month_show_df["Mất tiền"] = _month_show_df["Mất tiền"].map(_vnd)
+                st.dataframe(
+                    _month_show_df,
+                    use_container_width=True,
+                    hide_index=True,
+                )
+                _volume_fig = go.Figure()
+                _total_pct = ["100%" for _ in _month_df["Tổng đơn trả"]]
+                _received_pct = [
+                    f"{(v / t * 100):.1f}%" if t else ""
+                    for v, t in zip(_month_df["Đã nhập kho"], _month_df["Tổng đơn trả"])
                 ]
+                _open_pct = [
+                    f"{(v / t * 100):.1f}%" if t else ""
+                    for v, t in zip(_month_df["Chưa nhận/chưa nhập đủ"], _month_df["Tổng đơn trả"])
+                ]
+                _volume_fig.add_bar(
+                    x=_month_df["Tháng"], y=_month_df["Tổng đơn trả"], name="Tổng đơn trả",
+                    marker_color="#94A3B8", text=_total_pct, textposition="outside",
+                )
+                _volume_fig.add_bar(
+                    x=_month_df["Tháng"], y=_month_df["Đã nhập kho"], name="Đã nhận/đã nhập kho",
+                    marker_color="#1D9E75", text=_received_pct, textposition="outside",
+                )
+                _volume_fig.add_bar(
+                    x=_month_df["Tháng"], y=_month_df["Chưa nhận/chưa nhập đủ"], name="Chưa nhận/chưa nhập đủ",
+                    marker_color="#F59E0B", text=_open_pct, textposition="outside",
+                )
+                _volume_fig.update_layout(
+                    title="Sản lượng đơn trả theo tháng",
+                    height=340,
+                    barmode="group",
+                    margin=dict(t=54, b=20, l=10, r=10),
+                    yaxis=dict(title="Số đơn"),
+                    legend=dict(orientation="h", y=1.12, x=0),
+                )
+                st.plotly_chart(_volume_fig, width="stretch")
+
+                _outcome_fig = go.Figure()
+                _outcome_fig.add_bar(x=_month_df["Tháng"], y=_month_df["Thắng"], name="Thắng", marker_color="#1D9E75")
+                _outcome_fig.add_bar(x=_month_df["Tháng"], y=_month_df["Thua"], name="Thua", marker_color="#E24B4A")
+                _outcome_fig.add_bar(x=_month_df["Tháng"], y=_month_df["Hết hạn"], name="Hết hạn", marker_color="#6B7280")
+                _outcome_fig.add_bar(x=_month_df["Tháng"], y=_month_df["Không cần KN"], name="Không cần KN", marker_color="#534AB7")
+                _outcome_fig.add_bar(x=_month_df["Tháng"], y=_month_df["Cần KN"], name="Cần KN", marker_color="#F59E0B")
+                _outcome_fig.add_bar(x=_month_df["Tháng"], y=_month_df["Đang KN"], name="Đang KN", marker_color="#378ADD")
+                _outcome_fig.add_bar(x=_month_df["Tháng"], y=_month_df["Chưa chốt"], name="Chưa chốt", marker_color="#CBD5E1")
+                _outcome_fig.add_scatter(
+                    x=_month_df["Tháng"], y=_month_df["Mất tiền"], name="Mất tiền",
+                    mode="lines+markers+text",
+                    text=[_vnd(v) if v else "" for v in _month_df["Mất tiền"]],
+                    textposition="top center",
+                    yaxis="y2",
+                    line=dict(color="#7F1D1D", width=3),
+                    marker=dict(size=8),
+                )
+                _outcome_fig.update_layout(
+                    title="Kết quả KN và tiền mất theo tháng",
+                    height=390,
+                    barmode="stack",
+                    margin=dict(t=42, b=20, l=10, r=10),
+                    yaxis=dict(title="Số đơn", rangemode="tozero"),
+                    yaxis2=dict(title="Mất tiền", overlaying="y", side="right", showgrid=False, rangemode="tozero"),
+                    legend=dict(orientation="h", y=1.14, x=0),
+                )
+                st.plotly_chart(_outcome_fig, width="stretch")
+
+                # Drilldown filter is rendered near the top of the page via _return_top_drill_slot.
+            # 🚨 THỐNG KÊ MẤT HÀNG theo ĐVVC + Shipper (Thua + Hết hạn — CHỈ hàng chưa về kho, khớp card)
+            _ls = _rip.get("lost_stats") or {}
+            _lt = _ls.get("total") or {}
+            if _lt.get("n"):
+                def _fm(v):
+                    return f"{int(v or 0):,}".replace(",", ".") + "đ"
+                st.markdown("##### 🚨 Mất hàng theo ĐVVC / Shipper (Thua + Hết hạn)")
+                st.markdown(f"**{_lt['n']} đơn** hàng CHƯA về kho · thất thoát **{_fm(_lt['money'])}** "
+                            f"_(năm nay — khớp Thua+Hết hạn ở card trên)_")
+                st.caption("🚚 Tổng theo ĐVVC")
+                _dvr = _ls.get("by_dvvc") or []
+                st.dataframe(pd.DataFrame([{"ĐVVC": r["dvvc"], "Đơn": r["n"],
+                    "Thua/Hết": f"{r['thua']}/{r['het']}", "Tiền mất": _fm(r["money"])}
+                    for r in _dvr]), hide_index=True, width="stretch")
+                st.caption("🧍 Từng shipper & các đơn làm mất (gộp nhóm theo shipper; trong nhóm: mới → cũ)")
+                _ords = _ls.get("orders") or []
+                if _ords:
+                    _dvc = {"J&T Express": "#DC2626", "SPX (Shopee)": "#F97316", "Viettel Post": "#7C3AED",
+                            "GHN": "#2563EB", "GHTK": "#16A34A", "Ninja Van": "#DB2777"}
+                    _dvbg = {"J&T Express": "#FEF2F2", "SPX (Shopee)": "#FFF7ED", "Viettel Post": "#F5F3FF",
+                             "GHN": "#EFF6FF", "GHTK": "#F0FDF4", "Ninja Van": "#FDF2F8"}
+                    _thead = "".join(f"<th{s}>{c}</th>" for c, s in
+                                     [("STT", ""), ("Shipper", ""), ("SĐT", ""), ("ĐVVC", ""), ("Mã trả", ""),
+                                      ("Mã VĐ", ""), ("Ngày", ""), ("KQ", ""), ("Tiền mất", " style='text-align:right'")])
+                    _body, _prev, _sn = [], None, 0
+                    for o in _ords:
+                        _grp = (o["shipper"] != _prev)
+                        _sn = 1 if _grp else _sn + 1          # STT reset theo từng shipper (biết mỗi người mấy đơn)
+                        _clr = _dvc.get(o["dvvc"], "#94A3B8")
+                        _bg = _dvbg.get(o["dvvc"], "#F8FAFC")
+                        _sep = "border-top:2px solid #334155;" if (_grp and _prev is not None) else ""
+                        _rc = o.get("return_code") or ""
+                        _wb = o.get("waybill") or ""
+                        _rccell = (f"{_rc} <span class='cp' onclick=\"cpx('{_rc}',this)\">📋</span>") if _rc else "—"
+                        _wbcell = (f"{_wb} <span class='cp' onclick=\"cpx('{_wb}',this)\">📋</span>") if _wb else "—"
+                        _kqc = "#DC2626" if o["kind"] == "Thua" else "#6B7280"
+                        _body.append(
+                            f"<tr style='{_sep}background:{_bg};border-left:4px solid {_clr}'>"
+                            f"<td style='color:#64748b'>{_sn}</td>"
+                            f"<td style='font-weight:700'>{o['shipper'] if _grp else ''}</td>"
+                            f"<td>{(o['phone'] or '—') if _grp else ''}</td>"
+                            f"<td style='color:{_clr};font-weight:600'>{o['dvvc'] if _grp else ''}</td>"
+                            f"<td>{_rccell}</td><td>{_wbcell}</td>"
+                            f"<td>{o['date']}</td>"
+                            f"<td style='color:{_kqc};font-weight:600'>{o['kind']}</td>"
+                            f"<td style='text-align:right;font-weight:600'>{_fm(o['money'])}</td></tr>")
+                        _prev = o["shipper"]
+                    _css = ("<style>body{margin:0;font-family:Tahoma,Arial,sans-serif;color:#1f2937}"
+                            "table{border-collapse:collapse;font-size:12.5px;width:100%}"
+                            "th,td{border:1px solid #e2e6ec;padding:5px 8px;text-align:left;white-space:nowrap}"
+                            "th{background:#e2e8f0;font-weight:700}"
+                            ".cp{cursor:pointer;opacity:.5;font-size:11px;user-select:none}.cp:hover{opacity:1}</style>")
+                    _js = ("<script>function cpx(t,el){var a=document.createElement('textarea');a.value=t;"
+                           "a.style.position='fixed';a.style.opacity=0;document.body.appendChild(a);a.focus();a.select();"
+                           "try{document.execCommand('copy');}catch(e){}a.remove();"
+                           "if(el){var o=el.textContent;el.textContent='✅';setTimeout(function(){el.textContent=o;},900);}}</script>")
+                    _doc = ("<!DOCTYPE html><html><head><meta charset='utf-8'>" + _css + "</head><body>"
+                            "<div style='overflow-x:auto'><table><thead><tr>" + _thead + "</tr></thead><tbody>"
+                            + "".join(_body) + "</tbody></table></div>" + _js + "</body></html>")
+                    components.html(_doc, height=min(70 + len(_ords) * 33, 900), scrolling=True)
+                st.caption("📋 Bấm nút **📋** để copy mã trả / mã VĐ · STT đếm theo TỪNG shipper · màu = ĐVVC · vạch = đổi shipper. "
+                           "⚠️ Shopee/SPX không ghi tên shipper → cột Shipper hiện ĐVVC; mã VĐ lấy từ 'VĐ về' trong ghi chú "
+                           "nếu field trống; vài đơn Shopee sàn ẩn → '—'.")
+                st.divider()
+        with _tabs[0]:
+            st.markdown("##### 📊 Đang xử lý (chưa nhập kho)")
+            _old_n = sum(1 for d in _rip["detail"] if (d.get("age") or 0) > 5)
+            _m = st.columns(5)
+            _m[0].metric("Tổng đang xử lý", f"{_rip['total']:,}")
+            _m[1].metric("🚚 Đang hoàn hàng", f"{_rip['tot_returning']:,}")
+            _m[2].metric("📥 Đã giao người bán", f"{_rip['tot_returned']:,}")
+            _m[3].metric("🚫 Không có hàng hoàn về", f"{len(_no_return_list):,}")
+            _m[4].metric("🟡 Hơn 5 ngày", f"{_old_n:,}")
+            st.caption("🟡 **Dòng tô vàng = đơn CẦN KN** (hơn 5 ngày & CHƯA có ghi chú kết quả).  "
+                    "VĐ đi = mã vận đơn giao đi · VĐ trả về = mã vận đơn hoàn về "
+                    "(giao thất bại: 2 mã trùng nhau; chỉ hoàn tiền: không có kiện hàng hoàn về)."
+                    + ("  ·  ⚠️ đã chạm giới hạn quét — có thể còn đơn cũ hơn" if _rip.get("capped") else ""))
+
+            def _jss(s):       # escape chuỗi cho onclick JS
+                return str(s or "").replace("\\", "\\\\").replace("'", "\\'")
+
+            def _cp(val):      # nút copy 📋 (bấm 1 phát copy mã)
+                return (f"<span class='cp' onclick=\"cp('{_jss(val)}',this)\" title='Copy mã'>📋</span>"
+                        if val else "")
+
+            def _code_cell(val, link=None):    # mã + nút copy (kèm link nếu có)
+                v = _esc(str(val or ""))
+                disp = f"<a href='{_esc(link)}' target='_blank'>{v}</a>" if link else v
+                return f"{disp} {_cp(val)}" if val else ""
+
+            def _search_norm(s):
+                return "".join(ch for ch in _ascii_code(s) if ch.isalnum())
+
+            def _row_matches_code(d, needle):
+                q = _search_norm(needle)
+                if not q:
+                    return False
+                fields = [
+                    d.get("order_code"), d.get("return_code"), d.get("vd_di"), d.get("vd_tra"),
+                    d.get("sku"), d.get("note"), d.get("return_shipper"),
+                ]
+                return any(q in _search_norm(x) for x in fields if x)
+
+            def _row_location(d):
+                if str(d.get("stock_code") or "").lower() in ("stocked", "restocked"):
+                    return "Đã nhận/đã nhập kho"
+                if d.get("need_kn"):
+                    return "Cần KN"
+                if _note_is_khong_can_kn(d):
+                    return "Không cần KN"
+                if d.get("ship_code") == "no_return":
+                    return "Không có hàng hoàn về / chỉ hoàn tiền"
+                if d.get("loai_tra_code") == "return_and_refund":
+                    return "Trả hàng hoàn tiền"
+                if d.get("loai_tra_code") == "delivery_failed":
+                    return "Giao hàng thất bại"
+                return "Khác"
+
+            def _sub_table(items, h, show_type=False, show_reason=False, merge_delivery_vd=False, show_location=False):
+                if not items:
+                    st.caption("— Không có —")
+                    return
+                def _safe(v, default=""):
+                    return _esc(str(v if v not in (None, "") else default))
+                def _doisoat(d):   # 1 LINK đối soát TikTok/Shopee, tự chọn tab: note CÓ kết quả KN
+                    oc = d.get("order_code") or ""              # (🟢✅🔴❌⛔⚪⚫) → "Đã thanh toán"; còn lại → "Chưa thanh toán"
+                    _lk = (d.get("order_link") or "").lower()
+                    if oc and "tiktok" in _lk:                  # channel_type/connection_ids account-specific
+                        app, conn, ch = "tiktok-channel", "11589%2C12966%2C19313", "6"
+                    elif oc and "shopee" in _lk:
+                        app, conn, ch = "shopee-channel", "11588%2C12082%2C12405", "1"
+                    else:
+                        return "<span style='color:#cbd5e1'>—</span>"
+                    _done = any(m in (d.get("note") or "") for m in ("🟢", "✅", "🔴", "❌", "⛔", "⚪", "⚫"))
+                    paid, tab = ("true", "Đã") if _done else ("false", "Chờ")
+                    u = (f"https://vitranboutiquehcm.mysapo.net/admin/apps/{app}/home/"
+                         "automation-delivery-collations?query=" + oc +
+                         "&connection_ids=" + conn + "&channel_type=" + ch +
+                         "&created_on_min=2024-01-01&created_on_max=2027-12-31&paid=" + paid)
+                    return f"<a href='{_esc(u)}' target='_blank' title='Mở đối soát — tab {tab} thanh toán'>🔍 {tab}</a>"
+                cols = ["STT"]
+                if show_location:
+                    cols += ["Vị trí"]
+                cols += ["Ngày tạo", "Mã đơn", "Mã trả hàng"]
+                cols += ["Vận đơn"] if merge_delivery_vd else ["VĐ đi", "VĐ trả về"]
+                cols += ["Shipper hoàn", "Gian hàng"]
                 if show_type:
-                    tds.append(f"<td>{_safe(d.get('loai_tra'))}</td>")
-                tds += [f"<td>{_safe(d.get('sku'))}</td>",
-                        f"<td class='r'>{int(d.get('qty') or 0)}</td>",
-                        f"<td class='r'>{int(d.get('money') or 0):,}đ</td>",
-                        f"<td>{_safe(d.get('stock_status'), 'Chưa rõ')}</td>"]
+                    cols += ["Loại trả"]
+                cols += ["SKU", "SL", "Tổng tiền", "Nhập kho"]
                 if show_reason:
-                    tds.append(f"<td>{_safe(d.get('reason'))}</td>")
-                tds.append(f"<td>{_doisoat(d)}</td>")
-                tds.append(f"<td class='note' title='{_safe(note)}'>{_safe(note)}</td>")
-                body += f"<tr style='{bg}'>" + "".join(tds) + "</tr>"
-            html = f"""<style>
+                    cols += ["Lý do vào KN"]
+                cols += ["Đối soát", "Ghi chú"]
+                _sticky_n = cols.index("Mã trả hàng") + 1   # cố định các cột đầu → hết "Mã trả hàng"
+                thead = "".join(f"<th>{c}</th>" for c in cols)
+                body = ""
+                for i, d in enumerate(items, 1):
+                    bg = "background:#fff3cd" if d.get("need_kn") else ""
+                    note = d.get("note") or ""
+                    tds = [f"<td class='r'>{i}</td>"]
+                    if show_location:
+                        tds.append(f"<td>{_safe(d.get('_location') or _row_location(d))}</td>")
+                    tds += [
+                        f"<td>{_safe(d.get('created'))}</td>",
+                        f"<td>{_code_cell(d['order_code'], d.get('order_link'))}</td>",
+                        f"<td>{_code_cell(d.get('return_code'))}</td>",
+                    ]   # KHÔNG link, chỉ copy
+                    if merge_delivery_vd:
+                        tds.append(f"<td>{_code_cell(d.get('vd_di') or d.get('vd_tra'))}</td>")
+                    else:
+                        tds.append(f"<td>{_code_cell(d['vd_di'])}</td>")
+                        tds.append(f"<td>{_code_cell(d['vd_tra'])}</td>")
+                    tds += [
+                        f"<td>{_safe(d.get('return_shipper'), 'Chưa có')}</td>",
+                        f"<td>{_safe(d.get('gian_hang'))}</td>",
+                    ]
+                    if show_type:
+                        tds.append(f"<td>{_safe(d.get('loai_tra'))}</td>")
+                    tds += [f"<td>{_safe(d.get('sku'))}</td>",
+                            f"<td class='r'>{int(d.get('qty') or 0)}</td>",
+                            f"<td class='r'>{int(d.get('money') or 0):,}đ</td>",
+                            f"<td>{_safe(d.get('stock_status'), 'Chưa rõ')}</td>"]
+                    if show_reason:
+                        tds.append(f"<td>{_safe(d.get('reason'))}</td>")
+                    tds.append(f"<td>{_doisoat(d)}</td>")
+                    tds.append(f"<td class='note' title='{_safe(note)}'>{_safe(note)}</td>")
+                    body += f"<tr style='{bg}'>" + "".join(tds) + "</tr>"
+                html = f"""<style>
  body{{margin:0;font-family:Tahoma,Arial,sans-serif;color:#1f2937}}
  table{{border-collapse:collapse;font-size:12.5px;width:max-content;min-width:100%}}
  th,td{{border:1px solid #e2e6ec;padding:4px 8px;text-align:left;white-space:nowrap}}
@@ -2947,193 +2950,194 @@ if _page == PAGE_RETURNS:
   }});
  }})();
 </script>"""
-            components.html(html, height=h, scrolling=True)
+                components.html(html, height=h, scrolling=True)
 
-        def _type_block(title, code):
-            items = [d for d in _rip["detail"] if d["loai_tra_code"] == code and (code == "refund" or d["ship_code"] != "no_return")]
-            if not items:
-                return
-            hoan = [d for d in items if d["ship_code"] == "returning"]
-            giao = [d for d in items if d["ship_code"] == "returned"]
-            khong_hoan = [d for d in items if d["ship_code"] == "no_return"]
-            st.markdown(f"### {title} — {len(items)} đơn")
-            if hoan:
-                st.markdown(f"**🚚 Đang hoàn hàng — {len(hoan)} đơn**")
-                _sub_table(hoan, 260, merge_delivery_vd=(code == "delivery_failed"))
-            if giao:
-                st.markdown(f"**📥 Đã giao người bán — {len(giao)} đơn**")
-                _sub_table(giao, 260, merge_delivery_vd=(code == "delivery_failed"))
-            if khong_hoan:
-                st.markdown(f"**🚫 Không có hàng hoàn về — {len(khong_hoan)} đơn**")
-                _sub_table(khong_hoan, 260)
+            def _type_block(title, code):
+                items = [d for d in _rip["detail"] if d["loai_tra_code"] == code and (code == "refund" or d["ship_code"] != "no_return")]
+                if not items:
+                    return
+                hoan = [d for d in items if d["ship_code"] == "returning"]
+                giao = [d for d in items if d["ship_code"] == "returned"]
+                khong_hoan = [d for d in items if d["ship_code"] == "no_return"]
+                st.markdown(f"### {title} — {len(items)} đơn")
+                if hoan:
+                    st.markdown(f"**🚚 Đang hoàn hàng — {len(hoan)} đơn**")
+                    _sub_table(hoan, 260, merge_delivery_vd=(code == "delivery_failed"))
+                if giao:
+                    st.markdown(f"**📥 Đã giao người bán — {len(giao)} đơn**")
+                    _sub_table(giao, 260, merge_delivery_vd=(code == "delivery_failed"))
+                if khong_hoan:
+                    st.markdown(f"**🚫 Không có hàng hoàn về — {len(khong_hoan)} đơn**")
+                    _sub_table(khong_hoan, 260)
 
-        with _return_top_search_slot:
-            st.markdown("##### 🔎 Tìm nhanh mã đơn / mã trả / vận đơn")
-            with st.form("return_detail_search_form", clear_on_submit=False):
-                _s_cols = st.columns([5, 1])
-                _search_input = _s_cols[0].text_input(
-                    "Dán hoặc quét mã",
-                    value=st.session_state.get("return_detail_search_code", ""),
-                    placeholder="Quét mã đơn, mã trả hàng, VĐ đi hoặc VĐ trả về",
-                    label_visibility="collapsed",
-                )
-                _search_submit = _s_cols[1].form_submit_button("🔎 Tìm", use_container_width=True)
-            if _search_submit:
-                st.session_state["return_detail_search_code"] = str(_search_input or "").strip()
-            _active_search = str(st.session_state.get("return_detail_search_code") or "").strip()
-            if _active_search:
-                _search_matches = []
-                for _d in (_rip.get("all_detail") or _rip["detail"]):
-                    if _row_matches_code(_d, _active_search):
-                        _r = dict(_d)
-                        _r["_location"] = _row_location(_d)
-                        _search_matches.append(_r)
-                st.markdown('<div id="ket-qua-tim-ma"></div>', unsafe_allow_html=True)
-                if _search_matches:
-                    st.success(f"Tìm thấy {len(_search_matches)} dòng khớp `{_active_search}`. Xem trạng thái ngay bên dưới.")
-                    _merge_search_vd = all(d.get("loai_tra_code") == "delivery_failed" for d in _search_matches)
-                    _sub_table(
-                        _search_matches,
-                        min(360, 86 + 42 * len(_search_matches)),
-                        show_type=True,
-                        show_reason=True,
-                        show_location=True,
-                        merge_delivery_vd=_merge_search_vd,
+            with _return_top_search_slot:
+                st.markdown("##### 🔎 Tìm nhanh mã đơn / mã trả / vận đơn")
+                with st.form("return_detail_search_form", clear_on_submit=False):
+                    _s_cols = st.columns([5, 1])
+                    _search_input = _s_cols[0].text_input(
+                        "Dán hoặc quét mã",
+                        value=st.session_state.get("return_detail_search_code", ""),
+                        placeholder="Quét mã đơn, mã trả hàng, VĐ đi hoặc VĐ trả về",
+                        label_visibility="collapsed",
                     )
-                else:
-                    st.warning(f"Không tìm thấy mã `{_active_search}` trong danh sách đơn trả đang xử lý.")
-
-        with _return_top_drill_slot:
-            if _month_rows:
-                with st.expander("🔍 Bấm xem lý do từng đơn theo tháng / trạng thái nhập kho", expanded=False):
-                    _month_options = ["Tất cả"] + list(_month_df["Tháng"])
-                    _drill_cols = st.columns(3)
-                    _drill_month = _drill_cols[0].selectbox(
-                        "Tháng",
-                        _month_options,
-                        index=0,
-                        key="return_month_drill_month",
-                    )
-                    _drill_stock = _drill_cols[1].selectbox(
-                        "Trạng thái nhập kho",
-                        ["Tất cả", "Không nhập kho", "Nhập kho 1 phần", "Chưa nhập kho", "Đã nhập kho"],
-                        key="return_month_drill_stock",
-                    )
-                    _drill_outcome = _drill_cols[2].selectbox(
-                        "Kết quả",
-                        ["Tất cả", "Thắng", "Thua", "Hết hạn", "Không cần KN", "Cần KN", "Đang KN", "Chưa chốt", "Đã nhập kho"],
-                        key="return_month_drill_outcome",
-                    )
-                    _drill_rows = []
-                    for _d in _all_returns_detail:
-                        _raw = str(_d.get("created_on") or "")
-                        try:
-                            _dt = datetime.fromisoformat(_raw.replace("Z", "").split(".")[0]) + timedelta(hours=7)
-                        except Exception:
-                            continue
-                        if _drill_month != "Tất cả" and _dt.strftime("%m/%Y") != _drill_month:
-                            continue
-                        _sg = _stock_group(_d)
-                        _outcome = _return_outcome(_d)
-                        if _drill_stock != "Tất cả" and _sg != _drill_stock:
-                            continue
-                        if _drill_outcome != "Tất cả" and _outcome != _drill_outcome:
-                            continue
-                        _drill_rows.append({
-                            "Ngày tạo": _d.get("created") or "",
-                            "Mã đơn": _d.get("order_code") or "",
-                            "Mã trả": _d.get("return_code") or "",
-                            "Loại trả": _d.get("loai_tra") or "",
-                            "VĐ đi": _d.get("vd_di") or "",
-                            "VĐ trả về": _d.get("vd_tra") or "",
-                            "Shipper hoàn": _d.get("return_shipper") or "Chưa có",
-                            "Kết quả": _outcome,
-                            "Nhập kho": _d.get("stock_status") or "",
-                            "Tổng tiền": _vnd(_d.get("money") or 0),
-                            "Ghi chú": _d.get("note") or "",
-                        })
-                    _desc = []
-                    if _drill_month != "Tất cả":
-                        _desc.append(f"tháng {_drill_month}")
-                    if _drill_stock != "Tất cả":
-                        _desc.append(_drill_stock.lower())
-                    if _drill_outcome != "Tất cả":
-                        _desc.append(f"kết quả {_drill_outcome.lower()}")
-                    _filter_desc = ", ".join(_desc) if _desc else "tất cả đơn trả"
-                    if _drill_rows:
-                        st.caption(f"{len(_drill_rows)} đơn: {_filter_desc}.")
-                        st.dataframe(pd.DataFrame(_drill_rows), use_container_width=True, hide_index=True)
+                    _search_submit = _s_cols[1].form_submit_button("🔎 Tìm", use_container_width=True)
+                if _search_submit:
+                    st.session_state["return_detail_search_code"] = str(_search_input or "").strip()
+                _active_search = str(st.session_state.get("return_detail_search_code") or "").strip()
+                if _active_search:
+                    _search_matches = []
+                    for _d in (_rip.get("all_detail") or _rip["detail"]):
+                        if _row_matches_code(_d, _active_search):
+                            _r = dict(_d)
+                            _r["_location"] = _row_location(_d)
+                            _search_matches.append(_r)
+                    st.markdown('<div id="ket-qua-tim-ma"></div>', unsafe_allow_html=True)
+                    if _search_matches:
+                        st.success(f"Tìm thấy {len(_search_matches)} dòng khớp `{_active_search}`. Xem trạng thái ngay bên dưới.")
+                        _merge_search_vd = all(d.get("loai_tra_code") == "delivery_failed" for d in _search_matches)
+                        _sub_table(
+                            _search_matches,
+                            min(360, 86 + 42 * len(_search_matches)),
+                            show_type=True,
+                            show_reason=True,
+                            show_location=True,
+                            merge_delivery_vd=_merge_search_vd,
+                        )
                     else:
-                        st.caption(f"Không có đơn phù hợp: {_filter_desc}.")
+                        st.warning(f"Không tìm thấy mã `{_active_search}` trong danh sách đơn trả đang xử lý.")
 
-        # ── VIDEO DOHANA (metadata tích luỹ ở Gist → LƯU CẢ NĂM; khui hàng có tag=cần KN, đóng hàng có tag=không) ──
-        try:
-            _dvids = load_dohana_videos()
-        except Exception:
-            _dvids = []
-        _dtag_kn = [r for r in _dvids if r.get("tag_id") and r.get("type") == "inbound"]     # khui hàng có tag → CẦN KN
-        _dtag_nokn = [r for r in _dvids if r.get("tag_id") and r.get("type") == "package"]   # đóng hàng có tag → KHÔNG cần KN
+            with _return_top_drill_slot:
+                if _month_rows:
+                    with st.expander("🔍 Bấm xem lý do từng đơn theo tháng / trạng thái nhập kho", expanded=False):
+                        _month_options = ["Tất cả"] + list(_month_df["Tháng"])
+                        _drill_cols = st.columns(3)
+                        _drill_month = _drill_cols[0].selectbox(
+                            "Tháng",
+                            _month_options,
+                            index=0,
+                            key="return_month_drill_month",
+                        )
+                        _drill_stock = _drill_cols[1].selectbox(
+                            "Trạng thái nhập kho",
+                            ["Tất cả", "Không nhập kho", "Nhập kho 1 phần", "Chưa nhập kho", "Đã nhập kho"],
+                            key="return_month_drill_stock",
+                        )
+                        _drill_outcome = _drill_cols[2].selectbox(
+                            "Kết quả",
+                            ["Tất cả", "Thắng", "Thua", "Hết hạn", "Không cần KN", "Cần KN", "Đang KN", "Chưa chốt", "Đã nhập kho"],
+                            key="return_month_drill_outcome",
+                        )
+                        _drill_rows = []
+                        for _d in _all_returns_detail:
+                            _raw = str(_d.get("created_on") or "")
+                            try:
+                                _dt = datetime.fromisoformat(_raw.replace("Z", "").split(".")[0]) + timedelta(hours=7)
+                            except Exception:
+                                continue
+                            if _drill_month != "Tất cả" and _dt.strftime("%m/%Y") != _drill_month:
+                                continue
+                            _sg = _stock_group(_d)
+                            _outcome = _return_outcome(_d)
+                            if _drill_stock != "Tất cả" and _sg != _drill_stock:
+                                continue
+                            if _drill_outcome != "Tất cả" and _outcome != _drill_outcome:
+                                continue
+                            _drill_rows.append({
+                                "Ngày tạo": _d.get("created") or "",
+                                "Mã đơn": _d.get("order_code") or "",
+                                "Mã trả": _d.get("return_code") or "",
+                                "Loại trả": _d.get("loai_tra") or "",
+                                "VĐ đi": _d.get("vd_di") or "",
+                                "VĐ trả về": _d.get("vd_tra") or "",
+                                "Shipper hoàn": _d.get("return_shipper") or "Chưa có",
+                                "Kết quả": _outcome,
+                                "Nhập kho": _d.get("stock_status") or "",
+                                "Tổng tiền": _vnd(_d.get("money") or 0),
+                                "Ghi chú": _d.get("note") or "",
+                            })
+                        _desc = []
+                        if _drill_month != "Tất cả":
+                            _desc.append(f"tháng {_drill_month}")
+                        if _drill_stock != "Tất cả":
+                            _desc.append(_drill_stock.lower())
+                        if _drill_outcome != "Tất cả":
+                            _desc.append(f"kết quả {_drill_outcome.lower()}")
+                        _filter_desc = ", ".join(_desc) if _desc else "tất cả đơn trả"
+                        if _drill_rows:
+                            st.caption(f"{len(_drill_rows)} đơn: {_filter_desc}.")
+                            st.dataframe(pd.DataFrame(_drill_rows), use_container_width=True, hide_index=True)
+                        else:
+                            st.caption(f"Không có đơn phù hợp: {_filter_desc}.")
 
-        def _dohana_tag_tbl(items):
-            if not items:
-                st.caption("— (Dohana) chưa ghi nhận đơn gắn tag —")
-                return
-            st.dataframe(pd.DataFrame([{
-                "Mã đơn": r.get("code"),
-                "Tag": dohana._tag_name(r.get("tag_id")),
-                "Ngày quay": r.get("date") or "",
-                "Giờ": r.get("time") or "",
-                "Thời lượng(s)": r.get("dur"),
-                "Ghi nhận": r.get("first_seen") or "",
-            } for r in sorted(items, key=lambda x: (x.get("date") or "", x.get("time") or ""), reverse=True)]),
-                width="stretch", hide_index=True)
+            # ── VIDEO DOHANA (metadata tích luỹ ở Gist → LƯU CẢ NĂM; khui hàng có tag=cần KN, đóng hàng có tag=không) ──
+            try:
+                _dvids = load_dohana_videos()
+            except Exception:
+                _dvids = []
+            _dtag_kn = [r for r in _dvids if r.get("tag_id") and r.get("type") == "inbound"]     # khui hàng có tag → CẦN KN
+            _dtag_nokn = [r for r in _dvids if r.get("tag_id") and r.get("type") == "package"]   # đóng hàng có tag → KHÔNG cần KN
 
-        # ── DANH SÁCH ĐƠN CẦN KN (bấm ô "Cần KN" ở trên sẽ nhảy tới đây) ──
-        st.subheader("🚨 Đơn cần KN — lấy làm khiếu nại", anchor="don-can-kn")
-        st.caption("Gồm các đơn CHƯA có ghi chú kết quả chuẩn (THẮNG/THUA/KHÔNG CẦN KN/HẾT HẠN): "
-                   "đã giao người bán chưa nhập kho, đang hoàn hơn 5 ngày, hoặc chỉ hoàn tiền/không có hàng hoàn về. "
-                   "Đây chính là các dòng tô vàng — NV lấy làm khiếu nại.")
-        _sub_table(_ckn_list, 360, show_reason=True)
-        st.markdown(f"**🏷️ + Đơn Dohana gắn tag KHUI HÀNG (tráo · đã dùng · trả thiếu · hư hỏng) — {len(_dtag_kn)} đơn**")
-        _dohana_tag_tbl(_dtag_kn)
-        st.subheader("⛔ Đơn không cần KN — đã có kết luận", anchor="don-khong-can-kn")
-        st.caption("Các đơn trong bảng detail đã có ghi chú KHÔNG CẦN KN: đã nhận hàng, đã nhận/được đền tiền, hoặc shop đóng thiếu thật. Nhóm này không trộn vào danh sách CẦN KN.")
-        _sub_table(_khong_can_kn_list, 300)
-        st.markdown(f"**🏷️ + Đơn Dohana gắn tag ĐÓNG HÀNG (đóng thiếu SP) — {len(_dtag_nokn)} đơn**")
-        _dohana_tag_tbl(_dtag_nokn)
-        st.divider()
-        st.markdown("### 📋 Chi tiết còn hàng hoàn về theo loại")
-        _type_block("💸 Trả hàng hoàn tiền", "return_and_refund")
-        _type_block("📕 Giao hàng thất bại", "delivery_failed")
-        _type_block("🚫 Chỉ hoàn tiền / không có hàng hoàn về", "refund")
-        _other = [d for d in _rip["detail"]
-                  if d["loai_tra_code"] not in ("return_and_refund", "delivery_failed", "refund")
-                  and d["ship_code"] != "no_return"]
-        if _other:
-            st.markdown(f"### Khác — {len(_other)} đơn")
-            _sub_table(_other, 200)
-
-        # ── 🎥 KHO VIDEO DOHANA (lưu CẢ NĂM, vượt hạn 30 ngày của Dohana) — tra cứu metadata ──
-        st.divider()
-        st.subheader("🎥 Kho video Dohana (lưu cả năm)")
-        st.caption(f"Đã lưu **{len(_dvids)}** video (đóng hàng + khui hàng): trạng thái · ngày quay · giờ · "
-                   "thời lượng · tag. Dohana chỉ giữ 30 ngày — kho này gom dần (13/16/19h) nên đọc được đến cuối năm.")
-        _vq = st.text_input("Tra video theo mã đơn", key="dohana_vid_q", placeholder="Dán/nhập mã đơn…")
-        if _vq and _vq.strip():
-            _q = _vq.strip()
-            _hits = [r for r in _dvids if _q in str(r.get("code") or "")]
-            if _hits:
+            def _dohana_tag_tbl(items):
+                if not items:
+                    st.caption("— (Dohana) chưa ghi nhận đơn gắn tag —")
+                    return
                 st.dataframe(pd.DataFrame([{
                     "Mã đơn": r.get("code"),
-                    "Loại": "Khui hàng" if r.get("type") == "inbound" else "Đóng hàng",
-                    "Trạng thái": r.get("status"),
-                    "Ngày quay": r.get("date"),
-                    "Giờ": r.get("time"),
+                    "Tag": dohana._tag_name(r.get("tag_id")),
+                    "Ngày quay": r.get("date") or "",
+                    "Giờ": r.get("time") or "",
                     "Thời lượng(s)": r.get("dur"),
-                    "Tag": dohana._tag_name(r.get("tag_id")) if r.get("tag_id") else "",
-                } for r in _hits]), width="stretch", hide_index=True)
-            else:
-                st.caption("Không thấy trong kho (có thể chưa tới mốc lấy 13/16/19h, hoặc video ngoài phạm vi đã gom).")
+                    "Ghi nhận": r.get("first_seen") or "",
+                } for r in sorted(items, key=lambda x: (x.get("date") or "", x.get("time") or ""), reverse=True)]),
+                    width="stretch", hide_index=True)
+
+            # ── DANH SÁCH ĐƠN CẦN KN (bấm ô "Cần KN" ở trên sẽ nhảy tới đây) ──
+            st.subheader("🚨 Đơn cần KN — lấy làm khiếu nại", anchor="don-can-kn")
+            st.caption("Gồm các đơn CHƯA có ghi chú kết quả chuẩn (THẮNG/THUA/KHÔNG CẦN KN/HẾT HẠN): "
+                       "đã giao người bán chưa nhập kho, đang hoàn hơn 5 ngày, hoặc chỉ hoàn tiền/không có hàng hoàn về. "
+                       "Đây chính là các dòng tô vàng — NV lấy làm khiếu nại.")
+            _sub_table(_ckn_list, 360, show_reason=True)
+            st.markdown(f"**🏷️ + Đơn Dohana gắn tag KHUI HÀNG (tráo · đã dùng · trả thiếu · hư hỏng) — {len(_dtag_kn)} đơn**")
+            _dohana_tag_tbl(_dtag_kn)
+            st.subheader("⛔ Đơn không cần KN — đã có kết luận", anchor="don-khong-can-kn")
+            st.caption("Các đơn trong bảng detail đã có ghi chú KHÔNG CẦN KN: đã nhận hàng, đã nhận/được đền tiền, hoặc shop đóng thiếu thật. Nhóm này không trộn vào danh sách CẦN KN.")
+            _sub_table(_khong_can_kn_list, 300)
+            st.markdown(f"**🏷️ + Đơn Dohana gắn tag ĐÓNG HÀNG (đóng thiếu SP) — {len(_dtag_nokn)} đơn**")
+            _dohana_tag_tbl(_dtag_nokn)
+            st.divider()
+            st.markdown("### 📋 Chi tiết còn hàng hoàn về theo loại")
+            _type_block("💸 Trả hàng hoàn tiền", "return_and_refund")
+            _type_block("📕 Giao hàng thất bại", "delivery_failed")
+            _type_block("🚫 Chỉ hoàn tiền / không có hàng hoàn về", "refund")
+            _other = [d for d in _rip["detail"]
+                      if d["loai_tra_code"] not in ("return_and_refund", "delivery_failed", "refund")
+                      and d["ship_code"] != "no_return"]
+            if _other:
+                st.markdown(f"### Khác — {len(_other)} đơn")
+                _sub_table(_other, 200)
+
+        with _tabs[2]:
+            # ── 🎥 KHO VIDEO DOHANA (lưu CẢ NĂM, vượt hạn 30 ngày của Dohana) — tra cứu metadata ──
+            st.divider()
+            st.subheader("🎥 Kho video Dohana (lưu cả năm)")
+            st.caption(f"Đã lưu **{len(_dvids)}** video (đóng hàng + khui hàng): trạng thái · ngày quay · giờ · "
+                       "thời lượng · tag. Dohana chỉ giữ 30 ngày — kho này gom dần (13/16/19h) nên đọc được đến cuối năm.")
+            _vq = st.text_input("Tra video theo mã đơn", key="dohana_vid_q", placeholder="Dán/nhập mã đơn…")
+            if _vq and _vq.strip():
+                _q = _vq.strip()
+                _hits = [r for r in _dvids if _q in str(r.get("code") or "")]
+                if _hits:
+                    st.dataframe(pd.DataFrame([{
+                        "Mã đơn": r.get("code"),
+                        "Loại": "Khui hàng" if r.get("type") == "inbound" else "Đóng hàng",
+                        "Trạng thái": r.get("status"),
+                        "Ngày quay": r.get("date"),
+                        "Giờ": r.get("time"),
+                        "Thời lượng(s)": r.get("dur"),
+                        "Tag": dohana._tag_name(r.get("tag_id")) if r.get("tag_id") else "",
+                    } for r in _hits]), width="stretch", hide_index=True)
+                else:
+                    st.caption("Không thấy trong kho (có thể chưa tới mốc lấy 13/16/19h, hoặc video ngoài phạm vi đã gom).")
     st.stop()
 
 
