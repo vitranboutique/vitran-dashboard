@@ -115,9 +115,9 @@ def _fetch_videos(typ: str, cutoff_date, max_pages: int):
     vids = []
     for p in range(0, max_pages):        # ⚠️ 0-INDEXED: page=0 = MỚI NHẤT
         rows = None
-        # Dohana giới hạn 10 req/s (xác nhận từ Dohana). _throttle() giữ nhịp <10/s → hết 429.
-        # 429 lẻ (do consumer khác) → thử lại, cửa sổ reset <1s.
-        for _try in range(3):
+        # Dohana giới hạn 10 req/s (xác nhận từ Dohana). _throttle() giữ ~3/s → thừa dưới 10/s.
+        # 429 → thử lại TỐI ĐA 1 lần (ít đấm lại để key đang bị phạt hồi nhanh; kho lưu phục vụ đọc).
+        for _try in range(2):
             _throttle()
             try:
                 r = requests.get(_BASE, params={"page": p, "limit": 100, "type": typ},
