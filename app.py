@@ -1687,6 +1687,37 @@ if _page == PAGE_DAILY:
     if (isinstance(_dvr, dict) and _dvr.get("_from_store")) or (isinstance(_inb, dict) and _inb.get("_from_store")):
         st.warning("⚠️ Dohana tạm không phản hồi — đang dùng **video đã lưu trong kho** (có thể thiếu clip "
                    "quay trong vài phút gần nhất). Bấm **🔄 Tải lại số liệu** để thử lấy trực tiếp lại.")
+    with st.expander("🔌 Kiểm tra kết nối Dohana (bấm khi video không lên)"):
+        st.caption("Gửi **1 request** thử tới Dohana để biết lý do THẬT: key sai / quá tốc độ / mạng / hay chỉ cần reboot.")
+        if st.button("Gửi thử 1 request tới Dohana", key="dohana_ping_btn"):
+            import requests as _rq
+            try:
+                _dk = st.secrets["dohana"]["x_api_key"]
+            except Exception:
+                _dk = None
+            if not _dk:
+                st.error("❌ Chưa có key Dohana trong Secrets `[dohana].x_api_key`.")
+            else:
+                st.caption(f"Đang thử với key …{str(_dk)[-6:]}")
+                try:
+                    _pr = _rq.get("https://backend.dhn.io.vn/dpm/v1/partner/video/search",
+                                  params={"page": 0, "limit": 1, "type": "package"},
+                                  headers={"x-api-key": _dk}, timeout=20)
+                    _sc = _pr.status_code
+                    if _sc == 200:
+                        _nn = len((_pr.json() or {}).get("data") or [])
+                        st.success(f"✅ Kết nối OK (200) — Dohana trả về {_nn} video mẫu → app LẤY ĐƯỢC. "
+                                   "Báo cáo vẫn trống = đang chạy code cũ (**Reboot**) hoặc cache (**🔄 Tải lại số liệu**).")
+                    elif _sc in (401, 403):
+                        st.error(f"❌ KEY SAI / HẾT HẠN (mã {_sc}). Vào Dohana → Cài đặt → API Keys → Regenerate → "
+                                 "dán key mới vào Streamlit Secrets `[dohana].x_api_key`.")
+                    elif _sc == 429:
+                        st.warning("⚠️ QUÁ TỐC ĐỘ (429). Đợi ~1 phút rồi bấm lại. Nếu LÚC NÀO CŨNG 429 → key bị "
+                                   "phạt nặng / xài chung → nhờ Dohana cấp key riêng hoặc nới giới hạn.")
+                    else:
+                        st.warning(f"⚠️ Dohana trả mã {_sc}: {_pr.text[:200]}")
+                except Exception as _pe:
+                    st.error(f"❌ Không gọi được Dohana (mạng/timeout): {_pe}")
     _enrich_daily(_rep, _dvr, _inb)   # gắn clip khui hàng + đối chiếu video đóng gói
     if picklog.configured() and isinstance(_rep.get("funnel"), dict):
         _pl = picklog.read_today()
