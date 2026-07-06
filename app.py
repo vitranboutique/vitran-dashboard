@@ -227,8 +227,9 @@ def _week_table_html(data):
         return "color:#dc2626;font-weight:800;" if (k in _redkeys and isinstance(v, (int, float)) and v > 0) else ""
 
     head = "".join(
-        f'<th style="text-align:{"left" if k in _txt else "right"};padding:6px 8px;{_bd}'
-        f'background:{_bg(k, "head")};color:#16233f{";min-width:130px" if k == "ghi_chu" else ""}">{lbl}</th>'
+        f'<th style="position:sticky;top:0;z-index:3;text-align:{"left" if k in _txt else "right"};'
+        f'padding:6px 8px;{_bd}background:{_bg(k, "head")};color:#16233f'
+        f'{";min-width:130px" if k == "ghi_chu" else ""}">{lbl}</th>'
         for k, lbl in cols)
 
     body = ""
@@ -244,7 +245,10 @@ def _week_table_html(data):
         cells = ""
         for k, _ in cols:
             al = "left" if k in _txt else "right"
-            v = "" if k == "ghi_chu" else r.get(k, "")
+            if k == "ghi_chu":
+                v = str(r.get("ghi_chu", "") or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            else:
+                v = r.get(k, "")
             mw = "min-width:130px;" if k == "ghi_chu" else ""
             tag = (' <span style="color:#E24B4A;font-size:11px">• nay</span>'
                    if hot and k == "ngay" else "")
@@ -266,11 +270,13 @@ def _week_table_html(data):
         return f'<tr style="font-weight:800;color:#16233f">{cells}</tr>'
 
     tot_all = {k: sum(r.get(k, 0) for r in wk) for k in _numkeys}
-    foot = _tot_row(f"TỔNG {len(wk)} ngày qua", tot_all, "#eef1f6")
+    tots = _tot_row(f"TỔNG {len(wk)} ngày qua", tot_all, "#eef1f6")
     if month:
-        foot += _tot_row(f"TỔNG tháng {mlabel}", month, "#e0e7ff")
-    return (f'<table style="width:100%;border-collapse:collapse;font-size:11.5px">'
-            f'<thead><tr>{head}</tr></thead><tbody>{body}{foot}</tbody></table>')
+        tots += _tot_row(f"TỔNG tháng {mlabel}", month, "#e0e7ff")
+    # Tổng ĐEM LÊN ĐẦU (ngay dưới tiêu đề); tiêu đề STICKY (position:sticky) → trượt không mất.
+    return (f'<div style="max-height:540px;overflow:auto;border:1px solid #aab2c2;border-radius:6px">'
+            f'<table style="width:100%;border-collapse:collapse;font-size:11.5px">'
+            f'<thead><tr>{head}</tr></thead><tbody>{tots}{body}</tbody></table></div>')
 
 
 def _ascii_code(s):
@@ -1765,9 +1771,39 @@ if _page == PAGE_DAILY:
     with st.expander("📅 Tổng hợp 30 ngày (1 tháng) — đóng gói & đơn hoàn", expanded=False):
         try:
             _wk = load_week_summary()
+            _NOTE_FILE = "vitran_ghichu_ngay.json"
+            _notes = {}
+            if picklog.configured():
+                try:
+                    _notes = picklog._read_gist_file(_NOTE_FILE) or {}
+                except Exception:
+                    _notes = {}
+            for _d in _wk.get("days", []):
+                _d["ghi_chu"] = _notes.get(_d.get("iso"), "")
             st.markdown(_week_table_html(_wk), unsafe_allow_html=True)
+            if picklog.configured():
+                st.caption("✏️ Gõ ghi chú theo ngày rồi bấm **Lưu** — sẽ hiện vào cột *Ghi chú* của bảng trên (lưu bền, lần sau mở vẫn còn).")
+                _ndf = pd.DataFrame([{"Ngày": d["ngay"], "Thứ": d["thu"], "iso": d["iso"],
+                                      "Ghi chú": _notes.get(d["iso"], "")} for d in _wk.get("days", [])])
+                _ed = st.data_editor(
+                    _ndf, hide_index=True, use_container_width=True, key="week_note_editor",
+                    disabled=["Ngày", "Thứ", "iso"],
+                    column_config={"iso": None,
+                                   "Ngày": st.column_config.TextColumn("Ngày", width="small"),
+                                   "Thứ": st.column_config.TextColumn("Thứ", width="small"),
+                                   "Ghi chú": st.column_config.TextColumn("Ghi chú", width="large")})
+                if st.button("💾 Lưu ghi chú", key="save_week_note"):
+                    _out = {r["iso"]: str(r.get("Ghi chú") or "").strip()
+                            for r in _ed.to_dict("records") if str(r.get("Ghi chú") or "").strip()}
+                    if picklog._write_gist_file(_NOTE_FILE, _out):
+                        st.success("✅ Đã lưu ghi chú.")
+                        st.rerun()
+                    else:
+                        st.error("❌ Lưu lỗi (thiếu token picklog?).")
+            else:
+                st.caption("Ghi chú theo ngày cần cấu hình kho lưu (token picklog).")
         except Exception as e:
-            st.warning(f"Chưa lấy được tổng hợp tuần: `{e}`")
+            st.warning(f"Chưa lấy được tổng hợp: `{e}`")
 
     # ===== Chọn ngày xem báo cáo A4 chi tiết =====
     _vn_today = (datetime.now(timezone.utc) + timedelta(hours=7)).date()
