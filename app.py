@@ -1868,19 +1868,20 @@ if _page == PAGE_DAILY:
 
     # ===== Chọn ngày xem báo cáo A4 chi tiết =====
     _vn_today = (datetime.now(timezone.utc) + timedelta(hours=7)).date()
-    _LIVE = f"📅 Hôm nay ({_vn_today.strftime('%d/%m')})"
-    _past = {(_vn_today - timedelta(days=i)).strftime("%d/%m/%Y"):
-             (_vn_today - timedelta(days=i)).isoformat() for i in range(1, 7)}
-    _pick = st.selectbox("Xem báo cáo chi tiết (A4) ngày", [_LIVE] + [f"🗂️ {k}" for k in _past])
+    _pick_date = st.date_input("📅 Xem báo cáo A4 ngày (chọn trên LỊCH — tối đa 30 ngày gần nhất)",
+                               value=_vn_today, min_value=_vn_today - timedelta(days=30),
+                               max_value=_vn_today, format="DD/MM/YYYY", key="daily_pick_date")
+    _is_today = (_pick_date == _vn_today)
+    _disp = _pick_date.strftime("%d/%m/%Y")
     _sign_on = "1"   # phần ký tên LUÔN đặt ở Trang 1 (mặt trước)
 
     # ---- Xem báo cáo NGÀY CŨ (query lại Sapo + Dohana theo ngày, số đã cố định) ----
-    if _pick != _LIVE:
-        _iso = _past[_pick[3:]]
+    if not _is_today:
+        _iso = _pick_date.isoformat()
         try:
             _rep = load_daily_report(_iso)
         except Exception as e:
-            st.error(f"❌ Lỗi tổng hợp báo cáo ngày {_pick[3:]}: `{e}`")
+            st.error(f"❌ Lỗi tổng hợp báo cáo ngày {_disp}: `{e}`")
             st.stop()
         _dvr = load_dohana_date(_iso) if dohana.configured() else None
         _inb = load_dohana_inbound_date(_iso) if dohana.configured() else None
@@ -1889,9 +1890,9 @@ if _page == PAGE_DAILY:
             _pl = picklog.read_date(_iso)
             _rep["funnel"]["soan"] = sum(r.get("so_don", 0) or 0 for r in _pl) or None
             _rep["funnel"]["soan_sp"] = sum(r.get("so_sp", 0) or 0 for r in _pl) or None
-        st.info(f"🗂️ Báo cáo ngày **{_pick[3:]}** — query lại từ Sapo, **video lấy từ kho đã lưu** "
+        st.info(f"🗂️ Báo cáo ngày **{_disp}** — query lại từ Sapo, **video lấy từ kho đã lưu** "
                 "(Dohana chỉ giữ ~30 ngày; kho Gist lưu bền cả năm). Ngày trước khi bật lưu có thể trống video.")
-        _nrep = f"{_pick[3:]} (xem lại)"
+        _nrep = f"{_disp} (xem lại)"
         _nrec = len((_rep.get("nhap_kho") or {}).get("recon_rows") or [])
         _h = (1 + max(1, (_nrec + 19) // 20)) * 1140 + 120   # 1 trang 1 + N tờ trang 2 (20 đơn/tờ)
         components.html(daily_report.report_html(_rep, _dvr, _nrep, sign_on=_sign_on), height=_h, scrolling=True)

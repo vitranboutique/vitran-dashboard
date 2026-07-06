@@ -450,6 +450,9 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
     unmatched = nk.get("clip_unmatched") or []
     clip_on = nk.get("clip_available", False)
     n_ret = len(nk_detail)
+    _sp_exp = sum(int(d.get("sp", 0) or 0) for d in nk_detail)         # Σ SP kỳ vọng phải trả về
+    _sp_nhap = sum(int(d.get("sp_nhap", 0) or 0) for d in nk_detail)   # Σ SP thực nhập kho
+    _sp_thieu = max(0, _sp_exp - _sp_nhap)                             # SP khách trả THIẾU
     # Bảng đối chiếu (clip ↔ nhận hàng trả) + tóm tắt cột trống
     recon = nk.get("recon_rows") or []
     _cm = sum(1 for r in recon if not r.get("has_clip"))
@@ -499,11 +502,16 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
 
     clip_kpi_v = clip_total if clip_on else "—"
     clip_kpi_sub = (f"khớp {clip_co} · lệch {len(unmatched)}" if clip_on else "chưa kết nối Dohana")
+    _sp_sub = (f"Đã nhập kho {_sp_nhap}"
+               + (f' · <span style="color:#dc2626;font-weight:800">Thiếu {_sp_thieu}</span>' if _sp_thieu else ""))
     r_kpis_html = (
         f'<div class="kpi"><div class="l">📥 Hoàn nhập kho hôm nay</div>'
         f'<div class="v">{nk.get("so_phieu", 0)}</div>'
         f'<div class="l" style="margin-top:3px;font-weight:700">{nk.get("so_sp", 0)} SP'
         f'{(" · " + nk_src) if nk_src else ""}</div></div>'
+        f'<div class="kpi"><div class="l">📦 Tổng SL SP hoàn</div>'
+        f'<div class="v">{_sp_exp}</div>'
+        f'<div class="l" style="margin-top:3px;font-weight:700">{_sp_sub}</div></div>'
         f'<div class="kpi"><div class="l">↩️ Đang hoàn về (chờ nhận)</div>'
         f'<div class="v">{nk.get("cho_xu_ly", 0)}</div>'
         f'<div class="l" style="margin-top:3px">đang trên đường về kho</div></div>'
@@ -512,6 +520,28 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
         f'<div class="v">{clip_kpi_v}</div>'
         f'<div class="l" style="margin-top:3px;font-weight:700">{clip_kpi_sub}</div></div>'
     )
+    # ── KẾT LUẬN sai lệch (Phần 2) + lý do có thể ──
+    _concl = []
+    if _cm > 0:
+        _concl.append(f"<b>{_cm}</b> đơn hoàn THIẾU clip khui hàng")
+    if clip_on and unmatched:
+        _concl.append(f"<b>{len(unmatched)}</b> clip khui hàng DƯ (chưa khớp đơn nào)")
+    if _sp_thieu > 0:
+        _concl.append(f"<b>{_sp_thieu}</b> SP khách trả THIẾU")
+    if _sm > 0:
+        _concl.append(f"<b>{_sm}</b> đơn có clip nhưng CHƯA nhập kho")
+    if _concl:
+        concl_box = (
+            '<div class="warn" style="background:#fffbeb;border:1px solid #f59e0b;margin:.3em 0 .5em">'
+            '<div class="wh" style="color:#b45309">📌 KẾT LUẬN — SAI LỆCH cần kiểm tra:</div>'
+            '<div class="wb">• ' + '<br>• '.join(_concl) + '</div>'
+            '<div class="wb" style="margin-top:3px;color:#78350f">💡 Lý do có thể: '
+            '<b>sai mã lúc quay</b> · <b>quay nhầm mục</b> (khui hàng ↔ đóng hàng) · '
+            '<b>quay trùng</b> · <b>khách trả thiếu SP</b> · <b>chưa bấm nhập kho trên Sapo</b>.</div>'
+            '</div>')
+    else:
+        concl_box = ('<div class="warn" style="background:#f0fdf4;border:1px solid #16a34a;margin:.3em 0 .5em">'
+                     '<div class="wh" style="color:#15803d">✅ KẾT LUẬN: Khớp đủ — không có sai lệch clip/SP.</div></div>')
     # ── PHỄU: xác nhận → soạn(in phiếu) → video(đóng gói) → ĐVVC nhận | hủy · còn xót ──
     # 4 ô dòng 1 + 2 ô dòng 2. Mỗi ô có ô ☐ để NV KHO TICK xác nhận trước khi ký cuối.
     # Soạn hàng = đã in phiếu nhặt (dashboard/picklog); Có video = đơn đóng gói đã quay video.
@@ -661,7 +691,7 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
         _first, _last = _si == 0, _si == _ns - 1
         _sub = f" (tờ {_si + 1}/{_ns})" if _ns > 1 else ""
         _pno = f"Trang 2.{_si + 1}/{_ns}" if _ns > 1 else "Trang 2/2"
-        _kpi = f'<div class="kpis k3">{r_kpis_html}</div>' if _first else ''
+        _kpi = f'<div class="kpis">{r_kpis_html}</div>{concl_box}{warn_box}' if _first else ''
         _badge = recon_badge if _first else ''
         _tail = (_legend + _ghichu + sign2) if _last else ''
         page2 += f"""<div class="page page2 fixed"><div class="pfit">
