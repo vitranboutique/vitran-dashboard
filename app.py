@@ -205,14 +205,18 @@ def _week_table_html(data):
     else:                                   # dự phòng shape cũ (list)
         wk, month, mlabel = data, {}, ""
     cols = [("ngay", "Ngày"), ("thu", "Thứ"),
-            ("dong_goi", "Đóng gói"), ("vid_dong", "Vid đóng"), ("huy", "Hủy"), ("soan", "Soạn"),
-            ("shipper_nhan", "Shipper nhận"), ("giao_khach", "Giao khách"),
+            # ── ĐÓNG HÀNG (xanh) ──
+            ("dong_goi", "Đóng gói"), ("vid_dong", "Vid đóng"), ("tag_dong", "Tag đóng"),
+            ("huy", "Hủy"), ("soan", "Soạn"), ("shipper_nhan", "Shipper nhận"), ("giao_khach", "Giao khách"),
+            # ── HOÀN HÀNG (cam) ──
             ("hoan_don", "Hoàn (đơn)"), ("hoan_sp", "Hoàn SP"), ("vid_hoan", "Vid hoàn"),
-            ("thieu", "Thiếu SP"), ("tag", "Tag"), ("ghi_chu", "Ghi chú")]
+            ("thieu", "Thiếu SP"), ("tag_hoan", "Tag hoàn"),
+            ("ghi_chu", "Ghi chú")]
     _bd = "border:1px solid #aab2c2;"
-    _txt = ("ngay", "thu", "tag", "ghi_chu")
-    _dong = ("dong_goi", "vid_dong", "huy", "soan", "shipper_nhan", "giao_khach")   # ĐÓNG → XANH
-    _hoan = ("hoan_don", "hoan_sp", "vid_hoan", "thieu", "tag")                     # HOÀN → CAM
+    _tagcols = ("tag_dong", "tag_hoan")
+    _txt = ("ngay", "thu", "tag_dong", "tag_hoan", "ghi_chu")
+    _dong = ("dong_goi", "vid_dong", "tag_dong", "huy", "soan", "shipper_nhan", "giao_khach")   # ĐÓNG → XANH
+    _hoan = ("hoan_don", "hoan_sp", "vid_hoan", "thieu", "tag_hoan")                            # HOÀN → CAM
     _redkeys = ("huy", "thieu")             # > 0 = có vấn đề → tô đỏ
     _numkeys = ("dong_goi", "vid_dong", "huy", "soan", "shipper_nhan", "giao_khach",
                 "hoan_don", "hoan_sp", "vid_hoan", "thieu")
@@ -246,16 +250,14 @@ def _week_table_html(data):
         cells = ""
         for k, _ in cols:
             al = "left" if k in _txt else "right"
-            if k == "ghi_chu":
-                v = str(r.get("ghi_chu", "") or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            elif k == "tag":
-                v = str(r.get("tag", "") or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            if k == "ghi_chu" or k in _tagcols:
+                v = str(r.get(k, "") or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             else:
                 v = r.get(k, "")
-            mw = "min-width:120px;" if k in ("ghi_chu", "tag") else ""
+            mw = "min-width:110px;" if (k == "ghi_chu" or k in _tagcols) else ""
             _nay = (' <span style="color:#E24B4A;font-size:11px">• nay</span>'
                     if hot and k == "ngay" else "")
-            _tagclr = "color:#7c3aed;font-weight:700;" if (k == "tag" and v) else ""
+            _tagclr = "color:#7c3aed;font-weight:700;" if (k in _tagcols and v) else ""
             wt = "font-weight:800;" if hot else ""
             bg = "#fff2e0" if hot else _bg(k, "cell")     # hôm nay: nền cam nhạt cả dòng
             cells += (f'<td style="text-align:{al};padding:5px 8px;{_bd}{wtop}{mw}background:{bg};{wt}{_red(k, v)}{_tagclr}">'
@@ -268,9 +270,9 @@ def _week_table_html(data):
             if k == "ghi_chu":
                 cells += f'<td style="padding:6px 8px;{_bd}background:#ffffff"></td>'
                 continue
-            if k == "tag":
-                tv = str(src.get("tag", "") or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                cells += (f'<td style="text-align:left;padding:6px 8px;{_bd}background:{_bg("tag", "tot")};'
+            if k in _tagcols:
+                tv = str(src.get(k, "") or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                cells += (f'<td style="text-align:left;padding:6px 8px;{_bd}background:{_bg(k, "tot")};'
                           f'{"color:#7c3aed;" if tv else ""}">{tv}</td>')
                 continue
             v = src.get(k, 0)
@@ -823,47 +825,54 @@ def load_week_summary():
     data = L.get_week_summary(make_fetch_json(build_session()), days=30)
     # SỐ VIDEO đóng/hoàn + TAG (Khách tráo / Đã sử dụng / Hư hỏng...) từ kho video Dohana, theo NGÀY.
     for day in data.get("days", []):
-        day.setdefault("vid_dong", 0)
-        day.setdefault("vid_hoan", 0)
-        day.setdefault("tag", "")
+        for _k, _v in (("vid_dong", 0), ("vid_hoan", 0), ("tag_dong", ""), ("tag_hoan", "")):
+            day.setdefault(_k, _v)
     if isinstance(data.get("month"), dict):
-        data["month"].setdefault("vid_dong", 0)
-        data["month"].setdefault("vid_hoan", 0)
-        data["month"].setdefault("tag", "")
+        for _k, _v in (("vid_dong", 0), ("vid_hoan", 0), ("tag_dong", ""), ("tag_hoan", "")):
+            data["month"].setdefault(_k, _v)
     try:
         if picklog.configured():
             from collections import Counter as _Ct
             recs = picklog.read_dohana_videos()
-            vdong, vhoan, tags = {}, {}, {}
+            vdong, vhoan, tdong, thoan = {}, {}, {}, {}   # tag TÁCH theo loại video: đóng vs khui
             for r in recs:
                 d, ty = r.get("date"), r.get("type")
                 if not d:
                     continue
-                if ty == "package":
-                    vdong[d] = vdong.get(d, 0) + 1
-                elif ty == "inbound":
-                    vhoan[d] = vhoan.get(d, 0) + 1
                 tn = dohana._tag_name(r.get("tag_id")) if r.get("tag_id") else ""
-                if tn:
-                    tags.setdefault(d, _Ct())[tn] += 1
+                if ty == "package":          # đóng hàng → tag đóng (vd đóng thiếu SP)
+                    vdong[d] = vdong.get(d, 0) + 1
+                    if tn:
+                        tdong.setdefault(d, _Ct())[tn] += 1
+                elif ty == "inbound":        # khui hàng → tag hoàn (tráo / mất / hư hỏng / đã dùng)
+                    vhoan[d] = vhoan.get(d, 0) + 1
+                    if tn:
+                        thoan.setdefault(d, _Ct())[tn] += 1
+            _mpref = (data.get("days") or [{}])[0].get("iso", "")[:7]   # 'YYYY-MM' tháng này
 
             def _tagstr(cnt):
                 return " · ".join(f"{n} ×{c}" for n, c in cnt.items()) if cnt else ""
-            _mpref = (data.get("days") or [{}])[0].get("iso", "")[:7]   # 'YYYY-MM' tháng này
+
+            def _msum(dic):
+                return sum(c for dd, c in dic.items() if str(dd)[:7] == _mpref)
+
+            def _mtag(dic):
+                mt = _Ct()
+                for dd, cnt in dic.items():
+                    if str(dd)[:7] == _mpref:
+                        mt.update(cnt)
+                return _tagstr(mt)
+
             for day in data.get("days", []):
                 iso = day.get("iso")
                 day["vid_dong"] = vdong.get(iso, 0)
                 day["vid_hoan"] = vhoan.get(iso, 0)
-                day["tag"] = _tagstr(tags.get(iso))
+                day["tag_dong"] = _tagstr(tdong.get(iso))
+                day["tag_hoan"] = _tagstr(thoan.get(iso))
             if isinstance(data.get("month"), dict):
                 m = data["month"]
-                m["vid_dong"] = sum(c for dd, c in vdong.items() if str(dd)[:7] == _mpref)
-                m["vid_hoan"] = sum(c for dd, c in vhoan.items() if str(dd)[:7] == _mpref)
-                _mt = _Ct()
-                for dd, cnt in tags.items():
-                    if str(dd)[:7] == _mpref:
-                        _mt.update(cnt)
-                m["tag"] = _tagstr(_mt)
+                m["vid_dong"], m["vid_hoan"] = _msum(vdong), _msum(vhoan)
+                m["tag_dong"], m["tag_hoan"] = _mtag(tdong), _mtag(thoan)
     except Exception:
         pass
     return data
