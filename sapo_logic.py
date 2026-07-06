@@ -643,30 +643,44 @@ def get_alerts(fetch_json) -> dict:
             "cancel_retrieve_express": cancel_retrieve_express}
 
 
-def get_week_summary(fetch_json, days: int = 7) -> list:
-    """Tổng hợp NHIỀU NGÀY (mặc định 7) — mỗi ngày: đóng gói / hủy đã gói / shipper nhận /
-    giao khách / soạn. Số liệu cố định sau ngày (mốc packed_on/issued_on/delivered_on/cancelled_on
-    không đổi) nên query lại là ra số cuối, KHÔNG cần lưu. Quét đơn open + closed(theo created_on)
-    + cancelled, gom theo từng ngày."""
+def get_week_summary(fetch_json, days: int = 7) -> dict:
+    """Tổng hợp NHIỀU NGÀY (mặc định 7) + TỔNG THÁNG này — mỗi ngày: đóng gói / hủy đã gói /
+    soạn / shipper nhận / giao khách + ĐƠN HOÀN nhập kho (đơn · SP thực · thiếu · tráo).
+    Số cố định sau ngày. Trả {"days":[...], "month":{...}, "month_label":"MM/YYYY"}.
+    (thiếu = SP kỳ vọng − SP thực nhập; tráo = ghi chú phiếu có chữ 'tráo' — nguồn tạm khi
+    tag Dohana chưa lấy được.)"""
     now_vn = _now_utc() + timedelta(hours=7)
     today = now_vn.date()
+    month_start = today.replace(day=1)
+    days_this_month = (today - month_start).days + 1
     day_list = [today - timedelta(days=i) for i in range(days)]   # mới → cũ
     day_set = set(day_list)
-    agg = {d: {"dong_goi": 0, "huy": 0, "shipper_nhan": 0, "giao_khach": 0} for d in day_set}
+
+    def _blank():
+        return {"dong_goi": 0, "huy": 0, "shipper_nhan": 0, "giao_khach": 0,
+                "hoan_don": 0, "hoan_sp": 0, "thieu": 0, "trao": 0}
+    agg = {d: _blank() for d in day_set}
+    mon = _blank()
+
+    def _bump(key, d, n=1):
+        if d in agg:
+            agg[d][key] += n
+        if month_start <= d <= today:
+            mon[key] += n
 
     def f0(o):
         return (o.get("fulfillments") or [{}])[0]
 
-    # Đơn open + closed (created_on lùi ~ days+10 ngày để phủ packed/issued/delivered trong tuần)
+    # Đơn open + closed — lùi đủ phủ CẢ THÁNG (packed/issued/delivered trong tháng)
+    back = max(days + 10, days_this_month + 10)
     orders = []
     for p in range(1, 30):
         rows = fetch_json("/admin/orders.json", limit=250, page=p, status="open").get("orders", [])
         if not rows:
             break
         orders += rows
-    back = days + 10
     cmin = (today - timedelta(days=back)).isoformat() + "T00:00:00+07:00"
-    for p in range(1, 25):
+    for p in range(1, 40):
         rows = fetch_json("/admin/orders.json", limit=250, page=p,
                           status="closed", created_on_min=cmin).get("orders", [])
         if not rows:
@@ -678,40 +692,67 @@ def get_week_summary(fetch_json, days: int = 7) -> list:
 
     for o in orders:
         f = f0(o)
-        for fld, key in (("packed_on", "dong_goi"), ("issued_on", "shipper_nhan")):
-            d = _vn_date_of(f.get(fld))
-            if d in agg:
-                agg[d][key] += 1
-        # Giao khách = trong số đơn đóng gói ngày đó, đã giao đến tay khách (status delivered)
-        pd = _vn_date_of(f.get("packed_on"))
-        if pd in agg and f.get("shipment_status") == "delivered":
-            agg[pd]["giao_khach"] += 1
-    # Hủy đã gói theo cancelled_on (đơn đã đóng gói)
+        dp = _vn_date_of(f.get("packed_on"))
+        di = _vn_date_of(f.get("issued_on"))
+        if dp:
+            _bump("dong_goi", dp)
+        if di:
+            _bump("shipper_nhan", di)
+        if dp and f.get("shipment_status") == "delivered":
+            _bump("giao_khach", dp)
     try:
-        canc = get_cancelled(fetch_json, days=days)
+        canc = get_cancelled(fetch_json, days=max(days, days_this_month))
         for o in canc.get("packed", []):
             d = _vn_date_of(o.get("cancelled_on"))
-            if d in agg:
-                agg[d]["huy"] += 1
+            if d:
+                _bump("huy", d)
     except Exception:
         pass
+
+    # ĐƠN HOÀN nhập kho theo NGÀY nhập (restocked_ons) — quét phiếu trả lùi ~ tháng + đệm
+    rcut = today - timedelta(days=days_this_month + 30)
+    rrows = []
+    for p in range(1, 25):
+        chunk = fetch_json("/admin/order_returns.json", limit=250, page=p).get("order_returns", [])
+        if not chunk:
+            break
+        rrows += chunk
+        last = _vn_date_of(chunk[-1].get("created_on"))
+        if last and last < rcut:
+            break
+    for x in rrows:
+        if x.get("restock_status") != "restocked":
+            continue
+        ons = x.get("restocked_ons") or []
+        if isinstance(ons, str):
+            ons = [ons]
+        rd = next((_vn_date_of(o) for o in ons if _vn_date_of(o)), None)
+        if not rd:
+            continue
+        lis = x.get("line_items") or []
+        sp_nhap = int(round(sum((li.get("stocked_quantity") or 0) for li in lis)))
+        thieu = max(0, int(round(x.get("total_quantity") or 0)) - sp_nhap)
+        trao = 1 if "tráo" in str(x.get("note") or "").lower() else 0
+        _bump("hoan_don", rd)
+        _bump("hoan_sp", rd, sp_nhap)
+        _bump("thieu", rd, thieu)
+        _bump("trao", rd, trao)
 
     _wd = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"]
     out = []
     for d in day_list:
         a = agg[d]
         out.append({
-            "ngay": d.strftime("%d/%m"),
-            "thu": _wd[d.weekday()],
-            "iso": d.isoformat(),
-            "dong_goi": a["dong_goi"],
-            "huy": a["huy"],
-            "soan": a["dong_goi"] + a["huy"],     # đã soạn = đóng gói + hủy đã gói
-            "shipper_nhan": a["shipper_nhan"],
-            "giao_khach": a["giao_khach"],
+            "ngay": d.strftime("%d/%m"), "thu": _wd[d.weekday()], "iso": d.isoformat(),
+            "dong_goi": a["dong_goi"], "huy": a["huy"],
+            "soan": a["dong_goi"] + a["huy"],
+            "shipper_nhan": a["shipper_nhan"], "giao_khach": a["giao_khach"],
+            "hoan_don": a["hoan_don"], "hoan_sp": a["hoan_sp"],
+            "thieu": a["thieu"], "trao": a["trao"],
             "is_today": d == today,
         })
-    return out
+    mon["soan"] = mon["dong_goi"] + mon["huy"]
+    return {"days": out, "month": mon, "month_label": today.strftime("%m/%Y")}
 
 
 # ── Thống kê MẤT HÀNG (THUA/HẾT HẠN): trích ĐVVC + shipper từ carrier_name/ghi chú ──

@@ -194,37 +194,59 @@ st.markdown(
 )
 
 
-def _week_table_html(wk):
-    """Bảng tổng hợp 7 ngày qua (đóng gói/hủy/soạn/shipper/giao khách), tô dòng hôm nay."""
+def _week_table_html(data):
+    """Bảng tổng hợp 7 ngày + TỔNG tháng — kèm đơn hoàn (đơn/SP/thiếu/tráo); tô ĐỎ số có vấn đề
+    (hủy/thiếu/tráo > 0). Dòng hôm nay tô cam."""
+    if isinstance(data, dict):
+        wk = data.get("days", [])
+        month = data.get("month") or {}
+        mlabel = data.get("month_label", "")
+    else:                                   # dự phòng shape cũ (list)
+        wk, month, mlabel = data, {}, ""
     cols = [("ngay", "Ngày"), ("thu", "Thứ"), ("dong_goi", "Đóng gói"), ("huy", "Hủy"),
-            ("soan", "Soạn"), ("shipper_nhan", "Shipper nhận"), ("giao_khach", "Giao khách")]
+            ("soan", "Soạn"), ("shipper_nhan", "Shipper nhận"), ("giao_khach", "Giao khách"),
+            ("hoan_don", "Hoàn (đơn)"), ("hoan_sp", "Hoàn SP"), ("thieu", "Thiếu SP"), ("trao", "Tráo")]
     _bd = "border:1px solid #aab2c2;"
+    _txt = ("ngay", "thu")
+    _redkeys = ("huy", "thieu", "trao")     # > 0 = có vấn đề → tô đỏ
     head = "".join(
-        f'<th style="text-align:{"left" if k in ("ngay", "thu") else "right"};'
-        f'padding:6px 10px;{_bd}background:#dfe4ec;color:#16233f">{lbl}</th>'
+        f'<th style="text-align:{"left" if k in _txt else "right"};'
+        f'padding:6px 9px;{_bd}background:#dfe4ec;color:#16233f">{lbl}</th>'
         for k, lbl in cols)
+
+    def _red(k, v):
+        return "color:#dc2626;font-weight:800;" if (k in _redkeys and isinstance(v, (int, float)) and v > 0) else ""
+
     body = ""
     for r in wk:
         hot = r.get("is_today")
         bg = "background:#fff7ed;" if hot else ""
         cells = ""
         for k, _ in cols:
-            al = "left" if k in ("ngay", "thu") else "right"
+            al = "left" if k in _txt else "right"
+            v = r.get(k, "")
             tag = (' <span style="color:#E24B4A;font-size:11px">• đang chạy</span>'
                    if hot and k == "ngay" else "")
             wt = "font-weight:700;" if hot else ""
-            cells += (f'<td style="text-align:{al};padding:5px 10px;{wt}{_bd}">'
-                      f'{r.get(k, "")}{tag}</td>')
+            cells += f'<td style="text-align:{al};padding:5px 9px;{_bd}{wt}{_red(k, v)}">{v}{tag}</td>'
         body += f'<tr style="{bg}">{cells}</tr>'
-    keys = ("dong_goi", "huy", "soan", "shipper_nhan", "giao_khach")
-    tot = {k: sum(r.get(k, 0) for r in wk) for k in keys}
-    totc = (f'<td colspan="2" style="text-align:left;padding:6px 10px;{_bd}">TỔNG 7 ngày</td>'
-            + "".join(f'<td style="text-align:right;padding:6px 10px;{_bd}">{tot[k]}</td>'
-                      for k in keys))
-    return (f'<table style="width:100%;border-collapse:collapse;font-size:13px">'
-            f'<thead><tr>{head}</tr></thead><tbody>{body}'
-            f'<tr style="font-weight:800;background:#eef1f6;color:#16233f">{totc}</tr>'
-            f'</tbody></table>')
+
+    keys = ("dong_goi", "huy", "soan", "shipper_nhan", "giao_khach",
+            "hoan_don", "hoan_sp", "thieu", "trao")
+
+    def _tot_row(label, src, bg):
+        cells = f'<td colspan="2" style="text-align:left;padding:6px 9px;{_bd}">{label}</td>'
+        for k in keys:
+            v = src.get(k, 0)
+            cells += f'<td style="text-align:right;padding:6px 9px;{_bd}{_red(k, v)}">{v}</td>'
+        return f'<tr style="font-weight:800;background:{bg};color:#16233f">{cells}</tr>'
+
+    tot7 = {k: sum(r.get(k, 0) for r in wk) for k in keys}
+    foot = _tot_row("TỔNG 7 ngày", tot7, "#eef1f6")
+    if month:
+        foot += _tot_row(f"TỔNG tháng {mlabel}", month, "#e0e7ff")
+    return (f'<table style="width:100%;border-collapse:collapse;font-size:12.5px">'
+            f'<thead><tr>{head}</tr></thead><tbody>{body}{foot}</tbody></table>')
 
 
 def _ascii_code(s):
