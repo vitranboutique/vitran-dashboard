@@ -1787,6 +1787,42 @@ if _page == PAGE_DAILY:
                             " · ".join(f"**{_k}** ×{_v}" for _k, _v in _all_types.items()))
                 st.caption("📸 Chụp bảng + dòng xanh gửi Claude. inbound=0 mà package/không-lọc>0 → clip khui hàng "
                            "nằm ở loại KHÁC → sửa cách lấy. Toàn 401/429 → key/tốc độ.")
+        st.divider()
+        st.caption("**Kho video** (cột Vid/Tag ở bảng Tổng hợp 30 ngày) chỉ có video ĐÃ fetch được. Dohana vừa bị "
+                   "429 nên kho THIẾU → bấm nút này hút lại **~25 ngày** (Dohana chỉ giữ 25 ngày) gộp vào kho.")
+        if st.button("🔄 Đồng bộ Dohana ~25 ngày (lấp đầy kho video)", key="dohana_backfill"):
+            if not picklog.configured():
+                st.error("Chưa cấu hình kho lưu (token picklog).")
+            else:
+                with st.spinner("Đang lấy ~25 ngày video từ Dohana (có thể ~30 giây)…"):
+                    _n0 = len(picklog.read_dohana_videos())
+                    _new = []
+                    for _fn in (dohana.today_package_videos, dohana.inbound_videos):
+                        try:
+                            _r = _fn(days_match=25, max_pages=80)
+                            if _r:
+                                _new += _r.get("records") or []
+                        except Exception:
+                            pass
+                    _merged = picklog.merge_dohana_videos(_new)
+                    st.cache_data.clear()
+                st.success(f"✅ Đồng bộ xong — kho có **{len(_merged)}** video (thêm {len(_merged) - _n0}). "
+                           "Mở lại bảng '📅 Tổng hợp 30 ngày' để thấy Vid/Tag cập nhật.")
+                from collections import Counter as _Ct2
+                _tc, _sp = _Ct2(), {}
+                for _v in _merged:
+                    _tid = _v.get("tag_id")
+                    if _tid:
+                        _tc[_tid] += 1
+                        _sp.setdefault(_tid, _v.get("code"))
+                if _tc:
+                    st.markdown("**Tag trong kho** — dòng tên *⚠️ Có tag* = CHƯA map tên:")
+                    st.dataframe(pd.DataFrame([{
+                        "Tên": dohana._tag_name(_t), "Số video": _c,
+                        "Mã mẫu (tra trên Dohana)": _sp.get(_t), "tag_id": _t}
+                        for _t, _c in _tc.most_common()]), hide_index=True, use_container_width=True)
+                    st.caption("Tra 'Mã mẫu' trên Dohana để biết tên tag → nhắn Claude map giúp, hoặc tự thêm vào "
+                               "Secrets `[dohana.tags]`  \"tag_id\" = \"Tên tag\".")
     if not credential_present():
         st.warning("⚠️ Cần kết nối Sapo (API LIVE).")
         st.stop()
