@@ -781,7 +781,27 @@ def load_daily_report(date_iso=None):
 
 @st.cache_data(ttl=600, show_spinner="Đang tổng hợp 7 ngày qua…")
 def load_week_summary():
-    return L.get_week_summary(make_fetch_json(build_session()), days=7)
+    data = L.get_week_summary(make_fetch_json(build_session()), days=7)
+    # "Tráo" CHUẨN = video KHUI HÀNG gắn tag "Khách tráo!" (Dohana), đếm theo ngày — thay ước
+    # lượng theo ghi chú. Chỉ override khi KHO đã có video khui hàng (Dohana đã lấy được).
+    try:
+        if picklog.configured():
+            recs = picklog.read_dohana_videos()
+            if any(r.get("type") == "inbound" for r in recs):
+                trao_day = {}
+                for r in recs:
+                    if r.get("type") == "inbound" and "tráo" in (dohana._tag_name(r.get("tag_id")) or "").lower():
+                        d = r.get("date")
+                        if d:
+                            trao_day[d] = trao_day.get(d, 0) + 1
+                _mpref = (data.get("days") or [{}])[0].get("iso", "")[:7]   # 'YYYY-MM' tháng này
+                for day in data.get("days", []):
+                    day["trao"] = trao_day.get(day.get("iso"), 0)
+                if isinstance(data.get("month"), dict):
+                    data["month"]["trao"] = sum(c for dd, c in trao_day.items() if str(dd)[:7] == _mpref)
+    except Exception:
+        pass
+    return data
 
 
 @st.cache_data(ttl=180, show_spinner=False)
