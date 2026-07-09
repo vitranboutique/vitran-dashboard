@@ -1865,7 +1865,7 @@ if _page == PAGE_TTKH:
                 _all_rows = []
                 for _cat, _label in L.CUST_ERR_LABELS.items():
                     for m in (_ca.get("samples") or {}).get(_cat) or []:
-                        _all_rows.append({"Nhóm": _label, "Mã KH": m.get("id"), "Tên": m.get("ten"),
+                        _all_rows.append({"Nhóm": _label, "Ngày": m.get("ngay"), "Mã KH": m.get("id"), "Tên": m.get("ten"),
                                           "SĐT": m.get("sdt"), "SĐT sai?": "SAI" if m.get("sdt_xau") else "",
                                           "Địa chỉ": m.get("dia_chi")})
                 if _all_rows:
@@ -1890,7 +1890,7 @@ if _page == PAGE_TTKH:
                     with st.expander(f"• {_label} — {_n:,} khách" + (f" (hiện {len(_smp)} mẫu)" if _n > len(_smp) else "")):
                         if _smp:
                             _df = pd.DataFrame([{
-                                "Mã KH": m.get("id"), "Tên": m.get("ten"),
+                                "Ngày": m.get("ngay"), "Mã KH": m.get("id"), "Tên": m.get("ten"),
                                 "SĐT": ("⚠️ " + str(m.get("sdt") or "") if m.get("sdt_xau") else m.get("sdt")),
                                 "Địa chỉ": m.get("dia_chi"),
                                 "Mở Sapo": f"https://vitranboutiquehcm.mysapo.net/admin/customers/{m.get('id')}",

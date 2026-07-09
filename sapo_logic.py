@@ -525,7 +525,18 @@ CUST_ERR_LABELS = {
     "khong_dia_chi": "🔴 Không có địa chỉ",
     "thieu_sdt": "🟡 Đủ mã vùng, thiếu SĐT ở địa chỉ (đã fix hàng loạt)",
     "thieu_ma_phuong": "⚪ Có Tỉnh, thiếu mã Phường (ĐA SỐ bình thường — địa chỉ cũ)",
+    "thieu_ghi_chu": "🟠 Thiếu ghi chú mã đơn (username + mã đơn để đối chiếu) — sửa dần",
 }
+
+
+def note_missing_order_code(note) -> bool:
+    """True nếu khách ĐÃ lưu qua app (note có 'sdt:') NHƯNG note CHƯA có 'đơn: <mã>'.
+    Đây là nhóm khách lưu trước khi có tính năng ghi mã đơn → cần bổ sung để đối chiếu.
+    Khách nhập tay/nguồn khác (note không có 'sdt:') KHÔNG tính, tránh gom nhầm cả sổ."""
+    t = str(note or "")
+    if re.search(r"đơn:\s*\S", t, flags=re.I):
+        return False
+    return bool(re.search(r"sdt\s*:", t, flags=re.I))
 
 
 def phone_is_bad(p) -> bool:
@@ -595,19 +606,25 @@ def audit_customers(fetch_json, max_pages: int = 220, throttle: float = 0.35,
             a = c.get("default_address") or (c.get("addresses") or [None])[0]
             _cphone = c.get("phone") or ""
             cat = _classify_customer_addr(a if isinstance(a, dict) else None, _cphone)
+            # Địa chỉ đã chuẩn nhưng note chưa có mã đơn → nhóm 'thiếu ghi chú' (sửa dần)
+            if not cat and note_missing_order_code(c.get("note")):
+                cat = "thieu_ghi_chu"
             if not cat:
                 continue
             counts[cat] += 1
-            if len(samples[cat]) < per_cat_keep:
-                a = a if isinstance(a, dict) else {}
-                _aphone = a.get("phone") or a.get("phone_number") or a.get("mobile") or ""
-                samples[cat].append({
-                    "id": c.get("id"),
-                    "ten": c.get("name") or f"{c.get('first_name') or ''} {c.get('last_name') or ''}".strip(),
-                    "sdt": _cphone,
-                    "dia_chi": str(a.get("address1") or "")[:90],
-                    "sdt_xau": bool(phone_is_bad(_cphone) or phone_is_bad(_aphone)),
-                })
+            a = a if isinstance(a, dict) else {}
+            _aphone = a.get("phone") or a.get("phone_number") or a.get("mobile") or ""
+            _created = c.get("created_on") or c.get("modified_on") or ""
+            _cv = _parse_vn(_created)
+            samples[cat].append({
+                "id": c.get("id"),
+                "ten": c.get("name") or f"{c.get('first_name') or ''} {c.get('last_name') or ''}".strip(),
+                "sdt": _cphone,
+                "dia_chi": str(a.get("address1") or "")[:90],
+                "sdt_xau": bool(phone_is_bad(_cphone) or phone_is_bad(_aphone)),
+                "ngay": _cv.strftime("%d/%m/%y") if _cv else "",
+                "_sk": str(_created or ""),
+            })
         if progress_cb:
             try:
                 progress_cb(page, total, sum(counts.values()))
@@ -617,6 +634,12 @@ def audit_customers(fetch_json, max_pages: int = 220, throttle: float = 0.35,
             break
         if page == int(max_pages):
             hit_cap = True
+    # Sắp xếp MỚI → CŨ (theo ngày tạo, rồi id) và cắt còn per_cat_keep — đơn cũ quá bỏ dần
+    for cat in samples:
+        samples[cat].sort(key=lambda x: (x.get("_sk") or "", int(x.get("id") or 0)), reverse=True)
+        del samples[cat][per_cat_keep:]
+        for x in samples[cat]:
+            x.pop("_sk", None)
     return {"total": total, "counts": dict(counts), "samples": samples,
             "hit_cap": hit_cap, "ts": (_now_utc() + timedelta(hours=7)).strftime("%H:%M %d/%m")}
 
@@ -733,6 +756,7 @@ def audit_orders_missing_customer(fetch_json, good_phone_set, days: int = 30,
             "order_id": o.get("id"),
             "code": o.get("source_identifier") or o.get("name") or o.get("code") or o.get("id"),
             "phone": canon,
+            "_sk": o.get("created_on") or "",
             "created_on": created_vn.strftime("%d/%m %H:%M") if created_vn else "",
             "ly_do": "Khách địa chỉ CHƯA CHUẨN (text / thiếu SĐT / chưa chọn Tỉnh-Quận-Phường)" if canon in allset else "Chưa có khách",
             "info": order_shipping_to_info(o),
@@ -765,6 +789,9 @@ def audit_orders_missing_customer(fetch_json, good_phone_set, days: int = 30,
             except Exception:
                 pass
         w_end = w_start - timedelta(seconds=1)
+    out.sort(key=lambda x: str(x.get("_sk") or ""), reverse=True)   # MỚI → CŨ
+    for x in out:
+        x.pop("_sk", None)
     return out
 
 
