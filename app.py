@@ -1430,6 +1430,7 @@ if _page == PAGE_TTKH:
                                     return a[:180]
                             return _last[-1][:180]
 
+                        _consec_429, _breaker = 0, False
                         for _i, _m in enumerate(_batch):
                             _info = _m.get("info") or {}
                             try:
@@ -1443,23 +1444,31 @@ if _page == PAGE_TTKH:
                                 else:
                                     _cid, _att = upsert_customer_from_info(_sess, _info, skip_search=True,
                                                                            note=f"Backfill từ đơn {_m['code']}")
-                                    if not _cid and any("429" in str(a) for a in (_att or [])):
-                                        time.sleep(2.5)   # dính 429 → nghỉ rồi thử lại 1 lần
-                                        _cid, _att = upsert_customer_from_info(_sess, _info, skip_search=True,
-                                                                               note=f"Backfill từ đơn {_m['code']}")
+                                    _is429 = (not _cid) and any("429" in str(a) for a in (_att or []))
                                     if _cid:
                                         _ok += 1
                                         _done_ids.append(str(_m["order_id"]))
                                         _seen_phones.add(_info.get("phone"))
+                                        _consec_429 = 0
+                                    elif _is429:
+                                        _fail += 1
+                                        _consec_429 += 1
+                                        _fail_detail.append({"Mã đơn": _m["code"], "Lý do": "429 — Sapo đang chặn ghi"})
+                                        if _consec_429 >= 4:      # CIRCUIT BREAKER: dừng ngay, không đấm thêm
+                                            _breaker = True
+                                            _prog.progress((_i + 1) / len(_batch),
+                                                           text="⛔ Sapo đang chặn — dừng lại để không bị phạt nặng thêm.")
+                                            break
                                     else:
                                         _fail += 1
+                                        _consec_429 = 0
                                         _fail_detail.append({"Mã đơn": _m["code"], "Lý do": _reason_from_attempts(_att)})
                             except Exception as _ex:
                                 _fail += 1
                                 _fail_detail.append({"Mã đơn": _m["code"], "Lý do": f"{type(_ex).__name__}: {_ex}"[:180]})
                             _prog.progress((_i + 1) / len(_batch),
                                            text=f"Đã xử lý {_i + 1}/{len(_batch)} — tạo được {_ok}, lỗi {_fail}")
-                            time.sleep(0.7)   # giãn nhịp chống 429 (mỗi đơn nhiều request)
+                            time.sleep(1.0)   # giãn nhịp chống 429
                         _done_set = set(_done_ids)
                         _remain = [m for m in _mis if str(m["order_id"]) not in _done_set]
                         st.session_state["ttkh_audit"]["missing"] = _remain
@@ -1470,8 +1479,13 @@ if _page == PAGE_TTKH:
                             pass
                         load_customer_phone_set.clear()
                         load_ttkh_candidates.clear()
-                        st.session_state["ttkh_backfill_msg"] = (
-                            f"✅ Đã tạo/cập nhật {_ok} khách, lỗi {_fail}. Còn lại {len(_remain)} đơn cần tạo.")
+                        if _breaker:
+                            st.session_state["ttkh_backfill_msg"] = (
+                                f"⛔ Sapo đang CHẶN ghi (rate limit). Đã tạo {_ok} khách rồi DỪNG để không bị phạt nặng thêm. "
+                                f"Còn {len(_remain)} đơn. **Nghỉ 5–10 phút** rồi bấm tạo lại.")
+                        else:
+                            st.session_state["ttkh_backfill_msg"] = (
+                                f"✅ Đã tạo/cập nhật {_ok} khách, lỗi {_fail}. Còn lại {len(_remain)} đơn cần tạo.")
                         st.session_state["ttkh_backfill_fail"] = _fail_detail
                         st.rerun()
 
@@ -1480,7 +1494,8 @@ if _page == PAGE_TTKH:
                         with st.expander(f"❌ Chi tiết {len(_fd)} đơn lỗi lượt gần nhất", expanded=True):
                             _n429 = sum(1 for r in _fd if "429" in str(r.get("Lý do")))
                             if _n429:
-                                st.warning(f"{_n429}/{len(_fd)} đơn lỗi do **rate limit 429** — nghỉ ~1 phút rồi bấm tạo lại, các đơn này sẽ tự thử lại.")
+                                st.warning(f"{_n429}/{len(_fd)} đơn lỗi do **rate limit 429** (Sapo đang chặn ghi vì hôm nay đã ghi nhiều). "
+                                           "Đây KHÔNG phải lỗi dữ liệu — **nghỉ 5–10 phút** rồi bấm tạo lại, các đơn này sẽ vào.")
                             st.dataframe(pd.DataFrame(_fd), hide_index=True, width="stretch")
 
     with st.expander("ℹ️ Điều kiện lọc đơn"):

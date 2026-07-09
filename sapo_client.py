@@ -999,6 +999,8 @@ def _upsert_customer_info(session: requests.Session, order: dict, info: dict, no
         allow_redirects=False,
     )
     attempts.append(_attempt_desc(resp))
+    if resp.status_code == 429:
+        return None            # đang bị rate limit → DỪNG, không đấm thêm (tránh phạt nặng)
     if resp.status_code < 400:
         data = _json_or_empty(resp)
         new_id = _extract_customer_id_from_response(resp, data)
