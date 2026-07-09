@@ -1332,10 +1332,15 @@ if _page == PAGE_TTKH:
                 compact = "0" + compact[2:]
             return compact if "*" in compact and compact.startswith("0") else ""
         digits = re.sub(r"\D+", "", s)
-        digits = digits.lstrip("0")               # bỏ hết số 0 thừa ở đầu (gộp 00.. -> )
-        if digits.startswith("84") and len(digits) == 11:
-            digits = digits[2:]                   # bỏ mã quốc gia 84 (+ 9 số)
-        digits = "0" + digits                     # gắn lại đúng 1 số 0 ở đầu
+        if digits.startswith("00"):               # tiền tố quay số quốc tế 00…
+            digits = digits[2:]
+        if digits.startswith("84"):               # mã quốc gia 84 → phần trong nước
+            rest = digits[2:]
+            if len(rest) == 9:                    # 84 + 9 số thuê bao   (vd 84399918102)
+                digits = "0" + rest
+            elif len(rest) == 10 and rest.startswith("0"):  # 84 + 0 + 9 số (dư, vd +840399918102)
+                digits = rest
+        digits = "0" + digits.lstrip("0")         # gộp số 0 thừa → đúng 1 số 0 ở đầu
         if len(digits) != 10:                     # SĐT VN chuẩn = đúng 10 số
             return ""
         return digits
