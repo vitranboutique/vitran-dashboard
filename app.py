@@ -6,6 +6,7 @@ DEMO:  tự bật khi chưa cấu hình credential (xem README để chuyển sa
 """
 import os
 import re
+import time
 import unicodedata
 from datetime import datetime, timedelta, timezone
 from html import escape as _esc
@@ -719,6 +720,12 @@ def load_ttkh_candidates(days=15, channel_filter="tiktok"):
                                         channel_filter=channel_filter, pending_ids=_pending_ids)
 
 
+@st.cache_data(ttl=600, show_spinner=False)
+def load_customer_phone_set():
+    """Tập SĐT khách hàng (canon) — cache 10 phút vì shop có rất nhiều khách (tải nặng)."""
+    return L.get_customer_phone_set(make_fetch_json(build_session()))
+
+
 # Dohana: fetch TRỰC TIẾP thành công → MERGE vào kho Gist (lưu cả năm) rồi trả về. Nếu API tạm
 # không phản hồi (rate limit 10 req/s / 429) → DỰNG LẠI từ KHO đã lưu → báo cáo LUÔN có video.
 def _dohana_merge(live):
@@ -1341,20 +1348,25 @@ if _page == PAGE_TTKH:
             with st.spinner("Đang tải danh sách khách + đối chiếu đơn 30 ngày…"):
                 try:
                     _fj = make_fetch_json(build_session())
-                    _cores, _cap = L.get_customer_phone_set(_fj)
+                    _cores, _cap = load_customer_phone_set()
                     if not _cores:
-                        st.session_state["ttkh_audit"] = {"error": "Không lấy được danh sách khách hàng từ Sapo."}
+                        st.session_state["ttkh_audit"] = {"error": "Không lấy được danh sách khách hàng từ Sapo (rate limit 429). Thử lại sau ~1 phút."}
                     else:
                         _suspects = L.audit_orders_missing_customer(_fj, _cores, days=30, channel_filter=_channel_filter)
-                        _missing = []
-                        if len(_suspects) <= 200:            # xác nhận lại từng đơn nghi (tránh sót do phân trang)
+                        # Tải ĐỦ danh sách khách (_cap=False) → tin set luôn, khỏi search lại.
+                        # Tải THIẾU (_cap=True) → xác nhận từng đơn nghi (giãn nhịp tránh 429).
+                        if not _cap:
+                            _missing = _suspects
+                        elif len(_suspects) <= 150:
                             _sess = build_session()
+                            _missing = []
                             for _s in _suspects:
                                 try:
                                     if not customer_exists_by_phone(_sess, _s["phone"]):
                                         _missing.append(_s)
                                 except Exception:
                                     _missing.append(_s)
+                                time.sleep(0.35)
                         else:
                             _missing = _suspects
                         st.session_state["ttkh_audit"] = {
@@ -1776,6 +1788,7 @@ if _page == PAGE_TTKH:
                 _clear_ids.add(_oid)
             st.session_state["ttkh_clear_ids"] = sorted(_clear_ids)
             load_ttkh_candidates.clear()
+            load_customer_phone_set.clear()   # vừa tạo khách → làm mới tập SĐT khách
         st.rerun()
 
     def _ttkh_table(label, rows):

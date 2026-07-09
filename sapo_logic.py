@@ -18,6 +18,7 @@ import io
 import json
 import os
 import re
+import time
 from datetime import datetime, timedelta, timezone
 
 # Mẫu mã vận đơn để bóc từ note (SPXVN.../VTPVN... hoặc mã số 11–14 chữ số như J&T 861...)
@@ -446,13 +447,37 @@ def _canon_phone(raw) -> str:
     return d if len(d) == 10 else ""
 
 
-def get_customer_phone_set(fetch_json, max_pages: int = 80) -> tuple:
+def get_customer_phone_set(fetch_json, max_pages: int = 160, throttle: float = 0.35) -> tuple:
     """Lấy TẤT CẢ SĐT khách hàng đang có trong Sapo (dạng canon 0xxxxxxxxx).
-    Trả (set_phone, hit_cap). hit_cap=True nghĩa là chạm trần trang → có thể còn thiếu."""
+
+    Giãn nhịp ~3 req/s + tự thử lại khi 429 (Sapo giới hạn) để không bị chặn.
+    Trả (set_phone, hit_cap). hit_cap=True nghĩa là CHƯA lấy hết (chạm trần trang
+    hoặc vẫn 429 sau khi thử lại) → set có thể còn thiếu, cần xác nhận lại từng đơn."""
     cores = set()
     hit_cap = False
     for page in range(1, int(max_pages) + 1):
-        data = fetch_json("/admin/customers.json", limit=250, page=page)
+        data = None
+        for attempt in range(5):                      # thử lại tối đa 5 lần nếu 429
+            try:
+                if page > 1 or attempt > 0:
+                    time.sleep(throttle)
+                data = fetch_json("/admin/customers.json", limit=250, page=page)
+                break
+            except Exception as e:
+                status = getattr(getattr(e, "response", None), "status_code", None)
+                if status == 429:
+                    retry_after = 1.0
+                    try:
+                        retry_after = float(e.response.headers.get("Retry-After") or 1.0)
+                    except Exception:
+                        pass
+                    time.sleep(min(max(retry_after, 1.0) * (attempt + 1), 6))
+                    continue
+                data = None
+                break
+        if data is None:                              # vẫn lỗi/429 sau khi thử lại → dừng, trả phần đã có
+            hit_cap = True
+            break
         customers = data.get("customers", []) or data.get("data", []) or []
         if not customers:
             break
