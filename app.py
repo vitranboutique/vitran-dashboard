@@ -1314,7 +1314,14 @@ if _page == PAGE_TTKH:
             _ac = st.columns([1, 2])
             _audit_days = _ac[0].number_input("Số ngày quét", min_value=7, max_value=365, value=365, step=30,
                                               help="Tối đa 1 năm. Quét càng dài càng lâu (nhiều đơn + có thể chạm rate limit).")
-            if _ac[1].button("🔍 Quét đối chiếu ngay", key="ttkh_audit_run"):
+            # Tự quét LẦN ĐẦU (khi chưa có dữ liệu đã lưu) — sau đó lưu Gist, khỏi quét lại
+            _auto_first = ("ttkh_audit" not in st.session_state) and \
+                          (not st.session_state.get("ttkh_audit_autorun")) and credential_present()
+            _btn_scan = _ac[1].button("🔄 Cập nhật (quét lại) — cả năm", key="ttkh_audit_run")
+            if _auto_first and not _btn_scan:
+                st.info("Lần đầu chưa có dữ liệu — đang tự quét cả năm (mất vài phút, sau đó lưu lại khỏi quét nữa)…")
+            if _btn_scan or _auto_first:
+                st.session_state["ttkh_audit_autorun"] = True
                 st.session_state.pop("ttkh_audit", None)   # xóa kết quả/lỗi cũ ngay
                 _prog = st.progress(0.0, text="Bắt đầu…")
                 try:
@@ -1356,28 +1363,37 @@ if _page == PAGE_TTKH:
                     if not _mis:
                         st.success(f"✅ Không sót — mọi đơn đã ghi SĐT đều có khách + địa chỉ chuẩn. (Quét {_audit['ts']}, {_audit.get('days','?')} ngày)")
                     else:
-                        _n_text = sum(1 for m in _mis if "text" in str(m.get("ly_do", "")).lower())
-                        _n_nocust = len(_mis) - _n_text
-                        st.error(f"⚠️ Có {len(_mis)} đơn CHƯA ĐẠT (quét {_audit['ts']}, {_audit.get('days','?')} ngày): "
-                                 f"{_n_nocust} chưa có khách · {_n_text} khách địa chỉ text (chưa chọn Tỉnh/Quận/Phường).")
+                        _list_text = [m for m in _mis if "text" in str(m.get("ly_do", "")).lower()]
+                        _list_nocust = [m for m in _mis if m not in _list_text]
+                        st.error(f"⚠️ Có {len(_mis)} đơn CHƯA ĐẠT (quét {_audit['ts']}, {_audit.get('days','?')} ngày).")
 
                         def _mis_addr(info):
                             return ", ".join(str(x).strip() for x in (
                                 info.get("address1"), info.get("ward"), info.get("district"), info.get("province")
                             ) if str(x or "").strip())
 
-                        st.dataframe(
-                            pd.DataFrame([{
+                        def _mis_df(rows):
+                            return pd.DataFrame([{
                                 "Mã đơn": m["code"],
-                                "Lý do": m.get("ly_do", ""),
                                 "Tên": (m.get("info") or {}).get("name", ""),
                                 "SĐT": m["phone"],
                                 "Địa chỉ": _mis_addr(m.get("info") or {}),
                                 "Định dạng": "Mới" if (m.get("info") or {}).get("address_format") == "new" else "Cũ",
                                 "Ngày tạo": m["created_on"],
-                            } for m in _mis]),
-                            hide_index=True, width="stretch",
-                            column_config={"Địa chỉ": st.column_config.TextColumn("Địa chỉ", width="large")})
+                            } for m in rows])
+
+                        st.markdown(f"**① Có đơn nhưng CHƯA có khách — {len(_list_nocust)} đơn** (cần tạo khách)")
+                        if _list_nocust:
+                            st.dataframe(_mis_df(_list_nocust), hide_index=True, width="stretch",
+                                         column_config={"Địa chỉ": st.column_config.TextColumn("Địa chỉ", width="large")})
+                        else:
+                            st.caption("— Không có —")
+                        st.markdown(f"**② Đã có khách nhưng ĐỊA CHỈ chưa chuẩn (text) — {len(_list_text)} đơn** (cần sửa địa chỉ)")
+                        if _list_text:
+                            st.dataframe(_mis_df(_list_text), hide_index=True, width="stretch",
+                                         column_config={"Địa chỉ": st.column_config.TextColumn("Địa chỉ", width="large")})
+                        else:
+                            st.caption("— Không có —")
                         if st.session_state.get("ttkh_backfill_msg"):
                             st.success(st.session_state.pop("ttkh_backfill_msg"))
                         _CAP = 60
