@@ -541,8 +541,11 @@ def phone_is_bad(p) -> bool:
 
 
 def _classify_customer_addr(a, contact_phone="") -> str:
-    """Phân loại lỗi khách. Trả '' nếu đã chuẩn. Ưu tiên SĐT sai định dạng."""
+    """Phân loại lỗi khách. Trả '' nếu đã chuẩn HOẶC bỏ qua. Ưu tiên SĐT sai định dạng."""
     addr_phone = (a.get("phone") or a.get("phone_number") or a.get("mobile")) if isinstance(a, dict) else ""
+    # KHÔNG có SĐT nào (liên hệ + địa chỉ) → BỎ QUA (không số thì không làm gì được)
+    if not str(contact_phone or "").strip() and not str(addr_phone or "").strip():
+        return ""
     if phone_is_bad(contact_phone) or phone_is_bad(addr_phone):
         return "sdt_sai"
     if not isinstance(a, dict) or not (a.get("address1") or a.get("province_code")):
