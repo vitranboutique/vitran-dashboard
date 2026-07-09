@@ -978,16 +978,13 @@ def _upsert_customer_info(session: requests.Session, order: dict, info: dict, no
         phone_candidate = _find_customer_by_phone(session, phone, attempts) if phone and not _is_masked_phone(phone) else None
         if phone_candidate:
             try:
-                candidate = get_customer(session, phone_candidate)
-                if _customer_identity_saved(candidate, info, note):
-                    found_by_phone = phone_candidate
-                else:
-                    attempts.append(f"GET customer phone candidate -> different identity:{phone_candidate}")
+                get_customer(session, phone_candidate)
+                found_by_phone = phone_candidate
+                attempts.append(f"GET customer phone candidate -> update existing:{phone_candidate}")
             except Exception as e:
                 attempts.append(f"GET customer phone candidate -> {type(e).__name__}: {e}")
         found_by_identity = _find_customer_by_identity(session, info, note, attempts)
-    # Phone is only a search hint. If the same phone has a different name/address,
-    # create a separate customer instead of overwriting the old profile.
+    # SĐT là khóa chính vận hành: trùng SĐT thì cập nhật khách cũ, không tạo trùng.
     if phone and not _is_masked_phone(phone):
         customer_id = found_by_phone or found_by_identity
     else:
@@ -1013,6 +1010,8 @@ def _upsert_customer_info(session: requests.Session, order: dict, info: dict, no
                         return customer_id
                 except Exception as e:
                     attempts.append(f"GET customer verify -> {type(e).__name__}: {e}")
+        attempts.append("Existing customer selected but address verify chưa đủ -> giữ khách cũ, không tạo trùng")
+        return customer_id
     if phone and _is_masked_phone(phone):
         new_id = _create_customer_via_html(session, info, note, attempts)
         if new_id:

@@ -1523,6 +1523,26 @@ if _page == PAGE_TTKH:
             return ""
         return digits
 
+    def _ttkh_address_code_missing(info):
+        info = info or {}
+        fmt = info.get("address_format") or ("old" if info.get("district") else "new")
+        missing = []
+        if not str(info.get("province_code") or "").strip():
+            missing.append("mã tỉnh/thành")
+        if fmt != "new" and not str(info.get("district_code") or "").strip():
+            missing.append("mã quận/huyện")
+        if not str(info.get("ward_code") or "").strip():
+            missing.append("mã phường/xã")
+        return missing
+
+    def _ttkh_address_code_status(info):
+        missing = _ttkh_address_code_missing(info)
+        return "Đủ mã SAPO" if not missing else "Thiếu " + ", ".join(missing)
+
+    def _ttkh_can_write(row):
+        info = (row or {}).get("info") or {}
+        return bool((row or {}).get("has_phone")) and (row or {}).get("status") == "Hợp lệ" and not _ttkh_address_code_missing(info)
+
     def _parse_tiktok_ttkh(text):
         raw = str(text or "").replace("\r", "\n").strip()
         lines = [x.strip() for x in raw.splitlines() if x.strip()]
@@ -1608,6 +1628,9 @@ if _page == PAGE_TTKH:
         if not info["name"] or not info["address1"]:
             return info, "Thiếu tên hoặc địa chỉ giao hàng"
         info = resolve_address(info)
+        missing_codes = _ttkh_address_code_missing(info)
+        if missing_codes:
+            return info, "Thiếu mã SAPO: " + ", ".join(missing_codes)
         return info, "Hợp lệ"
 
     def _ttkh_editor_rows(rows):
@@ -1696,7 +1719,8 @@ if _page == PAGE_TTKH:
         return out
 
     def _ttkh_address_preview(info, status):
-        if status != "Hợp lệ":
+        info = info or {}
+        if status != "Hợp lệ" and not info.get("address1"):
             return status or "Chưa hợp lệ"
         fmt = "Địa chỉ mới" if info.get("address_format") == "new" else "Địa chỉ cũ"
         line_parts = [
@@ -1708,10 +1732,14 @@ if _page == PAGE_TTKH:
             line_parts.append(info.get("district") or "")
         line_parts.extend([info.get("province") or "", "Việt Nam"])
         line = ", ".join(str(x).strip() for x in line_parts if str(x or "").strip())
-        codes = ""
-        if info.get("address_format") != "new":
-            codes = f" | mã: P/T {info.get('province_code') or '-'} - Q/H {info.get('district_code') or '-'} - X/P {info.get('ward_code') or '-'}"
-        return f"{fmt}: {line}{codes}"
+        if info.get("address_format") == "new":
+            codes = f" | mã: Tỉnh {info.get('province_code') or '-'} - Phường/Xã {info.get('ward_code') or '-'}"
+        else:
+            codes = f" | mã: Tỉnh {info.get('province_code') or '-'} - Quận/Huyện {info.get('district_code') or '-'} - Phường/Xã {info.get('ward_code') or '-'}"
+        code_status = _ttkh_address_code_status(info)
+        if status != "Hợp lệ":
+            return f"{fmt}: {line}{codes} | {status or code_status}"
+        return f"{fmt}: {line}{codes} | {code_status}"
 
     def _kq(r):
         return str(r.get("Kết quả") or "")
@@ -1721,10 +1749,14 @@ if _page == PAGE_TTKH:
         kq = _kq(r)
         ly_do = str(r.get("Lý do") or "")
         is429 = "429" in ly_do or "rate limit" in ly_do.lower()
+        if kq.startswith("Chưa hoàn tất"):
+            if is429:
+                return "⚠️ Chưa hoàn tất (Sapo bận)", "Chờ 1–2 phút rồi bấm 💾 Ghi SAPO lại. App giữ đơn trong danh sách.", "#b45309"
+            return "⚠️ Chưa hoàn tất", "Mở chi tiết lỗi, kiểm tra mã tỉnh/quận/phường hoặc bấm Ghi lại. Nếu lặp lại, báo quản lý kèm mã đơn.", "#b45309"
         if kq.startswith("Đã ghi ghi chú + khách"):
             return "✅ Xong (đơn + khách)", "Không cần làm gì.", "#1e7d3c"
         if kq.startswith("Đã tạo/cập nhật khách"):
-            return "✅ Đã tạo khách", "Nên mở khách kiểm tra lại địa chỉ cho chắc.", "#1e7d3c"
+            return "⚠️ Cần kiểm tra địa chỉ", "Khách đã có/cập nhật, nhưng địa chỉ hoặc đơn chưa xác nhận đủ chuẩn. Mở khách kiểm tra mã vùng rồi Ghi lại nếu cần.", "#b45309"
         if kq.startswith("Đã ghi ghi chú,"):   # đơn OK, khách chưa tạo
             if is429:
                 return "⚠️ Chưa tạo được KHÁCH (Sapo bận)", "Chờ 1–2 phút rồi bấm 💾 Ghi SAPO lại. Đơn vẫn còn trong danh sách.", "#b45309"
@@ -1744,23 +1776,64 @@ if _page == PAGE_TTKH:
         results = st.session_state.get("ttkh_write_results") or []
         if not results:
             return
-        ok = sum(1 for r in results if _kq(r).startswith("Đã ghi ghi chú + khách") or _kq(r).startswith("Đã tạo/cập nhật khách"))
+        ok_rows = [r for r in results if _kq(r).startswith("Đã ghi ghi chú + khách")]
+        partial_rows = [r for r in results if _kq(r).startswith("Chưa hoàn tất") or _kq(r).startswith("Đã tạo/cập nhật khách")]
         cust_fail = [r for r in results if _kq(r).startswith("Đã ghi ghi chú,")]
         hard_fail = [r for r in results if _kq(r).startswith("Lỗi")]
-        skipped = sum(1 for r in results if _kq(r).startswith("Bỏ qua"))
-        _fail_rows = cust_fail + hard_fail
+        skipped_rows = [r for r in results if _kq(r).startswith("Bỏ qua")]
+        _fail_rows = partial_rows + cust_fail + hard_fail
+        _problem_rows = _fail_rows + skipped_rows
+        ok = len(ok_rows)
+        skipped = len(skipped_rows)
         failed = len(_fail_rows)
-        n429 = sum(1 for r in _fail_rows if "429" in str(r.get("Lý do")) or "rate limit" in str(r.get("Lý do")).lower())
 
-        _c = st.columns([1, 1, 2])
-        _c[0].metric("✅ Tổng đã lưu", ok)
-        _c[1].metric("❌ Thất bại", failed)
-        if failed:
-            _bad = ", ".join(str(r.get("Mã đơn")) for r in _fail_rows[:15])
-            _extra = f" — trong đó {n429} đơn do Sapo bận (429), chờ 1–2 phút rồi Ghi lại." if n429 else ""
-            _c[2].caption(f"Đơn lỗi (dán TTKH & Ghi lại): {_bad}.{_extra}")
+        total = len(results)
+        n429 = sum(1 for r in _problem_rows if "429" in str(r.get("Lý do")) or "rate limit" in str(r.get("Lý do")).lower())
+        # Lưu mã đơn cần xử lý để xem lại hoặc dùng cho các thao tác chẩn đoán sau này.
+        st.session_state["ttkh_failed_codes"] = [str(r.get("Mã đơn")) for r in _problem_rows]
+
+        if failed or skipped:
+            st.warning(f"Kết quả lưu TTKH: thành công {ok}/{total}, chưa hoàn tất {failed}, bỏ qua {skipped}. Xem bảng chi tiết bên dưới để xử lý tiếp.")
         else:
-            _c[2].caption("Tất cả đã lưu đủ 2 nơi 🎉" if ok else "")
+            st.success(f"Đã lưu thành công {ok}/{total} đơn: khách hàng + địa chỉ chuẩn + đơn hàng đều đã cập nhật.")
+
+        _c = st.columns([1, 1, 1, 1.8])
+        _c[0].metric("Tổng xử lý", total)
+        _c[1].metric("Thành công", ok)
+        _c[2].metric("Cần xử lý", failed + skipped)
+        if failed or skipped:
+            _bad_codes = ", ".join(str(r.get("Mã đơn")) for r in _problem_rows[:10])
+            _extra = f" Trong đó {n429} đơn do Sapo bận/rate limit, chờ 1–2 phút rồi Ghi lại." if n429 else ""
+            _c[3].caption(f"Đơn cần xử lý: {_bad_codes}.{_extra}")
+        else:
+            _c[3].caption("Tất cả đã lưu đủ 2 nơi 🎉" if ok else "")
+
+        detail_rows = []
+        for r in results:
+            friendly, todo, _color = _ttkh_friendly(r)
+            detail_rows.append({
+                "Mã đơn": r.get("Mã đơn"),
+                "Trạng thái": friendly,
+                "Cách xử lý": todo,
+                "SĐT": r.get("SĐT", ""),
+                "Loại địa chỉ": r.get("Loại địa chỉ", ""),
+                "Mã tỉnh": r.get("Mã tỉnh", ""),
+                "Mã quận": r.get("Mã quận", ""),
+                "Mã phường": r.get("Mã phường", ""),
+                "Lý do": r.get("Lý do", ""),
+                "Link khách": r.get("Link khách", ""),
+            })
+        with st.expander("Chi tiết kết quả lưu TTKH lần gần nhất", expanded=bool(failed or skipped)):
+            st.dataframe(
+                pd.DataFrame(detail_rows),
+                hide_index=True,
+                width="stretch",
+                column_config={
+                    "Cách xử lý": st.column_config.TextColumn(width="large"),
+                    "Lý do": st.column_config.TextColumn(width="large"),
+                    "Link khách": st.column_config.LinkColumn(width="medium"),
+                },
+            )
 
     def _write_ttkh_rows(rows_to_write):
         session = build_session()
@@ -1773,9 +1846,27 @@ if _page == PAGE_TTKH:
             raw = str(value or "").strip()
             return re.sub(r"[^0-9*]+", "", raw)
 
+        def _result_row(src, ket_qua, customer_url="", ly_do=""):
+            info = (src or {}).get("info") or {}
+            fmt = info.get("address_format") or ("old" if info.get("district") else "new")
+            return {
+                "Mã đơn": (src or {}).get("code"),
+                "SĐT": info.get("phone", ""),
+                "Loại địa chỉ": "Mới" if fmt == "new" else "Cũ",
+                "Mã tỉnh": info.get("province_code", ""),
+                "Mã quận": "" if fmt == "new" else info.get("district_code", ""),
+                "Mã phường": info.get("ward_code", ""),
+                "Kết quả": ket_qua,
+                "Link khách": customer_url,
+                "Lý do": ly_do,
+            }
+
         for r in rows_to_write:
-            if not r["has_phone"] or r["status"] != "Hợp lệ":
-                results.append({"Mã đơn": r["code"], "Kết quả": "Bỏ qua", "Link khách": "", "Lý do": r["status"]})
+            if not _ttkh_can_write(r):
+                reason = r.get("status") or ""
+                if r.get("has_phone") and reason == "Hợp lệ":
+                    reason = _ttkh_address_code_status(r.get("info") or {})
+                results.append(_result_row(r, "Bỏ qua", ly_do=reason))
                 continue
             old_note = r["old_note"]
             info = r["info"]
@@ -1812,36 +1903,34 @@ if _page == PAGE_TTKH:
                 if isinstance(saved, dict) and saved.get("_ttkh_customer_saved") and saved.get("_ttkh_address_saved") and saved.get("_ttkh_order_saved"):
                     ok_count += 1
                     written_ids.append(str(r["order_id"]))
-                    results.append({"Mã đơn": r["code"], "Kết quả": "Đã ghi ghi chú + khách hàng", "Link khách": customer_url, "Lý do": ""})
+                    results.append(_result_row(r, "Đã ghi ghi chú + khách hàng", customer_url=customer_url))
                 elif isinstance(saved, dict) and saved.get("_ttkh_customer_saved"):
-                    ok_count += 1
-                    written_ids.append(str(r["order_id"]))
                     customer_tail = "; ".join(saved.get("_ttkh_attempts", [])[-10:])
-                    results.append({
-                        "Mã đơn": r["code"],
-                        "Kết quả": "Đã tạo/cập nhật khách, kiểm tra lại địa chỉ đơn",
-                        "Link khách": customer_url,
-                        "Lý do": customer_tail[:1600],
-                    })
+                    results.append(_result_row(
+                        r,
+                        "Chưa hoàn tất: đã tạo/cập nhật khách nhưng địa chỉ/đơn chưa xác nhận đủ chuẩn",
+                        customer_url=customer_url,
+                        ly_do=customer_tail[:1600],
+                    ))
                 else:
                     customer_tail = "; ".join(saved.get("_ttkh_attempts", [])[-8:]) if isinstance(saved, dict) else ""
             except Exception as e:
                 customer_tail = str(e)[:1200]
             if not any(x.get("Mã đơn") == r["code"] for x in results):
                 if note_saved:
-                    results.append({
-                        "Mã đơn": r["code"],
-                        "Kết quả": "Đã ghi ghi chú, chưa ghi được khách/contact",
-                        "Link khách": customer_url,
-                        "Lý do": (customer_tail or note_error)[:1600],
-                    })
+                    results.append(_result_row(
+                        r,
+                        "Đã ghi ghi chú, chưa ghi được khách/contact",
+                        customer_url=customer_url,
+                        ly_do=(customer_tail or note_error)[:1600],
+                    ))
                 else:
-                    results.append({
-                        "Mã đơn": r["code"],
-                        "Kết quả": "Lỗi",
-                        "Link khách": customer_url,
-                        "Lý do": ("Ghi chú đơn hàng chưa lưu. " + note_error + " | " + customer_tail).strip(" |")[:1600],
-                    })
+                    results.append(_result_row(
+                        r,
+                        "Lỗi",
+                        customer_url=customer_url,
+                        ly_do=("Ghi chú đơn hàng chưa lưu. " + note_error + " | " + customer_tail).strip(" |")[:1600],
+                    ))
         st.session_state["ttkh_write_results"] = results
         # Ghi LỊCH SỬ lưu TTKH vào Gist để thống kê theo ngày (không được làm hỏng luồng ghi)
         try:
@@ -1849,7 +1938,7 @@ if _page == PAGE_TTKH:
 
             def _ttkh_result_cat(kq):
                 kq = str(kq or "")
-                if kq.startswith("Đã ghi ghi chú + khách") or kq.startswith("Đã tạo/cập nhật khách"):
+                if kq.startswith("Đã ghi ghi chú + khách"):
                     return "thanh_cong"
                 if kq.startswith("Bỏ qua"):
                     return "bo_qua"
@@ -1978,7 +2067,7 @@ if _page == PAGE_TTKH:
             if row_pending:
                 rp = row_pending[0]
                 preview = _ttkh_address_preview(rp["info"], rp["status"])
-                color = "#0f766e" if rp["status"] == "Hợp lệ" else "#b45309"
+                color = "#0f766e" if _ttkh_can_write(rp) else "#b45309"
                 c[4].markdown(
                     f"<div style='font-size:.82rem;line-height:1.35;color:{color};font-weight:700'>{_esc(preview)}</div>",
                     unsafe_allow_html=True,
@@ -1993,13 +2082,13 @@ if _page == PAGE_TTKH:
                     st.warning(f"Chưa dán TTKH cho đơn {code}.")
             if row_pending:
                 _st = row_pending[0]["status"]
-                _label = "Hợp lệ" if row_pending[0]["has_phone"] and _st == "Hợp lệ" else _st
+                _label = "Sẵn sàng ghi" if _ttkh_can_write(row_pending[0]) else _st
                 btn_cols[1].caption(f"Trạng thái dòng: {_label}")
             old_note = str(r.get("Ghi chú hiện tại") or "").strip()
             if old_note:
                 c[5].caption(f"Ghi chú cũ: {old_note[:120]}" + ("..." if len(old_note) > 120 else ""))
         pending_here = _collect_ttkh_rows(rows)
-        ready_here = sum(1 for r in pending_here if r["has_phone"] and r["status"] == "Hợp lệ")
+        ready_here = sum(1 for r in pending_here if _ttkh_can_write(r))
         save_cols = st.columns([1.6, 1, 5])
         if ready_here:
             save_cols[0].caption(f"Sẵn sàng ghi: {ready_here} đơn trong bảng này")
@@ -2009,6 +2098,7 @@ if _page == PAGE_TTKH:
             else:
                 st.warning("Chưa có dòng TTKH nào được dán trong bảng này.")
         return df
+
 
     with _tabA:
         if "ttkh_pending_inputs" not in st.session_state:
@@ -2293,11 +2383,11 @@ if _page == PAGE_TTKH:
             st.caption("Không có đơn để dán TTKH.")
 
         _pending_write = _collect_ttkh_rows(_all_rows)
-        _ready_all = sum(1 for r in _pending_write if r["has_phone"] and r["status"] == "Hợp lệ")
+        _ready_all = sum(1 for r in _pending_write if _ttkh_can_write(r))
         _invalid_all = len(_pending_write) - _ready_all
         with st.container(key="ttkh_save_float"):
             st.markdown("**💾 Lưu TTKH SAPO**")
-            st.caption(f"Hợp lệ: {_ready_all} · Chưa hợp lệ: {_invalid_all}")
+            st.caption(f"Sẵn sàng ghi: {_ready_all} · Cần sửa/thiếu mã: {_invalid_all}")
             if st.button("💾 Ghi SAPO", key="ttkh_float_save", use_container_width=True):
                 if _pending_write:
                     _write_ttkh_rows(_pending_write)
@@ -2308,10 +2398,14 @@ if _page == PAGE_TTKH:
         if _pending_write:
             _preview = pd.DataFrame([{
                 "Mã đơn": r["code"],
-                "Trạng thái": r["status"],
+                "Trạng thái": "Sẵn sàng ghi" if _ttkh_can_write(r) else r["status"],
                 "Tên": r["info"].get("name", ""),
                 "SĐT": r["info"].get("phone", ""),
                 "Loại địa chỉ": "Mới" if r["info"].get("address_format") == "new" else "Cũ",
+                "Mã SAPO": _ttkh_address_code_status(r["info"]),
+                "Mã tỉnh": r["info"].get("province_code", ""),
+                "Mã quận": "" if r["info"].get("address_format") == "new" else r["info"].get("district_code", ""),
+                "Mã phường": r["info"].get("ward_code", ""),
                 "Địa chỉ chuẩn SAPO": _ttkh_address_preview(r["info"], r["status"]),
                 "Địa chỉ": ", ".join(x for x in [
                     r["info"].get("address1", ""), r["info"].get("ward", ""),
@@ -2319,12 +2413,20 @@ if _page == PAGE_TTKH:
                 ] if x),
             } for r in _pending_write])
             st.markdown("#### Kiểm tra TTKH đã dán")
-            st.dataframe(_preview, hide_index=True, width="stretch")
-            _bad = [r for r in _pending_write if not r["has_phone"] or r["status"] != "Hợp lệ"]
+            st.dataframe(
+                _preview,
+                hide_index=True,
+                width="stretch",
+                column_config={
+                    "Địa chỉ chuẩn SAPO": st.column_config.TextColumn(width="large"),
+                    "Địa chỉ": st.column_config.TextColumn(width="large"),
+                },
+            )
+            _bad = [r for r in _pending_write if not _ttkh_can_write(r)]
             if _bad:
-                st.warning("Một số dòng đã dán TTKH nhưng chưa hợp lệ, app sẽ chưa ghi các dòng đó: "
+                st.warning("Một số dòng đã dán TTKH nhưng chưa đủ điều kiện ghi SAPO, app sẽ bỏ qua các dòng đó: "
                            + ", ".join(str(r["code"]) for r in _bad[:10]))
-            st.markdown(f"**Sẵn sàng ghi:** {sum(1 for r in _pending_write if r['has_phone'] and r['status'] == 'Hợp lệ')} đơn")
+            st.markdown(f"**Sẵn sàng ghi:** {sum(1 for r in _pending_write if _ttkh_can_write(r))} đơn")
             if st.button("🧹 Xóa toàn bộ danh sách chờ ghi"):
                 st.session_state["ttkh_pending_inputs"] = {}
                 _clear_ids = set(st.session_state.get("ttkh_clear_ids") or [])
