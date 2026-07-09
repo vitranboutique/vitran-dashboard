@@ -1403,17 +1403,30 @@ if _page == PAGE_TTKH:
                             _diag.append({"Mã đơn": _c, "Kết quả": "✅ Khách ĐÃ CÓ (không cần tạo)", "Chi tiết": f"SĐT {_info2['phone']} đã có khách"})
                             continue
                         _cid, _att = upsert_customer_from_info(_sess, _info2, skip_search=True, note=f"Fix đơn {_c}")
+                        _atts = [str(a) for a in (_att or [])]
+                        _blob = " ".join(_atts).lower()
                         if _cid:
-                            _diag.append({"Mã đơn": _c, "Kết quả": "✅ ĐÃ TẠO được khách", "Chi tiết": "; ".join(str(a) for a in (_att or [])[-3:])})
+                            _why = "✅ ĐÃ TẠO được khách"
+                        elif "429" in _blob:
+                            _why = "❌ 429 — Sapo đang chặn (rate limit). Nghỉ 5–10 phút rồi thử lại."
+                        elif "422" in _blob or "400" in _blob:
+                            _why = "❌ Dữ liệu địa chỉ không hợp lệ (Sapo từ chối 400/422)."
+                        elif "401" in _blob or "403" in _blob:
+                            _why = "❌ Phiên đăng nhập/cookie Sapo hết hạn (401/403) — cần cập nhật SAPO_COOKIE."
                         else:
-                            _diag.append({"Mã đơn": _c, "Kết quả": "❌ Vẫn KHÔNG tạo được", "Chi tiết": "; ".join(str(a) for a in (_att or [])[-6:])[:600]})
+                            _why = "❌ Vẫn không tạo được (xem các bước bên dưới)."
+                        _diag.append({"Mã đơn": _c, "phone": _info2["phone"], "ket_qua": _why, "attempts": _atts})
                     time.sleep(0.6)
                 st.session_state["ttkh_diag_result"] = _diag
                 load_customer_phone_set.clear()
             if st.session_state.get("ttkh_diag_result"):
                 st.markdown("**Kết quả chẩn đoán:**")
-                st.dataframe(pd.DataFrame(st.session_state["ttkh_diag_result"]), hide_index=True, width="stretch",
-                             column_config={"Chi tiết": st.column_config.TextColumn("Chi tiết (lý do)", width="large")})
+                for _dg in st.session_state["ttkh_diag_result"]:
+                    _k = _dg.get("ket_qua") or _dg.get("Kết quả") or ""
+                    st.markdown(f"**{_dg.get('Mã đơn')}** · SĐT {_dg.get('phone','')} → {_k}")
+                    _ats = _dg.get("attempts") or ([_dg.get("Chi tiết")] if _dg.get("Chi tiết") else [])
+                    if _ats:
+                        st.code("\n".join(str(a) for a in _ats), language="text")
     with st.expander("📅 Xem lịch sử theo từng ngày (30 ngày)", expanded=False):
         if _stat_rows:
             st.dataframe(
