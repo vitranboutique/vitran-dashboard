@@ -733,8 +733,9 @@ def load_ttkh_candidates(days=15, channel_filter="tiktok"):
 
 @st.cache_data(ttl=600, show_spinner=False)
 def load_customer_phone_set():
-    """Tập SĐT khách hàng (canon) — cache 10 phút vì shop có rất nhiều khách (tải nặng)."""
-    return L.get_customer_phone_set(make_fetch_json(build_session()))
+    """Tập SĐT khách hàng (canon) — cache 10 phút. Shop ~28k khách (~115 trang),
+    max_pages=220 (~55k) chừa dư cho tăng trưởng để không bỏ sót khách."""
+    return L.get_customer_phone_set(make_fetch_json(build_session()), max_pages=220)
 
 
 # Dohana: fetch TRỰC TIẾP thành công → MERGE vào kho Gist (lưu cả năm) rồi trả về. Nếu API tạm
