@@ -712,12 +712,14 @@ def customer_exists_by_phone(session: requests.Session, phone: str) -> bool:
         return False
 
 
-def upsert_customer_from_info(session: requests.Session, info: dict, note: str = "") -> tuple:
+def upsert_customer_from_info(session: requests.Session, info: dict, note: str = "", skip_search: bool = False) -> tuple:
     """Tạo/cập nhật khách hàng TỪ info (tên/SĐT/địa chỉ) — KHÔNG đụng đơn hàng.
-    Dedup theo SĐT (dùng lại nếu đã có). Trả (customer_id | None, attempts)."""
+    skip_search=True: bỏ tìm trùng SĐT (khi đã biết chắc chưa có khách) → ít request,
+    chống 429. Trả (customer_id | None, attempts)."""
     attempts: list[str] = []
     try:
-        cid = _upsert_customer_info(session, {}, info, note or "Tạo khách từ đơn hàng (backfill)", attempts)
+        cid = _upsert_customer_info(session, {}, info, note or "Tạo khách từ đơn hàng (backfill)", attempts,
+                                    skip_search=skip_search)
     except Exception as e:
         attempts.append(f"upsert_customer_from_info -> {type(e).__name__}: {e}")
         cid = None
@@ -937,21 +939,26 @@ def _create_customer_via_html(session: requests.Session, info: dict, note: str, 
     return None
 
 
-def _upsert_customer_info(session: requests.Session, order: dict, info: dict, note: str, attempts: list[str]):
+def _upsert_customer_info(session: requests.Session, order: dict, info: dict, note: str, attempts: list[str],
+                          skip_search: bool = False):
     customer = order.get("customer") if isinstance(order.get("customer"), dict) else {}
     phone = str(info.get("phone") or "").strip()
     found_by_phone = None
-    phone_candidate = _find_customer_by_phone(session, phone, attempts) if phone and not _is_masked_phone(phone) else None
-    if phone_candidate:
-        try:
-            candidate = get_customer(session, phone_candidate)
-            if _customer_identity_saved(candidate, info, note):
-                found_by_phone = phone_candidate
-            else:
-                attempts.append(f"GET customer phone candidate -> different identity:{phone_candidate}")
-        except Exception as e:
-            attempts.append(f"GET customer phone candidate -> {type(e).__name__}: {e}")
-    found_by_identity = _find_customer_by_identity(session, info, note, attempts)
+    found_by_identity = None
+    # skip_search=True: đã biết chắc chưa có khách (backfill) → BỎ tìm trùng để giảm
+    # số request (chống 429), tạo thẳng khách mới.
+    if not skip_search:
+        phone_candidate = _find_customer_by_phone(session, phone, attempts) if phone and not _is_masked_phone(phone) else None
+        if phone_candidate:
+            try:
+                candidate = get_customer(session, phone_candidate)
+                if _customer_identity_saved(candidate, info, note):
+                    found_by_phone = phone_candidate
+                else:
+                    attempts.append(f"GET customer phone candidate -> different identity:{phone_candidate}")
+            except Exception as e:
+                attempts.append(f"GET customer phone candidate -> {type(e).__name__}: {e}")
+        found_by_identity = _find_customer_by_identity(session, info, note, attempts)
     # Phone is only a search hint. If the same phone has a different name/address,
     # create a separate customer instead of overwriting the old profile.
     if phone and not _is_masked_phone(phone):

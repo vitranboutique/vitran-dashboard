@@ -1417,6 +1417,7 @@ if _page == PAGE_TTKH:
                         _sess = build_session()
                         _prog = st.progress(0.0, text="Đang tạo khách…")
                         _ok, _fail, _fail_detail, _done_ids = 0, 0, [], []
+                        _seen_phones = set()   # tránh tạo trùng SĐT trong cùng lượt (vì bỏ search)
 
                         def _reason_from_attempts(atts):
                             if not atts:
@@ -1436,14 +1437,20 @@ if _page == PAGE_TTKH:
                                     _fail += 1
                                     _miss = "SĐT" if not _info.get("phone") else "tên"
                                     _fail_detail.append({"Mã đơn": _m["code"], "Lý do": f"Thiếu {_miss} trên đơn"})
+                                elif _info.get("phone") in _seen_phones:
+                                    _ok += 1   # cùng SĐT đã tạo ở lượt này → coi như xong
+                                    _done_ids.append(str(_m["order_id"]))
                                 else:
-                                    _cid, _att = upsert_customer_from_info(_sess, _info, note=f"Backfill từ đơn {_m['code']}")
+                                    _cid, _att = upsert_customer_from_info(_sess, _info, skip_search=True,
+                                                                           note=f"Backfill từ đơn {_m['code']}")
                                     if not _cid and any("429" in str(a) for a in (_att or [])):
-                                        time.sleep(2.0)   # dính 429 → nghỉ rồi thử lại 1 lần
-                                        _cid, _att = upsert_customer_from_info(_sess, _info, note=f"Backfill từ đơn {_m['code']}")
+                                        time.sleep(2.5)   # dính 429 → nghỉ rồi thử lại 1 lần
+                                        _cid, _att = upsert_customer_from_info(_sess, _info, skip_search=True,
+                                                                               note=f"Backfill từ đơn {_m['code']}")
                                     if _cid:
                                         _ok += 1
                                         _done_ids.append(str(_m["order_id"]))
+                                        _seen_phones.add(_info.get("phone"))
                                     else:
                                         _fail += 1
                                         _fail_detail.append({"Mã đơn": _m["code"], "Lý do": _reason_from_attempts(_att)})
