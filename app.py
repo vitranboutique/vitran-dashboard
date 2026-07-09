@@ -1495,37 +1495,26 @@ if _page == PAGE_TTKH:
         _pc[1].button(f"👉 Xem {_n_fail_now} đơn", key="ttkh_goto_failed_stats", use_container_width=True,
                       on_click=lambda: st.session_state.update(ttkh_show_failed_only=True))
     # Mở sẵn khi đang có kết quả quét (để bảng + nút tạo khách luôn hiện, khỏi mở lại sau mỗi lần bấm)
-    with st.expander("🔍 Kiểm tra đơn thiếu khách — đối chiếu chắc chắn (30 ngày)",
+    with st.expander("🔍 Kiểm tra đơn thiếu khách / địa chỉ chưa chuẩn — đối chiếu chắc chắn",
                      expanded=bool(st.session_state.get("ttkh_audit"))):
-        st.caption("Quét MỌI đơn 30 ngày: đơn đã ghi SĐT lên đơn nhưng SĐT đó CHƯA có khách trong Sapo "
-                   "→ liệt kê để bạn tạo khách. Đây là cách biết CHẮC không sót (khác thống kê ở trên chỉ là nhật ký).")
-        if st.button("🔍 Quét đối chiếu ngay", key="ttkh_audit_run"):
-            with st.spinner("Đang tải danh sách khách + đối chiếu đơn 30 ngày…"):
+        st.caption("Quét MỌI đơn: đơn đã ghi SĐT lên đơn nhưng khách CHƯA ĐẠT — **chưa có khách**, HOẶC **khách "
+                   "địa chỉ text** (chưa chọn Tỉnh/Quận/Phường) → liệt kê để tạo/sửa. Biết CHẮC không sót.")
+        _ac = st.columns([1, 2])
+        _audit_days = _ac[0].number_input("Số ngày quét", min_value=7, max_value=365, value=365, step=30,
+                                          help="Tối đa 1 năm. Quét càng dài càng lâu (nhiều đơn + có thể chạm rate limit).")
+        if _ac[1].button("🔍 Quét đối chiếu ngay", key="ttkh_audit_run"):
+            with st.spinner(f"Đang tải danh sách khách + đối chiếu đơn {int(_audit_days)} ngày… (có thể lâu)"):
                 try:
                     _fj = make_fetch_json(build_session())
-                    _cores, _cap = load_customer_phone_set()
+                    _cores, _good, _cap = load_customer_phone_set()
                     if not _cores:
                         st.session_state["ttkh_audit"] = {"error": "Không lấy được danh sách khách hàng từ Sapo (rate limit 429). Thử lại sau ~1 phút."}
                     else:
-                        _suspects = L.audit_orders_missing_customer(_fj, _cores, days=30, channel_filter=_channel_filter)
-                        # Tải ĐỦ danh sách khách (_cap=False) → tin set luôn, khỏi search lại.
-                        # Tải THIẾU (_cap=True) → xác nhận từng đơn nghi (giãn nhịp tránh 429).
-                        if not _cap:
-                            _missing = _suspects
-                        elif len(_suspects) <= 150:
-                            _sess = build_session()
-                            _missing = []
-                            for _s in _suspects:
-                                try:
-                                    if not customer_exists_by_phone(_sess, _s["phone"]):
-                                        _missing.append(_s)
-                                except Exception:
-                                    _missing.append(_s)
-                                time.sleep(0.35)
-                        else:
-                            _missing = _suspects
+                        # đơn CHƯA ĐẠT = SĐT không nằm trong 'good' (chưa có khách HOẶC khách địa chỉ text)
+                        _missing = L.audit_orders_missing_customer(
+                            _fj, _good, days=int(_audit_days), channel_filter=_channel_filter, all_phone_set=_cores)
                         st.session_state["ttkh_audit"] = {
-                            "missing": _missing, "cap": _cap, "n_suspect": len(_suspects),
+                            "missing": _missing, "cap": _cap, "n_suspect": len(_missing), "days": int(_audit_days),
                             "ts": (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%H:%M %d/%m")}
                 except Exception as _e:
                     st.session_state["ttkh_audit"] = {"error": str(_e)[:400]}
@@ -1539,9 +1528,12 @@ if _page == PAGE_TTKH:
                 if _audit.get("cap"):
                     st.warning("Danh sách khách rất lớn, có thể chưa tải hết — kết quả tham khảo, nên quét lại/tăng giới hạn.")
                 if not _mis:
-                    st.success(f"✅ Không sót khách nào — mọi đơn đã ghi SĐT đều đã có khách trong Sapo. (Quét {_audit['ts']})")
+                    st.success(f"✅ Không sót — mọi đơn đã ghi SĐT đều có khách + địa chỉ chuẩn. (Quét {_audit['ts']}, {_audit.get('days','?')} ngày)")
                 else:
-                    st.error(f"⚠️ Có {len(_mis)} đơn đã ghi đơn nhưng CHƯA có khách (quét {_audit['ts']}):")
+                    _n_text = sum(1 for m in _mis if "text" in str(m.get("ly_do", "")).lower())
+                    _n_nocust = len(_mis) - _n_text
+                    st.error(f"⚠️ Có {len(_mis)} đơn CHƯA ĐẠT (quét {_audit['ts']}, {_audit.get('days','?')} ngày): "
+                             f"{_n_nocust} chưa có khách · {_n_text} khách địa chỉ text (chưa chọn Tỉnh/Quận/Phường).")
 
                     def _mis_addr(info):
                         return ", ".join(str(x).strip() for x in (
@@ -1551,6 +1543,7 @@ if _page == PAGE_TTKH:
                     st.dataframe(
                         pd.DataFrame([{
                             "Mã đơn": m["code"],
+                            "Lý do": m.get("ly_do", ""),
                             "Tên": (m.get("info") or {}).get("name", ""),
                             "SĐT": m["phone"],
                             "Địa chỉ": _mis_addr(m.get("info") or {}),
@@ -1595,7 +1588,10 @@ if _page == PAGE_TTKH:
                                     _ok += 1   # cùng SĐT đã tạo ở lượt này → coi như xong
                                     _done_ids.append(str(_m["order_id"]))
                                 else:
-                                    _cid, _att = upsert_customer_from_info(_sess, _info, skip_search=True,
+                                    # khách địa chỉ text đã tồn tại → KHÔNG skip_search (tìm & cập nhật, tránh trùng);
+                                    # khách chưa có → skip_search (tạo nhanh, ít 429)
+                                    _is_text = "text" in str(_m.get("ly_do", "")).lower()
+                                    _cid, _att = upsert_customer_from_info(_sess, _info, skip_search=(not _is_text),
                                                                            note=f"Backfill từ đơn {_m['code']}")
                                     _is429 = (not _cid) and any("429" in str(a) for a in (_att or []))
                                     if _cid:

@@ -506,13 +506,25 @@ def order_shipping_to_info(o: dict) -> dict:
     return info
 
 
-def get_customer_phone_set(fetch_json, max_pages: int = 160, throttle: float = 0.35) -> tuple:
-    """Lấy TẤT CẢ SĐT khách hàng đang có trong Sapo (dạng canon 0xxxxxxxxx).
+def _addr_is_structured(a) -> bool:
+    """True nếu địa chỉ có MÃ vùng (Tỉnh/Phường) — tức đã chọn dropdown, lọc được.
+    Địa chỉ text (chỉ address1, không mã) → False."""
+    if not isinstance(a, dict):
+        return False
+    return bool(str(a.get("province_code") or a.get("province_id") or "").strip()
+                or str(a.get("ward_code") or a.get("ward_id") or "").strip())
 
-    Giãn nhịp ~3 req/s + tự thử lại khi 429 (Sapo giới hạn) để không bị chặn.
-    Trả (set_phone, hit_cap). hit_cap=True nghĩa là CHƯA lấy hết (chạm trần trang
-    hoặc vẫn 429 sau khi thử lại) → set có thể còn thiếu, cần xác nhận lại từng đơn."""
+
+def get_customer_phone_set(fetch_json, max_pages: int = 160, throttle: float = 0.35) -> tuple:
+    """Lấy SĐT khách hàng trong Sapo (canon 0xxxxxxxxx).
+
+    Giãn nhịp ~3 req/s + tự thử lại khi 429. Trả (cores, good, hit_cap):
+    - cores: TẤT CẢ SĐT khách đang có.
+    - good : SĐT khách có ĐỊA CHỈ CÓ CẤU TRÚC (Tỉnh/Quận/Phường, lọc được).
+      SĐT ở cores nhưng KHÔNG ở good = khách địa chỉ text → cần sửa (tính là lỗi).
+    - hit_cap: True nếu chưa lấy hết (429/chạm trần) → kết quả có thể thiếu."""
     cores = set()
+    good = set()
     hit_cap = False
     for page in range(1, int(max_pages) + 1):
         data = None
@@ -543,27 +555,35 @@ def get_customer_phone_set(fetch_json, max_pages: int = 160, throttle: float = 0
         for c in customers:
             if not isinstance(c, dict):
                 continue
+            _phones = set()
             for k in ("phone", "phone_number", "mobile"):
                 p = _canon_phone(c.get(k))
                 if p:
-                    cores.add(p)
-            for a in (c.get("addresses") or []):
+                    _phones.add(p)
+            _addrs = c.get("addresses") or []
+            for a in _addrs:
                 if isinstance(a, dict):
                     p = _canon_phone(a.get("phone") or a.get("phone_number") or a.get("mobile"))
                     if p:
-                        cores.add(p)
+                        _phones.add(p)
+            _has_struct = any(_addr_is_structured(a) for a in _addrs) or _addr_is_structured(c)
+            for p in _phones:
+                cores.add(p)
+                if _has_struct:
+                    good.add(p)
         if len(customers) < 250:
             break
         if page == int(max_pages):
             hit_cap = True
-    return cores, hit_cap
+    return cores, good, hit_cap
 
 
-def audit_orders_missing_customer(fetch_json, customer_phone_set, days: int = 30,
-                                  max_pages: int = 40, channel_filter: str = "all") -> list:
-    """Duyệt đơn `days` ngày: đơn ĐÃ ghi SĐT lên đơn nhưng SĐT đó CHƯA có khách trong
-    Sapo (không nằm trong customer_phone_set) → nghi 'sót khách'. Trả list
-    {order_id, code, phone, created_on}. Cần xác nhận lại từng đơn ở lớp trên."""
+def audit_orders_missing_customer(fetch_json, good_phone_set, days: int = 30,
+                                  max_pages: int = 300, channel_filter: str = "all",
+                                  all_phone_set=None) -> list:
+    """Duyệt đơn `days` ngày: đơn đã ghi SĐT lên đơn nhưng khách CHƯA ĐẠT — tức SĐT
+    không nằm trong good_phone_set (khách chưa có, HOẶC có nhưng địa chỉ chỉ là text
+    chưa chọn Tỉnh/Quận/Phường). Trả list {order_id, code, phone, created_on, ly_do, info}."""
     cutoff_vn = (_now_utc() + timedelta(hours=7)).replace(tzinfo=None) - timedelta(days=days)
     created_min = cutoff_vn.isoformat()
     out = []
@@ -599,14 +619,17 @@ def audit_orders_missing_customer(fetch_json, customer_phone_set, days: int = 30
                 haystack = f"{cd.get('main_name') or ''} {cd.get('branch_name') or ''} {o.get('source_name') or ''}".lower()
                 if channel_key not in haystack:
                     continue
-            if canon in (customer_phone_set or set()):
-                continue   # khách đã có → đủ 2 nơi
+            if canon in (good_phone_set or set()):
+                continue   # khách đã có + địa chỉ có cấu trúc → đạt
+            _ly_do = ("Khách địa chỉ TEXT (chưa chọn Tỉnh/Quận/Phường)"
+                      if all_phone_set and canon in all_phone_set else "Chưa có khách")
             out.append({
                 "order_id": o.get("id"),
                 "code": o.get("source_identifier") or o.get("name") or o.get("code") or o.get("id"),
                 "phone": canon,
                 "created_on": created_vn.strftime("%d/%m %H:%M"),
-                "info": order_shipping_to_info(o),   # để backfill tạo khách từ đơn
+                "ly_do": _ly_do,
+                "info": order_shipping_to_info(o),   # để backfill tạo/sửa khách từ đơn
             })
         if not page_recent:
             break
