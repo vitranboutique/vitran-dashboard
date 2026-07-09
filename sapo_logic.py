@@ -161,14 +161,23 @@ def _has_customer_phone(note) -> bool:
 
 
 def _order_has_customer_phone(order) -> bool:
-    """TTKH coi là XONG (ẩn đơn khỏi danh sách cần lấy) CHỈ khi đã tạo/gắn được
-    KHÁCH HÀNG có SĐT vào đơn — tức khách đã hiện trong mục Khách hàng.
+    """Đơn coi là ĐÃ LƯU TTKH (ẩn khỏi danh sách cần lấy) khi SĐT khách đã được
+    ghi vào ĐỊA CHỈ đơn (shipping/billing) hoặc đã gắn KHÁCH có SĐT — tức thao
+    tác ghi Sapo đã thực sự chạy xong phần cốt lõi.
 
-    KHÔNG tính SĐT ở ghi chú / địa chỉ giao-thanh toán: ghi chú chỉ là phía đơn
-    hàng, ghi trước và luôn thành công, nên nếu tính vào đây thì đơn biến mất
-    ngay khi ghi note dù khách chưa được tạo (mất khi CHƯA đủ 2 nơi)."""
+    KHÔNG tính SĐT trong GHI CHÚ: ghi chú được ghi TRƯỚC và luôn thành công, nên
+    nếu tính note thì đơn biến mất ngay cả khi phần địa chỉ/khách CHƯA ghi được
+    (mất khi chưa đủ). Ngược lại, chỉ đợi khách được GẮN vào đơn (customer.phone)
+    thì quá chặt — hàm ghi hiện tạo được khách nhưng hay KHÔNG gắn nổi vào đơn,
+    khiến đơn không bao giờ ẩn. Lấy địa chỉ đơn làm mốc là cân bằng nhất."""
+    parts = [order.get("phone")]
     cust = order.get("customer") if isinstance(order.get("customer"), dict) else {}
-    return any(_has_customer_phone(cust.get(k)) for k in ("phone", "phone_number", "mobile"))
+    parts.extend(cust.get(k) for k in ("phone", "phone_number", "mobile"))
+    for key in ("shipping_address", "billing_address"):
+        addr = order.get(key) or {}
+        if isinstance(addr, dict):
+            parts.extend([addr.get("phone"), addr.get("phone_number"), addr.get("mobile")])
+    return any(_has_customer_phone(x) for x in parts if x)
 
 
 def _picking_deadline_vn(created_vn):

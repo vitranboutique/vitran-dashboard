@@ -1274,6 +1274,51 @@ if _page == PAGE_TTKH:
 
     st.info("Điều kiện lọc: đơn trong `Tất cả`, không hủy, tạo trong số ngày chọn, ghi chú/địa chỉ SAPO chưa có SĐT.")
 
+    # ── 📊 THỐNG KÊ LƯU TTKH THEO NGÀY (30 ngày, lưu bền trên Gist) ──
+    with st.expander("📊 Thống kê lưu TTKH theo ngày (30 ngày gần nhất)", expanded=False):
+        if not picklog.configured():
+            st.caption("⚠️ Chưa bật kho lưu Gist (secrets `[picklog].github_token`) nên chưa thống kê được. "
+                       "Xem hướng dẫn ở trang Phiếu nhặt hàng.")
+        else:
+            try:
+                _logs = picklog.read_ttkh_logs()
+            except Exception as _e:
+                _logs = []
+                st.caption(f"Không đọc được lịch sử: `{_e}`")
+            _today_vn = (datetime.now(timezone.utc) + timedelta(hours=7)).date()
+            _from = (_today_vn - timedelta(days=29)).isoformat()
+            _rows_by_day = {}
+            for _lg in _logs:
+                _d = str(_lg.get("ngay") or "")
+                if _d < _from:
+                    continue
+                _agg = _rows_by_day.setdefault(_d, {"Ngày": _d, "Thành công": 0, "Thất bại": 0, "Bỏ qua": 0})
+                _kq = _lg.get("ket_qua")
+                if _kq == "thanh_cong":
+                    _agg["Thành công"] += 1
+                elif _kq == "bo_qua":
+                    _agg["Bỏ qua"] += 1
+                else:
+                    _agg["Thất bại"] += 1
+            if not _rows_by_day:
+                st.caption("Chưa có lượt lưu TTKH nào trong 30 ngày (hoặc chưa lưu lần nào sau khi bật kho).")
+            else:
+                _stat_rows = []
+                for _d in sorted(_rows_by_day, reverse=True):
+                    _a = _rows_by_day[_d]
+                    _a["Tổng đã lưu"] = _a["Thành công"] + _a["Thất bại"]
+                    _stat_rows.append(_a)
+                _sc = st.columns(3)
+                _sc[0].metric("Tổng đã lưu (30 ngày)", sum(r["Tổng đã lưu"] for r in _stat_rows))
+                _sc[1].metric("Thành công", sum(r["Thành công"] for r in _stat_rows))
+                _sc[2].metric("Thất bại", sum(r["Thất bại"] for r in _stat_rows))
+                st.dataframe(
+                    pd.DataFrame(_stat_rows)[["Ngày", "Tổng đã lưu", "Thành công", "Thất bại", "Bỏ qua"]],
+                    hide_index=True, width="stretch",
+                )
+                st.caption("Thành công = đã tạo/cập nhật được khách hàng. Thất bại = ghi được ghi chú nhưng "
+                           "chưa tạo được khách, hoặc lỗi. Bỏ qua = dòng chưa hợp lệ (thiếu SĐT/địa chỉ).")
+
     _phone_re = re.compile(r"\b(?:\+?84|0)\d[\d\s.\-]{8,12}\b")
     _masked_phone_re = re.compile(r"(?:\+?84|0)?\d[\d\s().\-]*\*+[\d\s().\-]*\d")
 
@@ -1581,6 +1626,32 @@ if _page == PAGE_TTKH:
                         "Lý do": ("Ghi chú đơn hàng chưa lưu. " + note_error + " | " + customer_tail).strip(" |")[:1600],
                     })
         st.session_state["ttkh_write_results"] = results
+        # Ghi LỊCH SỬ lưu TTKH vào Gist để thống kê theo ngày (không được làm hỏng luồng ghi)
+        try:
+            _phone_by_code = {r["code"]: (r["info"].get("phone") or "") for r in rows_to_write}
+
+            def _ttkh_result_cat(kq):
+                kq = str(kq or "")
+                if kq.startswith("Đã ghi ghi chú + khách") or kq.startswith("Đã tạo/cập nhật khách"):
+                    return "thanh_cong"
+                if kq.startswith("Bỏ qua"):
+                    return "bo_qua"
+                return "that_bai"
+
+            _log_ts = datetime.now(timezone.utc) + timedelta(hours=7)
+            _log_records = [{
+                "ngay": _log_ts.strftime("%Y-%m-%d"),
+                "gio": _log_ts.strftime("%H:%M"),
+                "ts": _log_ts.isoformat(timespec="seconds"),
+                "ma_don": res.get("Mã đơn"),
+                "sdt": _phone_by_code.get(res.get("Mã đơn"), ""),
+                "ket_qua": _ttkh_result_cat(res.get("Kết quả")),
+                "chi_tiet": str(res.get("Kết quả") or ""),
+            } for res in results]
+            if picklog.configured() and _log_records:
+                picklog.log_ttkh_batch(_log_records)
+        except Exception:
+            pass
         if ok_count:
             _clear_ids = set(st.session_state.get("ttkh_clear_ids") or [])
             for _oid in written_ids:

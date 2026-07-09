@@ -149,6 +149,34 @@ def read_date(day_iso: str) -> list:
     return [r for r in data.get("logs", []) if r.get("ngay") == day_iso]
 
 
+# ─── LỊCH SỬ LƯU TTKH (mỗi lần ghi Sapo) — LƯU BỀN ĐỂ THỐNG KÊ THEO NGÀY ───
+_TTKH_FILE = "vitran_ttkh_log.json"
+
+
+def log_ttkh_batch(records: list) -> tuple:
+    """Ghi 1 lượt lưu TTKH (nhiều dòng) vào gist. Mỗi record nên có:
+    {ngay, gio, ma_don, sdt, ket_qua ('thanh_cong'|'that_bai'|'bo_qua'), chi_tiet}.
+    Trả (ok, msg). Không bao giờ raise (an toàn cho luồng ghi Sapo)."""
+    records = [r for r in (records or []) if r]
+    if not records:
+        return True, "Không có gì để lưu."
+    gid = _resolve_gid()
+    if not gid:
+        return False, "Chưa cấu hình GitHub token (kho lưu)."
+    data = _read_gist_file(_TTKH_FILE) or {"logs": []}
+    if not isinstance(data, dict):
+        data = {"logs": []}
+    data.setdefault("logs", []).extend(records)
+    ok = _write_gist_file(_TTKH_FILE, data)
+    return (ok, "Đã lưu lịch sử TTKH." if ok else "Lỗi lưu gist lịch sử TTKH.")
+
+
+def read_ttkh_logs() -> list:
+    """Toàn bộ lịch sử lưu TTKH đã tích luỹ (list record). Rỗng nếu chưa có/chưa cấu hình."""
+    d = _read_gist_file(_TTKH_FILE)
+    return (d or {}).get("logs", []) if isinstance(d, dict) else []
+
+
 # ─── METADATA VIDEO DOHANA (đóng hàng + khui hàng) — LƯU CẢ NĂM ───
 # Dohana chỉ giữ 30 ngày rồi XOÁ số liệu. Tích luỹ dần qua các lần fetch 3×/ngày vào GIST (không tự
 # xoá) → cuối năm VẪN ĐỌC được: trạng thái · ngày quay · giờ · thời lượng · tag. Khử trùng (code,type).
