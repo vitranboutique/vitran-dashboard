@@ -1333,6 +1333,67 @@ if _page == PAGE_TTKH:
         else:
             st.caption("Chưa có lượt lưu TTKH nào trong 30 ngày.")
 
+    # ── 🔍 KIỂM TRA SÓT KHÁCH: đối chiếu đơn ↔ khách theo SĐT (chắc chắn) ──
+    with st.expander("🔍 Kiểm tra đơn thiếu khách — đối chiếu chắc chắn (30 ngày)", expanded=False):
+        st.caption("Quét MỌI đơn 30 ngày: đơn đã ghi SĐT lên đơn nhưng SĐT đó CHƯA có khách trong Sapo "
+                   "→ liệt kê để bạn tạo khách. Đây là cách biết CHẮC không sót (khác thống kê ở trên chỉ là nhật ký).")
+        if st.button("🔍 Quét đối chiếu ngay", key="ttkh_audit_run"):
+            with st.spinner("Đang tải danh sách khách + đối chiếu đơn 30 ngày…"):
+                try:
+                    _fj = make_fetch_json(build_session())
+                    _cores, _cap = L.get_customer_phone_set(_fj)
+                    if not _cores:
+                        st.session_state["ttkh_audit"] = {"error": "Không lấy được danh sách khách hàng từ Sapo."}
+                    else:
+                        _suspects = L.audit_orders_missing_customer(_fj, _cores, days=30, channel_filter=_channel_filter)
+                        _missing = []
+                        if len(_suspects) <= 200:            # xác nhận lại từng đơn nghi (tránh sót do phân trang)
+                            _sess = build_session()
+                            for _s in _suspects:
+                                try:
+                                    if not customer_exists_by_phone(_sess, _s["phone"]):
+                                        _missing.append(_s)
+                                except Exception:
+                                    _missing.append(_s)
+                        else:
+                            _missing = _suspects
+                        st.session_state["ttkh_audit"] = {
+                            "missing": _missing, "cap": _cap, "n_suspect": len(_suspects),
+                            "ts": (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%H:%M %d/%m")}
+                except Exception as _e:
+                    st.session_state["ttkh_audit"] = {"error": str(_e)[:400]}
+
+        _audit = st.session_state.get("ttkh_audit")
+        if _audit:
+            if _audit.get("error"):
+                st.error(f"Lỗi quét: {_audit['error']}")
+            else:
+                _mis = _audit.get("missing") or []
+                if _audit.get("cap"):
+                    st.warning("Danh sách khách rất lớn, có thể chưa tải hết — kết quả tham khảo, nên quét lại/tăng giới hạn.")
+                if not _mis:
+                    st.success(f"✅ Không sót khách nào — mọi đơn đã ghi SĐT đều đã có khách trong Sapo. (Quét {_audit['ts']})")
+                else:
+                    st.error(f"⚠️ Có {len(_mis)} đơn đã ghi đơn nhưng CHƯA có khách (quét {_audit['ts']}):")
+                    st.dataframe(
+                        pd.DataFrame([{"Mã đơn": m["code"], "SĐT": m["phone"], "Ngày tạo": m["created_on"]} for m in _mis]),
+                        hide_index=True, width="stretch")
+                    if picklog.configured():
+                        if st.button(f"➕ Đưa {len(_mis)} đơn vào danh sách để tạo khách", key="ttkh_audit_add"):
+                            try:
+                                _ts = (datetime.now(timezone.utc) + timedelta(hours=7)).isoformat(timespec="seconds")
+                                _add = {str(m["order_id"]): {"ma_don": m["code"], "sdt": m["phone"],
+                                                             "ly_do": "Sót khách (quét đối chiếu)", "ts": _ts} for m in _mis}
+                                picklog.update_ttkh_pending(add=_add)
+                                load_ttkh_candidates.clear()
+                                st.session_state.pop("ttkh_audit", None)
+                                st.success("Đã đưa vào danh sách. Đang tải lại — dán TTKH & Ghi SAPO để tạo khách.")
+                                st.rerun()
+                            except Exception as _e:
+                                st.error(f"Lỗi đưa vào danh sách: {_e}")
+                    else:
+                        st.caption("⚠️ Chưa bật kho lưu Gist nên không tự đưa vào danh sách được — dùng ô 🔎 tìm từng mã đơn để cứu.")
+
     with st.expander("ℹ️ Điều kiện lọc đơn"):
         st.caption("Đơn trong `Tất cả`, không hủy, tạo trong số ngày chọn, ghi chú/địa chỉ SAPO chưa có SĐT khách.")
 

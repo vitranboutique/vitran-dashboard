@@ -427,6 +427,107 @@ def find_order_by_code(fetch_json, code, days: int = 30, max_pages: int = 40) ->
     return None
 
 
+def _canon_phone(raw) -> str:
+    """Chuẩn hóa SĐT về dạng '0xxxxxxxxx' (10 số) để đối chiếu đơn ↔ khách nhất quán.
+    Bỏ qua số bị che (*). Trả '' nếu không hợp lệ."""
+    s = str(raw or "")
+    if "*" in s:
+        return ""
+    d = re.sub(r"\D+", "", s)
+    if d.startswith("00"):
+        d = d[2:]
+    if d.startswith("84"):
+        rest = d[2:]
+        if len(rest) == 9:
+            d = "0" + rest
+        elif len(rest) == 10 and rest.startswith("0"):
+            d = rest
+    d = "0" + d.lstrip("0")
+    return d if len(d) == 10 else ""
+
+
+def get_customer_phone_set(fetch_json, max_pages: int = 80) -> tuple:
+    """Lấy TẤT CẢ SĐT khách hàng đang có trong Sapo (dạng canon 0xxxxxxxxx).
+    Trả (set_phone, hit_cap). hit_cap=True nghĩa là chạm trần trang → có thể còn thiếu."""
+    cores = set()
+    hit_cap = False
+    for page in range(1, int(max_pages) + 1):
+        data = fetch_json("/admin/customers.json", limit=250, page=page)
+        customers = data.get("customers", []) or data.get("data", []) or []
+        if not customers:
+            break
+        for c in customers:
+            if not isinstance(c, dict):
+                continue
+            for k in ("phone", "phone_number", "mobile"):
+                p = _canon_phone(c.get(k))
+                if p:
+                    cores.add(p)
+            for a in (c.get("addresses") or []):
+                if isinstance(a, dict):
+                    p = _canon_phone(a.get("phone") or a.get("phone_number") or a.get("mobile"))
+                    if p:
+                        cores.add(p)
+        if len(customers) < 250:
+            break
+        if page == int(max_pages):
+            hit_cap = True
+    return cores, hit_cap
+
+
+def audit_orders_missing_customer(fetch_json, customer_phone_set, days: int = 30,
+                                  max_pages: int = 40, channel_filter: str = "all") -> list:
+    """Duyệt đơn `days` ngày: đơn ĐÃ ghi SĐT lên đơn nhưng SĐT đó CHƯA có khách trong
+    Sapo (không nằm trong customer_phone_set) → nghi 'sót khách'. Trả list
+    {order_id, code, phone, created_on}. Cần xác nhận lại từng đơn ở lớp trên."""
+    cutoff_vn = (_now_utc() + timedelta(hours=7)).replace(tzinfo=None) - timedelta(days=days)
+    created_min = cutoff_vn.isoformat()
+    out = []
+    channel_key = str(channel_filter or "all").lower()
+    for page in range(1, int(max_pages) + 1):
+        data = fetch_json("/admin/orders.json", limit=250, page=page, created_on_min=created_min)
+        orders = data.get("orders", []) or []
+        if not orders:
+            break
+        page_recent = False
+        for o in orders:
+            created_vn = _parse_vn(o.get("created_on"))
+            if not created_vn or created_vn < cutoff_vn:
+                continue
+            page_recent = True
+            if str(o.get("status") or "").lower() == "cancelled" or o.get("cancelled_on"):
+                continue
+            # chỉ xét đơn ĐÃ ghi SĐT lên đơn (địa chỉ/đơn) — tức phần đơn hàng đã lưu
+            phone = ""
+            for key in ("shipping_address", "billing_address"):
+                a = o.get(key) or {}
+                if isinstance(a, dict):
+                    phone = a.get("phone") or a.get("phone_number") or a.get("mobile") or ""
+                    if phone:
+                        break
+            if not phone:
+                phone = o.get("phone") or ""
+            canon = _canon_phone(phone)
+            if not canon:
+                continue
+            if channel_key != "all":
+                cd = o.get("channel_definition") or {}
+                haystack = f"{cd.get('main_name') or ''} {cd.get('branch_name') or ''} {o.get('source_name') or ''}".lower()
+                if channel_key not in haystack:
+                    continue
+            if canon in (customer_phone_set or set()):
+                continue   # khách đã có → đủ 2 nơi
+            out.append({
+                "order_id": o.get("id"),
+                "code": o.get("source_identifier") or o.get("name") or o.get("code") or o.get("id"),
+                "phone": canon,
+                "created_on": created_vn.strftime("%d/%m %H:%M"),
+            })
+        if not page_recent:
+            break
+    return out
+
+
 def _packing_history(orders, gap_min: int = 20, ref_date=None) -> dict:
     """Suy ra các ĐỢT SOẠN HÀNG trong ngày từ mốc đóng gói (packed_on).
     Gom các đơn đóng gói cách nhau <= gap_min phút thành 1 đợt. ref_date=None → hôm nay."""
