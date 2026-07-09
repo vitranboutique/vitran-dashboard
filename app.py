@@ -1766,23 +1766,25 @@ if _page == PAGE_TTKH:
         cust_fail = [r for r in results if _kq(r).startswith("Đã ghi ghi chú,")]
         hard_fail = [r for r in results if _kq(r).startswith("Lỗi")]
         skipped = sum(1 for r in results if _kq(r).startswith("Bỏ qua"))
-        failed = len(cust_fail) + len(hard_fail)
-        n429 = sum(1 for r in (cust_fail + hard_fail) if "429" in str(r.get("Lý do")) or "rate limit" in str(r.get("Lý do")).lower())
+        _fail_rows = cust_fail + hard_fail
+        failed = len(_fail_rows)
+        n429 = sum(1 for r in _fail_rows if "429" in str(r.get("Lý do")) or "rate limit" in str(r.get("Lý do")).lower())
+        # Lưu mã đơn thất bại để lọc nhanh khi bấm ô "Thất bại"
+        st.session_state["ttkh_failed_codes"] = [str(r.get("Mã đơn")) for r in _fail_rows]
 
+        def _view_failed():
+            st.session_state["ttkh_show_failed_only"] = True
+
+        _c = st.columns([1, 1, 2])
+        _c[0].metric("✅ Tổng đã lưu", ok)
+        _c[1].metric("❌ Thất bại", failed)
         if failed:
-            _bad = ", ".join(str(r.get("Mã đơn")) for r in (cust_fail + hard_fail)[:20])
-            _msg = (f"⚠️ GHI XONG: **{ok} đơn OK** · **{failed} đơn CHƯA được** · {skipped} bỏ qua.\n\n"
-                    f"{failed} đơn chưa được **vẫn nằm trong danh sách** (gắn ⚠️) để ghi lại: {_bad}.")
-            if n429:
-                _msg += f"\n\n🕐 Trong đó {n429} đơn do **Sapo đang bận (429)** — chỉ cần **chờ 1–2 phút rồi bấm 💾 Ghi SAPO lại**, KHÔNG phải lỗi dữ liệu."
-            st.error(_msg)
+            _c[2].button(f"👉 Xem {failed} đơn thất bại", key="ttkh_goto_failed",
+                         on_click=_view_failed, use_container_width=True)
+            _extra = f" — trong đó {n429} đơn do Sapo bận (429), chờ 1–2 phút rồi Ghi lại." if n429 else ""
+            _c[2].caption(f"Bấm để lọc tới các đơn lỗi.{_extra}")
         else:
-            st.success(f"✅ Đã lưu ĐỦ 2 NƠI (đơn + khách): {ok} đơn." + (f" Bỏ qua {skipped} đơn chưa hợp lệ." if skipped else ""))
-        st.caption("👇 Kết quả + hướng dẫn xử lý hiện **ngay tại từng dòng đơn** bên dưới.")
-        # Chi tiết kỹ thuật để riêng cho quản lý
-        if failed:
-            with st.expander("🔧 Chi tiết kỹ thuật (cho quản lý)"):
-                st.dataframe(pd.DataFrame(results), hide_index=True, width="stretch")
+            _c[2].caption("Tất cả đã lưu đủ 2 nơi 🎉" if ok else "")
 
     def _write_ttkh_rows(rows_to_write):
         session = build_session()
@@ -1986,8 +1988,9 @@ if _page == PAGE_TTKH:
             _res = _res_map.get(code)
             if _res:
                 _rst, _rtodo, _rcolor = _ttkh_friendly(_res)
-                _res_badge = (f"<div style='margin-top:3px;font-size:.82rem;line-height:1.3;color:{_rcolor};font-weight:800'>{_esc(_rst)}"
-                              f"<div style='font-weight:500;color:#374151;font-size:.78rem'>➡ {_esc(_rtodo)}</div></div>")
+                if not _rst.startswith("✅"):   # đơn xong tự mất rồi → chỉ hiện đơn lỗi/chờ
+                    _res_badge = (f"<div style='margin-top:3px;font-size:.82rem;line-height:1.3;color:{_rcolor};font-weight:800'>{_esc(_rst)}"
+                                  f"<div style='font-weight:500;color:#374151;font-size:.78rem'>➡ {_esc(_rtodo)}</div></div>")
             c[1].markdown(code_link + sapo_link + customer_link + _warn_badge + _res_badge, unsafe_allow_html=True)
             c[2].markdown(
                 f"<abbr title='{_product_tip(r)}' style='cursor:help;font-weight:800;text-decoration:underline dotted #6b7280'>{int(r.get('SL SP') or 0)} SP ⓘ</abbr>",
@@ -2060,6 +2063,22 @@ if _page == PAGE_TTKH:
 
     _multi = [r for r in _tt["multi"] if _match(r)]
     _single = [r for r in _tt["single"] if _match(r)]
+
+    # Lọc "chỉ đơn THẤT BẠI" khi bấm ô Thất bại ở báo cáo trên
+    if st.session_state.get("ttkh_show_failed_only"):
+        _fcodes = set(st.session_state.get("ttkh_failed_codes") or [])
+
+        def _is_failed(row):
+            return any(_norm_code(row.get(k)) in {_norm_code(c) for c in _fcodes}
+                       for k in ("name", "sapo_name", "source_identifier"))
+
+        _multi = [r for r in _multi if _is_failed(r)]
+        _single = [r for r in _single if _is_failed(r)]
+        _fc1, _fc2 = st.columns([3, 1])
+        _fc1.warning(f"🔴 Đang xem {len(_multi) + len(_single)} đơn THẤT BẠI (chưa ghi được). Dán/ghi lại các đơn này.")
+        _fc2.button("Xem tất cả", key="ttkh_clear_failed_view", use_container_width=True,
+                    on_click=lambda: st.session_state.update(ttkh_show_failed_only=False))
+
     if _q:
         _found = len(_multi) + len(_single)
         if _found:
