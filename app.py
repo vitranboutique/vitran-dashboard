@@ -1383,6 +1383,7 @@ if _page == PAGE_TTKH:
             _still_bad = [c for c in _fail_log if c not in _ok_codes]
             if _still_bad and st.button("🔧 Tạo/sửa địa chỉ khách cho đơn lỗi (Tỉnh/Quận/Phường) & xem chi tiết", key="ttkh_diag_fail"):
                 _diag = []
+                _diag_ok_log = []   # ghi nhận lại vào nhật ký các đơn fix xong
                 _sess = build_session()
                 _fj2 = make_fetch_json(build_session())
                 for _c in _still_bad[:10]:
@@ -1408,6 +1409,11 @@ if _page == PAGE_TTKH:
                                                if any(w in a for w in ("POST", "PUT", "PATCH"))).lower()
                         if _cid:
                             _why = "✅ ĐÃ TẠO/CẬP NHẬT khách (địa chỉ Tỉnh/Quận/Phường)"
+                            _now2 = datetime.now(timezone.utc) + timedelta(hours=7)
+                            _diag_ok_log.append({"ngay": _now2.strftime("%Y-%m-%d"), "gio": _now2.strftime("%H:%M"),
+                                                 "ts": _now2.isoformat(timespec="seconds"), "ma_don": _c,
+                                                 "sdt": _info2["phone"], "ket_qua": "thanh_cong",
+                                                 "chi_tiet": "Fix/cập nhật địa chỉ khách"})
                         elif "429" in _write_blob:
                             _why = "❌ 429 — Sapo đang chặn (rate limit). Nghỉ 5–10 phút rồi thử lại."
                         elif "type_mismatch" in _blob or "convert string value to integer" in _blob:
@@ -1420,6 +1426,12 @@ if _page == PAGE_TTKH:
                             _why = "❌ Vẫn không tạo được (xem các bước bên dưới)."
                         _diag.append({"Mã đơn": _c, "phone": _info2["phone"], "ket_qua": _why, "attempts": _atts})
                     time.sleep(0.6)
+                # Ghi nhận lại vào nhật ký → bảng đơn lỗi chuyển sang 'Đã ghi lại OK'
+                try:
+                    if picklog.configured() and _diag_ok_log:
+                        picklog.log_ttkh_batch(_diag_ok_log)
+                except Exception:
+                    pass
                 st.session_state["ttkh_diag_result"] = _diag
                 load_customer_phone_set.clear()
             if st.session_state.get("ttkh_diag_result"):
