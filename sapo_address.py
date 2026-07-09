@@ -10,10 +10,20 @@ from pathlib import Path
 def norm_key(value) -> str:
     s = unicodedata.normalize("NFD", str(value or ""))
     s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
+    s = s.strip()
+    # Bỏ tiền tố tiếng Việt (Phường/Quận/TP...) ở ĐẦU
     s = re.sub(
         r"^(TP|THANH PHO|TINH|QUAN|HUYEN|THI XA|PHUONG|XA|THI TRAN)\s+",
         "",
-        s.strip(),
+        s,
+        flags=re.I,
+    )
+    # Bỏ đuôi tiếng ANH (Ward/District/City/Province...) do TikTok trả — nếu không sẽ
+    # khớp trượt (vd 'Chanh Hung Ward' != 'Chánh Hưng') → sai phường/quận.
+    s = re.sub(
+        r"\s+(WARD|DISTRICT|CITY|PROVINCE|COMMUNE|TOWN|TOWNSHIP)$",
+        "",
+        s,
         flags=re.I,
     )
     return re.sub(r"[^A-Z0-9]+", "", s.upper())
