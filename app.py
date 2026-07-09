@@ -1424,7 +1424,12 @@ if _page == PAGE_TTKH:
                             _why = "❌ Sapo từ chối dữ liệu tạo khách (400/422) — xem bước GHI bên dưới."
                         else:
                             _why = "❌ Vẫn không tạo được (xem các bước bên dưới)."
-                        _diag.append({"Mã đơn": _c, "phone": _info2["phone"], "ket_qua": _why, "attempts": _atts})
+                        _addr_str = ", ".join(str(x) for x in (
+                            _info2.get("ward"), _info2.get("district"), _info2.get("province")) if x)
+                        _diag.append({"Mã đơn": _c, "phone": _info2["phone"], "ket_qua": _why,
+                                      "dia_chi": f"{_addr_str}  [{_info2.get('address_format')}]"
+                                                 f"  mã P/X {_info2.get('ward_code') or '-'}",
+                                      "attempts": _atts})
                     time.sleep(0.6)
                 # Ghi nhận lại vào nhật ký → bảng đơn lỗi chuyển sang 'Đã ghi lại OK'
                 try:
@@ -1439,6 +1444,8 @@ if _page == PAGE_TTKH:
                 for _dg in st.session_state["ttkh_diag_result"]:
                     _k = _dg.get("ket_qua") or _dg.get("Kết quả") or ""
                     st.markdown(f"**{_dg.get('Mã đơn')}** · SĐT {_dg.get('phone','')} → {_k}")
+                    if _dg.get("dia_chi"):
+                        st.caption(f"📍 Địa chỉ app gửi: {_dg['dia_chi']}")
                     _ats = [str(a) for a in (_dg.get("attempts") or ([_dg.get("Chi tiết")] if _dg.get("Chi tiết") else []))]
                     _writes = [a for a in _ats if any(w in a for w in ("POST", "PUT", "PATCH"))]
                     _reads = [a for a in _ats if a not in _writes]
