@@ -966,6 +966,20 @@ def _create_customer_via_html(session: requests.Session, info: dict, note: str, 
     return None
 
 
+def _merge_order_codes_into_note(old_note: str, new_note: str) -> str:
+    """Giữ note MỚI (username/sdt/mã đơn mới) + gộp thêm mã đơn CŨ chưa có, để khách
+    mua nhiều lần vẫn giữ đủ mã đơn cho việc đối chiếu (đơn ↔ khách không liên kết)."""
+    old_note = str(old_note or "")
+    new_note = str(new_note or "")
+    codes_new = {c.strip() for c in re.findall(r"đơn:\s*(\S+)", new_note, flags=re.I)}
+    extra = [c.strip() for c in re.findall(r"đơn:\s*(\S+)", old_note, flags=re.I)
+             if c.strip() and c.strip() not in codes_new]
+    for c in dict.fromkeys(extra):
+        new_note += f"\nđơn: {c}"
+        codes_new.add(c)
+    return new_note
+
+
 def _upsert_customer_info(session: requests.Session, order: dict, info: dict, note: str, attempts: list[str],
                           skip_search: bool = False):
     customer = order.get("customer") if isinstance(order.get("customer"), dict) else {}
@@ -991,6 +1005,12 @@ def _upsert_customer_info(session: requests.Session, order: dict, info: dict, no
         customer_id = found_by_identity or customer.get("id") or order.get("customer_id")
     token = _page_csrf_token(session, f"{BASE}/admin/customers/{customer_id}" if customer_id else f"{BASE}/admin/customers", attempts)
     if customer_id:
+        # Khách cũ mua lại: gộp thêm mã đơn cũ trong note để không mất lịch sử đối chiếu.
+        try:
+            _existing = get_customer(session, customer_id)
+            note = _merge_order_codes_into_note(_existing.get("note") if isinstance(_existing, dict) else "", note)
+        except Exception as e:
+            attempts.append(f"GET customer note merge -> {type(e).__name__}: {e}")
         url = f"{BASE}/admin/customers/{customer_id}.json"
         for method in ("put", "patch"):
             resp = getattr(session, method)(
@@ -1074,6 +1094,11 @@ def update_order_customer_info(session: requests.Session, order_id, info: dict, 
         customer_note_parts.append(str(info.get("username") or "").strip())
     if info.get("phone"):
         customer_note_parts.append(f"sdt: {info.get('phone')}")
+    # Ghi MÃ ĐƠN vào note khách để đối chiếu sau (đơn ↔ khách KHÔNG liên kết trên Sapo)
+    _ocode = str(current_order.get("source_identifier") or current_order.get("name")
+                 or current_order.get("code") or "").strip()
+    if _ocode:
+        customer_note_parts.append(f"đơn: {_ocode}")
     customer_note = "\n".join(customer_note_parts) or "TTKH từ sàn"
     customer_id = _upsert_customer_info(session, current_order, info, customer_note, attempts)
     name = str(info.get("name") or "").strip()
