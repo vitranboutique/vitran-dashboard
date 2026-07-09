@@ -1405,14 +1405,18 @@ if _page == PAGE_TTKH:
                         _cid, _att = upsert_customer_from_info(_sess, _info2, skip_search=True, note=f"Fix đơn {_c}")
                         _atts = [str(a) for a in (_att or [])]
                         _blob = " ".join(_atts).lower()
+                        _write_blob = " ".join(a for a in [str(x) for x in (_att or [])]
+                                               if any(w in a for w in ("POST", "PUT", "PATCH"))).lower()
                         if _cid:
                             _why = "✅ ĐÃ TẠO được khách"
-                        elif "429" in _blob:
+                        elif "429" in _write_blob:
                             _why = "❌ 429 — Sapo đang chặn (rate limit). Nghỉ 5–10 phút rồi thử lại."
-                        elif "422" in _blob or "400" in _blob:
-                            _why = "❌ Dữ liệu địa chỉ không hợp lệ (Sapo từ chối 400/422)."
-                        elif "401" in _blob or "403" in _blob:
-                            _why = "❌ Phiên đăng nhập/cookie Sapo hết hạn (401/403) — cần cập nhật SAPO_COOKIE."
+                        elif "type_mismatch" in _blob or "convert string value to integer" in _blob:
+                            _why = "❌ Mã vùng địa chỉ sai kiểu (Sapo cần SỐ nhưng đơn có chữ) — địa chỉ đơn thiếu/hỏng mã phường-quận-tỉnh."
+                        elif "401" in _write_blob or "403" in _write_blob:
+                            _why = "❌ Phiên/cookie Sapo hết hạn (401/403) — cần cập nhật SAPO_COOKIE."
+                        elif "422" in _write_blob or "400" in _write_blob:
+                            _why = "❌ Sapo từ chối dữ liệu tạo khách (400/422) — xem bước GHI bên dưới."
                         else:
                             _why = "❌ Vẫn không tạo được (xem các bước bên dưới)."
                         _diag.append({"Mã đơn": _c, "phone": _info2["phone"], "ket_qua": _why, "attempts": _atts})
@@ -1424,9 +1428,15 @@ if _page == PAGE_TTKH:
                 for _dg in st.session_state["ttkh_diag_result"]:
                     _k = _dg.get("ket_qua") or _dg.get("Kết quả") or ""
                     st.markdown(f"**{_dg.get('Mã đơn')}** · SĐT {_dg.get('phone','')} → {_k}")
-                    _ats = _dg.get("attempts") or ([_dg.get("Chi tiết")] if _dg.get("Chi tiết") else [])
-                    if _ats:
-                        st.code("\n".join(str(a) for a in _ats), language="text")
+                    _ats = [str(a) for a in (_dg.get("attempts") or ([_dg.get("Chi tiết")] if _dg.get("Chi tiết") else []))]
+                    _writes = [a for a in _ats if any(w in a for w in ("POST", "PUT", "PATCH"))]
+                    _reads = [a for a in _ats if a not in _writes]
+                    if _writes:
+                        st.caption("🖊️ Bước TẠO/GHI khách (quan trọng nhất):")
+                        st.code("\n".join(_writes), language="text")
+                    if _reads:
+                        st.caption("🔎 Các bước tìm/đọc (phụ):")
+                        st.code("\n".join(_reads), language="text")
     with st.expander("📅 Xem lịch sử theo từng ngày (30 ngày)", expanded=False):
         if _stat_rows:
             st.dataframe(
