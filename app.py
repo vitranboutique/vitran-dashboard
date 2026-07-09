@@ -1389,7 +1389,7 @@ if _page == PAGE_TTKH:
                                          column_config={"Địa chỉ": st.column_config.TextColumn("Địa chỉ", width="large")})
                         else:
                             st.caption("— Không có —")
-                        st.markdown(f"**② Đã có khách nhưng ĐỊA CHỈ chưa chuẩn (text) — {len(_list_text)} đơn** (cần sửa địa chỉ)")
+                        st.markdown(f"**② Đã có khách nhưng ĐỊA CHỈ chưa chuẩn (text / thiếu SĐT) — {len(_list_text)} đơn** (cần sửa địa chỉ)")
                         if _list_text:
                             st.dataframe(_mis_df(_list_text), hide_index=True, width="stretch",
                                          column_config={"Địa chỉ": st.column_config.TextColumn("Địa chỉ", width="large")})

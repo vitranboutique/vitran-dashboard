@@ -507,12 +507,14 @@ def order_shipping_to_info(o: dict) -> dict:
 
 
 def _addr_is_structured(a) -> bool:
-    """True nếu địa chỉ có MÃ vùng (Tỉnh/Phường) — tức đã chọn dropdown, lọc được.
-    Địa chỉ text (chỉ address1, không mã) → False."""
+    """True nếu địa chỉ ĐÃ CHUẨN: có MÃ vùng (Tỉnh/Phường, chọn dropdown) VÀ có SĐT
+    trong địa chỉ. Thiếu 1 trong 2 (địa chỉ text HOẶC thiếu SĐT) → False (cần sửa)."""
     if not isinstance(a, dict):
         return False
-    return bool(str(a.get("province_code") or a.get("province_id") or "").strip()
-                or str(a.get("ward_code") or a.get("ward_id") or "").strip())
+    has_code = bool(str(a.get("province_code") or a.get("province_id") or "").strip()
+                    or str(a.get("ward_code") or a.get("ward_id") or "").strip())
+    has_phone = bool(str(a.get("phone") or a.get("phone_number") or a.get("mobile") or "").strip())
+    return has_code and has_phone
 
 
 def get_customer_phone_set(fetch_json, max_pages: int = 160, throttle: float = 0.35) -> tuple:
@@ -628,7 +630,7 @@ def audit_orders_missing_customer(fetch_json, good_phone_set, days: int = 30,
             "code": o.get("source_identifier") or o.get("name") or o.get("code") or o.get("id"),
             "phone": canon,
             "created_on": created_vn.strftime("%d/%m %H:%M") if created_vn else "",
-            "ly_do": "Khách địa chỉ TEXT (chưa chọn Tỉnh/Quận/Phường)" if canon in allset else "Chưa có khách",
+            "ly_do": "Khách địa chỉ CHƯA CHUẨN (text / thiếu SĐT / chưa chọn Tỉnh-Quận-Phường)" if canon in allset else "Chưa có khách",
             "info": order_shipping_to_info(o),
         })
 
