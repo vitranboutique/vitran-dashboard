@@ -1731,35 +1731,37 @@ if _page == PAGE_TTKH:
             codes = f" | mã: P/T {info.get('province_code') or '-'} - Q/H {info.get('district_code') or '-'} - X/P {info.get('ward_code') or '-'}"
         return f"{fmt}: {line}{codes}"
 
+    def _kq(r):
+        return str(r.get("Kết quả") or "")
+
+    def _ttkh_friendly(r):
+        """Trả (trạng thái dễ hiểu, cần làm gì, màu) cho nhân viên."""
+        kq = _kq(r)
+        ly_do = str(r.get("Lý do") or "")
+        is429 = "429" in ly_do or "rate limit" in ly_do.lower()
+        if kq.startswith("Đã ghi ghi chú + khách"):
+            return "✅ Xong (đơn + khách)", "Không cần làm gì.", "#1e7d3c"
+        if kq.startswith("Đã tạo/cập nhật khách"):
+            return "✅ Đã tạo khách", "Nên mở khách kiểm tra lại địa chỉ cho chắc.", "#1e7d3c"
+        if kq.startswith("Đã ghi ghi chú,"):   # đơn OK, khách chưa tạo
+            if is429:
+                return "⚠️ Chưa tạo được KHÁCH (Sapo bận)", "Chờ 1–2 phút rồi bấm 💾 Ghi SAPO lại. Đơn vẫn còn trong danh sách.", "#b45309"
+            return "⚠️ Chưa tạo được KHÁCH", "Bấm 💾 Ghi SAPO lại. Nếu vẫn lỗi sau 2–3 lần, báo quản lý kèm mã đơn.", "#b45309"
+        if kq.startswith("Lỗi"):               # cả đơn cũng lỗi
+            if is429:
+                return "❌ Chưa ghi được (Sapo bận)", "Chờ 1–2 phút rồi bấm 💾 Ghi SAPO lại.", "#b91c1c"
+            return "❌ Chưa ghi được", "Bấm 💾 Ghi SAPO lại. Nếu vẫn lỗi, báo quản lý kèm mã đơn.", "#b91c1c"
+        if kq.startswith("Bỏ qua"):
+            return "⏭️ Bỏ qua (chưa hợp lệ)", f"Kiểm lại TTKH đã dán ({ly_do}). Dán đúng block có SĐT + tên + địa chỉ rồi Ghi lại.", "#b45309"
+        return "❓ Không rõ", "Bấm Ghi lại; nếu lặp lại báo quản lý.", "#6b7280"
+
+    def _ttkh_result_by_code():
+        return {str(r.get("Mã đơn")): r for r in (st.session_state.get("ttkh_write_results") or [])}
+
     def _show_ttkh_write_results():
         results = st.session_state.get("ttkh_write_results") or []
         if not results:
             return
-
-        def _kq(r):
-            return str(r.get("Kết quả") or "")
-
-        def _friendly(r):
-            """Trả (trạng thái dễ hiểu, cần làm gì) cho nhân viên."""
-            kq = _kq(r)
-            ly_do = str(r.get("Lý do") or "")
-            is429 = "429" in ly_do or "rate limit" in ly_do.lower()
-            if kq.startswith("Đã ghi ghi chú + khách"):
-                return "✅ Xong (đơn + khách)", "Không cần làm gì."
-            if kq.startswith("Đã tạo/cập nhật khách"):
-                return "✅ Đã tạo khách", "Nên mở khách kiểm tra lại địa chỉ cho chắc."
-            if kq.startswith("Đã ghi ghi chú,"):   # đơn OK, khách chưa tạo
-                if is429:
-                    return "⚠️ Chưa tạo được KHÁCH (Sapo bận)", "Chờ 1–2 phút rồi bấm 💾 Ghi SAPO lại. Đơn vẫn còn trong danh sách."
-                return "⚠️ Chưa tạo được KHÁCH", "Bấm 💾 Ghi SAPO lại. Nếu vẫn lỗi sau 2–3 lần, báo quản lý kèm mã đơn."
-            if kq.startswith("Lỗi"):               # cả đơn cũng lỗi
-                if is429:
-                    return "❌ Chưa ghi được (Sapo bận)", "Chờ 1–2 phút rồi bấm 💾 Ghi SAPO lại."
-                return "❌ Chưa ghi được", "Bấm 💾 Ghi SAPO lại. Nếu vẫn lỗi, báo quản lý kèm mã đơn."
-            if kq.startswith("Bỏ qua"):
-                return "⏭️ Bỏ qua (chưa hợp lệ)", f"Kiểm lại TTKH đã dán ({ly_do}). Dán đúng block có SĐT + tên + địa chỉ rồi Ghi lại."
-            return "❓ Không rõ", "Bấm Ghi lại; nếu lặp lại báo quản lý."
-
         ok = sum(1 for r in results if _kq(r).startswith("Đã ghi ghi chú + khách") or _kq(r).startswith("Đã tạo/cập nhật khách"))
         cust_fail = [r for r in results if _kq(r).startswith("Đã ghi ghi chú,")]
         hard_fail = [r for r in results if _kq(r).startswith("Lỗi")]
@@ -1776,20 +1778,7 @@ if _page == PAGE_TTKH:
             st.error(_msg)
         else:
             st.success(f"✅ Đã lưu ĐỦ 2 NƠI (đơn + khách): {ok} đơn." + (f" Bỏ qua {skipped} đơn chưa hợp lệ." if skipped else ""))
-
-        # Bảng cho nhân viên: trạng thái + cần làm gì
-        _disp = []
-        for r in results:
-            _st, _todo = _friendly(r)
-            _disp.append({"Mã đơn": r.get("Mã đơn"), "Trạng thái": _st,
-                          "Cần làm gì": _todo, "Link khách": r.get("Link khách") or ""})
-        st.dataframe(
-            pd.DataFrame(_disp), hide_index=True, width="stretch",
-            column_config={
-                "Cần làm gì": st.column_config.TextColumn("Cần làm gì", width="large"),
-                "Link khách": st.column_config.LinkColumn("Link khách", display_text="Mở khách"),
-            },
-        )
+        st.caption("👇 Kết quả + hướng dẫn xử lý hiện **ngay tại từng dòng đơn** bên dưới.")
         # Chi tiết kỹ thuật để riêng cho quản lý
         if failed:
             with st.expander("🔧 Chi tiết kỹ thuật (cho quản lý)"):
@@ -1945,6 +1934,7 @@ if _page == PAGE_TTKH:
         h[4].markdown("**Địa chỉ chuẩn SAPO**")
         h[5].markdown("**TTKH dán vào**")
         st.markdown("<hr style='margin:4px 0 8px;border:0;border-top:1px solid #e5e7eb'>", unsafe_allow_html=True)
+        _res_map = _ttkh_result_by_code()   # kết quả Ghi SAPO lần gần nhất, theo mã đơn
         for _, r in df.iterrows():
             oid = str(r.get("_order_id"))
             key = _ttkh_input_key(oid)
@@ -1991,7 +1981,14 @@ if _page == PAGE_TTKH:
             _needs_cust = bool(r.get("_needs_customer"))
             _warn_badge = ("<div style='color:#b91c1c;font-weight:800;font-size:.8rem'>⚠️ Đã ghi đơn nhưng "
                            "CHƯA tạo được khách — ghi lại dòng này</div>") if _needs_cust else ""
-            c[1].markdown(code_link + sapo_link + customer_link + _warn_badge, unsafe_allow_html=True)
+            # Kết quả Ghi SAPO lần gần nhất — hiện NGAY tại dòng đơn cho nhân viên dễ coi
+            _res_badge = ""
+            _res = _res_map.get(code)
+            if _res:
+                _rst, _rtodo, _rcolor = _ttkh_friendly(_res)
+                _res_badge = (f"<div style='margin-top:3px;font-size:.82rem;line-height:1.3;color:{_rcolor};font-weight:800'>{_esc(_rst)}"
+                              f"<div style='font-weight:500;color:#374151;font-size:.78rem'>➡ {_esc(_rtodo)}</div></div>")
+            c[1].markdown(code_link + sapo_link + customer_link + _warn_badge + _res_badge, unsafe_allow_html=True)
             c[2].markdown(
                 f"<abbr title='{_product_tip(r)}' style='cursor:help;font-weight:800;text-decoration:underline dotted #6b7280'>{int(r.get('SL SP') or 0)} SP ⓘ</abbr>",
                 unsafe_allow_html=True,
