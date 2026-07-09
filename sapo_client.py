@@ -712,6 +712,18 @@ def customer_exists_by_phone(session: requests.Session, phone: str) -> bool:
         return False
 
 
+def upsert_customer_from_info(session: requests.Session, info: dict, note: str = "") -> tuple:
+    """Tạo/cập nhật khách hàng TỪ info (tên/SĐT/địa chỉ) — KHÔNG đụng đơn hàng.
+    Dedup theo SĐT (dùng lại nếu đã có). Trả (customer_id | None, attempts)."""
+    attempts: list[str] = []
+    try:
+        cid = _upsert_customer_info(session, {}, info, note or "Tạo khách từ đơn hàng (backfill)", attempts)
+    except Exception as e:
+        attempts.append(f"upsert_customer_from_info -> {type(e).__name__}: {e}")
+        cid = None
+    return cid, attempts
+
+
 def _find_customer_by_phone(session: requests.Session, phone: str, attempts: list[str]):
     if _is_masked_phone(phone):
         attempts.append("GET customer search -> skip masked phone")

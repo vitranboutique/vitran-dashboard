@@ -30,7 +30,7 @@ from sapo_client import (
     SapoAuthError, build_session, credential_present, make_fetch_json,
     find_order_returns_by_codes, get_order_return, parse_codes,
     update_order_customer_info, update_order_note, update_order_return_note,
-    customer_exists_by_phone,
+    customer_exists_by_phone, upsert_customer_from_info,
 )
 from picking_render import picking_html
 
@@ -1403,23 +1403,55 @@ if _page == PAGE_TTKH:
                 else:
                     st.error(f"⚠️ Có {len(_mis)} đơn đã ghi đơn nhưng CHƯA có khách (quét {_audit['ts']}):")
                     st.dataframe(
-                        pd.DataFrame([{"Mã đơn": m["code"], "SĐT": m["phone"], "Ngày tạo": m["created_on"]} for m in _mis]),
+                        pd.DataFrame([{"Mã đơn": m["code"], "Tên": (m.get("info") or {}).get("name", ""),
+                                       "SĐT": m["phone"], "Ngày tạo": m["created_on"]} for m in _mis]),
                         hide_index=True, width="stretch")
-                    if picklog.configured():
-                        if st.button(f"➕ Đưa {len(_mis)} đơn vào danh sách để tạo khách", key="ttkh_audit_add"):
+                    if st.session_state.get("ttkh_backfill_msg"):
+                        st.success(st.session_state.pop("ttkh_backfill_msg"))
+                    _CAP = 60
+                    _n_now = min(len(_mis), _CAP)
+                    st.caption(f"➡️ Tạo khách **trực tiếp từ dữ liệu đơn** (tên/SĐT/địa chỉ có sẵn), không cần lấy lại TTKH. "
+                               f"Mỗi lần xử lý tối đa {_CAP} đơn để tránh rate limit — bấm lại để tiếp tục (đơn lỗi sẽ tự thử lại lần sau).")
+                    if st.button(f"⚙️ Tự động tạo khách từ đơn — xử lý {_n_now} đơn tiếp theo", key="ttkh_backfill"):
+                        _batch = _mis[:_CAP]
+                        _sess = build_session()
+                        _prog = st.progress(0.0, text="Đang tạo khách…")
+                        _ok, _fail, _fail_codes, _done_ids = 0, 0, [], []
+                        for _i, _m in enumerate(_batch):
+                            _info = _m.get("info") or {}
                             try:
-                                _ts = (datetime.now(timezone.utc) + timedelta(hours=7)).isoformat(timespec="seconds")
-                                _add = {str(m["order_id"]): {"ma_don": m["code"], "sdt": m["phone"],
-                                                             "ly_do": "Sót khách (quét đối chiếu)", "ts": _ts} for m in _mis}
-                                picklog.update_ttkh_pending(add=_add)
-                                load_ttkh_candidates.clear()
-                                st.session_state.pop("ttkh_audit", None)
-                                st.success("Đã đưa vào danh sách. Đang tải lại — dán TTKH & Ghi SAPO để tạo khách.")
-                                st.rerun()
-                            except Exception as _e:
-                                st.error(f"Lỗi đưa vào danh sách: {_e}")
-                    else:
-                        st.caption("⚠️ Chưa bật kho lưu Gist nên không tự đưa vào danh sách được — dùng ô 🔎 tìm từng mã đơn để cứu.")
+                                if not _info.get("phone") or not _info.get("name"):
+                                    _fail += 1
+                                    _fail_codes.append(_m["code"])
+                                else:
+                                    _cid, _ = upsert_customer_from_info(_sess, _info, note=f"Backfill từ đơn {_m['code']}")
+                                    if _cid:
+                                        _ok += 1
+                                        _done_ids.append(str(_m["order_id"]))
+                                    else:
+                                        _fail += 1
+                                        _fail_codes.append(_m["code"])
+                            except Exception:
+                                _fail += 1
+                                _fail_codes.append(_m["code"])
+                            _prog.progress((_i + 1) / len(_batch),
+                                           text=f"Đã xử lý {_i + 1}/{len(_batch)} — tạo được {_ok}, lỗi {_fail}")
+                            time.sleep(0.7)   # giãn nhịp chống 429 (mỗi đơn nhiều request)
+                        _done_set = set(_done_ids)
+                        _remain = [m for m in _mis if str(m["order_id"]) not in _done_set]
+                        st.session_state["ttkh_audit"]["missing"] = _remain
+                        try:
+                            if picklog.configured() and _done_ids:
+                                picklog.update_ttkh_pending(remove_ids=_done_ids)
+                        except Exception:
+                            pass
+                        load_customer_phone_set.clear()
+                        load_ttkh_candidates.clear()
+                        _msg = f"✅ Đã tạo/cập nhật {_ok} khách, lỗi {_fail}. Còn lại {len(_remain)} đơn cần tạo."
+                        if _fail_codes:
+                            _msg += " · Đơn lỗi (thử lại lần sau): " + ", ".join(str(c) for c in _fail_codes[:15])
+                        st.session_state["ttkh_backfill_msg"] = _msg
+                        st.rerun()
 
     with st.expander("ℹ️ Điều kiện lọc đơn"):
         st.caption("Đơn trong `Tất cả`, không hủy, tạo trong số ngày chọn, ghi chú/địa chỉ SAPO chưa có SĐT khách.")

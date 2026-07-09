@@ -447,6 +447,30 @@ def _canon_phone(raw) -> str:
     return d if len(d) == 10 else ""
 
 
+def order_shipping_to_info(o: dict) -> dict:
+    """Dựng info khách (để tạo khách hàng) TỪ địa chỉ giao hàng của đơn — dùng khi
+    backfill khách cho đơn cũ (không lấy lại TTKH được nữa)."""
+    sa = o.get("shipping_address") or o.get("billing_address") or {}
+    if not isinstance(sa, dict):
+        sa = {}
+    name = (sa.get("name") or f"{sa.get('first_name') or ''} {sa.get('last_name') or ''}").strip()
+    phone = _canon_phone(sa.get("phone") or sa.get("phone_number") or sa.get("mobile") or o.get("phone"))
+    district = sa.get("district_name") or sa.get("district") or ""
+    return {
+        "username": "",
+        "name": name,
+        "phone": phone,
+        "address1": sa.get("address1") or "",
+        "ward": sa.get("ward_name") or sa.get("ward") or "",
+        "district": district,
+        "province": sa.get("province_name") or sa.get("province") or sa.get("city") or "",
+        "ward_code": str(sa.get("ward_code") or ""),
+        "district_code": str(sa.get("district_code") or ""),
+        "province_code": str(sa.get("province_code") or ""),
+        "address_format": "old" if district else "new",
+    }
+
+
 def get_customer_phone_set(fetch_json, max_pages: int = 160, throttle: float = 0.35) -> tuple:
     """Lấy TẤT CẢ SĐT khách hàng đang có trong Sapo (dạng canon 0xxxxxxxxx).
 
@@ -547,6 +571,7 @@ def audit_orders_missing_customer(fetch_json, customer_phone_set, days: int = 30
                 "code": o.get("source_identifier") or o.get("name") or o.get("code") or o.get("id"),
                 "phone": canon,
                 "created_on": created_vn.strftime("%d/%m %H:%M"),
+                "info": order_shipping_to_info(o),   # để backfill tạo khách từ đơn
             })
         if not page_recent:
             break
