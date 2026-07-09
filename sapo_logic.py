@@ -22,10 +22,13 @@ import time
 from datetime import datetime, timedelta, timezone
 
 try:
-    from sapo_address import resolve_address as _resolve_address
+    from sapo_address import resolve_address as _resolve_address, norm_key as _norm_key
 except Exception:   # phòng khi thiếu file dữ liệu địa chỉ
     def _resolve_address(info):
         return info
+
+    def _norm_key(v):
+        return re.sub(r"[^A-Z0-9]+", "", str(v or "").upper())
 
 # Mẫu mã vận đơn để bóc từ note (SPXVN.../VTPVN... hoặc mã số 11–14 chữ số như J&T 861...)
 _TRACK_RE = re.compile(r'[A-Z]{2,}VN\d+|\b\d{11,14}\b')
@@ -479,6 +482,21 @@ def order_shipping_to_info(o: dict) -> dict:
         "province_code": str(sa.get("province_code") or ""),
         "address_format": "old" if district else "new",
     }
+    # SỬA phường SAI trên đơn (do sáp nhập tỉnh 2025 gán nhầm, vd 'Vũng Tàu'):
+    # nếu tên phường trên đơn KHÔNG có trong dòng địa chỉ text mà text lại chứa
+    # '... Ward/Phường', thì LẤY PHƯỜNG TỪ TEXT (đúng hơn field của đơn).
+    addr1 = str(sa.get("address1") or "")
+    if addr1:
+        _wk = _norm_key(info.get("ward"))
+        if not _wk or _wk not in _norm_key(addr1):
+            for _tok in re.split(r"[,，]", addr1):
+                _tok = _tok.strip()
+                if re.search(r"\bward\b", _tok, re.I) or re.match(r"(?i)^(phường|phuong|xã|xa)\s", _tok):
+                    info["ward"] = _tok
+                    info["ward_code"] = ""          # buộc resolve lại theo tên đúng
+                    if not info.get("district"):
+                        info["address_format"] = "new"
+                    break
     # Phân giải ra MÃ vùng chuẩn Sapo (Tỉnh/Quận/Phường) để tạo khách có địa chỉ
     # CÓ CẤU TRÚC (lọc được), thay vì gửi tên → Sapo báo 'Province is not supported'.
     try:
