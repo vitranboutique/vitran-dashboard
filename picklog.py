@@ -177,6 +177,36 @@ def read_ttkh_logs() -> list:
     return (d or {}).get("logs", []) if isinstance(d, dict) else []
 
 
+# ─── ĐƠN "CHỜ TẠO KHÁCH": đã ghi được đơn nhưng phần KHÁCH HÀNG lỗi/thiếu ───
+# Giữ để filter KHÔNG ẩn đơn (chưa đủ 2 nơi) cho tới khi tạo được khách.
+_TTKH_PENDING_FILE = "vitran_ttkh_pending.json"
+
+
+def read_ttkh_pending() -> dict:
+    """Map {order_id: {ma_don, sdt, ly_do, ts}} các đơn đã ghi nhưng CHƯA tạo được khách."""
+    d = _read_gist_file(_TTKH_PENDING_FILE)
+    p = (d or {}).get("pending", {}) if isinstance(d, dict) else {}
+    return p if isinstance(p, dict) else {}
+
+
+def update_ttkh_pending(add: dict = None, remove_ids: list = None) -> bool:
+    """Thêm đơn lỗi khách vào / gỡ đơn đã tạo được khách ra khỏi danh sách chờ. An toàn."""
+    if not (add or remove_ids):
+        return True
+    gid = _resolve_gid()
+    if not gid:
+        return False
+    d = _read_gist_file(_TTKH_PENDING_FILE)
+    pend = (d or {}).get("pending", {}) if isinstance(d, dict) else {}
+    if not isinstance(pend, dict):
+        pend = {}
+    for oid in (remove_ids or []):
+        pend.pop(str(oid), None)
+    for oid, meta in (add or {}).items():
+        pend[str(oid)] = meta
+    return _write_gist_file(_TTKH_PENDING_FILE, {"pending": pend})
+
+
 # ─── METADATA VIDEO DOHANA (đóng hàng + khui hàng) — LƯU CẢ NĂM ───
 # Dohana chỉ giữ 30 ngày rồi XOÁ số liệu. Tích luỹ dần qua các lần fetch 3×/ngày vào GIST (không tự
 # xoá) → cuối năm VẪN ĐỌC được: trạng thái · ngày quay · giờ · thời lượng · tag. Khử trùng (code,type).

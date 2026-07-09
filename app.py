@@ -709,7 +709,13 @@ def load_picking():
 
 @st.cache_data(ttl=180, show_spinner="Đang lọc đơn cần lấy TTKH…")
 def load_ttkh_candidates(days=15, channel_filter="tiktok"):
-    return L.get_tt_customer_candidates(make_fetch_json(build_session()), days=days, channel_filter=channel_filter)
+    # Đơn đã ghi nhưng CHƯA tạo được khách → giữ hiện (chưa đủ 2 nơi). Đọc từ Gist.
+    try:
+        _pending_ids = set(picklog.read_ttkh_pending().keys()) if picklog.configured() else set()
+    except Exception:
+        _pending_ids = set()
+    return L.get_tt_customer_candidates(make_fetch_json(build_session()), days=days,
+                                        channel_filter=channel_filter, pending_ids=_pending_ids)
 
 
 # Dohana: fetch TRỰC TIẾP thành công → MERGE vào kho Gist (lưu cả năm) rồi trả về. Nếu API tạm
@@ -1444,6 +1450,7 @@ if _page == PAGE_TTKH:
             "order_value": r.get("order_value") or 0,
             "_order_id": r.get("order_id"),
             "_customer_id": r.get("customer_id"),
+            "_needs_customer": bool(r.get("needs_customer")),
         } for r in rows])
 
     def _money(v):
@@ -1537,12 +1544,26 @@ if _page == PAGE_TTKH:
         results = st.session_state.get("ttkh_write_results") or []
         if not results:
             return
-        ok = sum(1 for r in results if str(r.get("Kết quả") or "").startswith("Đã ghi ghi chú + khách"))
-        partial = sum(1 for r in results if str(r.get("Kết quả") or "").startswith("Đã ghi ghi chú,"))
-        failed = sum(1 for r in results if str(r.get("Kết quả") or "").startswith("Lỗi"))
-        skipped = sum(1 for r in results if str(r.get("Kết quả") or "").startswith("Bỏ qua"))
-        box = st.success if failed == 0 and partial == 0 else st.warning
-        box(f"Kết quả ghi SAPO: thành công {ok}, ghi chú OK nhưng khách/contact chưa OK {partial}, lỗi {failed}, bỏ qua {skipped}.")
+
+        def _kq(r):
+            return str(r.get("Kết quả") or "")
+
+        ok = sum(1 for r in results if _kq(r).startswith("Đã ghi ghi chú + khách") or _kq(r).startswith("Đã tạo/cập nhật khách"))
+        cust_fail = [r for r in results if _kq(r).startswith("Đã ghi ghi chú,")]   # đơn OK, KHÁCH lỗi
+        hard_fail = [r for r in results if _kq(r).startswith("Lỗi")]               # cả đơn cũng lỗi
+        skipped = sum(1 for r in results if _kq(r).startswith("Bỏ qua"))
+        failed = len(cust_fail) + len(hard_fail)
+
+        if failed:
+            _bad_codes = ", ".join(str(r.get("Mã đơn")) for r in (cust_fail + hard_fail)[:20])
+            st.error(
+                f"⚠️ Ghi SAPO CHƯA ĐỦ 2 NƠI ở {failed} đơn "
+                f"({len(cust_fail)} đơn chưa tạo được KHÁCH, {len(hard_fail)} đơn lỗi cả đơn hàng). "
+                f"Các đơn này **vẫn nằm trong danh sách** (có gắn ⚠️) để bạn **ghi lại**: {_bad_codes}. "
+                f"Đã lưu đủ 2 nơi: {ok} đơn. Bỏ qua: {skipped}."
+            )
+        else:
+            st.success(f"✅ Đã lưu đủ 2 nơi (đơn + khách): {ok} đơn. Bỏ qua {skipped} đơn chưa hợp lệ.")
         st.dataframe(
             pd.DataFrame(results),
             hide_index=True,
@@ -1655,6 +1676,25 @@ if _page == PAGE_TTKH:
             } for res in results]
             if picklog.configured() and _log_records:
                 picklog.log_ttkh_batch(_log_records)
+            # Cập nhật danh sách "chờ tạo khách": thành công → gỡ ra; thất bại → giữ lại
+            _oid_by_code = {r["code"]: str(r["order_id"]) for r in rows_to_write}
+            _pending_add, _pending_remove = {}, []
+            for res in results:
+                _cat = _ttkh_result_cat(res.get("Kết quả"))
+                _oid = _oid_by_code.get(res.get("Mã đơn"))
+                if not _oid or _cat == "bo_qua":
+                    continue
+                if _cat == "thanh_cong":
+                    _pending_remove.append(_oid)
+                else:
+                    _pending_add[_oid] = {
+                        "ma_don": res.get("Mã đơn"),
+                        "sdt": _phone_by_code.get(res.get("Mã đơn"), ""),
+                        "ly_do": str(res.get("Kết quả") or ""),
+                        "ts": _log_ts.isoformat(timespec="seconds"),
+                    }
+            if picklog.configured() and (_pending_add or _pending_remove):
+                picklog.update_ttkh_pending(add=_pending_add, remove_ids=_pending_remove)
         except Exception:
             pass
         if ok_count:
@@ -1723,7 +1763,10 @@ if _page == PAGE_TTKH:
             code_link = f"[{code}]({url})" if url else code
             sapo_link = f" · [Sapo]({sapo_url})" if sapo_url else ""
             customer_link = f" · [Khách]({customer_url})" if customer_url else f" · [Tìm khách]({_sapo_customer_search_url(customer_query)})"
-            c[1].markdown(code_link + sapo_link + customer_link)
+            _needs_cust = bool(r.get("_needs_customer"))
+            _warn_badge = ("<div style='color:#b91c1c;font-weight:800;font-size:.8rem'>⚠️ Đã ghi đơn nhưng "
+                           "CHƯA tạo được khách — ghi lại dòng này</div>") if _needs_cust else ""
+            c[1].markdown(code_link + sapo_link + customer_link + _warn_badge, unsafe_allow_html=True)
             c[2].markdown(
                 f"<abbr title='{_product_tip(r)}' style='cursor:help;font-weight:800;text-decoration:underline dotted #6b7280'>{int(r.get('SL SP') or 0)} SP ⓘ</abbr>",
                 unsafe_allow_html=True,

@@ -238,7 +238,8 @@ def _summarize_picking(orders):
     }
 
 
-def get_tt_customer_candidates(fetch_json, days: int = 15, max_pages: int = 30, channel_filter: str = "tiktok") -> dict:
+def get_tt_customer_candidates(fetch_json, days: int = 15, max_pages: int = 30, channel_filter: str = "tiktok",
+                               pending_ids=None) -> dict:
     """Đơn còn thiếu SĐT/TTKH trong ghi chú để NV lấy thông tin từ TikTok rồi ghi ngược vào SAPO.
 
     Nguồn: danh sách đơn hàng "Tất cả"; loại đơn hủy; chỉ lấy đơn tạo trong `days` ngày gần nhất;
@@ -308,7 +309,11 @@ def get_tt_customer_candidates(fetch_json, days: int = 15, max_pages: int = 30, 
             if str(o.get("status") or "").lower() == "cancelled" or o.get("cancelled_on"):
                 continue
             note = o.get("note") or ""
-            if _order_has_customer_phone(o):
+            # Đơn "chờ tạo khách" (đã ghi đơn nhưng phần khách hàng lỗi) thì GIỮ LẠI
+            # trong danh sách dù đơn đã có SĐT — chưa đủ 2 nơi nên chưa được ẩn.
+            _oid = str(o.get("id"))
+            _is_pending = bool(pending_ids) and _oid in pending_ids
+            if _order_has_customer_phone(o) and not _is_pending:
                 continue
             line_items = o.get("line_items") or []
             total_qty = int(round(sum((li.get("quantity") or 0) for li in line_items)))
@@ -351,6 +356,7 @@ def get_tt_customer_candidates(fetch_json, days: int = 15, max_pages: int = 30, 
                 "products": products,
                 "order_value": order_value,
                 "shipping_phone": ((o.get("shipping_address") or {}).get("phone") or ""),
+                "needs_customer": _is_pending,   # đã ghi đơn nhưng CHƯA tạo được khách
             })
 
         if not page_has_recent:
