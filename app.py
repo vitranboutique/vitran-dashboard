@@ -1273,58 +1273,68 @@ if _page == PAGE_TTKH:
         st.error(f"❌ Lỗi lọc đơn TTKH: `{_e}`")
         st.stop()
 
+    # ── HÀNG SỐ LIỆU: bên trái = đơn CẦN lấy, bên phải = đã LƯU 30 ngày (luôn hiện) ──
+    # Gom số liệu thống kê 30 ngày trước để hiện metric (bảng chi tiết để trong expander)
+    _stat_rows, _tot_saved, _tot_ok, _tot_fail = [], 0, 0, 0
+    _stat_msg = ""
+    if not picklog.configured():
+        _stat_msg = "⚠️ Chưa bật kho lưu Gist (`[picklog].github_token`) nên chưa thống kê được."
+    else:
+        try:
+            _logs = picklog.read_ttkh_logs()
+        except Exception as _e:
+            _logs, _stat_msg = [], f"Không đọc được lịch sử: `{_e}`"
+        _today_vn = (datetime.now(timezone.utc) + timedelta(hours=7)).date()
+        _from = (_today_vn - timedelta(days=29)).isoformat()
+        _rows_by_day = {}
+        for _lg in _logs:
+            _d = str(_lg.get("ngay") or "")
+            if _d < _from:
+                continue
+            _agg = _rows_by_day.setdefault(_d, {"Ngày": _d, "Thành công": 0, "Thất bại": 0, "Bỏ qua": 0})
+            _kq = _lg.get("ket_qua")
+            if _kq == "thanh_cong":
+                _agg["Thành công"] += 1
+            elif _kq == "bo_qua":
+                _agg["Bỏ qua"] += 1
+            else:
+                _agg["Thất bại"] += 1
+        for _d in sorted(_rows_by_day, reverse=True):
+            _a = _rows_by_day[_d]
+            _a["Tổng đã lưu"] = _a["Thành công"] + _a["Thất bại"]
+            _stat_rows.append(_a)
+        _tot_saved = sum(r["Tổng đã lưu"] for r in _stat_rows)
+        _tot_ok = sum(r["Thành công"] for r in _stat_rows)
+        _tot_fail = sum(r["Thất bại"] for r in _stat_rows)
+
+    st.markdown("##### 🔎 Đơn cần lấy TTKH")
     _m = st.columns(4)
     _m[0].metric("Tổng cần lấy", _tt["total"])
     _m[1].metric("Đơn ≥ 2 SP", len(_tt["multi"]))
     _m[2].metric("Đơn 1 SP", len(_tt["single"]))
     _m[3].metric("Cập nhật", _tt["generated_at_vn"])
 
-    st.info("Điều kiện lọc: đơn trong `Tất cả`, không hủy, tạo trong số ngày chọn, ghi chú/địa chỉ SAPO chưa có SĐT.")
-
-    # ── 📊 THỐNG KÊ LƯU TTKH THEO NGÀY (30 ngày, lưu bền trên Gist) ──
-    with st.expander("📊 Thống kê lưu TTKH theo ngày (30 ngày gần nhất)", expanded=False):
-        if not picklog.configured():
-            st.caption("⚠️ Chưa bật kho lưu Gist (secrets `[picklog].github_token`) nên chưa thống kê được. "
-                       "Xem hướng dẫn ở trang Phiếu nhặt hàng.")
+    st.markdown("##### 📊 Đã lưu TTKH — 30 ngày")
+    _sc = st.columns(3)
+    _sc[0].metric("Tổng đã lưu", _tot_saved)
+    _sc[1].metric("Thành công", _tot_ok)
+    _sc[2].metric("Thất bại", _tot_fail, delta=(f"-{_tot_fail}" if _tot_fail else None),
+                  delta_color="inverse")
+    if _stat_msg:
+        st.caption(_stat_msg)
+    with st.expander("📅 Xem lịch sử theo từng ngày (30 ngày)", expanded=False):
+        if _stat_rows:
+            st.dataframe(
+                pd.DataFrame(_stat_rows)[["Ngày", "Tổng đã lưu", "Thành công", "Thất bại", "Bỏ qua"]],
+                hide_index=True, width="stretch",
+            )
+            st.caption("Thành công = đã tạo/cập nhật được khách. Thất bại = ghi được ghi chú nhưng chưa "
+                       "tạo được khách/lỗi. Bỏ qua = dòng chưa hợp lệ (thiếu SĐT/địa chỉ).")
         else:
-            try:
-                _logs = picklog.read_ttkh_logs()
-            except Exception as _e:
-                _logs = []
-                st.caption(f"Không đọc được lịch sử: `{_e}`")
-            _today_vn = (datetime.now(timezone.utc) + timedelta(hours=7)).date()
-            _from = (_today_vn - timedelta(days=29)).isoformat()
-            _rows_by_day = {}
-            for _lg in _logs:
-                _d = str(_lg.get("ngay") or "")
-                if _d < _from:
-                    continue
-                _agg = _rows_by_day.setdefault(_d, {"Ngày": _d, "Thành công": 0, "Thất bại": 0, "Bỏ qua": 0})
-                _kq = _lg.get("ket_qua")
-                if _kq == "thanh_cong":
-                    _agg["Thành công"] += 1
-                elif _kq == "bo_qua":
-                    _agg["Bỏ qua"] += 1
-                else:
-                    _agg["Thất bại"] += 1
-            if not _rows_by_day:
-                st.caption("Chưa có lượt lưu TTKH nào trong 30 ngày (hoặc chưa lưu lần nào sau khi bật kho).")
-            else:
-                _stat_rows = []
-                for _d in sorted(_rows_by_day, reverse=True):
-                    _a = _rows_by_day[_d]
-                    _a["Tổng đã lưu"] = _a["Thành công"] + _a["Thất bại"]
-                    _stat_rows.append(_a)
-                _sc = st.columns(3)
-                _sc[0].metric("Tổng đã lưu (30 ngày)", sum(r["Tổng đã lưu"] for r in _stat_rows))
-                _sc[1].metric("Thành công", sum(r["Thành công"] for r in _stat_rows))
-                _sc[2].metric("Thất bại", sum(r["Thất bại"] for r in _stat_rows))
-                st.dataframe(
-                    pd.DataFrame(_stat_rows)[["Ngày", "Tổng đã lưu", "Thành công", "Thất bại", "Bỏ qua"]],
-                    hide_index=True, width="stretch",
-                )
-                st.caption("Thành công = đã tạo/cập nhật được khách hàng. Thất bại = ghi được ghi chú nhưng "
-                           "chưa tạo được khách, hoặc lỗi. Bỏ qua = dòng chưa hợp lệ (thiếu SĐT/địa chỉ).")
+            st.caption("Chưa có lượt lưu TTKH nào trong 30 ngày.")
+
+    with st.expander("ℹ️ Điều kiện lọc đơn"):
+        st.caption("Đơn trong `Tất cả`, không hủy, tạo trong số ngày chọn, ghi chú/địa chỉ SAPO chưa có SĐT khách.")
 
     _phone_re = re.compile(r"\b(?:\+?84|0)\d[\d\s.\-]{8,12}\b")
     _masked_phone_re = re.compile(r"(?:\+?84|0)?\d[\d\s().\-]*\*+[\d\s().\-]*\d")
@@ -1808,10 +1818,13 @@ if _page == PAGE_TTKH:
                 st.warning("Chưa có dòng TTKH nào được dán trong bảng này.")
         return df
 
-    st.caption("Dán nguyên block TTKH trực tiếp vào cột `TTKH dán vào` của đúng mã đơn. Rê chuột vào cột `SL SP` để xem SKU, SL, giá từng món và tổng tiền.")
     if "ttkh_pending_inputs" not in st.session_state:
         st.session_state["ttkh_pending_inputs"] = {}
+
+    st.divider()
+    st.markdown("### 🧾 Danh sách đơn — dán TTKH & Ghi SAPO")
     _show_ttkh_write_results()
+    st.caption("Dán nguyên block TTKH vào cột `TTKH dán vào` của đúng mã đơn. Rê chuột vào cột `SL SP` để xem SKU, SL, giá từng món và tổng tiền.")
 
     # 🔎 Tìm mã đơn → chỉ hiện đúng dòng cần lấy TTKH
     def _clear_ttkh_search():
