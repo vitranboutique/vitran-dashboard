@@ -1298,6 +1298,7 @@ if _page == PAGE_TTKH:
     # ── HÀNG SỐ LIỆU: bên trái = đơn CẦN lấy, bên phải = đã LƯU 30 ngày (luôn hiện) ──
     # Gom số liệu thống kê 30 ngày trước để hiện metric (bảng chi tiết để trong expander)
     _stat_rows, _tot_saved, _tot_ok, _tot_fail = [], 0, 0, 0
+    _fail_log, _ok_codes = {}, set()
     _stat_msg = ""
     if not picklog.configured():
         _stat_msg = "⚠️ Chưa bật kho lưu Gist (`[picklog].github_token`) nên chưa thống kê được."
@@ -1309,18 +1310,24 @@ if _page == PAGE_TTKH:
         _today_vn = (datetime.now(timezone.utc) + timedelta(hours=7)).date()
         _from = (_today_vn - timedelta(days=29)).isoformat()
         _rows_by_day = {}
+        _fail_log = {}   # ma_don -> {ma_don, sdt, ngay, gio}  (lượt lỗi gần nhất mỗi đơn)
+        _ok_codes = set()
         for _lg in _logs:
             _d = str(_lg.get("ngay") or "")
             if _d < _from:
                 continue
             _agg = _rows_by_day.setdefault(_d, {"Ngày": _d, "Thành công": 0, "Thất bại": 0, "Bỏ qua": 0})
             _kq = _lg.get("ket_qua")
+            _code = str(_lg.get("ma_don") or "")
             if _kq == "thanh_cong":
                 _agg["Thành công"] += 1
+                _ok_codes.add(_code)
             elif _kq == "bo_qua":
                 _agg["Bỏ qua"] += 1
             else:
                 _agg["Thất bại"] += 1
+                _fail_log[_code] = {"Mã đơn": _code, "SĐT": _lg.get("sdt") or "",
+                                    "Lúc": f"{_lg.get('gio') or ''} {_d}".strip()}
         for _d in sorted(_rows_by_day, reverse=True):
             _a = _rows_by_day[_d]
             _a["Tổng đã lưu"] = _a["Thành công"] + _a["Thất bại"]
@@ -1350,17 +1357,28 @@ if _page == PAGE_TTKH:
     _sc[1].metric("Thành công", _tot_ok, help="Số lượt tạo được khách.")
     _sc[2].metric("Thất bại", _tot_fail, delta=(f"-{_tot_fail}" if _tot_fail else None),
                   delta_color="inverse",
-                  help="Số LƯỢT ghi bị lỗi trong 30 ngày (lịch sử). Đơn đó có thể đã ghi lại "
-                       "thành công sau. Muốn xử lý đơn còn tồn thì xem dòng 'đơn chờ tạo khách' bên dưới.")
+                  help="Số LƯỢT ghi bị lỗi trong 30 ngày (lịch sử). Đơn đó có thể đã ghi lại thành công sau.")
     if _stat_msg:
         st.caption(_stat_msg)
 
-    # Dòng RIÊNG: đơn ĐANG còn chờ tạo khách (con số cần hành động, khác với nhật ký ở trên)
-    if _n_fail_now:
-        _pc = st.columns([3, 1])
-        _pc[0].warning(f"⚠️ Đang có **{_n_fail_now} đơn CHỜ TẠO KHÁCH** (đã ghi đơn nhưng chưa tạo được khách) — cần xử lý.")
-        _pc[1].button(f"👉 Xem {_n_fail_now} đơn", key="ttkh_goto_failed_stats", use_container_width=True,
-                      on_click=lambda: st.session_state.update(ttkh_show_failed_only=True))
+    # "1 đơn lỗi" là đơn nào → liệt kê mã đơn lỗi trong nhật ký + link kiểm khách
+    if _fail_log:
+        _fl_rows = []
+        for _c, _rec in _fail_log.items():
+            _fl_rows.append({
+                **_rec,
+                "Trạng thái": "✅ Đã ghi lại OK" if _c in _ok_codes else "❌ Còn lỗi",
+                "Kiểm khách": (f"https://vitranboutiquehcm.mysapo.net/admin/customers?query={quote_plus(_rec['SĐT'])}"
+                               if _rec.get("SĐT") else ""),
+            })
+        with st.expander(f"🔎 {len(_fl_rows)} đơn lỗi trong nhật ký (mã đơn + link)",
+                         expanded=bool(_tot_fail) and _tot_fail <= 5):
+            st.dataframe(
+                pd.DataFrame(_fl_rows)[["Mã đơn", "SĐT", "Lúc", "Trạng thái", "Kiểm khách"]],
+                hide_index=True, width="stretch",
+                column_config={"Kiểm khách": st.column_config.LinkColumn("Kiểm khách", display_text="Mở Sapo")})
+            st.caption("‘Mở Sapo’ = tìm khách theo SĐT để kiểm/tạo. Muốn tới đơn trong danh sách bên dưới: "
+                       "copy Mã đơn dán vào ô 🔎 tìm mã đơn.")
     with st.expander("📅 Xem lịch sử theo từng ngày (30 ngày)", expanded=False):
         if _stat_rows:
             st.dataframe(
@@ -1373,6 +1391,12 @@ if _page == PAGE_TTKH:
             st.caption("Chưa có lượt lưu TTKH nào trong 30 ngày.")
 
     # ── 🔍 KIỂM TRA SÓT KHÁCH: đối chiếu đơn ↔ khách theo SĐT (chắc chắn) ──
+    # Đơn ĐANG chờ tạo khách (needs_customer) — thuộc nhóm "thiếu khách", đặt ngay tại đây
+    if _n_fail_now:
+        _pc = st.columns([3, 1])
+        _pc[0].warning(f"⚠️ Đang có **{_n_fail_now} đơn CHỜ TẠO KHÁCH** trong danh sách (đã ghi đơn nhưng chưa tạo được khách).")
+        _pc[1].button(f"👉 Xem {_n_fail_now} đơn", key="ttkh_goto_failed_stats", use_container_width=True,
+                      on_click=lambda: st.session_state.update(ttkh_show_failed_only=True))
     # Mở sẵn khi đang có kết quả quét (để bảng + nút tạo khách luôn hiện, khỏi mở lại sau mỗi lần bấm)
     with st.expander("🔍 Kiểm tra đơn thiếu khách — đối chiếu chắc chắn (30 ngày)",
                      expanded=bool(st.session_state.get("ttkh_audit"))):
