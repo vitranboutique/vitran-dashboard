@@ -29,6 +29,7 @@ from sapo_client import (
     SapoAuthError, build_session, credential_present, make_fetch_json,
     find_order_returns_by_codes, get_order_return, parse_codes,
     update_order_customer_info, update_order_note, update_order_return_note,
+    customer_exists_by_phone,
 )
 from picking_render import picking_html
 
@@ -1841,7 +1842,44 @@ if _page == PAGE_TTKH:
             st.success(f"🔎 Tìm thấy {_found} đơn khớp `{_search}` — dán TTKH vào dòng bên dưới.")
         else:
             st.warning(f"Không thấy đơn `{_search}` trong danh sách CẦN lấy TTKH. "
-                       "Có thể đơn đã lưu TTKH rồi, hoặc bị hủy/ngoài số ngày lọc.")
+                       "Có thể đơn đã lưu đủ 2 nơi, hoặc đã ghi ĐƠN nhưng CHƯA tạo KHÁCH, hoặc bị hủy/ngoài số ngày lọc.")
+            st.caption("Đơn đã ghi phần đơn hàng nhưng thiếu khách hàng sẽ bị ẩn. Bấm nút dưới để tra thẳng trong Sapo và đưa nó trở lại danh sách để hoàn tất.")
+            if st.button("🔧 Tra Sapo & đưa đơn về danh sách để tạo khách", key="ttkh_lookup_fix"):
+                with st.spinner("Đang tra đơn trong Sapo…"):
+                    try:
+                        _od = L.find_order_by_code(make_fetch_json(build_session()), _search,
+                                                   days=max(int(_days), 30))
+                    except Exception as _e:
+                        _od = None
+                        st.error(f"Lỗi tra cứu: `{_e}`")
+                if _od is None:
+                    st.warning("Không tìm thấy đơn này trong Sapo (trong ~30 ngày gần nhất).")
+                elif _od.get("cancelled"):
+                    st.info(f"Đơn `{_od['code']}` đã HỦY — không cần lấy TTKH.")
+                elif not _od.get("phone"):
+                    st.info(f"Đơn `{_od['code']}` CHƯA có SĐT trên đơn → thuộc diện cần lấy TTKH bình thường. "
+                            "Tăng 'Số ngày gần nhất' rồi tìm lại, đơn sẽ hiện trong danh sách.")
+                else:
+                    with st.spinner("Đang kiểm tra khách theo SĐT…"):
+                        try:
+                            _exists = customer_exists_by_phone(build_session(), _od["phone"])
+                        except Exception:
+                            _exists = False
+                    if _exists:
+                        st.success(f"✅ Đơn `{_od['code']}` đã ĐỦ 2 nơi — khách SĐT `{_od['phone']}` đã có "
+                                   "trong mục Khách hàng. Không cần lấy nữa.")
+                    else:
+                        try:
+                            _ts = (datetime.now(timezone.utc) + timedelta(hours=7)).isoformat(timespec="seconds")
+                            picklog.update_ttkh_pending(add={str(_od["order_id"]): {
+                                "ma_don": _od["code"], "sdt": _od["phone"],
+                                "ly_do": "Đã ghi đơn, khách chưa tạo (tra cứu tay)", "ts": _ts}})
+                            load_ttkh_candidates.clear()
+                            st.success(f"Đã đưa đơn `{_od['code']}` (SĐT `{_od['phone']}`) về danh sách. "
+                                       "Đang tải lại — dán TTKH rồi Ghi SAPO để tạo khách.")
+                            st.rerun()
+                        except Exception as _e:
+                            st.error(f"Không đưa được vào danh sách: `{_e}`")
 
     _df_multi = _ttkh_table("Đơn ≥ 2 SP", _multi)
     _df_single = _ttkh_table("Đơn 1 SP", _single)

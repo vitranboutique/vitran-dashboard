@@ -382,6 +382,51 @@ def get_tt_customer_candidates(fetch_json, days: int = 15, max_pages: int = 30, 
     }
 
 
+def find_order_by_code(fetch_json, code, days: int = 30, max_pages: int = 40) -> dict:
+    """Tra 1 đơn theo mã (sàn/Sapo) trong `days` ngày gần nhất — KỂ CẢ đơn đã có SĐT
+    (không lọc như get_tt_customer_candidates). Trả:
+    {order_id, code, phone, has_order_phone, cancelled} hoặc None nếu không thấy.
+    Dùng để 'cứu' đơn đã lưu nửa chừng (có đơn, chưa có khách) mà filter đã ẩn."""
+    q = re.sub(r"\s+", "", str(code or "")).lower()
+    if not q:
+        return None
+    cutoff_vn = (_now_utc() + timedelta(hours=7)).replace(tzinfo=None) - timedelta(days=days)
+    created_min = cutoff_vn.isoformat()
+    for page in range(1, int(max_pages) + 1):
+        data = fetch_json("/admin/orders.json", limit=250, page=page, created_on_min=created_min)
+        orders = data.get("orders", []) or []
+        if not orders:
+            break
+        for o in orders:
+            hit = False
+            for k in ("source_identifier", "name", "code", "id"):
+                v = re.sub(r"\s+", "", str(o.get(k) or "")).lower()
+                if v and q in v:
+                    hit = True
+                    break
+            if not hit:
+                continue
+            phone = ""
+            for key in ("shipping_address", "billing_address"):
+                a = o.get(key) or {}
+                if isinstance(a, dict):
+                    phone = a.get("phone") or a.get("phone_number") or a.get("mobile") or ""
+                    if phone:
+                        break
+            if not phone:
+                phone = o.get("phone") or ""
+            if not phone and isinstance(o.get("customer"), dict):
+                phone = o["customer"].get("phone") or ""
+            return {
+                "order_id": o.get("id"),
+                "code": o.get("source_identifier") or o.get("name") or o.get("code") or o.get("id"),
+                "phone": phone or "",
+                "has_order_phone": _order_has_customer_phone(o),
+                "cancelled": str(o.get("status") or "").lower() == "cancelled" or bool(o.get("cancelled_on")),
+            }
+    return None
+
+
 def _packing_history(orders, gap_min: int = 20, ref_date=None) -> dict:
     """Suy ra các ĐỢT SOẠN HÀNG trong ngày từ mốc đóng gói (packed_on).
     Gom các đơn đóng gói cách nhau <= gap_min phút thành 1 đợt. ref_date=None → hôm nay."""

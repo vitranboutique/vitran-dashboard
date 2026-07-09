@@ -704,6 +704,14 @@ def _save_customer_address(session: requests.Session, customer_id, info: dict, a
     return False
 
 
+def customer_exists_by_phone(session: requests.Session, phone: str) -> bool:
+    """True nếu ĐÃ có khách hàng với SĐT này trong Sapo (tìm theo số). Public wrapper."""
+    try:
+        return bool(_find_customer_by_phone(session, phone, []))
+    except Exception:
+        return False
+
+
 def _find_customer_by_phone(session: requests.Session, phone: str, attempts: list[str]):
     if _is_masked_phone(phone):
         attempts.append("GET customer search -> skip masked phone")
