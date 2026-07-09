@@ -1908,20 +1908,14 @@ if _page == PAGE_TTKH:
         _fail_rows = cust_fail + hard_fail
         failed = len(_fail_rows)
         n429 = sum(1 for r in _fail_rows if "429" in str(r.get("Lý do")) or "rate limit" in str(r.get("Lý do")).lower())
-        # Lưu mã đơn thất bại để lọc nhanh khi bấm ô "Thất bại"
-        st.session_state["ttkh_failed_codes"] = [str(r.get("Mã đơn")) for r in _fail_rows]
-
-        def _view_failed():
-            st.session_state["ttkh_show_failed_only"] = True
 
         _c = st.columns([1, 1, 2])
         _c[0].metric("✅ Tổng đã lưu", ok)
         _c[1].metric("❌ Thất bại", failed)
         if failed:
-            _c[2].button(f"👉 Xem {failed} đơn thất bại", key="ttkh_goto_failed",
-                         on_click=_view_failed, use_container_width=True)
+            _bad = ", ".join(str(r.get("Mã đơn")) for r in _fail_rows[:15])
             _extra = f" — trong đó {n429} đơn do Sapo bận (429), chờ 1–2 phút rồi Ghi lại." if n429 else ""
-            _c[2].caption(f"Bấm để lọc tới các đơn lỗi.{_extra}")
+            _c[2].caption(f"Đơn lỗi (dán TTKH & Ghi lại): {_bad}.{_extra}")
         else:
             _c[2].caption("Tất cả đã lưu đủ 2 nơi 🎉" if ok else "")
 
@@ -2212,25 +2206,7 @@ if _page == PAGE_TTKH:
 
         _multi = [r for r in _tt["multi"] if _match(r)]
         _single = [r for r in _tt["single"] if _match(r)]
-
-        # Lọc "chỉ đơn THẤT BẠI" khi bấm ô Thất bại ở báo cáo trên
-        if st.session_state.get("ttkh_show_failed_only"):
-            _fcodes = set(st.session_state.get("ttkh_failed_codes") or [])
-
-            _fcodes_norm = {_norm_code(c) for c in _fcodes}
-
-            def _is_failed(row):
-                if row.get("needs_customer"):   # đơn đã ghi nhưng chưa tạo được khách
-                    return True
-                return any(_norm_code(row.get(k)) in _fcodes_norm
-                           for k in ("name", "sapo_name", "source_identifier"))
-
-            _multi = [r for r in _multi if _is_failed(r)]
-            _single = [r for r in _single if _is_failed(r)]
-            _fc1, _fc2 = st.columns([3, 1])
-            _fc1.warning(f"🔴 Đang xem {len(_multi) + len(_single)} đơn CHỜ TẠO KHÁCH / lỗi. Dán TTKH & Ghi lại các đơn này.")
-            _fc2.button("Xem tất cả", key="ttkh_clear_failed_view", use_container_width=True,
-                        on_click=lambda: st.session_state.update(ttkh_show_failed_only=False))
+        st.session_state.pop("ttkh_show_failed_only", None)   # bỏ bộ lọc cũ (gây ẩn hết đơn)
 
         if _q:
             _found = len(_multi) + len(_single)
