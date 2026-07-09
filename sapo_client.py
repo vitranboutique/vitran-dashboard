@@ -495,6 +495,31 @@ def _customer_payload(customer_id, info: dict, note: str) -> dict:
     return {"customer": customer}
 
 
+def _customer_payload_min(info: dict, note: str) -> dict:
+    """Payload TỐI GIẢN: chỉ Tên + SĐT + địa chỉ dạng TEXT (address1), KHÔNG gửi
+    mã/ID phường-quận-tỉnh. Dùng khi Sapo từ chối tỉnh ('Province is not supported').
+    Khách vẫn tạo được & tìm được theo SĐT; địa chỉ chi tiết vẫn còn trên đơn hàng."""
+    name = str(info.get("name") or "").strip()
+    parts = name.split()
+    first_name = parts[0] if parts else name
+    last_name = " ".join(parts[1:]) if len(parts) > 1 else ""
+    phone_value = str(info.get("phone") or "").strip()
+    addr_text = ", ".join(str(x).strip() for x in (
+        info.get("address1"), info.get("ward"), info.get("district"), info.get("province")
+    ) if str(x or "").strip())
+    address = {"first_name": first_name, "last_name": last_name, "name": name,
+               "address1": addr_text, "country": "Vietnam", "country_code": "VN"}
+    if phone_value:
+        address.update({"phone": phone_value, "phone_number": phone_value, "mobile": phone_value})
+    customer = {"first_name": first_name, "last_name": last_name, "name": name, "note": note,
+                "addresses": [address], "addresses_attributes": [address],
+                "default_address": address, "default_address_attributes": address,
+                "accepts_marketing": False}
+    if phone_value:
+        customer.update({"phone": phone_value, "phone_number": phone_value, "mobile": phone_value})
+    return {"customer": customer}
+
+
 def _norm_phone(value) -> str:
     raw = str(value or "").strip()
     if "*" in raw:
@@ -1007,6 +1032,30 @@ def _upsert_customer_info(session: requests.Session, order: dict, info: dict, no
         if new_id:
             _save_customer_address(session, new_id, info, attempts, token)
             return new_id
+    # FALLBACK: Sapo từ chối địa chỉ/tỉnh (vd 'Province is not supported') → tạo TỐI GIẢN
+    # (Tên + SĐT + địa chỉ text, bỏ mã vùng) để khách vẫn vào & tìm được theo SĐT.
+    _body = ""
+    try:
+        _body = (resp.text or "")[:400].lower()
+    except Exception:
+        pass
+    if resp.status_code in (400, 422) and ("province" in _body or "district" in _body
+                                           or "ward" in _body or "address" in _body
+                                           or "type_mismatch" in _body or "not support" in _body):
+        try:
+            resp_min = session.post(
+                create_url, json=_customer_payload_min(info, note),
+                headers=_json_headers(f"{BASE}/admin/customers", token),
+                timeout=30, allow_redirects=False,
+            )
+            attempts.append("MIN " + _attempt_desc(resp_min))
+            if resp_min.status_code < 400:
+                data_min = _json_or_empty(resp_min)
+                new_id_min = _extract_customer_id_from_response(resp_min, data_min)
+                if new_id_min:
+                    return new_id_min
+        except Exception as e:
+            attempts.append(f"POST customer min -> {type(e).__name__}: {e}")
     new_id = _create_customer_via_html(session, info, note, attempts)
     if new_id:
         return new_id
