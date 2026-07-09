@@ -1739,28 +1739,61 @@ if _page == PAGE_TTKH:
         def _kq(r):
             return str(r.get("Kết quả") or "")
 
+        def _friendly(r):
+            """Trả (trạng thái dễ hiểu, cần làm gì) cho nhân viên."""
+            kq = _kq(r)
+            ly_do = str(r.get("Lý do") or "")
+            is429 = "429" in ly_do or "rate limit" in ly_do.lower()
+            if kq.startswith("Đã ghi ghi chú + khách"):
+                return "✅ Xong (đơn + khách)", "Không cần làm gì."
+            if kq.startswith("Đã tạo/cập nhật khách"):
+                return "✅ Đã tạo khách", "Nên mở khách kiểm tra lại địa chỉ cho chắc."
+            if kq.startswith("Đã ghi ghi chú,"):   # đơn OK, khách chưa tạo
+                if is429:
+                    return "⚠️ Chưa tạo được KHÁCH (Sapo bận)", "Chờ 1–2 phút rồi bấm 💾 Ghi SAPO lại. Đơn vẫn còn trong danh sách."
+                return "⚠️ Chưa tạo được KHÁCH", "Bấm 💾 Ghi SAPO lại. Nếu vẫn lỗi sau 2–3 lần, báo quản lý kèm mã đơn."
+            if kq.startswith("Lỗi"):               # cả đơn cũng lỗi
+                if is429:
+                    return "❌ Chưa ghi được (Sapo bận)", "Chờ 1–2 phút rồi bấm 💾 Ghi SAPO lại."
+                return "❌ Chưa ghi được", "Bấm 💾 Ghi SAPO lại. Nếu vẫn lỗi, báo quản lý kèm mã đơn."
+            if kq.startswith("Bỏ qua"):
+                return "⏭️ Bỏ qua (chưa hợp lệ)", f"Kiểm lại TTKH đã dán ({ly_do}). Dán đúng block có SĐT + tên + địa chỉ rồi Ghi lại."
+            return "❓ Không rõ", "Bấm Ghi lại; nếu lặp lại báo quản lý."
+
         ok = sum(1 for r in results if _kq(r).startswith("Đã ghi ghi chú + khách") or _kq(r).startswith("Đã tạo/cập nhật khách"))
-        cust_fail = [r for r in results if _kq(r).startswith("Đã ghi ghi chú,")]   # đơn OK, KHÁCH lỗi
-        hard_fail = [r for r in results if _kq(r).startswith("Lỗi")]               # cả đơn cũng lỗi
+        cust_fail = [r for r in results if _kq(r).startswith("Đã ghi ghi chú,")]
+        hard_fail = [r for r in results if _kq(r).startswith("Lỗi")]
         skipped = sum(1 for r in results if _kq(r).startswith("Bỏ qua"))
         failed = len(cust_fail) + len(hard_fail)
+        n429 = sum(1 for r in (cust_fail + hard_fail) if "429" in str(r.get("Lý do")) or "rate limit" in str(r.get("Lý do")).lower())
 
         if failed:
-            _bad_codes = ", ".join(str(r.get("Mã đơn")) for r in (cust_fail + hard_fail)[:20])
-            st.error(
-                f"⚠️ Ghi SAPO CHƯA ĐỦ 2 NƠI ở {failed} đơn "
-                f"({len(cust_fail)} đơn chưa tạo được KHÁCH, {len(hard_fail)} đơn lỗi cả đơn hàng). "
-                f"Các đơn này **vẫn nằm trong danh sách** (có gắn ⚠️) để bạn **ghi lại**: {_bad_codes}. "
-                f"Đã lưu đủ 2 nơi: {ok} đơn. Bỏ qua: {skipped}."
-            )
+            _bad = ", ".join(str(r.get("Mã đơn")) for r in (cust_fail + hard_fail)[:20])
+            _msg = (f"⚠️ GHI XONG: **{ok} đơn OK** · **{failed} đơn CHƯA được** · {skipped} bỏ qua.\n\n"
+                    f"{failed} đơn chưa được **vẫn nằm trong danh sách** (gắn ⚠️) để ghi lại: {_bad}.")
+            if n429:
+                _msg += f"\n\n🕐 Trong đó {n429} đơn do **Sapo đang bận (429)** — chỉ cần **chờ 1–2 phút rồi bấm 💾 Ghi SAPO lại**, KHÔNG phải lỗi dữ liệu."
+            st.error(_msg)
         else:
-            st.success(f"✅ Đã lưu đủ 2 nơi (đơn + khách): {ok} đơn. Bỏ qua {skipped} đơn chưa hợp lệ.")
+            st.success(f"✅ Đã lưu ĐỦ 2 NƠI (đơn + khách): {ok} đơn." + (f" Bỏ qua {skipped} đơn chưa hợp lệ." if skipped else ""))
+
+        # Bảng cho nhân viên: trạng thái + cần làm gì
+        _disp = []
+        for r in results:
+            _st, _todo = _friendly(r)
+            _disp.append({"Mã đơn": r.get("Mã đơn"), "Trạng thái": _st,
+                          "Cần làm gì": _todo, "Link khách": r.get("Link khách") or ""})
         st.dataframe(
-            pd.DataFrame(results),
-            hide_index=True,
-            width="stretch",
-            column_config={"Link khách": st.column_config.LinkColumn("Link khách", display_text="Mở khách")},
+            pd.DataFrame(_disp), hide_index=True, width="stretch",
+            column_config={
+                "Cần làm gì": st.column_config.TextColumn("Cần làm gì", width="large"),
+                "Link khách": st.column_config.LinkColumn("Link khách", display_text="Mở khách"),
+            },
         )
+        # Chi tiết kỹ thuật để riêng cho quản lý
+        if failed:
+            with st.expander("🔧 Chi tiết kỹ thuật (cho quản lý)"):
+                st.dataframe(pd.DataFrame(results), hide_index=True, width="stretch")
 
     def _write_ttkh_rows(rows_to_write):
         session = build_session()
