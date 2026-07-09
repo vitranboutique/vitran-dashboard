@@ -1356,7 +1356,9 @@ if _page == PAGE_TTKH:
             st.caption("Chưa có lượt lưu TTKH nào trong 30 ngày.")
 
     # ── 🔍 KIỂM TRA SÓT KHÁCH: đối chiếu đơn ↔ khách theo SĐT (chắc chắn) ──
-    with st.expander("🔍 Kiểm tra đơn thiếu khách — đối chiếu chắc chắn (30 ngày)", expanded=False):
+    # Mở sẵn khi đang có kết quả quét (để bảng + nút tạo khách luôn hiện, khỏi mở lại sau mỗi lần bấm)
+    with st.expander("🔍 Kiểm tra đơn thiếu khách — đối chiếu chắc chắn (30 ngày)",
+                     expanded=bool(st.session_state.get("ttkh_audit"))):
         st.caption("Quét MỌI đơn 30 ngày: đơn đã ghi SĐT lên đơn nhưng SĐT đó CHƯA có khách trong Sapo "
                    "→ liệt kê để bạn tạo khách. Đây là cách biết CHẮC không sót (khác thống kê ở trên chỉ là nhật ký).")
         if st.button("🔍 Quét đối chiếu ngay", key="ttkh_audit_run"):
