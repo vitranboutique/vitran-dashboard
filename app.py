@@ -1869,13 +1869,10 @@ if _page == PAGE_TTKH:
                                           "SĐT": m.get("sdt"), "SĐT sai?": "SAI" if m.get("sdt_xau") else "",
                                           "Địa chỉ": m.get("dia_chi")})
                 if _all_rows:
-                    import io as _io
-                    _buf = _io.BytesIO()
-                    pd.DataFrame(_all_rows).to_excel(_buf, index=False)
-                    st.download_button("📥 Tải Excel danh sách khách chưa chuẩn", _buf.getvalue(),
-                                       file_name="khach_chua_chuan.xlsx",
-                                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-                    st.caption("Excel gồm tối đa 2.000 khách/nhóm. Cần TOÀN BỘ thì dùng script `scan_invalid_orders.py`.")
+                    _csv = pd.DataFrame(_all_rows).to_csv(index=False).encode("utf-8-sig")
+                    st.download_button("📥 Tải danh sách (CSV — mở bằng Excel)", _csv,
+                                       file_name="khach_chua_chuan.csv", mime="text/csv")
+                    st.caption("File gồm tối đa 2.000 khách/nhóm. Cần TOÀN BỘ thì dùng script `scan_customers.py`.")
 
                 for _cat, _label in L.CUST_ERR_LABELS.items():
                     _n = _counts.get(_cat, 0)
