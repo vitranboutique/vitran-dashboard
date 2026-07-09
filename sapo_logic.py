@@ -580,7 +580,8 @@ def get_customer_phone_set(fetch_json, max_pages: int = 160, throttle: float = 0
 
 def audit_orders_missing_customer(fetch_json, good_phone_set, days: int = 30,
                                   max_pages: int = 120, channel_filter: str = "all",
-                                  all_phone_set=None, window_days: int = 30, throttle: float = 0.3) -> list:
+                                  all_phone_set=None, window_days: int = 30, throttle: float = 0.3,
+                                  progress_cb=None) -> list:
     """Đơn đã ghi SĐT lên đơn nhưng khách CHƯA ĐẠT (chưa có khách, HOẶC khách địa chỉ
     text). Trả list {order_id, code, phone, created_on, ly_do, info}.
 
@@ -631,9 +632,12 @@ def audit_orders_missing_customer(fetch_json, good_phone_set, days: int = 30,
             "info": order_shipping_to_info(o),
         })
 
+    _total_win = max(1, (int(days) + int(window_days) - 1) // int(window_days))
+    _win_i = 0
     w_end = now_vn
     while w_end > start_all:
         w_start = max(w_end - timedelta(days=window_days), start_all)
+        _win_i += 1
         for page in range(1, int(max_pages) + 1):
             try:
                 if page > 1:
@@ -649,6 +653,11 @@ def audit_orders_missing_customer(fetch_json, good_phone_set, days: int = 30,
                 _process(o)
             if len(orders) < 250:
                 break
+        if progress_cb:
+            try:
+                progress_cb(_win_i, _total_win, len(seen), len(out))
+            except Exception:
+                pass
         w_end = w_start - timedelta(seconds=1)
     return out
 

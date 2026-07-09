@@ -1504,21 +1504,30 @@ if _page == PAGE_TTKH:
         _audit_days = _ac[0].number_input("Số ngày quét", min_value=7, max_value=365, value=365, step=30,
                                           help="Tối đa 1 năm. Quét càng dài càng lâu (nhiều đơn + có thể chạm rate limit).")
         if _ac[1].button("🔍 Quét đối chiếu ngay", key="ttkh_audit_run"):
-            with st.spinner(f"Đang tải danh sách khách + đối chiếu đơn {int(_audit_days)} ngày… (có thể lâu)"):
-                try:
+            st.session_state.pop("ttkh_audit", None)   # xóa kết quả/lỗi cũ ngay
+            _prog = st.progress(0.0, text="Bắt đầu…")
+            try:
+                _prog.progress(0.02, text="Đang tải danh sách khách hàng (16k+)… ~30 giây")
+                _cores, _good, _cap = load_customer_phone_set()
+                if not _cores:
+                    st.session_state["ttkh_audit"] = {"error": "Không lấy được danh sách khách hàng từ Sapo (rate limit 429). Thử lại sau ~1 phút."}
+                else:
                     _fj = make_fetch_json(build_session())
-                    _cores, _good, _cap = load_customer_phone_set()
-                    if not _cores:
-                        st.session_state["ttkh_audit"] = {"error": "Không lấy được danh sách khách hàng từ Sapo (rate limit 429). Thử lại sau ~1 phút."}
-                    else:
-                        # đơn CHƯA ĐẠT = SĐT không nằm trong 'good' (chưa có khách HOẶC khách địa chỉ text)
-                        _missing = L.audit_orders_missing_customer(
-                            _fj, _good, days=int(_audit_days), channel_filter=_channel_filter, all_phone_set=_cores)
-                        st.session_state["ttkh_audit"] = {
-                            "missing": _missing, "cap": _cap, "n_suspect": len(_missing), "days": int(_audit_days),
-                            "ts": (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%H:%M %d/%m")}
-                except Exception as _e:
-                    st.session_state["ttkh_audit"] = {"error": str(_e)[:400]}
+
+                    def _audit_prog(win_i, win_n, n_seen, n_found):
+                        _prog.progress(min(0.05 + 0.95 * win_i / max(win_n, 1), 1.0),
+                                       text=f"Đối chiếu tháng {win_i}/{win_n} · đã xét {n_seen} đơn · tìm thấy {n_found} đơn cần xử lý")
+
+                    _missing = L.audit_orders_missing_customer(
+                        _fj, _good, days=int(_audit_days), channel_filter=_channel_filter,
+                        all_phone_set=_cores, progress_cb=_audit_prog)
+                    st.session_state["ttkh_audit"] = {
+                        "missing": _missing, "cap": _cap, "n_suspect": len(_missing), "days": int(_audit_days),
+                        "ts": (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%H:%M %d/%m")}
+            except Exception as _e:
+                st.session_state["ttkh_audit"] = {"error": str(_e)[:400]}
+            _prog.empty()
+            st.rerun()
 
         _audit = st.session_state.get("ttkh_audit")
         if _audit:
