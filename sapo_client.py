@@ -439,7 +439,9 @@ def _customer_payload(customer_id, info: dict, note: str) -> dict:
     province_code = str(info.get("province_code") or "").strip()
     district_code = str(info.get("district_code") or "").strip()
     ward_code = str(info.get("ward_code") or "").strip()
-    use_address_codes = info.get("address_format") != "new"
+    # Gửi MÃ vùng bất cứ khi nào có (cả địa chỉ MỚI lẫn CŨ) — trước đây địa chỉ mới
+    # chỉ gửi TÊN nên Sapo đoán sai (vd ra 'Vũng Tàu'). Có mã thì gửi mã cho chuẩn.
+    use_address_codes = bool(ward_code or province_code)
     address = {
         "first_name": first_name,
         "last_name": last_name,
@@ -1083,7 +1085,7 @@ def update_order_customer_info(session: requests.Session, order_id, info: dict, 
     province_code = str(info.get("province_code") or "").strip()
     district_code = str(info.get("district_code") or "").strip()
     ward_code = str(info.get("ward_code") or "").strip()
-    use_address_codes = info.get("address_format") != "new"
+    use_address_codes = bool(ward_code or province_code)   # gửi mã cả địa chỉ mới lẫn cũ
     shipping = {
         "first_name": first_name,
         "last_name": last_name,
