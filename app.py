@@ -1841,7 +1841,7 @@ if _page == PAGE_TTKH:
             try:
                 def _cust_prog(page, tot, found):
                     _cp.progress(min(page / 120, 1.0), text=f"Trang {page} · đã xét {tot} khách · lỗi {found}")
-                _res = L.audit_customers(make_fetch_json(build_session()), progress_cb=_cust_prog)
+                _res = L.audit_customers(make_fetch_json(build_session()), per_cat_keep=2000, progress_cb=_cust_prog)
                 st.session_state["cust_audit"] = _res
                 if picklog.configured():
                     picklog.save_cust_audit(_res)
@@ -1857,9 +1857,26 @@ if _page == PAGE_TTKH:
             else:
                 _counts = _ca.get("counts") or {}
                 _tot_bad = sum(_counts.values())
-                st.error(f"⚠️ {_tot_bad} / {_ca.get('total','?')} khách CHƯA CHUẨN (quét {_ca.get('ts','?')}).")
+                st.error(f"⚠️ {_tot_bad:,} / {_ca.get('total','?')} khách CHƯA CHUẨN (quét {_ca.get('ts','?')}).")
                 if _ca.get("hit_cap"):
                     st.warning("Có thể chưa quét hết (chạm giới hạn/429) — quét lại nếu cần.")
+
+                # 📥 Nút tải Excel (gộp mọi nhóm; SĐT sai đánh dấu)
+                _all_rows = []
+                for _cat, _label in L.CUST_ERR_LABELS.items():
+                    for m in (_ca.get("samples") or {}).get(_cat) or []:
+                        _all_rows.append({"Nhóm": _label, "Mã KH": m.get("id"), "Tên": m.get("ten"),
+                                          "SĐT": m.get("sdt"), "SĐT sai?": "SAI" if m.get("sdt_xau") else "",
+                                          "Địa chỉ": m.get("dia_chi")})
+                if _all_rows:
+                    import io as _io
+                    _buf = _io.BytesIO()
+                    pd.DataFrame(_all_rows).to_excel(_buf, index=False)
+                    st.download_button("📥 Tải Excel danh sách khách chưa chuẩn", _buf.getvalue(),
+                                       file_name="khach_chua_chuan.xlsx",
+                                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                    st.caption("Excel gồm tối đa 2.000 khách/nhóm. Cần TOÀN BỘ thì dùng script `scan_invalid_orders.py`.")
+
                 for _cat, _label in L.CUST_ERR_LABELS.items():
                     _n = _counts.get(_cat, 0)
                     if not _n:
@@ -1868,13 +1885,14 @@ if _page == PAGE_TTKH:
                     with st.expander(f"• {_label} — {_n:,} khách" + (f" (hiện {len(_smp)} mẫu)" if _n > len(_smp) else "")):
                         if _smp:
                             _df = pd.DataFrame([{
-                                "Mã KH": m.get("id"), "Tên": m.get("ten"), "SĐT": m.get("sdt"),
+                                "Mã KH": m.get("id"), "Tên": m.get("ten"),
+                                "SĐT": ("⚠️ " + str(m.get("sdt") or "") if m.get("sdt_xau") else m.get("sdt")),
                                 "Địa chỉ": m.get("dia_chi"),
                                 "Mở Sapo": f"https://vitranboutiquehcm.mysapo.net/admin/customers/{m.get('id')}",
                             } for m in _smp])
                             st.dataframe(_df, hide_index=True, width="stretch",
                                          column_config={"Mở Sapo": st.column_config.LinkColumn("Mở Sapo", display_text="Mở")})
-                st.caption("Mỗi nhóm là cùng 1 kiểu lỗi → sẽ code cách fix riêng cho từng nhóm ở bước sau. "
+                st.caption("SĐT có **⚠️** = sai định dạng. Mỗi nhóm 1 kiểu lỗi → code fix riêng ở bước sau. "
                            "Nhóm 'thiếu SĐT' đã fix xong (1.327 khách).")
 
         with st.expander("ℹ️ Điều kiện lọc đơn"):

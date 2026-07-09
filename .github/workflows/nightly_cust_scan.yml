@@ -1,0 +1,23 @@
+name: Quét khách hàng chưa chuẩn (mỗi đêm)
+
+# Chạy 22:00 giờ VN mỗi ngày (15:00 UTC). Có thể chạy tay ở tab Actions.
+on:
+  schedule:
+    - cron: "0 15 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests openpyxl
+      - name: Quét + đẩy Gist
+        env:
+          SAPO_API_KEY: ${{ secrets.SAPO_API_KEY }}
+          SAPO_API_SECRET: ${{ secrets.SAPO_API_SECRET }}
+          GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
+        run: python scan_customers.py

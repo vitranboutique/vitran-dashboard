@@ -19,3 +19,6 @@ venv/
 *.csv
 SKILL.md
 start_dashboard.bat
+*.log
+khach_chua_chuan.xlsx
+invalid_orders.xlsx

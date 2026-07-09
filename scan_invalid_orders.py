@@ -30,12 +30,16 @@ def build_session():
     s.headers.update({"User-Agent": "Mozilla/5.0", "Accept": "application/json"})
     token = os.environ.get("SAPO_ACCESS_TOKEN") or os.environ.get("SAPO_TOKEN")
     cookie = os.environ.get("SAPO_COOKIE")
+    key = os.environ.get("SAPO_API_KEY")
+    secret = os.environ.get("SAPO_API_SECRET")
     if token:
         s.headers["X-Sapo-Access-Token"] = token
     elif cookie:
         s.headers["Cookie"] = cookie
+    elif key and secret:
+        s.auth = (key, secret)   # Sapo Open API (Basic Auth)
     else:
-        sys.exit("❌ Thiếu credential: đặt SAPO_ACCESS_TOKEN hoặc SAPO_COOKIE.")
+        sys.exit("❌ Thiếu credential: đặt SAPO_ACCESS_TOKEN / SAPO_COOKIE / SAPO_API_KEY+SECRET.")
     return s
 
 

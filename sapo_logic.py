@@ -519,6 +519,7 @@ def _addr_is_structured(a) -> bool:
 
 # Các nhóm lỗi địa chỉ khách hàng (để hiện danh sách + code fix theo nhóm)
 CUST_ERR_LABELS = {
+    "sdt_sai": "🔴 SĐT sai định dạng — CẦN FIX",
     "thieu_ma_tinh": "🔴 Thiếu mã tỉnh (địa chỉ chỉ có text) — CẦN FIX",
     "thieu_ca_2": "🔴 Thiếu mã tỉnh + SĐT — CẦN FIX",
     "khong_dia_chi": "🔴 Không có địa chỉ",
@@ -527,13 +528,28 @@ CUST_ERR_LABELS = {
 }
 
 
-def _classify_customer_addr(a) -> str:
-    """Phân loại lỗi địa chỉ khách. Trả '' nếu đã chuẩn (đủ mã tỉnh+phường+SĐT)."""
+def phone_is_bad(p) -> bool:
+    """True nếu SĐT CÓ nhưng SAI ĐỊNH DẠNG. Chuẩn = '0'+9 số HOẶC '+84'+9 số.
+    Còn lại (vd '00971213738' dư 0, có khoảng trắng, sai đầu số) = sai — kể cả khi
+    sửa được. Số rỗng (thiếu) → False. Số bị che (*) → bỏ qua."""
+    p = str(p or "").strip()
+    if not p or "*" in p:
+        return False
+    if re.match(r"^0\d{9}$", p) or re.match(r"^\+84\d{9}$", p):
+        return False
+    return True
+
+
+def _classify_customer_addr(a, contact_phone="") -> str:
+    """Phân loại lỗi khách. Trả '' nếu đã chuẩn. Ưu tiên SĐT sai định dạng."""
+    addr_phone = (a.get("phone") or a.get("phone_number") or a.get("mobile")) if isinstance(a, dict) else ""
+    if phone_is_bad(contact_phone) or phone_is_bad(addr_phone):
+        return "sdt_sai"
     if not isinstance(a, dict) or not (a.get("address1") or a.get("province_code")):
         return "khong_dia_chi"
     pc = str(a.get("province_code") or a.get("province_id") or "").strip()
     wc = str(a.get("ward_code") or a.get("ward_id") or "").strip()
-    ph = str(a.get("phone") or a.get("phone_number") or a.get("mobile") or "").strip()
+    ph = str(addr_phone or "").strip()
     if not pc:
         return "thieu_ca_2" if not ph else "thieu_ma_tinh"
     if not wc:
@@ -574,17 +590,20 @@ def audit_customers(fetch_json, max_pages: int = 220, throttle: float = 0.35,
         for c in custs:
             total += 1
             a = c.get("default_address") or (c.get("addresses") or [None])[0]
-            cat = _classify_customer_addr(a if isinstance(a, dict) else None)
+            _cphone = c.get("phone") or ""
+            cat = _classify_customer_addr(a if isinstance(a, dict) else None, _cphone)
             if not cat:
                 continue
             counts[cat] += 1
             if len(samples[cat]) < per_cat_keep:
                 a = a if isinstance(a, dict) else {}
+                _aphone = a.get("phone") or a.get("phone_number") or a.get("mobile") or ""
                 samples[cat].append({
                     "id": c.get("id"),
                     "ten": c.get("name") or f"{c.get('first_name') or ''} {c.get('last_name') or ''}".strip(),
-                    "sdt": c.get("phone") or "",
+                    "sdt": _cphone,
                     "dia_chi": str(a.get("address1") or "")[:90],
+                    "sdt_xau": bool(phone_is_bad(_cphone) or phone_is_bad(_aphone)),
                 })
         if progress_cb:
             try:
