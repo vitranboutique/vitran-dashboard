@@ -1431,6 +1431,7 @@ if _page == PAGE_TTKH:
                         _diag.append({"Mã đơn": _c, "phone": _info2["phone"], "ket_qua": _why, "luc": _luc,
                                       "dia_chi": f"{_addr_str}  [{_info2.get('address_format')}]"
                                                  f"  mã P/X {_info2.get('ward_code') or '-'}",
+                                      "raw": _od.get("raw_shipping") or {},
                                       "attempts": _atts})
                     time.sleep(0.6)
                 # Ghi nhận lại vào nhật ký → bảng đơn lỗi chuyển sang 'Đã ghi lại OK'
@@ -1452,6 +1453,13 @@ if _page == PAGE_TTKH:
                     st.markdown(f"**{_dg.get('Mã đơn')}** · SĐT {_dg.get('phone','')} → {_k}")
                     if _dg.get("dia_chi"):
                         st.caption(f"📍 Địa chỉ app gửi: {_dg['dia_chi']}")
+                    if _dg.get("raw"):
+                        _rw = _dg["raw"]
+                        st.caption("🧾 DỮ LIỆU THÔ trên đơn (Sapo trả): "
+                                   f"ward={_rw.get('ward_name') or _rw.get('ward') or '-'!r} · "
+                                   f"district={_rw.get('district_name') or _rw.get('district') or '-'!r} · "
+                                   f"province={_rw.get('province_name') or _rw.get('province') or '-'!r} · "
+                                   f"address1={_rw.get('address1') or '-'!r}")
                     _ats = [str(a) for a in (_dg.get("attempts") or ([_dg.get("Chi tiết")] if _dg.get("Chi tiết") else []))]
                     _writes = [a for a in _ats if any(w in a for w in ("POST", "PUT", "PATCH"))]
                     _reads = [a for a in _ats if a not in _writes]

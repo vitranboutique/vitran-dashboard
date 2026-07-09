@@ -431,6 +431,9 @@ def find_order_by_code(fetch_json, code, days: int = 30, max_pages: int = 40) ->
                 "has_order_phone": _order_has_customer_phone(o),
                 "cancelled": str(o.get("status") or "").lower() == "cancelled" or bool(o.get("cancelled_on")),
                 "info": order_shipping_to_info(o),   # dữ liệu khách từ đơn (để tạo khách)
+                "raw_shipping": {k: (o.get("shipping_address") or {}).get(k) for k in (
+                    "address1", "ward", "ward_name", "ward_code", "district", "district_name",
+                    "district_code", "province", "province_name", "province_code", "city")},
             }
     return None
 
