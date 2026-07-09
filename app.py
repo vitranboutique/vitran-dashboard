@@ -1381,7 +1381,7 @@ if _page == PAGE_TTKH:
                        "copy Mã đơn dán vào ô 🔎 tìm mã đơn.")
 
             _still_bad = [c for c in _fail_log if c not in _ok_codes]
-            if _still_bad and st.button("🔧 Thử tạo khách cho đơn còn lỗi & xem lý do chi tiết", key="ttkh_diag_fail"):
+            if _still_bad and st.button("🔧 Tạo/sửa địa chỉ khách cho đơn lỗi (Tỉnh/Quận/Phường) & xem chi tiết", key="ttkh_diag_fail"):
                 _diag = []
                 _sess = build_session()
                 _fj2 = make_fetch_json(build_session())
@@ -1399,16 +1399,15 @@ if _page == PAGE_TTKH:
                         if not _info2.get("phone") or not _info2.get("name"):
                             _diag.append({"Mã đơn": _c, "Kết quả": "❌ Đơn thiếu SĐT/tên", "Chi tiết": f"phone={_info2.get('phone')}, name={_info2.get('name')}"})
                             continue
-                        if customer_exists_by_phone(_sess, _info2["phone"]):
-                            _diag.append({"Mã đơn": _c, "Kết quả": "✅ Khách ĐÃ CÓ (không cần tạo)", "Chi tiết": f"SĐT {_info2['phone']} đã có khách"})
-                            continue
-                        _cid, _att = upsert_customer_from_info(_sess, _info2, skip_search=True, note=f"Fix đơn {_c}")
+                        # Tạo HOẶC cập nhật địa chỉ (không skip_search → tìm khách cũ để GHI ĐÈ
+                        # địa chỉ có cấu trúc Tỉnh/Quận/Phường, sửa cả khách đã lỡ tạo bằng text)
+                        _cid, _att = upsert_customer_from_info(_sess, _info2, note=f"Fix/cập nhật đơn {_c}")
                         _atts = [str(a) for a in (_att or [])]
                         _blob = " ".join(_atts).lower()
                         _write_blob = " ".join(a for a in [str(x) for x in (_att or [])]
                                                if any(w in a for w in ("POST", "PUT", "PATCH"))).lower()
                         if _cid:
-                            _why = "✅ ĐÃ TẠO được khách"
+                            _why = "✅ ĐÃ TẠO/CẬP NHẬT khách (địa chỉ Tỉnh/Quận/Phường)"
                         elif "429" in _write_blob:
                             _why = "❌ 429 — Sapo đang chặn (rate limit). Nghỉ 5–10 phút rồi thử lại."
                         elif "type_mismatch" in _blob or "convert string value to integer" in _blob:
