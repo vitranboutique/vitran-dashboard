@@ -271,13 +271,17 @@ def merge_dohana_videos(new_list) -> list:
         if old is None:
             rec = {"code": c, "type": ty, "status": r.get("status"), "date": r.get("date"),
                    "time": r.get("time"), "dur": r.get("dur"), "tag_id": r.get("tag_id"),
-                   "staff": r.get("staff"), "first_seen": today}
+                   "tag_name": r.get("tag_name"), "staff": r.get("staff"), "first_seen": today}
             cur.append(rec)
             idx[(c, ty)] = rec
             changed = True
-        elif r.get("tag_id") and not old.get("tag_id"):   # tag gắn MUỘN (sau khi đã lưu) → cập nhật
-            old["tag_id"] = r.get("tag_id")
-            changed = True
+        else:
+            if r.get("tag_id") and not old.get("tag_id"):   # tag gắn MUỘN (sau khi đã lưu) → cập nhật
+                old["tag_id"] = r.get("tag_id")
+                changed = True
+            if r.get("tag_name") and not old.get("tag_name"):
+                old["tag_name"] = r.get("tag_name")
+                changed = True
     if changed:
         try:
             body = {"files": {_DFILE: {"content": json.dumps({"videos": cur}, ensure_ascii=False)}}}

@@ -14,6 +14,7 @@ import requests
 import streamlit as st
 
 _BASE = "https://backend.dhn.io.vn/dpm/v1/partner/video/search"
+_TAG_CACHE = {"ts": 0.0, "map": {}}
 
 
 def _key():
@@ -54,6 +55,111 @@ def _vn_time(iso):
         return ""
 
 
+def _valid_tag_text(x, tag_id=""):
+    s = str(x or "").strip()
+    if not s or s == str(tag_id or "").strip():
+        return ""
+    if s in ("⚠️ Có tag", "Có tag"):
+        return ""
+    if len(s) == 36 and s.count("-") == 4:
+        return ""
+    if s.lower() in ("none", "null", "false"):
+        return ""
+    return s
+
+
+def _raw_tag_name(v):
+    """Cố đọc tên tag nếu Partner API có field phụ; nếu không có thì trả rỗng."""
+    tid = v.get("tagId") or v.get("tag_id")
+    for k in ("tagName", "tag_name", "tagLabel", "tag_label", "tagTitle", "tag_title"):
+        got = _valid_tag_text(v.get(k), tid)
+        if got:
+            return got
+    for k in ("tag", "tagInfo", "tag_info", "videoTag", "video_tag"):
+        obj = v.get(k)
+        if isinstance(obj, dict):
+            for kk in ("name", "title", "label", "text"):
+                got = _valid_tag_text(obj.get(kk), tid)
+                if got:
+                    return got
+        else:
+            got = _valid_tag_text(obj, tid)
+            if got:
+                return got
+    tags = v.get("tags")
+    if isinstance(tags, list):
+        names = []
+        for obj in tags:
+            if isinstance(obj, dict):
+                got = next((_valid_tag_text(obj.get(kk), tid)
+                            for kk in ("name", "title", "label", "text") if _valid_tag_text(obj.get(kk), tid)), "")
+            else:
+                got = _valid_tag_text(obj, tid)
+            if got:
+                names.append(got)
+        if names:
+            return " · ".join(names)
+    return ""
+
+
+def _flatten_tags_payload(payload):
+    if isinstance(payload, list):
+        return payload
+    if not isinstance(payload, dict):
+        return []
+    for k in ("data", "items", "rows", "results", "tags"):
+        v = payload.get(k)
+        if isinstance(v, list):
+            return v
+        if isinstance(v, dict):
+            got = _flatten_tags_payload(v)
+            if got:
+                return got
+    return []
+
+
+def _extract_tag_pair(row):
+    if not isinstance(row, dict):
+        return None, None
+    tid = next((row.get(k) for k in ("id", "_id", "tagId", "tag_id", "uuid", "value") if row.get(k)), None)
+    name = next((_valid_tag_text(row.get(k), tid)
+                 for k in ("name", "title", "label", "text", "tagName", "tag_name") if _valid_tag_text(row.get(k), tid)), "")
+    return (str(tid).strip(), name) if tid and name else (None, None)
+
+
+def _fetch_tag_names():
+    """Đọc danh sách tag DHN để map tagId -> tên tag (UI DHN dùng API /tag)."""
+    now = time.monotonic()
+    if now - float(_TAG_CACHE.get("ts") or 0) < 3600:
+        return dict(_TAG_CACHE.get("map") or {})
+    key = _key()
+    out = {}
+    if key:
+        headers = {"x-api-key": key}
+        urls = [
+            "https://backend.dhn.io.vn/dpm/v1/partner/tag",
+            "https://backend.dhn.io.vn/dpm/v1/partner/tags",
+            "https://backend.dhn.io.vn/dpm/v1/tag",
+            "https://be.dhn.io.vn/dpm/v1/tag",
+        ]
+        for url in urls:
+            try:
+                _throttle()
+                r = requests.get(url, headers=headers, timeout=15)
+                if r.status_code != 200:
+                    continue
+                for row in _flatten_tags_payload(r.json()):
+                    tid, name = _extract_tag_pair(row)
+                    if tid and name:
+                        out[tid] = name
+                if out:
+                    break
+            except Exception:
+                pass
+    _TAG_CACHE["ts"], _TAG_CACHE["map"] = now, out
+    return dict(out)
+
+
 def _records_from(vids, typ):
     """Metadata MỌI video (khử trùng theo mã, giữ bản MỚI NHẤT) để tích luỹ lưu cả năm —
     {code, type, status, date(VN yyyy-mm-dd), time(VN HH:MM:SS), dur(giây), tag_id}."""
@@ -69,6 +175,7 @@ def _records_from(vids, typ):
                     "time": _vn_time(v.get("createdAt")),
                     "dur": int(dur) if isinstance(dur, (int, float)) else None,
                     "tag_id": v.get("tagId"),
+                    "tag_name": _raw_tag_name(v),
                     "staff": ((v.get("user") or {}).get("firstName") or "").strip()})
     return out
 
@@ -82,17 +189,26 @@ _TAG_NAMES = {
 }
 
 
-def _tag_name(tag_id):
-    """Trả tên tag để hiển thị. Chưa map được tagId -> '⚠️ Có tag' (nhân viên mở app xem)."""
+def _tag_name(tag_id, fallback=""):
+    """Trả tên tag để hiển thị. Chưa map được tagId thì hiện rõ id để không còn chung chung."""
+    fb = _valid_tag_text(fallback, tag_id)
+    if fb:
+        return fb
     if not tag_id:
         return ""
+    _tid = str(tag_id).strip()
     try:
         ov = dict(st.secrets["dohana"]["tags"])
-        if tag_id in ov and ov[tag_id]:
-            return ov[tag_id]
+        if _tid in ov and ov[_tid]:
+            return ov[_tid]
     except Exception:
         pass
-    return _TAG_NAMES.get(tag_id) or "⚠️ Có tag"
+    if _tid in _TAG_NAMES:
+        return _TAG_NAMES[_tid]
+    api_tags = _fetch_tag_names()
+    if _tid in api_tags:
+        return api_tags[_tid]
+    return f"⚠️ Tag chưa map tên (id {_tid[:8]})"
 
 
 _LAST_REQ = [0.0]   # mốc request Dohana gần nhất (dùng chung mọi call) — giữ nhịp ≤ 10 req/s
@@ -173,7 +289,7 @@ def inbound_videos(days_match: int = 3, max_pages: int = 25, target_date=None):
             "dur": int(dur) if isinstance(dur, (int, float)) else None,
             "recorded": _vn_dt(v.get("createdAt")),
             "tag_id": v.get("tagId"),
-            "tag": _tag_name(v.get("tagId")),
+            "tag": _tag_name(v.get("tagId"), _raw_tag_name(v)),
             "staff": ((v.get("user") or {}).get("firstName") or "").strip(),   # NV quay clip
         }
     return {

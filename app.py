@@ -364,6 +364,15 @@ def match_packing_videos(order_codes, vcodes):
 def _enrich_daily(rep, dvr, inb):
     """Gắn đối chiếu CLIP KHUI HÀNG (inbound) + VIDEO ĐÓNG GÓI (package) vào rep.
     Dùng chung cho cả báo cáo hôm nay và xem lại ngày cũ."""
+    def _clip_tag(m):
+        if not m:
+            return ""
+        tid = m.get("tag_id")
+        tag = dohana._tag_name(tid, m.get("tag") or m.get("tag_name") or "") if tid else (m.get("tag") or m.get("tag_name") or "")
+        if str(tag).strip() in ("⚠️ Có tag", "Có tag"):
+            return "⚠️ Tag chưa map tên"
+        return tag
+
     nk = rep.get("nhap_kho") or {}
     if inb is not None:
         mset, cnt = inb.get("match", set()), inb.get("count", {})
@@ -377,7 +386,8 @@ def _enrich_daily(rep, dvr, inb):
             m = meta.get(hit) if hit else None
             d["clip_dur"] = m.get("dur") if m else None
             d["clip_time"] = m.get("recorded") if m else ""
-            d["clip_tag"] = m.get("tag") if m else ""
+            d["clip_tag_id"] = m.get("tag_id") if m else ""
+            d["clip_tag"] = _clip_tag(m)
             d["clip_staff"] = m.get("staff") if m else ""
             if hit:
                 consumed.add(hit)
@@ -423,7 +433,8 @@ def _enrich_daily(rep, dvr, inb):
                 if m:
                     d["clip_dur"] = m.get("dur")
                     d["clip_time"] = m.get("recorded")
-                    d["clip_tag"] = m.get("tag")
+                    d["clip_tag_id"] = m.get("tag_id")
+                    d["clip_tag"] = _clip_tag(m)
                     d["clip_staff"] = m.get("staff")
         nk["clip_available"] = True
         nk["clip_co"] = sum(1 for d in nk.get("detail", []) if d.get("clip"))
@@ -432,7 +443,8 @@ def _enrich_daily(rep, dvr, inb):
         # Kèm TAG (vd Khách tráo!) + thời lượng/giờ cho clip dư — đơn có tag thường bị giữ lại
         # xử lý tranh chấp nên KHÔNG nhập kho (đúng quy trình) → cần hiện rõ tag để theo dõi.
         nk["clip_unmatched_detail"] = [
-            {"code": c, "tag": (meta.get(c) or {}).get("tag", ""),
+            {"code": c, "tag_id": (meta.get(c) or {}).get("tag_id", ""),
+             "tag": _clip_tag(meta.get(c) or {}),
              "dur": (meta.get(c) or {}).get("dur"),
              "recorded": (meta.get(c) or {}).get("recorded", ""),
              "staff": (meta.get(c) or {}).get("staff", "")}
@@ -453,6 +465,7 @@ def _enrich_daily(rep, dvr, inb):
         recon.append({
             "clip_code": d.get("clip_code"), "clip_time": d.get("clip_time"),
             "clip_dur": d.get("clip_dur"), "clip_tag": d.get("clip_tag"),
+            "clip_tag_id": d.get("clip_tag_id"),
             "clip_alt": d.get("clip_altcode"), "has_clip": bool(d.get("clip")),
             "order_code": d.get("order_code"), "recv_time": d.get("recv_time"),
             "vd_gui": d.get("tracking"),   # mã VĐ GIAO ĐI (tra Sapo/sàn được)
@@ -469,6 +482,7 @@ def _enrich_daily(rep, dvr, inb):
         recon.append({
             "clip_code": u.get("code"), "clip_time": u.get("recorded"),
             "clip_dur": u.get("dur"), "clip_tag": u.get("tag"),
+            "clip_tag_id": u.get("tag_id"),
             "clip_alt": False, "has_clip": True,
             "order_code": info.get("order_code") or "", "recv_time": "", "vd_gui": info.get("vd_gui") or "",
             "nhan_vien": u.get("staff") or "",
@@ -770,7 +784,8 @@ def _dohana_inb_from_store(date_iso, days_match=3):
             _p = str(r.get("date") or "").split("-")
             _dd = f"{_p[2]}/{_p[1]}" if len(_p) == 3 else ""
             meta[c] = {"dur": r.get("dur"), "recorded": (f"{r.get('time') or ''} {_dd}").strip(),
-                       "tag_id": r.get("tag_id"), "tag": dohana._tag_name(r.get("tag_id")),
+                       "tag_id": r.get("tag_id"),
+                       "tag": dohana._tag_name(r.get("tag_id"), r.get("tag_name")),
                        "staff": r.get("staff") or ""}
     return {"total": len(day), "count": count, "match": set(count),
             "today_codes": {r.get("code") for r in day if r.get("code")},
@@ -853,7 +868,7 @@ def load_week_summary():
                 d, ty = r.get("date"), r.get("type")
                 if not d:
                     continue
-                tn = dohana._tag_name(r.get("tag_id")) if r.get("tag_id") else ""
+                tn = dohana._tag_name(r.get("tag_id"), r.get("tag_name")) if r.get("tag_id") else ""
                 if ty == "package":          # đóng hàng → tag đóng (vd đóng thiếu SP)
                     vdong[d] = vdong.get(d, 0) + 1
                     if tn:
@@ -2063,6 +2078,16 @@ if _page == PAGE_DAILY:
                 if _all_types:
                     st.info("Loại `type` Dohana đang trả (không lọc): " +
                             " · ".join(f"**{_k}** ×{_v}" for _k, _v in _all_types.items()))
+                try:
+                    _tag_map = dohana._fetch_tag_names()
+                except Exception:
+                    _tag_map = {}
+                if _tag_map:
+                    _sample_tags = " · ".join(f"{_name} ({str(_tid)[:8]})"
+                                               for _tid, _name in list(_tag_map.items())[:6])
+                    st.success(f"✅ Đọc được **{len(_tag_map)} tag** từ DHN API: {_sample_tags}")
+                else:
+                    st.warning("⚠️ Chưa đọc được danh sách tag từ DHN API `/tag`; app sẽ hiện `Tag chưa map tên (id...)`.")
                 st.caption("📸 Chụp bảng + dòng xanh gửi Claude. inbound=0 mà package/không-lọc>0 → clip khui hàng "
                            "nằm ở loại KHÁC → sửa cách lấy. Toàn 401/429 → key/tốc độ.")
         st.divider()
@@ -2087,16 +2112,17 @@ if _page == PAGE_DAILY:
                 st.success(f"✅ Đồng bộ xong — kho có **{len(_merged)}** video (thêm {len(_merged) - _n0}). "
                            "Mở lại bảng '📅 Tổng hợp 30 ngày' để thấy Vid/Tag cập nhật.")
                 from collections import Counter as _Ct2
-                _tc, _sp = _Ct2(), {}
+                _tc, _sp, _tn = _Ct2(), {}, {}
                 for _v in _merged:
                     _tid = _v.get("tag_id")
                     if _tid:
                         _tc[_tid] += 1
                         _sp.setdefault(_tid, _v.get("code"))
+                        _tn.setdefault(_tid, _v.get("tag_name"))
                 if _tc:
-                    st.markdown("**Tag trong kho** — dòng tên *⚠️ Có tag* = CHƯA map tên:")
+                    st.markdown("**Tag trong kho** — dòng tên *⚠️ Tag chưa map tên* = CHƯA map được tên tag:")
                     st.dataframe(pd.DataFrame([{
-                        "Tên": dohana._tag_name(_t), "Số video": _c,
+                        "Tên": dohana._tag_name(_t, _tn.get(_t)), "Số video": _c,
                         "Mã mẫu (tra trên Dohana)": _sp.get(_t), "tag_id": _t}
                         for _t, _c in _tc.most_common()]), hide_index=True, use_container_width=True)
                     st.caption("Tra 'Mã mẫu' trên Dohana để biết tên tag → nhắn Claude map giúp, hoặc tự thêm vào "
@@ -3586,7 +3612,7 @@ if _page == PAGE_RETURNS:
                     return
                 st.dataframe(pd.DataFrame([{
                     "Mã đơn": r.get("code"),
-                    "Tag": dohana._tag_name(r.get("tag_id")),
+                    "Tag": dohana._tag_name(r.get("tag_id"), r.get("tag_name")),
                     "Ngày quay": r.get("date") or "",
                     "Giờ": r.get("time") or "",
                     "Thời lượng(s)": r.get("dur"),
@@ -3637,7 +3663,7 @@ if _page == PAGE_RETURNS:
                         "Ngày quay": r.get("date"),
                         "Giờ": r.get("time"),
                         "Thời lượng(s)": r.get("dur"),
-                        "Tag": dohana._tag_name(r.get("tag_id")) if r.get("tag_id") else "",
+                        "Tag": dohana._tag_name(r.get("tag_id"), r.get("tag_name")) if r.get("tag_id") else "",
                     } for r in _hits]), width="stretch", hide_index=True)
                 else:
                     st.caption("Không thấy trong kho (có thể chưa tới mốc lấy 13/16/19h, hoặc video ngoài phạm vi đã gom).")

@@ -6,6 +6,17 @@ import json
 from collections import OrderedDict
 from html import escape as _e
 
+
+def _tag_label(tag, tag_id=""):
+    tag = str(tag or "").strip()
+    tid = str(tag_id or "").strip()
+    if not tag:
+        return ""
+    if tag in ("⚠️ Có tag", "Có tag"):
+        return f"⚠️ Tag chưa map tên{f' (id {tid[:8]})' if tid else ''}"
+    return tag
+
+
 _CSS = """
   --navy:#16233f; --accent:#E24B4A; --line:#cfd6e0; --grid:#8c98ab; --soft:#eef1f6; --ink:#1f2733;
   body{font-family:Tahoma,Verdana,'Segoe UI',system-ui,Roboto,Arial,sans-serif;margin:0;background:#e9edf2;color:var(--ink);}
@@ -259,11 +270,13 @@ def _returns_clip_rows(detail):
         lt = d.get("loai_tra", "—")
         lt_style = ("color:#c2410c;font-weight:800"
                     if d.get("loai_tra_code") == "delivery_failed" else "color:#374151")
-        # Tag app đóng hàng (tráo hàng / mất hàng…) — tô tím nổi bật để cảnh báo
-        tag = d.get("clip_tag") or ""
+        # Tag khui hàng = hàng có vấn đề. Nếu đã nằm trong bảng nhập kho thì phải cảnh báo.
+        tag = _tag_label(d.get("clip_tag"), d.get("clip_tag_id"))
         if tag:
-            tag_cell = (f'<span style="color:#6d28d9;font-weight:800;background:#f3e8ff;'
-                        f'padding:1px 5px;border-radius:4px">🏷️ {_e(str(tag))}</span>')
+            tag_cell = (f'<span style="color:#b91c1c;font-weight:900;background:#fee2e2;'
+                        f'padding:1px 5px;border-radius:4px">🏷️ {_e(str(tag))}</span>'
+                        '<div style="font-size:.78em;color:#b91c1c;font-weight:800;margin-top:2px">'
+                        '⚠️ Đã nhập kho đơn có tag</div>')
         else:
             tag_cell = '<span style="color:#cbd5e1">—</span>'
         # 2 MÃ TRA CỨU: (1) Mã đơn = tra Sapo + SÀN; (2) Mã clip = tra APP ĐÓNG HÀNG (Dohana)
@@ -317,6 +330,7 @@ def _recon_rows(rows, start=0, clip_on=True):
                 _ss.append(f'📥 {_e(str(r["recv_time"]))}')
             if r.get("nhan_vien"):
                 _ss.append(f'👤 {_e(str(r["nhan_vien"]))}')
+            _tag = _tag_label(r.get("clip_tag"), r.get("clip_tag_id"))
             # DÒNG SL NHẬP KHO: khách trả THIẾU (nhập < kỳ vọng) → đỏ đậm cảnh báo; đủ → xanh
             _spn, _spe = r.get("sp_nhap"), r.get("sp")
             if _spn is not None and _spe is not None and _spn < _spe:
@@ -326,26 +340,34 @@ def _recon_rows(rows, start=0, clip_on=True):
                 _nhap = f'<div style="font-size:.82em;color:#15803d">📦 Nhập kho {_spn} SP</div>'
             else:
                 _nhap = ''
+            _tag_warn = (
+                f'<div style="font-size:.85em;color:#b91c1c;font-weight:900;margin-top:2px">'
+                f'⚠️ ĐÃ nhập kho dù clip có tag “{_e(str(_tag))}” — kiểm tra/gỡ nhập kho nếu hàng hư hỏng, thiếu, sai hoặc tráo.</div>'
+                if _tag else '')
             sapo_cell = (f'<b>{_e(str(r.get("order_code") or "?"))}</b>'
                          + (f'<div style="font-size:.82em;color:#6b7280">{" · ".join(_ss)}</div>'
                             if _ss else '')
-                         + _nhap)
-            sapo_td = ""
+                         + _nhap + _tag_warn)
+            sapo_td = ' style="background:#fef2f2"' if _tag else ""
         else:
             _oc = r.get("order_code") or ""
-            _tag = r.get("clip_tag") or ""
-            _rsn = (f'✗ CHƯA nhập kho — đơn gắn tag “{_e(str(_tag))}”, giữ xử lý tranh chấp (theo dõi/khiếu nại sàn)'
-                    if _tag else
-                    '✗ CHƯA bấm nhập kho trên Sapo — kiểm tra: quên nhập kho / quay nhầm mục / quay trùng')
+            _tag = _tag_label(r.get("clip_tag"), r.get("clip_tag_id"))
             _ocb = f'<b>{_e(str(_oc))}</b><br>' if _oc else ''
-            sapo_cell = f'{_ocb}<span style="color:#dc2626;font-weight:800">{_rsn}</span>'
-            sapo_td = ' style="background:#fef2f2"'
+            if _tag:
+                _rsn = (f'✓ KHÔNG nhập kho Sapo — đúng quy trình vì clip có tag “{_e(str(_tag))}”. '
+                        'Giữ xử lý tranh chấp/khiếu nại sàn, giữ clip làm bằng chứng.')
+                sapo_cell = f'{_ocb}<span style="color:#15803d;font-weight:900">{_rsn}</span>'
+                sapo_td = ' style="background:#f0fdf4"'
+            else:
+                _rsn = '✗ CHƯA bấm nhập kho trên Sapo — kiểm tra: quên nhập kho / quay nhầm mục / quay trùng'
+                sapo_cell = f'{_ocb}<span style="color:#dc2626;font-weight:800">{_rsn}</span>'
+                sapo_td = ' style="background:#fef2f2"'
         # ── SKU · Loại trả · Tag ──
         sku = _e(str(r.get("sku") or "—"))
         lt = r.get("loai_tra") or "—"
         lt_style = ("color:#c2410c;font-weight:800"
                     if r.get("loai_tra_code") == "delivery_failed" else "color:#374151")
-        tag = r.get("clip_tag") or ""
+        tag = _tag_label(r.get("clip_tag"), r.get("clip_tag_id"))
         tag_cell = (f'<span style="color:#6d28d9;font-weight:800;background:#f3e8ff;'
                     f'padding:1px 5px;border-radius:4px">🏷️ {_e(str(tag))}</span>'
                     if tag else '<span style="color:#cbd5e1">—</span>')
@@ -448,6 +470,9 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
     clip_co = nk.get("clip_co", 0)
     clip_total = nk.get("clip_total", 0)
     unmatched = nk.get("clip_unmatched") or []
+    unmatched_detail = nk.get("clip_unmatched_detail") or [{"code": c} for c in unmatched]
+    unmatched_tagged = [u for u in unmatched_detail if _tag_label(u.get("tag"), u.get("tag_id"))]
+    unmatched_plain = [u for u in unmatched_detail if not _tag_label(u.get("tag"), u.get("tag_id"))]
     clip_on = nk.get("clip_available", False)
     n_ret = len(nk_detail)
     _sp_exp = sum(int(d.get("sp", 0) or 0) for d in nk_detail)         # Σ SP kỳ vọng phải trả về
@@ -456,9 +481,14 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
     # Bảng đối chiếu (clip ↔ nhận hàng trả) + tóm tắt cột trống
     recon = nk.get("recon_rows") or []
     _cm = sum(1 for r in recon if not r.get("has_clip"))
-    _sm = sum(1 for r in recon if not r.get("has_sapo"))
-    recon_badge = (f' <span style="font-size:.8em;color:{"#dc2626" if (_cm or _sm) else "#15803d"}">'
-                   f'({len(recon)} dòng · {_cm} thiếu clip · {_sm} chưa nhập kho)</span>')
+    _sm = sum(1 for r in recon if (not r.get("has_sapo")) and (not _tag_label(r.get("clip_tag"), r.get("clip_tag_id"))))
+    _tag_hold = sum(1 for r in recon if (not r.get("has_sapo")) and _tag_label(r.get("clip_tag"), r.get("clip_tag_id")))
+    _tag_imported = sum(1 for r in recon if r.get("has_sapo") and _tag_label(r.get("clip_tag"), r.get("clip_tag_id")))
+    _tag_hold_txt = f' · {_tag_hold} tag giữ xử lý' if _tag_hold else ''
+    _tag_imported_txt = f' · {_tag_imported} đã nhập kho có tag' if _tag_imported else ''
+    recon_badge = (f' <span style="font-size:.8em;color:{"#dc2626" if (_cm or _sm or _tag_imported) else "#15803d"}">'
+                   f'({len(recon)} dòng · {_cm} thiếu clip · {_sm} chưa nhập kho cần kiểm tra'
+                   f'{_tag_hold_txt}{_tag_imported_txt})</span>')
     if not clip_on:
         clip_summary = ''
         clip_note = ('<div style="font-size:.85em;color:#dc2626;margin-top:.46em">'
@@ -472,36 +502,56 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
         clip_note = ('' if ok or not n_ret else
                      f'<div style="font-size:.85em;color:#dc2626;margin-top:.46em;font-weight:700">'
                      f'⚠️ Có {n_ret - clip_co} đơn hoàn THIẾU clip khui hàng — cần kiểm tra/khiếu nại ngay.</div>')
-        if unmatched:
-            _ud = nk.get("clip_unmatched_detail") or [{"code": c} for c in unmatched]
-            _has_tag = any(u.get("tag") for u in _ud)
+        if unmatched_detail:
+            def _clip_lines(items, color="#b45309"):
+                _lines = ""
+                for u in items:
+                    _tag = _tag_label(u.get("tag"), u.get("tag_id"))
+                    _tg = (f' · <span style="background:#fde68a;color:#7c2d12;font-weight:900;'
+                           f'padding:0 4px;border-radius:3px">🏷️ {_e(str(_tag))}</span>'
+                           if _tag else "")
+                    _mt = []
+                    if u.get("dur"):
+                        _mt.append(f'{u["dur"]}s')
+                    if u.get("recorded"):
+                        _mt.append(str(u["recorded"]))
+                    _mts = (' <span style="color:#9a7a3a">· ' + _e(" · ".join(_mt)) + '</span>') if _mt else ""
+                    _lines += (f'<div class="wc" style="margin-top:2px;color:{color}">'
+                               f'{_e(str(u.get("code", "")))}{_tg}{_mts}</div>')
+                return _lines
+
             _lines = ""
-            for u in _ud:
-                _tg = (f' · <span style="background:#fde68a;color:#7c2d12;font-weight:900;'
-                       f'padding:0 4px;border-radius:3px">🏷️ {_e(str(u["tag"]))}</span>'
-                       if u.get("tag") else "")
-                _mt = []
-                if u.get("dur"):
-                    _mt.append(f'{u["dur"]}s')
-                if u.get("recorded"):
-                    _mt.append(str(u["recorded"]))
-                _mts = (' <span style="color:#9a7a3a">· ' + _e(" · ".join(_mt)) + '</span>') if _mt else ""
-                _lines += f'<div class="wc" style="margin-top:2px">{_e(str(u.get("code", "")))}{_tg}{_mts}</div>'
-            warn_box = (
-                '<div class="warn">'
-                f'<div class="wh">⚠️ {len(_ud)} clip khui hàng CÓ trên Dohana nhưng CHƯA có đơn hoàn nhập kho</div>'
-                + ('<div class="wb"><b>Clip có TAG (vd “Khách tráo!”)</b> = đơn CÓ VẤN ĐỀ, nhân viên giữ lại '
-                   'xử lý tranh chấp nên CHƯA bấm nhập kho — đúng quy trình, cần <b>theo dõi & khiếu nại sàn</b> '
-                   '(giữ clip làm bằng chứng).</div>' if _has_tag else '')
-                + '<div class="wb">Clip KHÔNG tag → kiểm tra: <b>(1)</b> hàng hoàn chưa bấm nhập kho (vào Sapo '
-                  'nhập kho để lên bảng), <b>(2)</b> quay nhầm mục (đóng hàng ↔ khui hàng), <b>(3)</b> quay trùng.</div>'
-                + _lines
-                + '</div>')
+            if unmatched_tagged:
+                _lines += (
+                    '<div class="warn" style="background:#f0fdf4;border:1px solid #16a34a;border-left:5px solid #16a34a">'
+                    f'<div class="wh" style="color:#15803d">✅ {len(unmatched_tagged)} clip có TAG đang giữ xử lý — không nhập kho Sapo là đúng quy trình</div>'
+                    '<div class="wb" style="color:#166534"><b>Tag hư hỏng · trả thiếu · sai hàng · khách tráo</b> = hàng có vấn đề; '
+                    'nhân viên giữ lại xử lý tranh chấp/khiếu nại sàn và giữ clip làm bằng chứng, không bấm nhập kho.</div>'
+                    + _clip_lines(unmatched_tagged, "#15803d")
+                    + '</div>')
+            if unmatched_plain:
+                _lines += (
+                    '<div class="warn">'
+                    f'<div class="wh">⚠️ {len(unmatched_plain)} clip khui hàng KHÔNG tag có trên Dohana nhưng CHƯA có đơn hoàn nhập kho</div>'
+                    '<div class="wb">Cần kiểm tra: <b>(1)</b> hàng hoàn chưa bấm nhập kho (vào Sapo nhập kho để lên bảng), '
+                    '<b>(2)</b> quay nhầm mục (đóng hàng ↔ khui hàng), <b>(3)</b> quay trùng.</div>'
+                    + _clip_lines(unmatched_plain)
+                    + '</div>')
+            warn_box = _lines
         else:
             warn_box = ''
 
     clip_kpi_v = clip_total if clip_on else "—"
-    clip_kpi_sub = (f"khớp {clip_co} · lệch {len(unmatched)}" if clip_on else "chưa kết nối Dohana")
+    if clip_on:
+        _clip_parts = [f"khớp {clip_co}"]
+        if unmatched_tagged:
+            _clip_parts.append(f"tag giữ {len(unmatched_tagged)}")
+        if _tag_imported:
+            _clip_parts.append(f"nhập tag {_tag_imported}")
+        _clip_parts.append(f"lệch {len(unmatched_plain)}")
+        clip_kpi_sub = " · ".join(_clip_parts)
+    else:
+        clip_kpi_sub = "chưa kết nối Dohana"
     _sp_sub = (f"Đã nhập kho {_sp_nhap}"
                + (f' · <span style="color:#dc2626;font-weight:800">Thiếu {_sp_thieu}</span>' if _sp_thieu else ""))
     r_kpis_html = (
@@ -515,7 +565,7 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
         f'<div class="kpi"><div class="l">↩️ Đang hoàn về (chờ nhận)</div>'
         f'<div class="v">{nk.get("cho_xu_ly", 0)}</div>'
         f'<div class="l" style="margin-top:3px">đang trên đường về kho</div></div>'
-        f'<div class="kpi{" hot" if (clip_on and unmatched) else ""}">'
+        f'<div class="kpi{" hot" if (clip_on and (unmatched_plain or _tag_imported)) else ""}">'
         f'<div class="l">📹 Clip khui hàng hôm nay</div>'
         f'<div class="v">{clip_kpi_v}</div>'
         f'<div class="l" style="margin-top:3px;font-weight:700">{clip_kpi_sub}</div></div>'
@@ -524,12 +574,15 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
     _concl = []
     if _cm > 0:
         _concl.append(f"<b>{_cm}</b> đơn hoàn THIẾU clip khui hàng")
-    if clip_on and unmatched:
-        _concl.append(f"<b>{len(unmatched)}</b> clip khui hàng DƯ (chưa khớp đơn nào)")
+    if clip_on and unmatched_plain:
+        _concl.append(f"<b>{len(unmatched_plain)}</b> clip khui hàng KHÔNG tag chưa có nhập kho Sapo")
     if _sp_thieu > 0:
         _concl.append(f"<b>{_sp_thieu}</b> SP khách trả THIẾU")
-    if _sm > 0:
-        _concl.append(f"<b>{_sm}</b> đơn có clip nhưng CHƯA nhập kho")
+    if _tag_imported > 0:
+        _concl.append(f"<b>{_tag_imported}</b> đơn ĐÃ nhập kho nhưng clip có tag hư hỏng/thiếu/sai hàng/khách tráo")
+    _hold_note = (f'<div class="wb" style="margin-top:3px;color:#166534">✅ <b>{_tag_hold}</b> clip có tag hư hỏng/thiếu/sai hàng/khách tráo: '
+                  'không nhập kho Sapo là đúng quy trình, giữ xử lý tranh chấp/khiếu nại sàn.</div>'
+                  if _tag_hold else '')
     if _concl:
         concl_box = (
             '<div class="warn" style="background:#fffbeb;border:1px solid #f59e0b;margin:.3em 0 .5em">'
@@ -538,10 +591,13 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
             '<div class="wb" style="margin-top:3px;color:#78350f">💡 Lý do có thể: '
             '<b>sai mã lúc quay</b> · <b>quay nhầm mục</b> (khui hàng ↔ đóng hàng) · '
             '<b>quay trùng</b> · <b>khách trả thiếu SP</b> · <b>chưa bấm nhập kho trên Sapo</b>.</div>'
+            + _hold_note +
             '</div>')
     else:
         concl_box = ('<div class="warn" style="background:#f0fdf4;border:1px solid #16a34a;margin:.3em 0 .5em">'
-                     '<div class="wh" style="color:#15803d">✅ KẾT LUẬN: Khớp đủ — không có sai lệch clip/SP.</div></div>')
+                     '<div class="wh" style="color:#15803d">✅ KẾT LUẬN: Không có sai lệch cần kiểm tra.</div>'
+                     + _hold_note +
+                     '</div>')
     # ── PHỄU: xác nhận → soạn(in phiếu) → video(đóng gói) → ĐVVC nhận | hủy · còn xót ──
     # 4 ô dòng 1 + 2 ô dòng 2. Mỗi ô có ô ☐ để NV KHO TICK xác nhận trước khi ký cuối.
     # Soạn hàng = đã in phiếu nhặt (dashboard/picklog); Có video = đơn đóng gói đã quay video.
