@@ -1381,12 +1381,19 @@ if _page == PAGE_TTKH:
                        "copy Mã đơn dán vào ô 🔎 tìm mã đơn.")
 
             _still_bad = [c for c in _fail_log if c not in _ok_codes]
-            if _still_bad and st.button("🔧 Tạo/sửa địa chỉ khách cho đơn lỗi (Tỉnh/Quận/Phường) & xem chi tiết", key="ttkh_diag_fail"):
+            st.markdown("**🔧 Tạo / sửa địa chỉ khách (Tỉnh/Quận/Phường) cho đơn:**")
+            _diag_code = st.text_input("Nhập mã đơn bất kỳ để tạo/sửa (bỏ trống = xử lý các đơn còn lỗi)",
+                                       key="ttkh_diag_code", placeholder="Vd 584725942718924544")
+            _run_diag = st.button("🔧 Chạy tạo/sửa địa chỉ khách & xem chi tiết", key="ttkh_diag_fail")
+            if _run_diag:
+                _codes_to_fix = [_diag_code.strip()] if _diag_code.strip() else _still_bad[:10]
+                if not _codes_to_fix:
+                    st.info("Không có đơn nào để xử lý (nhập mã đơn vào ô trên).")
                 _diag = []
                 _diag_ok_log = []   # ghi nhận lại vào nhật ký các đơn fix xong
                 _sess = build_session()
                 _fj2 = make_fetch_json(build_session())
-                for _c in _still_bad[:10]:
+                for _c in _codes_to_fix:
                     with st.spinner(f"Đang xử lý đơn {_c}…"):
                         try:
                             _od = L.find_order_by_code(_fj2, _c, days=45)
