@@ -1336,12 +1336,26 @@ if _page == PAGE_TTKH:
     _m[2].metric("Đơn 1 SP", len(_tt["single"]))
     _m[3].metric("Cập nhật", _tt["generated_at_vn"])
 
+    # Số đơn ĐANG còn lỗi/chờ trong danh sách (để nút "Thất bại" dẫn tới)
+    _fail_codes_now = set(st.session_state.get("ttkh_failed_codes") or [])
+    _n_fail_now = sum(
+        1 for r in (_tt["multi"] + _tt["single"])
+        if r.get("needs_customer") or str(r.get("name")) in _fail_codes_now
+        or str(r.get("source_identifier")) in _fail_codes_now
+    )
+
     st.markdown("##### 📊 Đã lưu TTKH — 30 ngày")
     _sc = st.columns(3)
     _sc[0].metric("Tổng đã lưu", _tot_saved)
     _sc[1].metric("Thành công", _tot_ok)
     _sc[2].metric("Thất bại", _tot_fail, delta=(f"-{_tot_fail}" if _tot_fail else None),
                   delta_color="inverse")
+    if _n_fail_now:
+        _sc[2].button(f"👉 Xem {_n_fail_now} đơn lỗi/chờ", key="ttkh_goto_failed_stats",
+                      use_container_width=True,
+                      on_click=lambda: st.session_state.update(ttkh_show_failed_only=True))
+    elif _tot_fail:
+        _sc[2].caption("Các đơn lỗi trước đã xử lý xong ✅")
     if _stat_msg:
         st.caption(_stat_msg)
     with st.expander("📅 Xem lịch sử theo từng ngày (30 ngày)", expanded=False):
@@ -2068,8 +2082,12 @@ if _page == PAGE_TTKH:
     if st.session_state.get("ttkh_show_failed_only"):
         _fcodes = set(st.session_state.get("ttkh_failed_codes") or [])
 
+        _fcodes_norm = {_norm_code(c) for c in _fcodes}
+
         def _is_failed(row):
-            return any(_norm_code(row.get(k)) in {_norm_code(c) for c in _fcodes}
+            if row.get("needs_customer"):   # đơn đã ghi nhưng chưa tạo được khách
+                return True
+            return any(_norm_code(row.get(k)) in _fcodes_norm
                        for k in ("name", "sapo_name", "source_identifier"))
 
         _multi = [r for r in _multi if _is_failed(r)]
