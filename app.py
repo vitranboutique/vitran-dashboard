@@ -1355,13 +1355,23 @@ if _page == PAGE_TTKH:
         )
 
         # Chỉ tính lỗi CHƯA xử lý (đơn đã ghi lại OK thì không báo lỗi ở trên nữa)
-        _n_unresolved = len([c for c in _fail_log if c not in _ok_codes])
+        _unresolved_codes = [c for c in _fail_log if c not in _ok_codes]
+        _n_unresolved = len(_unresolved_codes)
+        _n_resolved = len(_fail_log) - _n_unresolved
         st.markdown("##### 📊 Đã lưu TTKH — 30 ngày (nhật ký)")
-        _sc = st.columns(3)
+        _sc = st.columns(4)
         _sc[0].metric("Tổng đã lưu", _tot_saved, help="Tổng số LƯỢT ghi SAPO trong 30 ngày (nhật ký).")
         _sc[1].metric("Thành công", _tot_ok, help="Số lượt tạo được khách.")
-        _sc[2].metric("Lỗi chưa xử lý", _n_unresolved,
-                      help="Đơn lỗi CHƯA khắc phục. Đơn đã ghi lại OK không tính ở đây (xem lịch sử lỗi bên dưới).")
+        _sc[2].metric("Lỗi đã xử lý", _n_resolved, help="Đơn từng lỗi nhưng ĐÃ ghi/tạo lại được khách.")
+        _sc[3].metric("Lỗi chưa xử lý", _n_unresolved,
+                      help="Đơn lỗi CHƯA khắc phục. Bấm nút bên dưới để xem danh sách + cách xử lý.")
+        if _n_unresolved:
+            _sc[3].button("👉 Xem & xử lý", key="ttkh_goto_unresolved", use_container_width=True,
+                          on_click=lambda: st.session_state.update(ttkh_show_unresolved=True))
+        if st.session_state.get("ttkh_show_unresolved") and _n_unresolved:
+            st.error(f"**{_n_unresolved} đơn lỗi chưa xử lý:** {', '.join(_unresolved_codes[:20])}")
+            st.markdown("**Cách xử lý:** mở expander *“🔧 Tạo / sửa địa chỉ khách”* bên dưới → nhập mã đơn "
+                        "→ bấm **Chạy tạo/sửa**. Nếu lỗi 429 (Sapo bận) thì nghỉ 5–10 phút rồi thử lại.")
         if _stat_msg:
             st.caption(_stat_msg)
 
@@ -1494,10 +1504,30 @@ if _page == PAGE_TTKH:
         # ── 🔍 KIỂM TRA SÓT KHÁCH: đối chiếu đơn ↔ khách theo SĐT (chắc chắn) ──
         # Đơn ĐANG chờ tạo khách (needs_customer) — thuộc nhóm "thiếu khách", đặt ngay tại đây
         if _n_fail_now:
-            _pc = st.columns([3, 1])
-            _pc[0].warning(f"⚠️ Đang có **{_n_fail_now} đơn CHỜ TẠO KHÁCH** trong danh sách (đã ghi đơn nhưng chưa tạo được khách).")
+            _pc = st.columns([2.4, 1, 1])
+            _pc[0].warning(f"⚠️ Đang có **{_n_fail_now} đơn CHỜ TẠO KHÁCH** (đã ghi đơn nhưng chưa tạo được khách).")
             _pc[1].button(f"👉 Xem {_n_fail_now} đơn", key="ttkh_goto_failed_stats", use_container_width=True,
                           on_click=lambda: st.session_state.update(ttkh_show_failed_only=True))
+            # Nhiều đơn "chờ" thực ra ĐÃ tạo được khách (qua công cụ khác) mà chưa gỡ khỏi
+            # danh sách chờ → nút này kiểm SĐT trên Sapo, gỡ các đơn khách đã có.
+            if _pc[2].button("🧹 Dọn (bỏ đơn đã có khách)", key="ttkh_clean_pending", use_container_width=True):
+                with st.spinner("Đang kiểm & dọn danh sách chờ…"):
+                    try:
+                        _pend = picklog.read_ttkh_pending() if picklog.configured() else {}
+                        _sess3 = build_session()
+                        _rm = []
+                        for _oid, _meta in list(_pend.items())[:200]:
+                            _ph = str((_meta or {}).get("sdt") or "").strip()
+                            if _ph and customer_exists_by_phone(_sess3, _ph):
+                                _rm.append(_oid)
+                            time.sleep(0.25)
+                        if _rm:
+                            picklog.update_ttkh_pending(remove_ids=_rm)
+                            load_ttkh_candidates.clear()
+                        st.success(f"Đã gỡ {len(_rm)} đơn (khách đã có). Còn {len(_pend) - len(_rm)} đơn thật sự chờ.")
+                        st.rerun()
+                    except Exception as _e:
+                        st.error(f"Lỗi dọn: {_e}")
         # Mở sẵn khi đang có kết quả quét (để bảng + nút tạo khách luôn hiện, khỏi mở lại sau mỗi lần bấm)
         with st.expander("🔍 Kiểm tra đơn thiếu khách / địa chỉ chưa chuẩn — đối chiếu chắc chắn",
                          expanded=bool(st.session_state.get("ttkh_audit"))):
@@ -1791,6 +1821,7 @@ if _page == PAGE_TTKH:
             "_order_id": r.get("order_id"),
             "_customer_id": r.get("customer_id"),
             "_needs_customer": bool(r.get("needs_customer")),
+            "_phone": r.get("shipping_phone") or "",
         } for r in rows])
 
     def _money(v):
@@ -2122,13 +2153,15 @@ if _page == PAGE_TTKH:
             url = _ttkh_order_url(code, r.get("Gian hàng"))
             sapo_url = _sapo_order_url(oid)
             customer_url = _sapo_customer_url(r.get("_customer_id"))
-            customer_query = code
+            # Tìm khách theo SĐT (không phải mã đơn — Sapo tìm khách theo số/tên)
+            customer_query = str(r.get("_phone") or "").strip()
             if row_pending:
                 _info = row_pending[0].get("info") or {}
-                customer_query = _info.get("phone") or _info.get("name") or code
+                customer_query = _info.get("phone") or customer_query or _info.get("name") or code
+            customer_query = customer_query or code
             code_link = f"[{code}]({url})" if url else code
             sapo_link = f" · [Sapo]({sapo_url})" if sapo_url else ""
-            customer_link = f" · [Khách]({customer_url})" if customer_url else f" · [Tìm khách]({_sapo_customer_search_url(customer_query)})"
+            customer_link = f" · [Khách]({customer_url})" if customer_url else f" · [🔎 Tìm khách theo SĐT]({_sapo_customer_search_url(customer_query)})"
             _needs_cust = bool(r.get("_needs_customer"))
             _warn_badge = ("<div style='color:#b91c1c;font-weight:800;font-size:.8rem'>⚠️ Đã ghi đơn nhưng "
                            "CHƯA tạo được khách — ghi lại dòng này</div>") if _needs_cust else ""
