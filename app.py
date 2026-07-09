@@ -1404,10 +1404,23 @@ if _page == PAGE_TTKH:
                     st.success(f"✅ Không sót khách nào — mọi đơn đã ghi SĐT đều đã có khách trong Sapo. (Quét {_audit['ts']})")
                 else:
                     st.error(f"⚠️ Có {len(_mis)} đơn đã ghi đơn nhưng CHƯA có khách (quét {_audit['ts']}):")
+
+                    def _mis_addr(info):
+                        return ", ".join(str(x).strip() for x in (
+                            info.get("address1"), info.get("ward"), info.get("district"), info.get("province")
+                        ) if str(x or "").strip())
+
                     st.dataframe(
-                        pd.DataFrame([{"Mã đơn": m["code"], "Tên": (m.get("info") or {}).get("name", ""),
-                                       "SĐT": m["phone"], "Ngày tạo": m["created_on"]} for m in _mis]),
-                        hide_index=True, width="stretch")
+                        pd.DataFrame([{
+                            "Mã đơn": m["code"],
+                            "Tên": (m.get("info") or {}).get("name", ""),
+                            "SĐT": m["phone"],
+                            "Địa chỉ": _mis_addr(m.get("info") or {}),
+                            "Định dạng": "Mới" if (m.get("info") or {}).get("address_format") == "new" else "Cũ",
+                            "Ngày tạo": m["created_on"],
+                        } for m in _mis]),
+                        hide_index=True, width="stretch",
+                        column_config={"Địa chỉ": st.column_config.TextColumn("Địa chỉ", width="large")})
                     if st.session_state.get("ttkh_backfill_msg"):
                         st.success(st.session_state.pop("ttkh_backfill_msg"))
                     _CAP = 60
