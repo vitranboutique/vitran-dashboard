@@ -1287,9 +1287,11 @@ if _page == PAGE_TTKH:
                 compact = "0" + compact[2:]
             return compact if "*" in compact and compact.startswith("0") else ""
         digits = re.sub(r"\D+", "", s)
-        if digits.startswith("84") and len(digits) >= 11:
-            digits = "0" + digits[2:]
-        if len(digits) < 10 or len(digits) > 11 or not digits.startswith("0"):
+        digits = digits.lstrip("0")               # bỏ hết số 0 thừa ở đầu (gộp 00.. -> )
+        if digits.startswith("84") and len(digits) == 11:
+            digits = digits[2:]                   # bỏ mã quốc gia 84 (+ 9 số)
+        digits = "0" + digits                     # gắn lại đúng 1 số 0 ở đầu
+        if len(digits) != 10:                     # SĐT VN chuẩn = đúng 10 số
             return ""
         return digits
 
