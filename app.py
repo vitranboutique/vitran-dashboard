@@ -1998,8 +1998,8 @@ if _page == PAGE_TTKH:
         h[1].markdown("**Mã đơn**")
         h[2].markdown("**SL SP**")
         h[3].markdown("**Gian hàng**")
-        h[4].markdown("**Địa chỉ chuẩn SAPO**")
-        h[5].markdown("**TTKH dán vào**")
+        h[4].markdown("**Địa chỉ chuẩn SAPO**  \n<small>Cũ: tỉnh/quận/phường · Mới: tỉnh/phường</small>", unsafe_allow_html=True)
+        h[5].markdown("**TTKH dán vào**  \n<small>App sẽ kiểm đủ mã SAPO trước khi ghi</small>", unsafe_allow_html=True)
         st.markdown("<hr style='margin:4px 0 8px;border:0;border-top:1px solid #e5e7eb'>", unsafe_allow_html=True)
         _res_map = _ttkh_result_by_code()   # kết quả Ghi SAPO lần gần nhất, theo mã đơn
         for _, r in df.iterrows():
@@ -2020,7 +2020,7 @@ if _page == PAGE_TTKH:
                 key=key,
                 height=96,
                 label_visibility="collapsed",
-                placeholder="Dán nguyên block TTKH từ sàn vào đây",
+                placeholder="Dán nguyên block TTKH từ sàn. App sẽ phân địa chỉ cũ/mới và kiểm mã tỉnh/quận/phường.",
             )
             row_pending = []
             if str(typed_ttkh or "").strip():
@@ -2303,6 +2303,11 @@ if _page == PAGE_TTKH:
 
         st.divider()
         st.markdown("### 🧾 Danh sách đơn — dán TTKH & Ghi SAPO")
+        st.info(
+            "Bản lưu TTKH mới: chỉ ghi SAPO khi địa chỉ đã phân loại cũ/mới và map đủ mã tỉnh/quận/phường. "
+            "Sau khi bấm Ghi SAPO sẽ hiện bảng kết quả: thành công, chưa hoàn tất, lý do lỗi và cách xử lý.",
+            icon="✅",
+        )
         _show_ttkh_write_results()
         st.caption("Dán nguyên block TTKH vào cột `TTKH dán vào` của đúng mã đơn. Rê chuột vào cột `SL SP` để xem SKU, SL, giá từng món và tổng tiền.")
 
@@ -2413,6 +2418,7 @@ if _page == PAGE_TTKH:
                 ] if x),
             } for r in _pending_write])
             st.markdown("#### Kiểm tra TTKH đã dán")
+            st.caption("Bảng này là bước chặn trước khi ghi: chỉ dòng `Sẵn sàng ghi` và `Đủ mã SAPO` mới được đẩy sang Sapo.")
             st.dataframe(
                 _preview,
                 hide_index=True,
@@ -2426,7 +2432,11 @@ if _page == PAGE_TTKH:
             if _bad:
                 st.warning("Một số dòng đã dán TTKH nhưng chưa đủ điều kiện ghi SAPO, app sẽ bỏ qua các dòng đó: "
                            + ", ".join(str(r["code"]) for r in _bad[:10]))
-            st.markdown(f"**Sẵn sàng ghi:** {sum(1 for r in _pending_write if _ttkh_can_write(r))} đơn")
+            _ready_preview = sum(1 for r in _pending_write if _ttkh_can_write(r))
+            if _ready_preview:
+                st.success(f"Sẵn sàng ghi SAPO: {_ready_preview}/{len(_pending_write)} đơn đã đủ mã địa chỉ.")
+            else:
+                st.warning("Chưa có dòng nào đủ điều kiện ghi SAPO. Kiểm tra lại TTKH hoặc mã tỉnh/quận/phường.")
             if st.button("🧹 Xóa toàn bộ danh sách chờ ghi"):
                 st.session_state["ttkh_pending_inputs"] = {}
                 _clear_ids = set(st.session_state.get("ttkh_clear_ids") or [])
