@@ -1811,8 +1811,40 @@ if _page == PAGE_TTKH:
     if "ttkh_pending_inputs" not in st.session_state:
         st.session_state["ttkh_pending_inputs"] = {}
     _show_ttkh_write_results()
-    _df_multi = _ttkh_table("Đơn ≥ 2 SP", _tt["multi"])
-    _df_single = _ttkh_table("Đơn 1 SP", _tt["single"])
+
+    # 🔎 Tìm mã đơn → chỉ hiện đúng dòng cần lấy TTKH
+    def _clear_ttkh_search():
+        st.session_state["ttkh_search"] = ""
+
+    _sc = st.columns([3, 1])
+    _search = _sc[0].text_input("🔎 Tìm mã đơn", key="ttkh_search",
+                                placeholder="Dán/nhập mã đơn (sàn hoặc Sapo) để nhảy tới đúng dòng…",
+                                label_visibility="collapsed")
+    _sc[1].button("Xóa tìm", use_container_width=True, on_click=_clear_ttkh_search)
+
+    def _norm_code(v):
+        return re.sub(r"\s+", "", str(v or "")).lower()
+
+    _q = _norm_code(_search)
+
+    def _match(row):
+        if not _q:
+            return True
+        hay = " ".join(_norm_code(row.get(k)) for k in ("name", "sapo_name", "source_identifier"))
+        return _q in hay
+
+    _multi = [r for r in _tt["multi"] if _match(r)]
+    _single = [r for r in _tt["single"] if _match(r)]
+    if _q:
+        _found = len(_multi) + len(_single)
+        if _found:
+            st.success(f"🔎 Tìm thấy {_found} đơn khớp `{_search}` — dán TTKH vào dòng bên dưới.")
+        else:
+            st.warning(f"Không thấy đơn `{_search}` trong danh sách CẦN lấy TTKH. "
+                       "Có thể đơn đã lưu TTKH rồi, hoặc bị hủy/ngoài số ngày lọc.")
+
+    _df_multi = _ttkh_table("Đơn ≥ 2 SP", _multi)
+    _df_single = _ttkh_table("Đơn 1 SP", _single)
     _all_rows = list(_tt["multi"]) + list(_tt["single"])
     if not _all_rows:
         st.caption("Không có đơn để dán TTKH.")
