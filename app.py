@@ -725,13 +725,10 @@ def load_picking():
 
 @st.cache_data(ttl=180, show_spinner="Đang lọc đơn cần lấy TTKH…")
 def load_ttkh_candidates(days=15, channel_filter="tiktok"):
-    # Đơn đã ghi nhưng CHƯA tạo được khách → giữ hiện (chưa đủ 2 nơi). Đọc từ Gist.
-    try:
-        _pending_ids = set(picklog.read_ttkh_pending().keys()) if picklog.configured() else set()
-    except Exception:
-        _pending_ids = set()
+    # Đơn CẦN lấy TTKH = đơn chưa có SĐT trên đơn (real-time từ Sapo). Tự hiện/tự mất,
+    # KHÔNG dùng danh sách chờ lưu cứng (dễ kẹt). Phần khách text/thiếu → tab Kiểm tra.
     return L.get_tt_customer_candidates(make_fetch_json(build_session()), days=days,
-                                        channel_filter=channel_filter, pending_ids=_pending_ids)
+                                        channel_filter=channel_filter, pending_ids=None)
 
 
 @st.cache_data(ttl=600, show_spinner=False)
@@ -1339,21 +1336,7 @@ if _page == PAGE_TTKH:
             _tot_ok = sum(r["Thành công"] for r in _stat_rows)
             _tot_fail = sum(r["Thất bại"] for r in _stat_rows)
 
-        st.markdown("##### 🔎 Đơn cần lấy TTKH")
-        _m = st.columns(4)
-        _m[0].metric("Tổng cần lấy", _tt["total"])
-        _m[1].metric("Đơn ≥ 2 SP", len(_tt["multi"]))
-        _m[2].metric("Đơn 1 SP", len(_tt["single"]))
-        _m[3].metric("Cập nhật", _tt["generated_at_vn"])
-
-        # Số đơn ĐANG còn lỗi/chờ trong danh sách (để nút "Thất bại" dẫn tới)
-        _fail_codes_now = set(st.session_state.get("ttkh_failed_codes") or [])
-        _n_fail_now = sum(
-            1 for r in (_tt["multi"] + _tt["single"])
-            if r.get("needs_customer") or str(r.get("name")) in _fail_codes_now
-            or str(r.get("source_identifier")) in _fail_codes_now
-        )
-
+        # (Metric "Đơn cần lấy TTKH" đã chuyển sang tab "Lấy - lưu TTKH")
         # Chỉ tính lỗi CHƯA xử lý (đơn đã ghi lại OK thì không báo lỗi ở trên nữa)
         _unresolved_codes = [c for c in _fail_log if c not in _ok_codes]
         _n_unresolved = len(_unresolved_codes)
@@ -1492,42 +1475,18 @@ if _page == PAGE_TTKH:
                             st.code("\n".join(_reads), language="text")
         with st.expander("📅 Xem lịch sử theo từng ngày (30 ngày)", expanded=False):
             if _stat_rows:
+                _daily = pd.DataFrame(_stat_rows).rename(columns={"Thất bại": "Lỗi"})
                 st.dataframe(
-                    pd.DataFrame(_stat_rows)[["Ngày", "Tổng đã lưu", "Thành công", "Thất bại", "Bỏ qua"]],
+                    _daily[["Ngày", "Tổng đã lưu", "Thành công", "Lỗi"]],
                     hide_index=True, width="stretch",
                 )
-                st.caption("Thành công = đã tạo/cập nhật được khách. Thất bại = ghi được ghi chú nhưng chưa "
-                           "tạo được khách/lỗi. Bỏ qua = dòng chưa hợp lệ (thiếu SĐT/địa chỉ).")
+                st.caption("Thành công = đã tạo/cập nhật được khách. Lỗi = ghi được ghi chú nhưng chưa tạo được khách.")
             else:
                 st.caption("Chưa có lượt lưu TTKH nào trong 30 ngày.")
 
         # ── 🔍 KIỂM TRA SÓT KHÁCH: đối chiếu đơn ↔ khách theo SĐT (chắc chắn) ──
-        # Đơn ĐANG chờ tạo khách (needs_customer) — thuộc nhóm "thiếu khách", đặt ngay tại đây
-        if _n_fail_now:
-            _pc = st.columns([2.4, 1, 1])
-            _pc[0].warning(f"⚠️ Đang có **{_n_fail_now} đơn CHỜ TẠO KHÁCH** (đã ghi đơn nhưng chưa tạo được khách).")
-            _pc[1].button(f"👉 Xem {_n_fail_now} đơn", key="ttkh_goto_failed_stats", use_container_width=True,
-                          on_click=lambda: st.session_state.update(ttkh_show_failed_only=True))
-            # Nhiều đơn "chờ" thực ra ĐÃ tạo được khách (qua công cụ khác) mà chưa gỡ khỏi
-            # danh sách chờ → nút này kiểm SĐT trên Sapo, gỡ các đơn khách đã có.
-            if _pc[2].button("🧹 Dọn (bỏ đơn đã có khách)", key="ttkh_clean_pending", use_container_width=True):
-                with st.spinner("Đang kiểm & dọn danh sách chờ…"):
-                    try:
-                        _pend = picklog.read_ttkh_pending() if picklog.configured() else {}
-                        _sess3 = build_session()
-                        _rm = []
-                        for _oid, _meta in list(_pend.items())[:200]:
-                            _ph = str((_meta or {}).get("sdt") or "").strip()
-                            if _ph and customer_exists_by_phone(_sess3, _ph):
-                                _rm.append(_oid)
-                            time.sleep(0.25)
-                        if _rm:
-                            picklog.update_ttkh_pending(remove_ids=_rm)
-                            load_ttkh_candidates.clear()
-                        st.success(f"Đã gỡ {len(_rm)} đơn (khách đã có). Còn {len(_pend) - len(_rm)} đơn thật sự chờ.")
-                        st.rerun()
-                    except Exception as _e:
-                        st.error(f"Lỗi dọn: {_e}")
+        st.caption("Đơn CHƯA nhập đủ 2 nơi, HOẶC khách địa chỉ text → dùng nút **Quét đối chiếu** bên dưới "
+                   "(tự tính real-time, không cần dọn tay).")
         # Mở sẵn khi đang có kết quả quét (để bảng + nút tạo khách luôn hiện, khỏi mở lại sau mỗi lần bấm)
         with st.expander("🔍 Kiểm tra đơn thiếu khách / địa chỉ chưa chuẩn — đối chiếu chắc chắn",
                          expanded=bool(st.session_state.get("ttkh_audit"))):
@@ -2217,6 +2176,13 @@ if _page == PAGE_TTKH:
     with _tabA:
         if "ttkh_pending_inputs" not in st.session_state:
             st.session_state["ttkh_pending_inputs"] = {}
+
+        st.markdown("##### 🔎 Đơn cần lấy TTKH")
+        _m = st.columns(4)
+        _m[0].metric("Tổng cần lấy", _tt["total"])
+        _m[1].metric("Đơn ≥ 2 SP", len(_tt["multi"]))
+        _m[2].metric("Đơn 1 SP", len(_tt["single"]))
+        _m[3].metric("Cập nhật", _tt["generated_at_vn"])
 
         st.divider()
         st.markdown("### 🧾 Danh sách đơn — dán TTKH & Ghi SAPO")
