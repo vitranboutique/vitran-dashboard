@@ -579,60 +579,77 @@ def get_customer_phone_set(fetch_json, max_pages: int = 160, throttle: float = 0
 
 
 def audit_orders_missing_customer(fetch_json, good_phone_set, days: int = 30,
-                                  max_pages: int = 300, channel_filter: str = "all",
-                                  all_phone_set=None) -> list:
-    """Duyệt đơn `days` ngày: đơn đã ghi SĐT lên đơn nhưng khách CHƯA ĐẠT — tức SĐT
-    không nằm trong good_phone_set (khách chưa có, HOẶC có nhưng địa chỉ chỉ là text
-    chưa chọn Tỉnh/Quận/Phường). Trả list {order_id, code, phone, created_on, ly_do, info}."""
-    cutoff_vn = (_now_utc() + timedelta(hours=7)).replace(tzinfo=None) - timedelta(days=days)
-    created_min = cutoff_vn.isoformat()
-    out = []
+                                  max_pages: int = 120, channel_filter: str = "all",
+                                  all_phone_set=None, window_days: int = 30, throttle: float = 0.3) -> list:
+    """Đơn đã ghi SĐT lên đơn nhưng khách CHƯA ĐẠT (chưa có khách, HOẶC khách địa chỉ
+    text). Trả list {order_id, code, phone, created_on, ly_do, info}.
+
+    Quét theo CỬA SỔ thời gian (từng đoạn window_days) — mỗi cửa sổ phân trang riêng
+    → tránh 422 do Sapo chặn phân trang sâu (>~30k đơn/121 trang). Chịu lỗi: gặp
+    lỗi 1 trang thì bỏ, sang cửa sổ khác, KHÔNG crash."""
+    now_vn = (_now_utc() + timedelta(hours=7)).replace(tzinfo=None)
+    start_all = now_vn - timedelta(days=days)
     channel_key = str(channel_filter or "all").lower()
-    for page in range(1, int(max_pages) + 1):
-        data = fetch_json("/admin/orders.json", limit=250, page=page, created_on_min=created_min)
-        orders = data.get("orders", []) or []
-        if not orders:
-            break
-        page_recent = False
-        for o in orders:
-            created_vn = _parse_vn(o.get("created_on"))
-            if not created_vn or created_vn < cutoff_vn:
-                continue
-            page_recent = True
-            if str(o.get("status") or "").lower() == "cancelled" or o.get("cancelled_on"):
-                continue
-            # chỉ xét đơn ĐÃ ghi SĐT lên đơn (địa chỉ/đơn) — tức phần đơn hàng đã lưu
-            phone = ""
-            for key in ("shipping_address", "billing_address"):
-                a = o.get(key) or {}
-                if isinstance(a, dict):
-                    phone = a.get("phone") or a.get("phone_number") or a.get("mobile") or ""
-                    if phone:
-                        break
-            if not phone:
-                phone = o.get("phone") or ""
-            canon = _canon_phone(phone)
-            if not canon:
-                continue
-            if channel_key != "all":
-                cd = o.get("channel_definition") or {}
-                haystack = f"{cd.get('main_name') or ''} {cd.get('branch_name') or ''} {o.get('source_name') or ''}".lower()
-                if channel_key not in haystack:
-                    continue
-            if canon in (good_phone_set or set()):
-                continue   # khách đã có + địa chỉ có cấu trúc → đạt
-            _ly_do = ("Khách địa chỉ TEXT (chưa chọn Tỉnh/Quận/Phường)"
-                      if all_phone_set and canon in all_phone_set else "Chưa có khách")
-            out.append({
-                "order_id": o.get("id"),
-                "code": o.get("source_identifier") or o.get("name") or o.get("code") or o.get("id"),
-                "phone": canon,
-                "created_on": created_vn.strftime("%d/%m %H:%M"),
-                "ly_do": _ly_do,
-                "info": order_shipping_to_info(o),   # để backfill tạo/sửa khách từ đơn
-            })
-        if not page_recent:
-            break
+    good = good_phone_set or set()
+    allset = all_phone_set or set()
+    out = []
+    seen = set()
+
+    def _process(o):
+        oid = str(o.get("id"))
+        if not oid or oid in seen:
+            return
+        if str(o.get("status") or "").lower() == "cancelled" or o.get("cancelled_on"):
+            return
+        phone = ""
+        for key in ("shipping_address", "billing_address"):
+            a = o.get(key) or {}
+            if isinstance(a, dict):
+                phone = a.get("phone") or a.get("phone_number") or a.get("mobile") or ""
+                if phone:
+                    break
+        if not phone:
+            phone = o.get("phone") or ""
+        canon = _canon_phone(phone)
+        if not canon:
+            return
+        if channel_key != "all":
+            cd = o.get("channel_definition") or {}
+            hay = f"{cd.get('main_name') or ''} {cd.get('branch_name') or ''} {o.get('source_name') or ''}".lower()
+            if channel_key not in hay:
+                return
+        seen.add(oid)
+        if canon in good:
+            return   # khách đã có + địa chỉ có cấu trúc → đạt
+        created_vn = _parse_vn(o.get("created_on"))
+        out.append({
+            "order_id": o.get("id"),
+            "code": o.get("source_identifier") or o.get("name") or o.get("code") or o.get("id"),
+            "phone": canon,
+            "created_on": created_vn.strftime("%d/%m %H:%M") if created_vn else "",
+            "ly_do": "Khách địa chỉ TEXT (chưa chọn Tỉnh/Quận/Phường)" if canon in allset else "Chưa có khách",
+            "info": order_shipping_to_info(o),
+        })
+
+    w_end = now_vn
+    while w_end > start_all:
+        w_start = max(w_end - timedelta(days=window_days), start_all)
+        for page in range(1, int(max_pages) + 1):
+            try:
+                if page > 1:
+                    time.sleep(throttle)
+                data = fetch_json("/admin/orders.json", limit=250, page=page,
+                                  created_on_min=w_start.isoformat(), created_on_max=w_end.isoformat())
+            except Exception:
+                break   # 422/429/lỗi mạng → bỏ trang, sang cửa sổ khác (không crash)
+            orders = data.get("orders", []) or []
+            if not orders:
+                break
+            for o in orders:
+                _process(o)
+            if len(orders) < 250:
+                break
+        w_end = w_start - timedelta(seconds=1)
     return out
 
 

@@ -1351,13 +1351,14 @@ if _page == PAGE_TTKH:
         or str(r.get("source_identifier")) in _fail_codes_now
     )
 
+    # Chỉ tính lỗi CHƯA xử lý (đơn đã ghi lại OK thì không báo lỗi ở trên nữa)
+    _n_unresolved = len([c for c in _fail_log if c not in _ok_codes])
     st.markdown("##### 📊 Đã lưu TTKH — 30 ngày (nhật ký)")
     _sc = st.columns(3)
     _sc[0].metric("Tổng đã lưu", _tot_saved, help="Tổng số LƯỢT ghi SAPO trong 30 ngày (nhật ký).")
     _sc[1].metric("Thành công", _tot_ok, help="Số lượt tạo được khách.")
-    _sc[2].metric("Thất bại", _tot_fail, delta=(f"-{_tot_fail}" if _tot_fail else None),
-                  delta_color="inverse",
-                  help="Số LƯỢT ghi bị lỗi trong 30 ngày (lịch sử). Đơn đó có thể đã ghi lại thành công sau.")
+    _sc[2].metric("Lỗi chưa xử lý", _n_unresolved,
+                  help="Đơn lỗi CHƯA khắc phục. Đơn đã ghi lại OK không tính ở đây (xem lịch sử lỗi bên dưới).")
     if _stat_msg:
         st.caption(_stat_msg)
 
@@ -1371,8 +1372,8 @@ if _page == PAGE_TTKH:
                 "Kiểm khách": (f"https://vitranboutiquehcm.mysapo.net/admin/customers?query={quote_plus(_rec['SĐT'])}"
                                if _rec.get("SĐT") else ""),
             })
-        with st.expander(f"🔎 {len(_fl_rows)} đơn lỗi trong nhật ký (mã đơn + link)",
-                         expanded=bool(_tot_fail) and _tot_fail <= 5):
+        with st.expander(f"🔎 Lịch sử lỗi ({len(_fl_rows)} đơn) — mã đơn + link",
+                         expanded=_n_unresolved > 0 and _n_unresolved <= 5):
             st.dataframe(
                 pd.DataFrame(_fl_rows)[["Mã đơn", "SĐT", "Lúc", "Trạng thái", "Kiểm khách"]],
                 hide_index=True, width="stretch",
