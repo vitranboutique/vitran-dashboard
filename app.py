@@ -1379,6 +1379,41 @@ if _page == PAGE_TTKH:
                 column_config={"Kiểm khách": st.column_config.LinkColumn("Kiểm khách", display_text="Mở Sapo")})
             st.caption("‘Mở Sapo’ = tìm khách theo SĐT để kiểm/tạo. Muốn tới đơn trong danh sách bên dưới: "
                        "copy Mã đơn dán vào ô 🔎 tìm mã đơn.")
+
+            _still_bad = [c for c in _fail_log if c not in _ok_codes]
+            if _still_bad and st.button("🔧 Thử tạo khách cho đơn còn lỗi & xem lý do chi tiết", key="ttkh_diag_fail"):
+                _diag = []
+                _sess = build_session()
+                _fj2 = make_fetch_json(build_session())
+                for _c in _still_bad[:10]:
+                    with st.spinner(f"Đang xử lý đơn {_c}…"):
+                        try:
+                            _od = L.find_order_by_code(_fj2, _c, days=45)
+                        except Exception as _e:
+                            _diag.append({"Mã đơn": _c, "Kết quả": "Không tra được đơn", "Chi tiết": str(_e)[:200]})
+                            continue
+                        if not _od:
+                            _diag.append({"Mã đơn": _c, "Kết quả": "❌ Không thấy đơn (quá 45 ngày?)", "Chi tiết": ""})
+                            continue
+                        _info2 = _od.get("info") or {}
+                        if not _info2.get("phone") or not _info2.get("name"):
+                            _diag.append({"Mã đơn": _c, "Kết quả": "❌ Đơn thiếu SĐT/tên", "Chi tiết": f"phone={_info2.get('phone')}, name={_info2.get('name')}"})
+                            continue
+                        if customer_exists_by_phone(_sess, _info2["phone"]):
+                            _diag.append({"Mã đơn": _c, "Kết quả": "✅ Khách ĐÃ CÓ (không cần tạo)", "Chi tiết": f"SĐT {_info2['phone']} đã có khách"})
+                            continue
+                        _cid, _att = upsert_customer_from_info(_sess, _info2, skip_search=True, note=f"Fix đơn {_c}")
+                        if _cid:
+                            _diag.append({"Mã đơn": _c, "Kết quả": "✅ ĐÃ TẠO được khách", "Chi tiết": "; ".join(str(a) for a in (_att or [])[-3:])})
+                        else:
+                            _diag.append({"Mã đơn": _c, "Kết quả": "❌ Vẫn KHÔNG tạo được", "Chi tiết": "; ".join(str(a) for a in (_att or [])[-6:])[:600]})
+                    time.sleep(0.6)
+                st.session_state["ttkh_diag_result"] = _diag
+                load_customer_phone_set.clear()
+            if st.session_state.get("ttkh_diag_result"):
+                st.markdown("**Kết quả chẩn đoán:**")
+                st.dataframe(pd.DataFrame(st.session_state["ttkh_diag_result"]), hide_index=True, width="stretch",
+                             column_config={"Chi tiết": st.column_config.TextColumn("Chi tiết (lý do)", width="large")})
     with st.expander("📅 Xem lịch sử theo từng ngày (30 ngày)", expanded=False):
         if _stat_rows:
             st.dataframe(
