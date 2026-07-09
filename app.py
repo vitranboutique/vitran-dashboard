@@ -1407,13 +1407,15 @@ if _page == PAGE_TTKH:
                         _blob = " ".join(_atts).lower()
                         _write_blob = " ".join(a for a in [str(x) for x in (_att or [])]
                                                if any(w in a for w in ("POST", "PUT", "PATCH"))).lower()
+                        _luc = ""
                         if _cid:
-                            _why = "✅ ĐÃ TẠO/CẬP NHẬT khách (địa chỉ Tỉnh/Quận/Phường)"
                             _now2 = datetime.now(timezone.utc) + timedelta(hours=7)
+                            _luc = _now2.strftime("%H:%M:%S %d/%m/%Y")
+                            _why = f"✅ ĐÃ TẠO/CẬP NHẬT khách (địa chỉ Tỉnh/Quận/Phường) — lúc {_luc}"
                             _diag_ok_log.append({"ngay": _now2.strftime("%Y-%m-%d"), "gio": _now2.strftime("%H:%M"),
                                                  "ts": _now2.isoformat(timespec="seconds"), "ma_don": _c,
                                                  "sdt": _info2["phone"], "ket_qua": "thanh_cong",
-                                                 "chi_tiet": "Fix/cập nhật địa chỉ khách"})
+                                                 "chi_tiet": f"Fix/cập nhật địa chỉ khách lúc {_luc}"})
                         elif "429" in _write_blob:
                             _why = "❌ 429 — Sapo đang chặn (rate limit). Nghỉ 5–10 phút rồi thử lại."
                         elif "type_mismatch" in _blob or "convert string value to integer" in _blob:
@@ -1426,7 +1428,7 @@ if _page == PAGE_TTKH:
                             _why = "❌ Vẫn không tạo được (xem các bước bên dưới)."
                         _addr_str = ", ".join(str(x) for x in (
                             _info2.get("ward"), _info2.get("district"), _info2.get("province")) if x)
-                        _diag.append({"Mã đơn": _c, "phone": _info2["phone"], "ket_qua": _why,
+                        _diag.append({"Mã đơn": _c, "phone": _info2["phone"], "ket_qua": _why, "luc": _luc,
                                       "dia_chi": f"{_addr_str}  [{_info2.get('address_format')}]"
                                                  f"  mã P/X {_info2.get('ward_code') or '-'}",
                                       "attempts": _atts})
@@ -1440,6 +1442,10 @@ if _page == PAGE_TTKH:
                 st.session_state["ttkh_diag_result"] = _diag
                 load_customer_phone_set.clear()
             if st.session_state.get("ttkh_diag_result"):
+                _ok_list = [d for d in st.session_state["ttkh_diag_result"] if d.get("luc")]
+                if _ok_list:
+                    _last_time = max(d["luc"] for d in _ok_list)
+                    st.success(f"✅ CẬP NHẬT THÀNH CÔNG {len(_ok_list)} khách — thời điểm hoàn tất: **{_last_time}** (giờ VN). Dùng mốc này để đối chiếu.")
                 st.markdown("**Kết quả chẩn đoán:**")
                 for _dg in st.session_state["ttkh_diag_result"]:
                     _k = _dg.get("ket_qua") or _dg.get("Kết quả") or ""
@@ -1616,8 +1622,10 @@ if _page == PAGE_TTKH:
                                 f"⛔ Sapo đang CHẶN ghi (rate limit). Đã tạo {_ok} khách rồi DỪNG để không bị phạt nặng thêm. "
                                 f"Còn {len(_remain)} đơn. **Nghỉ 5–10 phút** rồi bấm tạo lại.")
                         else:
+                            _bf_time = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%H:%M:%S %d/%m/%Y")
                             st.session_state["ttkh_backfill_msg"] = (
-                                f"✅ Đã tạo/cập nhật {_ok} khách, lỗi {_fail}. Còn lại {len(_remain)} đơn cần tạo.")
+                                f"✅ Đã tạo/cập nhật {_ok} khách (lỗi {_fail}) — hoàn tất lúc **{_bf_time}** (giờ VN). "
+                                f"Còn lại {len(_remain)} đơn cần tạo.")
                         st.session_state["ttkh_backfill_fail"] = _fail_detail
                         st.rerun()
 
