@@ -1344,20 +1344,23 @@ if _page == PAGE_TTKH:
         or str(r.get("source_identifier")) in _fail_codes_now
     )
 
-    st.markdown("##### 📊 Đã lưu TTKH — 30 ngày")
+    st.markdown("##### 📊 Đã lưu TTKH — 30 ngày (nhật ký)")
     _sc = st.columns(3)
-    _sc[0].metric("Tổng đã lưu", _tot_saved)
-    _sc[1].metric("Thành công", _tot_ok)
+    _sc[0].metric("Tổng đã lưu", _tot_saved, help="Tổng số LƯỢT ghi SAPO trong 30 ngày (nhật ký).")
+    _sc[1].metric("Thành công", _tot_ok, help="Số lượt tạo được khách.")
     _sc[2].metric("Thất bại", _tot_fail, delta=(f"-{_tot_fail}" if _tot_fail else None),
-                  delta_color="inverse")
-    if _n_fail_now:
-        _sc[2].button(f"👉 Xem {_n_fail_now} đơn lỗi/chờ", key="ttkh_goto_failed_stats",
-                      use_container_width=True,
-                      on_click=lambda: st.session_state.update(ttkh_show_failed_only=True))
-    elif _tot_fail:
-        _sc[2].caption("Các đơn lỗi trước đã xử lý xong ✅")
+                  delta_color="inverse",
+                  help="Số LƯỢT ghi bị lỗi trong 30 ngày (lịch sử). Đơn đó có thể đã ghi lại "
+                       "thành công sau. Muốn xử lý đơn còn tồn thì xem dòng 'đơn chờ tạo khách' bên dưới.")
     if _stat_msg:
         st.caption(_stat_msg)
+
+    # Dòng RIÊNG: đơn ĐANG còn chờ tạo khách (con số cần hành động, khác với nhật ký ở trên)
+    if _n_fail_now:
+        _pc = st.columns([3, 1])
+        _pc[0].warning(f"⚠️ Đang có **{_n_fail_now} đơn CHỜ TẠO KHÁCH** (đã ghi đơn nhưng chưa tạo được khách) — cần xử lý.")
+        _pc[1].button(f"👉 Xem {_n_fail_now} đơn", key="ttkh_goto_failed_stats", use_container_width=True,
+                      on_click=lambda: st.session_state.update(ttkh_show_failed_only=True))
     with st.expander("📅 Xem lịch sử theo từng ngày (30 ngày)", expanded=False):
         if _stat_rows:
             st.dataframe(
@@ -2093,7 +2096,7 @@ if _page == PAGE_TTKH:
         _multi = [r for r in _multi if _is_failed(r)]
         _single = [r for r in _single if _is_failed(r)]
         _fc1, _fc2 = st.columns([3, 1])
-        _fc1.warning(f"🔴 Đang xem {len(_multi) + len(_single)} đơn THẤT BẠI (chưa ghi được). Dán/ghi lại các đơn này.")
+        _fc1.warning(f"🔴 Đang xem {len(_multi) + len(_single)} đơn CHỜ TẠO KHÁCH / lỗi. Dán TTKH & Ghi lại các đơn này.")
         _fc2.button("Xem tất cả", key="ttkh_clear_failed_view", use_container_width=True,
                     on_click=lambda: st.session_state.update(ttkh_show_failed_only=False))
 
