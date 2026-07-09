@@ -182,6 +182,23 @@ def read_ttkh_logs() -> list:
 _TTKH_PENDING_FILE = "vitran_ttkh_pending.json"
 
 
+_TTKH_AUDIT_FILE = "vitran_ttkh_audit.json"
+
+
+def save_ttkh_audit(data: dict) -> bool:
+    """Lưu kết quả quét đối chiếu (đơn thiếu khách/địa chỉ text) để giữ qua tải lại."""
+    try:
+        return _write_gist_file(_TTKH_AUDIT_FILE, data or {})
+    except Exception:
+        return False
+
+
+def read_ttkh_audit() -> dict:
+    """Đọc kết quả quét gần nhất (None nếu chưa quét/chưa cấu hình)."""
+    d = _read_gist_file(_TTKH_AUDIT_FILE)
+    return d if isinstance(d, dict) else None
+
+
 def read_ttkh_pending() -> dict:
     """Map {order_id: {ma_don, sdt, ly_do, ts}} các đơn đã ghi nhưng CHƯA tạo được khách."""
     d = _read_gist_file(_TTKH_PENDING_FILE)
