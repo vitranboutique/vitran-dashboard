@@ -199,6 +199,22 @@ def read_ttkh_audit() -> dict:
     return d if isinstance(d, dict) else None
 
 
+_CUST_AUDIT_FILE = "vitran_cust_audit.json"
+
+
+def save_cust_audit(data: dict) -> bool:
+    """Lưu kết quả quét KHÁCH HÀNG chưa chuẩn (phân nhóm) để giữ qua tải lại."""
+    try:
+        return _write_gist_file(_CUST_AUDIT_FILE, data or {})
+    except Exception:
+        return False
+
+
+def read_cust_audit() -> dict:
+    d = _read_gist_file(_CUST_AUDIT_FILE)
+    return d if isinstance(d, dict) else None
+
+
 def read_ttkh_pending() -> dict:
     """Map {order_id: {ma_don, sdt, ly_do, ts}} các đơn đã ghi nhưng CHƯA tạo được khách."""
     d = _read_gist_file(_TTKH_PENDING_FILE)

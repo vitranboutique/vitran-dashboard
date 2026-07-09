@@ -1823,6 +1823,60 @@ if _page == PAGE_TTKH:
                                                "Đây KHÔNG phải lỗi dữ liệu — **nghỉ 5–10 phút** rồi bấm tạo lại, các đơn này sẽ vào.")
                                 st.dataframe(pd.DataFrame(_fd), hide_index=True, width="stretch")
 
+        # ── 🧹 KHÁCH HÀNG LƯU CHƯA CHUẨN (phân theo nhóm lỗi) ──
+        st.divider()
+        st.markdown("### 🧹 Khách hàng lưu chưa chuẩn (theo nhóm)")
+        st.caption("Quét toàn bộ khách, phân nhóm lỗi địa chỉ (thiếu SĐT / thiếu mã tỉnh / thiếu mã phường…) "
+                   "để xử lý theo nhóm. Kết quả LƯU, tải lại vẫn còn.")
+        if "cust_audit" not in st.session_state and picklog.configured():
+            try:
+                _sc_saved = picklog.read_cust_audit()
+                if _sc_saved:
+                    st.session_state["cust_audit"] = _sc_saved
+            except Exception:
+                pass
+        if st.button("🔄 Quét khách hàng (cập nhật)", key="cust_audit_run"):
+            st.session_state.pop("cust_audit", None)
+            _cp = st.progress(0.0, text="Đang quét khách hàng…")
+            try:
+                def _cust_prog(page, tot, found):
+                    _cp.progress(min(page / 120, 1.0), text=f"Trang {page} · đã xét {tot} khách · lỗi {found}")
+                _res = L.audit_customers(make_fetch_json(build_session()), progress_cb=_cust_prog)
+                st.session_state["cust_audit"] = _res
+                if picklog.configured():
+                    picklog.save_cust_audit(_res)
+            except Exception as _e:
+                st.session_state["cust_audit"] = {"error": str(_e)[:300]}
+            _cp.empty()
+            st.rerun()
+
+        _ca = st.session_state.get("cust_audit")
+        if _ca:
+            if _ca.get("error"):
+                st.error(f"Lỗi quét khách: {_ca['error']}")
+            else:
+                _counts = _ca.get("counts") or {}
+                _tot_bad = sum(_counts.values())
+                st.error(f"⚠️ {_tot_bad} / {_ca.get('total','?')} khách CHƯA CHUẨN (quét {_ca.get('ts','?')}).")
+                if _ca.get("hit_cap"):
+                    st.warning("Có thể chưa quét hết (chạm giới hạn/429) — quét lại nếu cần.")
+                for _cat, _label in L.CUST_ERR_LABELS.items():
+                    _n = _counts.get(_cat, 0)
+                    if not _n:
+                        continue
+                    _smp = (_ca.get("samples") or {}).get(_cat) or []
+                    with st.expander(f"• {_label} — {_n:,} khách" + (f" (hiện {len(_smp)} mẫu)" if _n > len(_smp) else "")):
+                        if _smp:
+                            _df = pd.DataFrame([{
+                                "Mã KH": m.get("id"), "Tên": m.get("ten"), "SĐT": m.get("sdt"),
+                                "Địa chỉ": m.get("dia_chi"),
+                                "Mở Sapo": f"https://vitranboutiquehcm.mysapo.net/admin/customers/{m.get('id')}",
+                            } for m in _smp])
+                            st.dataframe(_df, hide_index=True, width="stretch",
+                                         column_config={"Mở Sapo": st.column_config.LinkColumn("Mở Sapo", display_text="Mở")})
+                st.caption("Mỗi nhóm là cùng 1 kiểu lỗi → sẽ code cách fix riêng cho từng nhóm ở bước sau. "
+                           "Nhóm 'thiếu SĐT' đã fix xong (1.327 khách).")
+
         with st.expander("ℹ️ Điều kiện lọc đơn"):
             st.caption("Đơn trong `Tất cả`, không hủy, tạo trong số ngày chọn, ghi chú/địa chỉ SAPO chưa có SĐT khách.")
 

@@ -517,6 +517,88 @@ def _addr_is_structured(a) -> bool:
     return has_code and has_phone
 
 
+# Các nhóm lỗi địa chỉ khách hàng (để hiện danh sách + code fix theo nhóm)
+CUST_ERR_LABELS = {
+    "thieu_ma_tinh": "🔴 Thiếu mã tỉnh (địa chỉ chỉ có text) — CẦN FIX",
+    "thieu_ca_2": "🔴 Thiếu mã tỉnh + SĐT — CẦN FIX",
+    "khong_dia_chi": "🔴 Không có địa chỉ",
+    "thieu_sdt": "🟡 Đủ mã vùng, thiếu SĐT ở địa chỉ (đã fix hàng loạt)",
+    "thieu_ma_phuong": "⚪ Có Tỉnh, thiếu mã Phường (ĐA SỐ bình thường — địa chỉ cũ)",
+}
+
+
+def _classify_customer_addr(a) -> str:
+    """Phân loại lỗi địa chỉ khách. Trả '' nếu đã chuẩn (đủ mã tỉnh+phường+SĐT)."""
+    if not isinstance(a, dict) or not (a.get("address1") or a.get("province_code")):
+        return "khong_dia_chi"
+    pc = str(a.get("province_code") or a.get("province_id") or "").strip()
+    wc = str(a.get("ward_code") or a.get("ward_id") or "").strip()
+    ph = str(a.get("phone") or a.get("phone_number") or a.get("mobile") or "").strip()
+    if not pc:
+        return "thieu_ca_2" if not ph else "thieu_ma_tinh"
+    if not wc:
+        return "thieu_ma_phuong"
+    if not ph:
+        return "thieu_sdt"
+    return ""
+
+
+def audit_customers(fetch_json, max_pages: int = 220, throttle: float = 0.35,
+                    per_cat_keep: int = 500, progress_cb=None) -> dict:
+    """Quét TẤT CẢ khách hàng, phân loại theo nhóm lỗi địa chỉ.
+
+    Trả {total, counts:{cat:n}, samples:{cat:[{id,ten,sdt,dia_chi}]} (mỗi nhóm giữ
+    tối đa per_cat_keep để nhẹ), ts, hit_cap}. Dùng cho tab 'Khách hàng chưa chuẩn'."""
+    from collections import Counter
+    counts = Counter()
+    samples = {k: [] for k in CUST_ERR_LABELS}
+    total = 0
+    hit_cap = False
+    for page in range(1, int(max_pages) + 1):
+        data = None
+        for attempt in range(4):
+            try:
+                if page > 1 or attempt > 0:
+                    time.sleep(throttle)
+                data = fetch_json("/admin/customers.json", limit=250, page=page)
+                break
+            except Exception as e:
+                if getattr(getattr(e, "response", None), "status_code", None) == 429:
+                    time.sleep(2 * (attempt + 1)); continue
+                data = None; break
+        if data is None:
+            hit_cap = True; break
+        custs = data.get("customers", []) or data.get("data", []) or []
+        if not custs:
+            break
+        for c in custs:
+            total += 1
+            a = c.get("default_address") or (c.get("addresses") or [None])[0]
+            cat = _classify_customer_addr(a if isinstance(a, dict) else None)
+            if not cat:
+                continue
+            counts[cat] += 1
+            if len(samples[cat]) < per_cat_keep:
+                a = a if isinstance(a, dict) else {}
+                samples[cat].append({
+                    "id": c.get("id"),
+                    "ten": c.get("name") or f"{c.get('first_name') or ''} {c.get('last_name') or ''}".strip(),
+                    "sdt": c.get("phone") or "",
+                    "dia_chi": str(a.get("address1") or "")[:90],
+                })
+        if progress_cb:
+            try:
+                progress_cb(page, total, sum(counts.values()))
+            except Exception:
+                pass
+        if len(custs) < 250:
+            break
+        if page == int(max_pages):
+            hit_cap = True
+    return {"total": total, "counts": dict(counts), "samples": samples,
+            "hit_cap": hit_cap, "ts": (_now_utc() + timedelta(hours=7)).strftime("%H:%M %d/%m")}
+
+
 def get_customer_phone_set(fetch_json, max_pages: int = 160, throttle: float = 0.35) -> tuple:
     """Lấy SĐT khách hàng trong Sapo (canon 0xxxxxxxxx).
 
