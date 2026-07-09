@@ -723,11 +723,58 @@ def load_picking():
     return L.get_picking(make_fetch_json(build_session()))
 
 
+def _prune_ttkh_pending_existing_customers(pending: dict) -> dict:
+    """Remove stale pending orders once the phone already exists as a Sapo customer."""
+    if not pending:
+        return {}
+    if not picklog.configured():
+        return pending
+
+    checks = []
+    for oid, meta in list(pending.items()):
+        if not isinstance(meta, dict):
+            continue
+        phone = str(meta.get("sdt") or meta.get("phone") or "").strip()
+        if phone:
+            checks.append((str(oid), phone))
+
+    # Keep this cheap and gentle on Sapo. A large queue should still be handled by the audit flow.
+    if not checks or len(checks) > 50:
+        return pending
+
+    try:
+        sess = build_session()
+    except Exception:
+        return pending
+
+    remove_ids = []
+    for oid, phone in checks:
+        try:
+            if customer_exists_by_phone(sess, phone):
+                remove_ids.append(oid)
+        except Exception:
+            pass
+        time.sleep(0.15)
+
+    if not remove_ids:
+        return pending
+
+    try:
+        if picklog.update_ttkh_pending(remove_ids=remove_ids):
+            removed = set(remove_ids)
+            return {str(oid): meta for oid, meta in pending.items() if str(oid) not in removed}
+    except Exception:
+        pass
+    return pending
+
+
 @st.cache_data(ttl=180, show_spinner="Đang lọc đơn cần lấy TTKH…")
 def load_ttkh_candidates(days=15, channel_filter="tiktok"):
     # Đơn đã ghi nhưng CHƯA tạo được khách → giữ hiện (chưa đủ 2 nơi). Đọc từ Gist.
     try:
-        _pending_ids = set(picklog.read_ttkh_pending().keys()) if picklog.configured() else set()
+        _pending = picklog.read_ttkh_pending() if picklog.configured() else {}
+        _pending = _prune_ttkh_pending_existing_customers(_pending)
+        _pending_ids = set(_pending.keys())
     except Exception:
         _pending_ids = set()
     return L.get_tt_customer_candidates(make_fetch_json(build_session()), days=days,
