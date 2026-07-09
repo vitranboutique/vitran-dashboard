@@ -5,6 +5,7 @@ import re
 from datetime import date, datetime, time, timedelta, timezone
 
 
+SAPO_BASE = "https://vitranboutiquehcm.mysapo.net"
 SIZE_ORDER = ["XS", "S", "M", "L", "XL"]
 SIZE_SET = set(SIZE_ORDER)
 ALL_PRICE_SIZES = ["XS", "S", "M", "L", "XL", "XXL"]
@@ -234,6 +235,38 @@ def catalog_by_sku(variants: list[dict]) -> dict[str, dict]:
     return out
 
 
+def movement_by_sku(rows: list[dict]) -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    for row in rows or []:
+        sku = normalize_sku(row.get("variant_sku") or row.get("sku"))
+        if not sku:
+            continue
+        cur = out.setdefault(sku, {
+            "sku": sku,
+            "product_title": row.get("product_title") or "",
+            "variant_title": row.get("variant_title") or "",
+            "product_type": row.get("product_type") or "",
+            "product_vendor": row.get("product_vendor") or "",
+            "opening_quantity": 0,
+            "inward_quantity": 0,
+            "outward_quantity": 0,
+            "closing_quantity": 0,
+            "opening_value": 0,
+            "inward_value": 0,
+            "outward_value": 0,
+            "closing_value": 0,
+        })
+        for key in (
+            "opening_quantity", "inward_quantity", "outward_quantity", "closing_quantity",
+            "opening_value", "inward_value", "outward_value", "closing_value",
+        ):
+            cur[key] += _num(row.get(key), 0)
+        for key in ("product_title", "variant_title", "product_type", "product_vendor"):
+            if not cur.get(key) and row.get(key):
+                cur[key] = row.get(key) or ""
+    return out
+
+
 def filter_variants(variants: list[dict], query: str, *, limit: int = 50) -> list[dict]:
     q = str(query or "").strip().upper()
     if not q:
@@ -312,10 +345,112 @@ def get_sales_by_sku(
     }
 
 
+def _csrf_token(html: str) -> str | None:
+    m = re.search(r'<meta[^>]+name=["\']csrf-token["\'][^>]+content=["\']([^"\']+)["\']', html or "", re.I)
+    if m:
+        return m.group(1)
+    m = re.search(r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']csrf-token["\']', html or "", re.I)
+    return m.group(1) if m else None
+
+
+def _report_csrf_token(session) -> str | None:
+    try:
+        resp = session.get(
+            f"{SAPO_BASE}/admin/reports/inventory_movement",
+            headers={"Accept": "text/html,application/xhtml+xml"},
+            timeout=30,
+        )
+        if resp.status_code < 400:
+            return _csrf_token(resp.text or "")
+    except Exception:
+        return None
+    return None
+
+
+def _report_result_to_rows(result: dict) -> tuple[list[dict], dict, int]:
+    columns = [c.get("field") if isinstance(c, dict) else str(c) for c in (result.get("columns") or [])]
+    rows = []
+    for raw in result.get("data") or []:
+        if isinstance(raw, dict):
+            rows.append(raw)
+        else:
+            rows.append({field: raw[idx] if idx < len(raw) else None for idx, field in enumerate(columns)})
+    summary_raw = result.get("summary") or []
+    if isinstance(summary_raw, dict):
+        summary = summary_raw
+    else:
+        summary = {field: summary_raw[idx] if idx < len(summary_raw) else None for idx, field in enumerate(columns)}
+    return rows, summary, int(result.get("count") or len(rows))
+
+
+def post_report_query(session, query: str) -> tuple[list[dict], dict, int]:
+    headers = {
+        "Accept": "application/json, text/plain, */*",
+        "X-Requested-With": "XMLHttpRequest",
+        "X-Sapo-Client": "frontend",
+    }
+    token = _report_csrf_token(session)
+    if token:
+        headers["X-CSRF-Token"] = token
+    resp = session.post(f"{SAPO_BASE}/admin/reports/query.json", data={"q": query}, headers=headers, timeout=60)
+    resp.raise_for_status()
+    data = resp.json() if resp.content else {}
+    result = data.get("result") or data
+    return _report_result_to_rows(result)
+
+
+def _inventory_movement_query(start_date: date, end_date: date, *, limit: int, offset: int) -> str:
+    show = ",".join([
+        "opening_quantity", "opening_value",
+        "inward_quantity", "inward_value",
+        "outward_quantity", "outward_value",
+        "closing_quantity", "closing_value",
+    ])
+    by = ",".join([
+        "product_id", "variant_id", "product_title", "variant_title", "variant_sku",
+        "variant_barcode", "variant_unit", "product_type", "product_vendor",
+    ])
+    return (
+        f"SHOW {show} BY {by} FROM aggregate_inventory_movements "
+        f"SINCE {start_date.isoformat()} UNTIL {end_date.isoformat()} "
+        'WHERE variant_type == "normal" AND tracked == TRUE '
+        f"ORDER BY variant_id DESC LIMIT {int(limit)} OFFSET {int(offset)}"
+    )
+
+
+def get_inventory_movement_rows(
+    session,
+    *,
+    start_date: date,
+    end_date: date,
+    page_limit: int = 250,
+    max_pages: int = 80,
+) -> dict:
+    rows: list[dict] = []
+    summary: dict = {}
+    total_count = 0
+    page_limit = max(1, min(int(page_limit or 250), 500))
+    for page in range(max(1, int(max_pages or 1))):
+        query = _inventory_movement_query(start_date, end_date, limit=page_limit, offset=page * page_limit)
+        chunk, summary, count = post_report_query(session, query)
+        total_count = count or total_count
+        rows.extend(chunk)
+        if not chunk or len(rows) >= total_count or len(chunk) < page_limit:
+            break
+    return {
+        "rows": rows,
+        "summary": summary or {},
+        "count": total_count or len(rows),
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
+    }
+
+
 def compute_production_forecast(
     variants: list[dict],
     sales: dict[str, dict],
     *,
+    inventory_rows: list[dict] | None = None,
     data_months: int = 3,
     forecast_months: int = 1,
     safety_factor: float = 1.15,
@@ -325,16 +460,23 @@ def compute_production_forecast(
     forecast_months = max(1, int(forecast_months or 1))
     safety_factor = max(0, float(safety_factor or 1))
     stock = catalog_by_sku(variants)
-    all_skus = sorted(set(stock) | set(sales))
+    movement = movement_by_sku(inventory_rows or []) if inventory_rows is not None else {}
+    all_skus = sorted(set(stock) | set(sales) | set(movement))
 
     aggregated = []
     for sku in all_skus:
         cat = stock.get(sku) or {}
         sale = sales.get(sku) or {}
+        mv = movement.get(sku) or {}
         parsed = parse_sku(sku)
-        total_out = _int(sale.get("qty"))
-        total_in = 0
-        ending_stock = _int(cat.get("inventory_quantity"))
+        if inventory_rows is not None:
+            total_out = _int(mv.get("outward_quantity"))
+            total_in = _int(mv.get("inward_quantity"))
+            ending_stock = _int(mv.get("closing_quantity")) if mv else _int(cat.get("inventory_quantity"))
+        else:
+            total_out = _int(sale.get("qty"))
+            total_in = 0
+            ending_stock = _int(cat.get("inventory_quantity"))
         avg_monthly_out = total_out / data_months
         avg_monthly_in = total_in / data_months
         target_stock = avg_monthly_out * forecast_months * safety_factor
@@ -346,8 +488,8 @@ def compute_production_forecast(
         stock_cover = ending_stock / avg_monthly_out if avg_monthly_out > 0 else (999 if ending_stock > 0 else 0)
         aggregated.append({
             "sku": sku,
-            "productName": cat.get("product_name") or sale.get("name") or "",
-            "variantName": cat.get("variant_name") or "",
+            "productName": mv.get("product_title") or cat.get("product_name") or sale.get("name") or "",
+            "variantName": mv.get("variant_title") or cat.get("variant_name") or "",
             "price": money(cat.get("price")),
             "orders": _int(sale.get("orders")),
             "totalIn": total_in,
@@ -601,6 +743,53 @@ def get_production_forecast(
         "sold_items": sales_payload["total_items"],
         "start_date": sales_payload["start_date"],
         "end_date": sales_payload["end_date"],
+        "basis": "orders",
+    }
+    return result
+
+
+def get_production_forecast_from_sapo_report(
+    session,
+    fetch_json,
+    *,
+    data_months: int = 3,
+    forecast_months: int = 1,
+    safety_factor: float = 1.15,
+    round_mode: str = "ceil",
+    end_date: date | None = None,
+    max_product_pages: int = 80,
+    max_report_pages: int = 80,
+) -> dict:
+    end = end_date or _vn_now().date()
+    start = end - timedelta(days=max(1, int(data_months or 1)) * 30)
+    variants = get_catalog_variants(fetch_json, max_pages=max_product_pages)
+    movement = get_inventory_movement_rows(
+        session,
+        start_date=start,
+        end_date=end,
+        max_pages=max_report_pages,
+    )
+    result = compute_production_forecast(
+        variants,
+        {},
+        inventory_rows=movement["rows"],
+        data_months=data_months,
+        forecast_months=forecast_months,
+        safety_factor=safety_factor,
+        round_mode=round_mode,
+    )
+    rows = movement.get("rows") or []
+    result["source"] = {
+        "variant_count": len(variants),
+        "sku_count": len(catalog_by_sku(variants)),
+        "movement_rows": len(rows),
+        "movement_count": movement.get("count") or len(rows),
+        "sold_items": _int(sum(_num(r.get("outward_quantity"), 0) for r in rows)),
+        "inward_items": _int(sum(_num(r.get("inward_quantity"), 0) for r in rows)),
+        "closing_items": _int(sum(_num(r.get("closing_quantity"), 0) for r in rows)),
+        "start_date": movement["start_date"],
+        "end_date": movement["end_date"],
+        "basis": "inventory_movement_report",
     }
     return result
 
