@@ -21,6 +21,12 @@ import re
 import time
 from datetime import datetime, timedelta, timezone
 
+try:
+    from sapo_address import resolve_address as _resolve_address
+except Exception:   # phòng khi thiếu file dữ liệu địa chỉ
+    def _resolve_address(info):
+        return info
+
 # Mẫu mã vận đơn để bóc từ note (SPXVN.../VTPVN... hoặc mã số 11–14 chữ số như J&T 861...)
 _TRACK_RE = re.compile(r'[A-Z]{2,}VN\d+|\b\d{11,14}\b')
 _PHONE_RE = re.compile(r'(?:s\s*[đd]t|phone|tel|dien\s*thoai|điện\s*thoại)\s*[:\-]?\s*(?:\+?84|0)?\d[\d\s.\-]{7,12}|\b(?:\+?84|0)\d[\d\s.\-]{8,12}\b', re.I)
@@ -457,7 +463,7 @@ def order_shipping_to_info(o: dict) -> dict:
     name = (sa.get("name") or f"{sa.get('first_name') or ''} {sa.get('last_name') or ''}").strip()
     phone = _canon_phone(sa.get("phone") or sa.get("phone_number") or sa.get("mobile") or o.get("phone"))
     district = sa.get("district_name") or sa.get("district") or ""
-    return {
+    info = {
         "username": "",
         "name": name,
         "phone": phone,
@@ -470,6 +476,13 @@ def order_shipping_to_info(o: dict) -> dict:
         "province_code": str(sa.get("province_code") or ""),
         "address_format": "old" if district else "new",
     }
+    # Phân giải ra MÃ vùng chuẩn Sapo (Tỉnh/Quận/Phường) để tạo khách có địa chỉ
+    # CÓ CẤU TRÚC (lọc được), thay vì gửi tên → Sapo báo 'Province is not supported'.
+    try:
+        info = _resolve_address(info)
+    except Exception:
+        pass
+    return info
 
 
 def get_customer_phone_set(fetch_json, max_pages: int = 160, throttle: float = 0.35) -> tuple:
