@@ -1340,23 +1340,35 @@ def _production_detail_df(rows):
 
 
 def _render_cutbatch_by_material(cut_batches):
-    """Cắt chung theo vải — 1 BẢNG cho mỗi CHẤT LIỆU (cần nhiều lên trên), rows = màu vải."""
+    """Cắt chung theo vải — 1 BẢNG/CHẤT LIỆU (cần nhiều lên trên), rows = màu vải.
+    Cùng style HTML (header tối dính) như các tab khác cho đồng bộ."""
     from collections import defaultdict
     fams = defaultdict(list)
     for b in cut_batches:
         fams[b.get("family") or "(khác)"].append(b)
     fam_order = sorted(fams.items(), key=lambda kv: -sum(float(x.get("totalNeed") or 0) for x in kv[1]))
+    _TD = "padding:4px 9px;border-bottom:1px solid rgba(148,163,184,.16);white-space:nowrap;"
+    _TH = "padding:6px 9px;text-align:left;white-space:nowrap;position:sticky;top:0;background:#334155;color:#fff;z-index:1;"
+    headers = ["Màu vải", "Cần cắt", "Cây", "Nhóm mã (cắt chung)"]
     for fam, items in fam_order:
         items.sort(key=lambda x: -float(x.get("totalNeed") or 0))
         fam_need = int(round(sum(float(x.get("totalNeed") or 0) for x in items)))
         fam_rolls = int(round(sum(float(x.get("totalRolls") or 0) for x in items)))
         st.markdown(f"### ✂️ {fam} — cần {fam_need} cái · ~{fam_rolls} cây")
-        st.dataframe(pd.DataFrame([{
-            "Màu vải": b.get("colorCode"),
-            "Tổng cần cắt": int(round(b.get("totalNeed") or 0)),
-            "Tổng cây": int(round(b.get("totalRolls") or 0)),
-            "Nhóm mã (cắt chung)": b.get("groupsText") or "",
-        } for b in items]), width="stretch", hide_index=True)
+        rows = []
+        for b in items:
+            cells = [
+                (b.get("colorCode") or "", "font-weight:700;"),
+                (str(int(round(b.get("totalNeed") or 0))), "font-weight:700;color:#b91c1c;"),
+                (str(int(round(b.get("totalRolls") or 0))), ""),
+                (b.get("groupsText") or "", "white-space:normal;"),
+            ]
+            tds = "".join(f'<td style="{_TD}{stl}">{_esc(str(v))}</td>' for v, stl in cells)
+            rows.append(f"<tr>{tds}</tr>")
+        thead = "".join(f'<th style="{_TH}">{_esc(h)}</th>' for h in headers)
+        st.markdown('<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;font-size:.85rem">'
+                    f'<thead><tr>{thead}</tr></thead><tbody>{"".join(rows)}</tbody></table></div>',
+                    unsafe_allow_html=True)
 
 
 def _render_stock_cover_grouped(skus_flat):
@@ -1604,6 +1616,19 @@ def _render_grouped_skus(skus, cols, sort="cover", scroll_h=None, max_groups=Non
         st.caption(note)
 
 
+def _render_by_material(skus, cols, sort="need"):
+    """Chia theo CHẤT LIỆU trước (chất liệu cần nhiều lên đầu), rồi mới vào bảng Mã>Màu>Size."""
+    from collections import defaultdict
+    fams = defaultdict(list)
+    for s in skus:
+        fams[s.get("family") or "(khác)"].append(s)
+    fam_order = sorted(fams.items(), key=lambda kv: -sum(float(x.get("needQty") or 0) for x in kv[1]))
+    for fam, items in fam_order:
+        need = int(round(sum(float(x.get("needQty") or 0) for x in items)))
+        st.markdown(f"### 🧵 {fam} — cần {need} cái")
+        _render_grouped_skus(items, cols=cols, sort=sort)
+
+
 def _render_production_page():
     st.title("🧵 Dự đoán sản xuất")
     st.caption("**Công thức cố định:** nhu cầu/tháng = tổng bán **3 tháng gần nhất ÷ 3** · "
@@ -1686,11 +1711,22 @@ def _render_production_page():
     mm[4].metric("🟰 Tồn cuối (nay)", f"{_sig('endingStock'):,}",
                  help="Tồn kho THỰC hiện tại trên Sapo (thời điểm HÔM NAY) = Tồn đầu + Nhập − Bán.")
 
-    tabs = st.tabs(["🧵 Cần sản xuất", "✋ Tự cắt tay", "✂️ Cắt chung theo vải",
-                    "🕒 Tồn còn bán bao lâu", "📋 Chi tiết SKU", "⚠️ Cảnh báo"])
+    tabs = st.tabs(["📋 Chi tiết SKU", "🧵 Cần sản xuất", "✋ Tự cắt tay",
+                    "✂️ Cắt chung theo vải", "⚠️ Cảnh báo"])
     with tabs[0]:
-        st.caption("Cần sản xuất theo **Mã (gạch đậm) → Màu (gạch đứt) → Size** — mỗi dòng là 1 size "
-                   "cần làm. Xếp mã cần nhiều lên đầu.")
+        st.caption("Gõ SKU/mã — **lọc ngay khi gõ** (gõ đúng mã → còn 1 SKU). "
+                   "Gạch **đậm** = đổi mã · gạch **đứt** = đổi màu.")
+        detail = rep.get("aggregated", [])
+        if not detail:
+            st.info("Không có SKU.")
+        else:
+            _render_detail_search_table(detail)
+            st.download_button("⬇️ Tải CSV chi tiết SKU",
+                               _production_detail_df(detail).to_csv(index=False).encode("utf-8-sig"),
+                               "chi-tiet-sku-du-doan.csv", "text/csv")
+    with tabs[1]:
+        st.caption("Cần sản xuất — **chia theo chất liệu**, trong mỗi chất liệu: "
+                   "Mã (gạch đậm) → Màu (gạch đứt) → Size.")
         _need = [r for r in rep.get("needRows", []) if not r.get("manualCut")]
         if not _need:
             st.success("✅ Chưa có nhóm nào cần sản xuất theo công thức hiện tại.")
@@ -1701,21 +1737,12 @@ def _render_production_page():
             if not sel:
                 st.info("Không có mã ở mức đã chọn.")
             else:
-                _render_grouped_skus(sel, cols=["ma", "mau", "chatlieu", "size", "ton", "banth", "duban", "cansx"], sort="need")
+                _render_by_material(sel, cols=["ma", "mau", "size", "ton", "banth", "duban", "cansx"], sort="need")
                 st.download_button("⬇️ Tải CSV cần sản xuất",
                                    _production_detail_df(sel).to_csv(index=False).encode("utf-8-sig"),
                                    "du-doan-san-xuat.csv", "text/csv")
     with tabs[2]:
-        st.caption("Gom theo **chất liệu → màu vải** để cắt chung 1 cây. **Mỗi chất liệu 1 bảng**, "
-                   "màu cần nhiều xếp trên. 'Nhóm mã' = các mã dùng chung màu vải đó (cắt cùng đợt).")
-        _cb = rep.get("cutBatchGroups", [])
-        if not _cb:
-            st.info("Chưa có nhóm cắt chung theo vải.")
-        else:
-            _render_cutbatch_by_material(_cb)
-    with tabs[1]:
-        st.caption("Nhóm **cần SX ≤ 5 cái** — số nhỏ, cắt cả cây vải phí nên **cắt tay**. "
-                   "Theo **Mã (gạch đậm) → Màu (gạch đứt) → Size**.")
+        st.caption("Nhóm **cần SX ≤ 5 cái** — cắt tay. **Chia theo chất liệu**, rồi Mã → Màu → Size.")
         mc = crit.get("manualCutGroups") or []
         _mskus = [r for r in rep.get("needRows", []) if r.get("manualCut")]
         if not _mskus:
@@ -1733,7 +1760,7 @@ def _render_production_page():
                 height=54,
             )
             st.caption("Bấm **In A4** để mở phiếu in. Nếu bị chặn popup thì tải **phiếu HTML** rồi mở bằng trình duyệt → Ctrl+P.")
-            _render_grouped_skus(_mskus, cols=["ma", "mau", "chatlieu", "size", "ton", "cansx"], sort="need")
+            _render_by_material(_mskus, cols=["ma", "mau", "size", "ton", "cansx"], sort="need")
             _dl = st.columns(2)
             _dl[0].download_button("🖨️ Tải phiếu in (HTML)", _print_html.encode("utf-8"),
                                    "phieu-cat-tay.html", "text/html")
@@ -1741,31 +1768,14 @@ def _render_production_page():
                                    _production_detail_df(_mskus).to_csv(index=False).encode("utf-8-sig"),
                                    "tu-cat-tay.csv", "text/csv")
     with tabs[3]:
-        st.caption("Tồn còn bán được bao lâu — **chia theo MÃ** (ngăn bằng gạch đậm, gồm mọi màu+size), "
-                   "**mã còn ít hàng nhất lên đầu**. 🔴 hết · 🟠 dưới 1 tháng · 🟡 dưới 2 tháng.")
-        _agg = rep.get("aggregated", [])
-        if not _agg:
-            st.info("Chưa có dữ liệu.")
+        st.caption("Gom theo **chất liệu → màu vải** để cắt chung 1 cây. Mỗi chất liệu 1 bảng, "
+                   "màu cần nhiều xếp trên. 'Nhóm mã' = các mã dùng chung màu vải đó.")
+        _cb = rep.get("cutBatchGroups", [])
+        if not _cb:
+            st.info("Chưa có nhóm cắt chung theo vải.")
         else:
-            _fams = sorted({str(s.get("family")) for s in _agg if s.get("family")})
-            _pick = st.multiselect("Lọc chất liệu", _fams, default=[], key="cover_fam")
-            _view = [s for s in _agg if str(s.get("family")) in _pick] if _pick else _agg
-            _render_grouped_skus(_view, cols=["ma", "mau", "chatlieu", "size", "ton", "banth", "duban", "cansx"], sort="cover")
-            st.download_button("⬇️ Tải CSV tồn đủ bán",
-                               _production_detail_df(_view).to_csv(index=False).encode("utf-8-sig"),
-                               "ton-du-ban.csv", "text/csv")
+            _render_cutbatch_by_material(_cb)
     with tabs[4]:
-        st.caption("Gõ SKU/mã vào ô dưới — danh sách **lọc ngay khi gõ** (gõ đúng mã → còn 1 SKU). "
-                   "Gom theo **nhóm mã+màu**, ngăn bằng gạch đậm.")
-        detail = rep.get("aggregated", [])
-        if not detail:
-            st.info("Không có SKU.")
-        else:
-            _render_detail_search_table(detail)
-            st.download_button("⬇️ Tải CSV chi tiết SKU",
-                               _production_detail_df(detail).to_csv(index=False).encode("utf-8-sig"),
-                               "chi-tiet-sku-du-doan.csv", "text/csv")
-    with tabs[5]:
         for msg in crit.get("alerts") or []:
             st.warning(msg)
         st.caption("Cuộn trong bảng vẫn giữ dòng tiêu đề. Gạch **đậm** = đổi mã · gạch **đứt** = đổi màu.")
