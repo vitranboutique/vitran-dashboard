@@ -1122,6 +1122,30 @@ def _production_group_df(groups):
     } for g in groups])
 
 
+def _render_fabric_groups(groups):
+    """Gom các nhóm mã+màu theo CHẤT LIỆU + MÀU VẢI (cùng vải cắt chung 1 đợt).
+    Mỗi khối: tiêu đề (vải, tổng cần, số cây, danh sách mã) + bảng chi tiết các mã."""
+    from collections import defaultdict
+    buckets = defaultdict(list)
+    for g in groups:
+        buckets[(g.get("family") or "(khác)", g.get("fabricColorGroup") or "(không màu)")].append(g)
+    # Gom các khối CÙNG CHẤT LIỆU đứng cạnh nhau; trong 1 chất liệu, cần nhiều xếp trước.
+    order = sorted(buckets.items(),
+                   key=lambda kv: (str(kv[0][0]), -sum(float(x.get("totalNeed") or 0) for x in kv[1])))
+    for (fam, fcol), items in order:
+        items.sort(key=lambda x: -float(x.get("totalNeed") or 0))
+        need = int(round(sum(float(x.get("totalNeed") or 0) for x in items)))
+        cap = max((int(x.get("cutCapacity") or 0) for x in items), default=0) or 1
+        rolls = -(-need // cap) if need > 0 else 0
+        codes = " · ".join(
+            f"{x.get('productCode')}{'-' + x.get('colorCode') if x.get('colorCode') else ''}"
+            for x in items)
+        st.markdown(f"**🧵 {fam} · màu vải {fcol}** — {len(items)} mã · cần **{need}** cái · ~**{rolls}** cây")
+        st.caption(f"Cùng vải này cắt chung được các mã: {codes}")
+        dfg = _production_group_df(items).drop(columns=["Chất liệu"], errors="ignore")
+        st.dataframe(_style_prod(dfg), width="stretch", hide_index=True)
+
+
 def _stock_cover_group_df(groups):
     """Gom theo NHÓM MÃ + MÀU (cùng nhóm mới cắt chung đợt), sắp sắp-hết-hàng lên đầu."""
     gs = sorted(groups, key=_cover_sort_val)
@@ -1300,20 +1324,24 @@ def _render_production_page():
     tabs = st.tabs(["🧵 Cần sản xuất", "🕒 Tồn còn bán bao lâu", "✋ Tự cắt tay",
                     "✂️ Cắt chung theo vải", "📋 Chi tiết SKU", "⚠️ Cảnh báo"])
     with tabs[0]:
-        st.caption("**Cần SX theo từng SIZE**, không phải cả nhóm. Nhóm bán chạy tồn tổng còn nhiều "
-                   "nhưng **1 size sắp hết** thì vẫn phải SX bù size đó → cột **'Đủ bán (size thiếu)'** "
-                   "là tồn của SIZE đang gấp, cột **'Size cần'** cho biết size nào + bao nhiêu.")
-        important = [g for g in rep.get("groupRows", []) if float(g.get("totalNeed") or 0) > 0]
-        df = _production_group_df(important)
-        if df.empty:
+        st.caption("Gom theo **chất liệu + màu vải** — cùng loại vải cắt chung 1 đợt, mỗi khối liệt kê "
+                   "các mã cắt được. 'Cần SX' & 'Đủ bán (size thiếu)' tính theo **SIZE đang thiếu** "
+                   "(nhóm còn nhiều nhưng 1 size sắp hết vẫn phải SX bù — xem cột 'Size cần').")
+        important = [g for g in rep.get("groupRows", [])
+                     if float(g.get("totalNeed") or 0) > 0 and not g.get("manualCut")]
+        if not important:
             st.success("✅ Chưa có nhóm nào cần sản xuất theo công thức hiện tại.")
         else:
-            level = st.multiselect("Lọc mức", ["Bắt buộc SX", "Gợi ý SX", "Tự cắt tay"],
+            level = st.multiselect("Lọc mức", ["Bắt buộc SX", "Gợi ý SX"],
                                    default=["Bắt buộc SX", "Gợi ý SX"])
-            view = df[df["Mức"].isin(level)] if level else df
-            st.dataframe(_style_prod(view), width="stretch", hide_index=True)
-            st.download_button("⬇️ Tải CSV cần sản xuất", view.to_csv(index=False).encode("utf-8-sig"),
-                               "du-doan-san-xuat.csv", "text/csv")
+            sel = [g for g in important if g.get("suggestionType") in level] if level else important
+            if not sel:
+                st.info("Không có nhóm ở mức đã chọn.")
+            else:
+                _render_fabric_groups(sel)
+                st.download_button("⬇️ Tải CSV cần sản xuất",
+                                   _production_group_df(sel).to_csv(index=False).encode("utf-8-sig"),
+                                   "du-doan-san-xuat.csv", "text/csv")
     with tabs[1]:
         st.caption("Tồn hiện tại **gom theo NHÓM MÃ + MÀU** (cùng nhóm mới cắt chung đợt), "
                    "sắp **sắp hết hàng lên đầu**. 🔴 đỏ = hết · 🟠 cam = còn dưới 1 tháng · 🟡 vàng = dưới 2 tháng.")
@@ -1329,13 +1357,14 @@ def _render_production_page():
                                "ton-du-ban-theo-nhom.csv", "text/csv")
     with tabs[2]:
         st.caption("Hàng **bán ít** (dưới ~10 cái/kỳ) — KHÔNG cắt cả cây vải, để nhân viên "
-                   "**cắt tay** theo nhu cầu. Bảng riêng cho thợ cắt.")
-        mdf = _production_group_df(crit.get("manualCutGroups") or [])
-        if mdf.empty:
+                   "**cắt tay** theo nhu cầu. Gom theo **chất liệu + màu vải** cho thợ cắt.")
+        mc = crit.get("manualCutGroups") or []
+        if not mc:
             st.info("Không có nhóm tự cắt tay.")
         else:
-            st.dataframe(_style_prod(mdf), width="stretch", hide_index=True)
-            st.download_button("⬇️ Tải CSV tự cắt tay", mdf.to_csv(index=False).encode("utf-8-sig"),
+            _render_fabric_groups(mc)
+            st.download_button("⬇️ Tải CSV tự cắt tay",
+                               _production_group_df(mc).to_csv(index=False).encode("utf-8-sig"),
                                "tu-cat-tay.csv", "text/csv")
     with tabs[3]:
         cut_df = pd.DataFrame([{
