@@ -2397,9 +2397,12 @@ if _page == PAGE_TTKH:
                 _info = row_pending[0].get("info") or {}
                 customer_query = _info.get("phone") or customer_query or _info.get("name") or code
             customer_query = customer_query or code
-            code_link = f"[{code}]({url})" if url else code
-            sapo_link = f" · [Sapo]({sapo_url})" if sapo_url else ""
-            customer_link = f" · [Khách]({customer_url})" if customer_url else f" · [🔎 Tìm khách theo SĐT]({_sapo_customer_search_url(customer_query)})"
+            def _lnk(txt, href):   # link mở TAB MỚI (bấm alt+tab / tắt trang dễ, không mất app)
+                return f"<a href='{href}' target='_blank' rel='noopener'>{txt}</a>"
+            code_link = _lnk(_esc(str(code)), url) if url else _esc(str(code))
+            sapo_link = f" · {_lnk('Sapo', sapo_url)}" if sapo_url else ""
+            customer_link = (f" · {_lnk('Khách', customer_url)}" if customer_url
+                             else f" · {_lnk('🔎 Tìm khách theo SĐT', _sapo_customer_search_url(customer_query))}")
             _needs_cust = bool(r.get("_needs_customer"))
             _warn_badge = ("<div style='color:#b91c1c;font-weight:800;font-size:.8rem'>⚠️ Đã ghi đơn nhưng "
                            "CHƯA tạo được khách — ghi lại dòng này</div>") if _needs_cust else ""
