@@ -1210,22 +1210,19 @@ def _production_detail_df(rows):
 
 def _render_production_page():
     st.title("🧵 Dự đoán sản xuất")
-    st.caption("Lấy toàn bộ SKU + tồn kho từ danh sách sản phẩm Sapo và số BÁN/XUẤT từ đơn hàng (qua Open API, như các tab khác). Công thức giữ logic tool cũ: bán/xuất ≥30 = bắt buộc SX, 10–29 = gợi ý, dưới 10 = tự cắt tay.")
+    st.caption("**Công thức cố định:** nhu cầu/tháng = tổng bán **3 tháng gần nhất ÷ 3** · "
+               "tồn mục tiêu = nhu cầu/tháng **× 1,5** (dự phòng tránh hết hàng) · làm tròn LÊN. "
+               "Cần SX = tồn mục tiêu − tồn hiện tại. Phân loại theo logic cũ: bán nhiều = Bắt buộc SX, "
+               "vừa = Gợi ý, ít = Tự cắt tay. (Lấy trung bình 3 tháng gần nhất nên tự bám mùa mua.)")
     if not credential_present():
         st.warning("⚠️ Trang này cần credential Sapo LIVE.")
         st.stop()
 
-    top = st.columns([1, 1, 1, 1, 1.2])
-    data_months = top[0].number_input("Lấy số bán mấy tháng", min_value=1, max_value=12, value=3, step=1)
-    forecast_months = top[1].number_input("Dự báo mấy tháng", min_value=1, max_value=6, value=1, step=1)
-    safety_factor = top[2].number_input("Hệ số an toàn", min_value=0.5, max_value=3.0, value=1.15, step=0.05, format="%.2f")
-    round_mode = top[3].selectbox("Làm tròn SL", [("ceil", "Luôn làm tròn lên"), ("round", "Làm tròn gần nhất"), ("none", "Không làm tròn")],
-                                  index=0, format_func=lambda x: x[1])[0]
-    end_date = top[4].date_input("Đến ngày", value=(datetime.now(timezone.utc) + timedelta(hours=7)).date())
-    with st.expander("Tùy chọn tải Sapo", expanded=False):
-        c1, c2 = st.columns(2)
-        max_product_pages = c1.number_input("Trang sản phẩm tối đa", min_value=1, max_value=300, value=80, step=10)
-        max_report_pages = c2.number_input("Trang báo cáo XNT tối đa", min_value=1, max_value=300, value=80, step=10)
+    # CÔNG THỨC CỐ ĐỊNH (theo yêu cầu shop) — không cho chỉnh tay:
+    #   nhu cầu/tháng = tổng bán 3 tháng gần nhất ÷ 3 ; tồn mục tiêu = ×1,5 ; làm tròn LÊN.
+    data_months, forecast_months, safety_factor, round_mode = 3, 1, 1.5, "ceil"
+    max_product_pages, max_report_pages = 80, 250
+    end_date = (datetime.now(timezone.utc) + timedelta(hours=7)).date()
     if st.button("🔄 Làm mới dữ liệu Sapo", key="prod_refresh"):
         st.cache_data.clear()
         st.rerun()
@@ -1260,8 +1257,8 @@ def _render_production_page():
                      f"Muốn số nhỏ/sát hơn thì lọc bỏ đơn hoàn/trả — báo mình bật.")
     m[2].metric("Tổng cần SX", f"{sum(float(x.get('needQty') or 0) for x in rep.get('needRows', [])):,.0f}",
                 help="Tổng số cái cần sản xuất = cộng 'Cần SX' của các nhóm. "
-                     "Cần SX = Tồn mục tiêu − Tồn hiện tại (làm tròn theo tùy chọn). "
-                     "Tồn mục tiêu = bán bình quân/tháng × số tháng dự báo × hệ số an toàn.")
+                     "Cần SX = Tồn mục tiêu − Tồn hiện tại (làm tròn LÊN). "
+                     "Tồn mục tiêu = (tổng bán 3 tháng gần nhất ÷ 3) × 1,5.")
     m[3].metric("Bắt buộc SX", len(crit.get("mustProduceGroups") or []),
                 help="Số NHÓM (mã+màu) bắt buộc sản xuất — theo logic tool cũ: bán/xuất ≥ 30 cái/kỳ mà tồn thiếu.")
     m[4].metric("Gợi ý SX", len(crit.get("suggestGroups") or []),
