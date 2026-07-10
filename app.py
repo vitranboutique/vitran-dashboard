@@ -651,6 +651,7 @@ PAGE_CHAMCONG = "🕘 Chấm công"
 PAGE_LUONG = "💰 Lương của tôi"
 PAGE_QRSHOP = "📲 QR chấm công (shop)"
 PAGE_QLCC = "🛠️ Quản lý chấm công"
+PAGE_OPS = "📊 Vận hành"   # gộp: Tổng quan + Báo cáo cuối ngày + Phiếu nhặt hàng (tab ngang)
 
 # Phân quyền theo tài khoản.
 #  · Tổng quan + Báo cáo cuối ngày: AI CŨNG xem được.
@@ -659,20 +660,19 @@ PAGE_QLCC = "🛠️ Quản lý chấm công"
 _cc_role = cham_cong.role_of(CUR_USER)
 _cc_emp = cham_cong.emp_of(CUR_USER)
 if _cc_role == "nv":
-    # Kho: thêm Phiếu nhặt + Đơn trả + DỰ ĐOÁN SX (để cắt hàng). CSKH: chỉ Lấy-lưu TTKH.
-    _rolepg = [PAGE_PICK, PAGE_RETURNS, PAGE_PRODUCTION] if _cc_emp == "kho" else [PAGE_TTKH]
-    _opts = [PAGE_DAILY, PAGE_OVERVIEW] + _rolepg + [PAGE_CHAMCONG, PAGE_LUONG]
-    _default = PAGE_CHAMCONG if st.query_params.get("tk") else PAGE_DAILY   # quét QR → về Chấm công
+    # PAGE_OPS gộp Tổng quan + Báo cáo cuối ngày + Phiếu nhặt hàng. Kho: thêm Đơn trả + Dự đoán SX.
+    _rolepg = [PAGE_RETURNS, PAGE_PRODUCTION] if _cc_emp == "kho" else [PAGE_TTKH]
+    _opts = [PAGE_OPS] + _rolepg + [PAGE_CHAMCONG, PAGE_LUONG]
+    _default = PAGE_CHAMCONG if st.query_params.get("tk") else PAGE_OPS   # quét QR → về Chấm công
 elif _cc_role == "shop":                    # máy shop: CHỈ thấy trang hiện mã QR chấm công
     _opts = [PAGE_QRSHOP]
     _default = PAGE_QRSHOP
 elif _cc_role == "admin":
-    _opts = [PAGE_OVERVIEW, PAGE_PRODUCTION, PAGE_PRICE, PAGE_PICK, PAGE_TTKH, PAGE_DAILY, PAGE_RETURNS,
-             PAGE_QRSHOP, PAGE_QLCC]
-    _default = PAGE_OVERVIEW
+    _opts = [PAGE_OPS, PAGE_PRODUCTION, PAGE_PRICE, PAGE_TTKH, PAGE_RETURNS, PAGE_QRSHOP, PAGE_QLCC]
+    _default = PAGE_OPS
 else:
-    _opts = [PAGE_OVERVIEW, PAGE_PRODUCTION, PAGE_PRICE, PAGE_PICK, PAGE_TTKH, PAGE_DAILY, PAGE_RETURNS]
-    _default = PAGE_OVERVIEW
+    _opts = [PAGE_OPS, PAGE_PRODUCTION, PAGE_PRICE, PAGE_TTKH, PAGE_RETURNS]
+    _default = PAGE_OPS
 _sees_production = PAGE_PRODUCTION in _opts   # kho/admin: hiện cảnh báo việc SX/cắt tay mọi tab
 _idx = _opts.index(_default) if _default in _opts else 0
 _page = st.sidebar.radio("Trang", _opts, index=_idx)
@@ -1891,7 +1891,7 @@ if _page == PAGE_PRICE:
 
 
 # ════════════════ TRANG TỔNG QUAN ĐIỀU HÀNH ════════════════
-if _page == PAGE_OVERVIEW:
+def _render_overview():
     _l, _r = st.columns([3, 1])
     _l.title("🛍️ VITRAN BOUTIQUE")
     _l.caption("Tổng quan điều hành")
@@ -1899,15 +1899,15 @@ if _page == PAGE_OVERVIEW:
     _r.metric("Cập nhật (giờ VN)", _vn.strftime("%H:%M"), _vn.strftime("%d/%m/%Y"))
     if not credential_present():
         st.warning("⚠️ Trang này cần kết nối Sapo (LIVE).")
-        st.stop()
-    if st.button("🔄 Tải lại số liệu"):
+        return
+    if st.button("🔄 Tải lại số liệu", key="ov_reload"):
         st.cache_data.clear()
         st.rerun()
     try:
         ov = load_overview()
     except Exception as e:
         st.error(f"❌ Lỗi tải tổng quan: `{e}`")
-        st.stop()
+        return
 
     st.markdown('<div class="sec sec-orange">Tổng quan 7 ngày gần nhất</div>', unsafe_allow_html=True)
     _a = st.columns(3)
@@ -2010,16 +2010,16 @@ if _page == PAGE_OVERVIEW:
 
     st.caption("Số liệu 7 ngày gần nhất · cache 5 phút · giờ VN (UTC+7). "
                "(Khối Hàng hoàn/Khiếu nại — Phần 3 — cần nhập tay Google Sheet, làm sau.)")
-    st.stop()
+    return
 
 
-if _page == PAGE_PICK:
+def _render_pick():
     st.title("🧾 Phiếu nhặt hàng")
     st.caption("Tự kéo từ Sapo: đơn **đã in phiếu giao hàng** + **chờ đóng gói**. "
                "Hỏa tốc ưu tiên nhặt trước. Đếm cũ/mới theo **Ngày xử lý** (Sapo), cảnh báo xử lý trễ.")
     if not credential_present():
         st.warning("⚠️ Trang này cần kết nối Sapo (API LIVE) — hiện chưa có credential.")
-        st.stop()
+        return
     if st.button("🔄 Tải lại đơn cần nhặt"):
         st.cache_data.clear()
         st.rerun()
@@ -2027,7 +2027,7 @@ if _page == PAGE_PICK:
         pdata = load_picking()
     except Exception as e:
         st.error(f"❌ Lỗi kéo đơn từ Sapo: `{e}`")
-        st.stop()
+        return
 
     exp, nor = pdata["express"], pdata["normal"]
     k = st.columns(4)
@@ -2188,7 +2188,7 @@ if _page == PAGE_PICK:
         _html_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "picking_slip.html")
         with open(_html_path, encoding="utf-8") as _f:
             components.html(_f.read(), height=1300, scrolling=True)
-    st.stop()
+    return
 
 
 # ════════════════ TRANG LẤY - LƯU TTKH ════════════════
@@ -3450,7 +3450,7 @@ if _page == PAGE_TTKH:
 
 
 # ════════════════ TRANG BÁO CÁO CUỐI NGÀY (A4) ════════════════
-if _page == PAGE_DAILY:
+def _render_daily():
     st.title("📄 Báo cáo vận hành cuối ngày")
     st.caption("Tổng hợp tự động từ Sapo + Dohana — bấm **In báo cáo A4** trong khung để in/lưu PDF.  "
                "🎥 *Video Dohana lấy trực tiếp mỗi lần xem (cache ~5 phút); bấm “Tải lại số liệu” để cập nhật ngay.*")
@@ -3545,7 +3545,7 @@ if _page == PAGE_DAILY:
                                "Secrets `[dohana.tags]`  \"tag_id\" = \"Tên tag\".")
     if not credential_present():
         st.warning("⚠️ Cần kết nối Sapo (API LIVE).")
-        st.stop()
+        return
 
     # ===== Tổng hợp 7 NGÀY QUA (số cố định sau ngày — query lại là ra số cuối) =====
     # Ẩn mặc định — bấm mới mở (đỡ rối, chỉ xem khi cần).
@@ -3602,7 +3602,7 @@ if _page == PAGE_DAILY:
             _rep = load_daily_report(_iso)
         except Exception as e:
             st.error(f"❌ Lỗi tổng hợp báo cáo ngày {_disp}: `{e}`")
-            st.stop()
+            return
         _dvr = load_dohana_date(_iso) if dohana.configured() else None
         _inb = load_dohana_inbound_date(_iso) if dohana.configured() else None
         _enrich_daily(_rep, _dvr, _inb)
@@ -3616,17 +3616,17 @@ if _page == PAGE_DAILY:
         _nrec = len((_rep.get("nhap_kho") or {}).get("recon_rows") or [])
         _h = (1 + max(1, (_nrec + 19) // 20)) * 1140 + 120   # 1 trang 1 + N tờ trang 2 (20 đơn/tờ)
         components.html(daily_report.report_html(_rep, _dvr, _nrep, sign_on=_sign_on), height=_h, scrolling=True)
-        st.stop()
+        return
 
     # ---- Hôm nay (trực tiếp) ----
-    if st.button("🔄 Tải lại số liệu"):
+    if st.button("🔄 Tải lại số liệu", key="daily_reload"):
         st.cache_data.clear()
         st.rerun()
     try:
         _rep = load_daily_report()
     except Exception as e:
         st.error(f"❌ Lỗi tổng hợp báo cáo: `{e}`")
-        st.stop()
+        return
     _dvr = load_dohana() if dohana.configured() else None
     _inb = load_dohana_inbound() if dohana.configured() else None
     if (isinstance(_dvr, dict) and _dvr.get("_from_store")) or (isinstance(_inb, dict) and _inb.get("_from_store")):
@@ -3650,7 +3650,20 @@ if _page == PAGE_DAILY:
         st.error(f"❌ Lỗi dựng báo cáo A4 (mục đơn trả hàng bên dưới vẫn hiển thị): `{_e}`")
         with st.expander("Chi tiết lỗi (gửi Claude để sửa)"):
             st.code(_tb.format_exc())
-    st.stop()   # HẾT trang "Báo cáo cuối ngày" — mục đơn trả hàng đã TÁCH sang TRANG RIÊNG (sidebar)
+    return   # HẾT trang "Báo cáo cuối ngày" — mục đơn trả hàng đã TÁCH sang TRANG RIÊNG (sidebar)
+
+
+# ═════════════ TRANG GỘP: VẬN HÀNH (Tổng quan + Báo cáo cuối ngày + Phiếu nhặt hàng) ═════════════
+if _page == PAGE_OPS:
+    _tab_ov, _tab_daily, _tab_pick = st.tabs(
+        ["📊 Tổng quan điều hành", "📄 Báo cáo cuối ngày", "🧾 Phiếu nhặt hàng"])
+    with _tab_ov:
+        _render_overview()
+    with _tab_daily:
+        _render_daily()
+    with _tab_pick:
+        _render_pick()
+    st.stop()
 
 
 # ═════════════ TRANG RIÊNG: ĐƠN TRẢ HÀNG ĐANG XỬ LÝ (nút chọn trên sidebar) ═════════════
