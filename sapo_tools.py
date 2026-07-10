@@ -375,6 +375,66 @@ def get_sales_by_sku(
     }
 
 
+def _sum_by_sku_in_period(fetch_json, path, root_key, qty_keys, date_keys,
+                          start_date: date, end_date: date, max_pages: int = 40) -> dict:
+    """Cộng số lượng theo SKU từ các phiếu (nhập kho / trả hàng) trong khoảng ngày (giờ VN).
+
+    API bỏ qua lọc ngày nên tự lọc bằng code; phiếu xếp mới→cũ nên gặp phiếu cũ hơn
+    đầu kỳ thì dừng. qty_keys: thử lần lượt các field số lượng (lấy field đầu > 0)."""
+    out: dict[str, float] = {}
+    stop = False
+    for page in range(1, int(max_pages) + 1):
+        rows = fetch_json(path, limit=250, page=page).get(root_key, []) or []
+        if not rows:
+            break
+        for doc in rows:
+            if str(doc.get("status") or "").lower() in ("cancelled", "canceled") or doc.get("cancelled_on"):
+                continue
+            d = None
+            for dk in date_keys:
+                d = _created_vn_date(doc.get(dk))
+                if d is not None:
+                    break
+            if d is not None:
+                if d > end_date:
+                    continue
+                if d < start_date:
+                    stop = True
+                    continue
+            for li in doc.get("line_items") or []:
+                sku = normalize_sku(li.get("sku"))
+                if not sku:
+                    continue
+                qty = 0.0
+                for qk in qty_keys:
+                    v = _num(li.get(qk))
+                    if v:
+                        qty = v
+                        break
+                if qty:
+                    out[sku] = out.get(sku, 0.0) + qty
+        if stop or len(rows) < 250:
+            break
+    return out
+
+
+def get_inbound_by_sku(fetch_json, *, start_date: date, end_date: date, max_pages: int = 40) -> dict:
+    """Nhập kho trong kỳ theo SKU, tách 2 nguồn:
+      - ncc     : phiếu nhập kho (receive_inventories) = nhập từ nhà cung cấp.
+      - returns : đơn trả hàng (order_returns) đã nhập lại kho (restocked).
+    Trả {ncc:{sku:qty}, returns:{sku:qty}}."""
+    ncc = _sum_by_sku_in_period(
+        fetch_json, "/admin/receive_inventories.json", "receive_inventories",
+        qty_keys=("quantity",), date_keys=("received_on", "created_on"),
+        start_date=start_date, end_date=end_date, max_pages=max_pages)
+    returns = _sum_by_sku_in_period(
+        fetch_json, "/admin/order_returns.json", "order_returns",
+        qty_keys=("restocked_quantity", "stocked_quantity"),
+        date_keys=("returned_on", "completed_on", "created_on"),
+        start_date=start_date, end_date=end_date, max_pages=max_pages)
+    return {"ncc": ncc, "returns": returns}
+
+
 def _csrf_token(html: str) -> str | None:
     m = re.search(r'<meta[^>]+name=["\']csrf-token["\'][^>]+content=["\']([^"\']+)["\']', html or "", re.I)
     if m:

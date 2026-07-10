@@ -981,14 +981,51 @@ def load_price_tool_html():
     return path.read_text(encoding="utf-8")
 
 
+def _attach_inbound(rep, inbound):
+    """Ghép NHẬP KHO trong kỳ (NCC + hàng hoàn) vào từng SKU/nhóm + suy ra TỒN ĐẦU KỲ.
+    Tồn đầu kỳ = Tồn cuối (hiện tại) − Nhập + Bán trong kỳ."""
+    ncc = (inbound or {}).get("ncc", {}) or {}
+    ret = (inbound or {}).get("returns", {}) or {}
+    seen = set()
+
+    def _fill(row):
+        if not isinstance(row, dict) or id(row) in seen:
+            return
+        seen.add(id(row))
+        a = int(round(ncc.get(row.get("sku"), 0) or 0))
+        b = int(round(ret.get(row.get("sku"), 0) or 0))
+        row["inNCC"], row["inReturn"], row["totalIn"] = a, b, a + b
+        row["openingStock"] = int(round(row.get("endingStock") or 0)) - (a + b) + int(round(row.get("totalOut") or 0))
+
+    for key in ("aggregated", "needRows", "outSkuList", "zeroSalesList", "slowStockList"):
+        for r in rep.get(key, []) or []:
+            _fill(r)
+
+    def _fill_group(g):
+        gn = gr = 0
+        for r in g.get("skus", []) or []:
+            _fill(r)
+            gn += int(round(ncc.get(r.get("sku"), 0) or 0))
+            gr += int(round(ret.get(r.get("sku"), 0) or 0))
+        g["inNCC"], g["inReturn"], g["totalIn"] = gn, gr, gn + gr
+        g["openingStock"] = int(round(g.get("totalStock") or 0)) - (gn + gr) + int(round(g.get("totalOut") or 0))
+
+    for g in rep.get("groupRows", []) or []:
+        _fill_group(g)
+    for ck in ("mustProduceGroups", "suggestGroups", "manualCutGroups"):
+        for g in (rep.get("critical", {}) or {}).get(ck, []) or []:
+            _fill_group(g)
+
+
 @st.cache_data(ttl=900, show_spinner="Đang dự đoán sản xuất từ Sapo…")
 def load_production_tool(data_months, forecast_months, safety_factor, round_mode, end_date_iso,
                          max_product_pages=80, max_report_pages=80):
     end_date = datetime.fromisoformat(end_date_iso).date()
     # Tính từ ĐƠN HÀNG + tồn kho sản phẩm qua Open API (key/secret) — CHẠY NHƯ CÁC TAB KHÁC,
     # KHÔNG cần phiên admin/cookie (endpoint báo cáo xuất-nhập-tồn bị 403 với key/secret).
-    return PT.get_production_forecast(
-        make_fetch_json(build_session()),
+    fetch = make_fetch_json(build_session())
+    rep = PT.get_production_forecast(
+        fetch,
         data_months=int(data_months),
         forecast_months=int(forecast_months),
         safety_factor=float(safety_factor),
@@ -997,6 +1034,14 @@ def load_production_tool(data_months, forecast_months, safety_factor, round_mode
         max_product_pages=int(max_product_pages),
         max_order_pages=int(max_report_pages),
     )
+    # Nhập kho trong kỳ (NCC + hàng hoàn) từ Open API → ghép để hiện đủ Xuất-Nhập-Tồn.
+    _start = end_date - timedelta(days=max(1, int(data_months)) * 30)
+    try:
+        inbound = PT.get_inbound_by_sku(fetch, start_date=_start, end_date=end_date, max_pages=40)
+    except Exception:
+        inbound = {"ncc": {}, "returns": {}}
+    _attach_inbound(rep, inbound)
+    return rep
 
 
 def _vnd(value):
@@ -1051,9 +1096,11 @@ def _production_group_df(groups):
         "Chất liệu": g.get("family"),
         "Mã": g.get("productCode"),
         "Màu": g.get("colorCode") or "",
-        "Màu vải": g.get("fabricColorGroup"),
+        "Tồn đầu": int(round(g.get("openingStock") or 0)),
+        "Nhập NCC": int(round(g.get("inNCC") or 0)),
+        "Nhập hoàn": int(round(g.get("inReturn") or 0)),
         "Bán kỳ": int(round(g.get("totalOut") or 0)),
-        "Tồn": int(round(g.get("totalStock") or 0)),
+        "Tồn cuối": int(round(g.get("totalStock") or 0)),
         "Tồn đủ bán": _cover_text(g.get("totalStock"), g.get("avgMonthlyOut"), g.get("stockCoverMonths")),
         "Cần SX": int(round(g.get("totalNeed") or 0)),
         "Cây": int(round(g.get("rollsNeeded") or 0)),
@@ -1147,9 +1194,12 @@ def _production_detail_df(rows):
         "SKU": r.get("sku"),
         "Tên SP": r.get("productName") or "",
         "Size": (r.get("parsed") or {}).get("size") or "",
-        "Tồn": int(round(r.get("endingStock") or 0)),
-        "Tồn đủ bán": _cover_text(r.get("endingStock"), r.get("avgMonthlyOut"), r.get("stockCoverMonths")),
+        "Tồn đầu": int(round(r.get("openingStock") or 0)),
+        "Nhập NCC": int(round(r.get("inNCC") or 0)),
+        "Nhập hoàn": int(round(r.get("inReturn") or 0)),
         "Bán kỳ": int(round(r.get("totalOut") or 0)),
+        "Tồn cuối": int(round(r.get("endingStock") or 0)),
+        "Tồn đủ bán": _cover_text(r.get("endingStock"), r.get("avgMonthlyOut"), r.get("stockCoverMonths")),
         "Bình quân/tháng": round(float(r.get("avgMonthlyOut") or 0), 2),
         "Tồn mục tiêu": round(float(r.get("targetStock") or 0), 2),
         "Cần SX": int(round(float(r.get("needQty") or 0))),
@@ -1219,7 +1269,24 @@ def _render_production_page():
     m[5].metric("Tự cắt tay", len(crit.get("manualCutGroups") or []),
                 help="Số nhóm bán ít (dưới 10 cái/kỳ) — không cắt cả cây, tự cắt tay khi cần.")
 
-    tabs = st.tabs(["🧵 Cần sản xuất", "🕒 Tồn còn bán bao lâu", "✂️ Cắt chung theo vải", "Chi tiết SKU", "Cảnh báo"])
+    _agg = rep.get("aggregated", []) or []
+    def _sig(k):
+        return int(round(sum(float(x.get(k) or 0) for x in _agg)))
+    st.markdown("**📦 Xuất – Nhập – Tồn trong kỳ**  ·  Tồn đầu ➕ Nhập ➖ Bán 🟰 Tồn cuối")
+    mm = st.columns(5)
+    mm[0].metric("Tồn đầu kỳ", f"{_sig('openingStock'):,}",
+                 help="Ước tính tồn ĐẦU kỳ = Tồn cuối (hiện tại) − Nhập trong kỳ + Bán trong kỳ.")
+    mm[1].metric("➕ Nhập NCC", f"{_sig('inNCC'):,}",
+                 help="Nhập kho từ NHÀ CUNG CẤP trong kỳ (phiếu nhập kho — receive_inventories).")
+    mm[2].metric("➕ Nhập hoàn", f"{_sig('inReturn'):,}",
+                 help="Nhập LẠI kho từ ĐƠN TRẢ HÀNG trong kỳ (số hàng đã restock vào kho).")
+    mm[3].metric("➖ Bán/xuất", f"{_sig('totalOut'):,}",
+                 help="Số cái bán ra trong kỳ (tính từ đơn hàng, trừ đơn hủy).")
+    mm[4].metric("🟰 Tồn cuối (nay)", f"{_sig('endingStock'):,}",
+                 help="Tồn kho THỰC hiện tại trên Sapo = Tồn đầu + Nhập − Bán.")
+
+    tabs = st.tabs(["🧵 Cần sản xuất", "🕒 Tồn còn bán bao lâu", "✋ Tự cắt tay",
+                    "✂️ Cắt chung theo vải", "📋 Chi tiết SKU", "⚠️ Cảnh báo"])
     with tabs[0]:
         important = [g for g in rep.get("groupRows", []) if float(g.get("totalNeed") or 0) > 0]
         df = _production_group_df(important)
@@ -1227,7 +1294,7 @@ def _render_production_page():
             st.success("✅ Chưa có nhóm nào cần sản xuất theo công thức hiện tại.")
         else:
             level = st.multiselect("Lọc mức", ["Bắt buộc SX", "Gợi ý SX", "Tự cắt tay"],
-                                   default=["Bắt buộc SX", "Gợi ý SX", "Tự cắt tay"])
+                                   default=["Bắt buộc SX", "Gợi ý SX"])
             view = df[df["Mức"].isin(level)] if level else df
             st.dataframe(_style_prod(view), width="stretch", hide_index=True)
             st.download_button("⬇️ Tải CSV cần sản xuất", view.to_csv(index=False).encode("utf-8-sig"),
@@ -1246,6 +1313,16 @@ def _render_production_page():
             st.download_button("⬇️ Tải CSV tồn đủ bán theo nhóm", vv.to_csv(index=False).encode("utf-8-sig"),
                                "ton-du-ban-theo-nhom.csv", "text/csv")
     with tabs[2]:
+        st.caption("Hàng **bán ít** (dưới ~10 cái/kỳ) — KHÔNG cắt cả cây vải, để nhân viên "
+                   "**cắt tay** theo nhu cầu. Bảng riêng cho thợ cắt.")
+        mdf = _production_group_df(crit.get("manualCutGroups") or [])
+        if mdf.empty:
+            st.info("Không có nhóm tự cắt tay.")
+        else:
+            st.dataframe(_style_prod(mdf), width="stretch", hide_index=True)
+            st.download_button("⬇️ Tải CSV tự cắt tay", mdf.to_csv(index=False).encode("utf-8-sig"),
+                               "tu-cat-tay.csv", "text/csv")
+    with tabs[3]:
         cut_df = pd.DataFrame([{
             "Chất liệu": g.get("family"),
             "Màu vải": g.get("colorCode"),
@@ -1257,7 +1334,7 @@ def _render_production_page():
             st.info("Chưa có nhóm cắt chung theo vải.")
         else:
             st.dataframe(cut_df, width="stretch", hide_index=True)
-    with tabs[3]:
+    with tabs[4]:
         q = st.text_input("Tìm SKU / mã đầu", placeholder="VD: CVBC, OL, SD…", key="prod_sku_q")
         detail = rep.get("aggregated", [])
         if q.strip():
@@ -1272,7 +1349,7 @@ def _render_production_page():
             st.dataframe(_style_prod(ddf), width="stretch", hide_index=True)
             st.download_button("⬇️ Tải CSV chi tiết SKU", ddf.to_csv(index=False).encode("utf-8-sig"),
                                "chi-tiet-sku-du-doan.csv", "text/csv")
-    with tabs[4]:
+    with tabs[5]:
         for msg in crit.get("alerts") or []:
             st.warning(msg)
         c1, c2, c3 = st.columns(3)
