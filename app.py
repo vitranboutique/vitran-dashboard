@@ -2397,8 +2397,8 @@ if _page == PAGE_TTKH:
                 _info = row_pending[0].get("info") or {}
                 customer_query = _info.get("phone") or customer_query or _info.get("name") or code
             customer_query = customer_query or code
-            def _lnk(txt, href):   # class ttkh-win: script tiêm sẽ mở CỬA SỔ riêng (không phải tab)
-                return f"<a class='ttkh-win' href='{href}' target='_blank' rel='noopener'>{txt}</a>"
+            def _lnk(txt, href):   # mở tab mới (Shift+Click để mở CỬA SỔ Chrome riêng)
+                return f"<a href='{href}' target='_blank' rel='noopener'>{txt}</a>"
             code_link = _lnk(_esc(str(code)), url) if url else _esc(str(code))
             sapo_link = f" · {_lnk('Sapo', sapo_url)}" if sapo_url else ""
             customer_link = (f" · {_lnk('Khách', customer_url)}" if customer_url
@@ -2739,33 +2739,6 @@ if _page == PAGE_TTKH:
 
         _df_multi = _ttkh_table("Đơn ≥ 2 SP", _multi)
         _df_single = _ttkh_table("Đơn 1 SP", _single)
-        # Ép link (class 'ttkh-win') mở thành CỬA SỔ Chrome RIÊNG cho mỗi đơn (không phải tab),
-        # để bấm alt+tab & tắt dễ. Streamlit lọc onclick trong markdown nên phải tiêm script,
-        # gắn listener lên document CHA (link nằm ở trang app, không nằm trong iframe này).
-        components.html(
-            """<script>
-            (function(){
-              try{
-                var P = window.parent, D = P.document;
-                var W = Math.min(1280, Math.round(P.screen.width*0.7));
-                var H = Math.min(920, Math.round(P.screen.height*0.9));
-                function patch(a){
-                  if(a.dataset.winPatched) return;
-                  a.dataset.winPatched = "1";
-                  a.addEventListener("click", function(e){
-                    e.preventDefault(); e.stopPropagation();
-                    var left = Math.max(0,(P.screen.width - W)/2), top = Math.max(0,(P.screen.height - H)/2);
-                    P.open(a.href, "w_"+a.href, "width="+W+",height="+H+",left="+left+",top="+top);
-                  }, true);
-                }
-                function scan(){ D.querySelectorAll("a.ttkh-win").forEach(patch); }
-                scan();
-                new MutationObserver(scan).observe(D.body, {childList:true, subtree:true});
-              }catch(err){ /* iframe khác origin → link vẫn mở tab bình thường */ }
-            })();
-            </script>""",
-            height=0,
-        )
         _all_rows = list(_tt["multi"]) + list(_tt["single"])
         if not _all_rows:
             st.caption("Không có đơn để dán TTKH.")
