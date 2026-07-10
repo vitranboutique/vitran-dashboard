@@ -651,7 +651,7 @@ PAGE_CHAMCONG = "🕘 Chấm công"
 PAGE_LUONG = "💰 Lương của tôi"
 PAGE_QRSHOP = "📲 QR chấm công (shop)"
 PAGE_QLCC = "🛠️ Quản lý chấm công"
-PAGE_OPS = "📊 Vận hành"   # gộp: Tổng quan + Báo cáo cuối ngày + Phiếu nhặt hàng (tab ngang)
+PAGE_OPS = "📊 Vận hành"   # tab: Báo cáo cuối ngày + Đơn trả + Phiếu nhặt (CSKH chỉ thấy Báo cáo)
 
 # Phân quyền theo tài khoản.
 #  · Tổng quan + Báo cáo cuối ngày: AI CŨNG xem được.
@@ -659,20 +659,26 @@ PAGE_OPS = "📊 Vận hành"   # gộp: Tổng quan + Báo cáo cuối ngày + 
 #  · Chấm công/Lương: của ai người nấy.  · Admin: xem hết + QR shop + quản lý chấm công.
 _cc_role = cham_cong.role_of(CUR_USER)
 _cc_emp = cham_cong.emp_of(CUR_USER)
+# Trang "Tổng quan điều hành" TÁCH RIÊNG — chỉ chủ shop + zenzen197 xem được.
+_OWNER_USERS = {"vitran2291@gmail.com", "zenzen197@gmail.com"}
+_is_owner = str(CUR_USER).strip().lower() in _OWNER_USERS
+_is_cskh = (_cc_role == "nv" and _cc_emp != "kho")   # CSKH: KHÔNG thấy tab Đơn trả & Phiếu nhặt
+# PAGE_OPS (Vận hành) gồm: Báo cáo cuối ngày (mặc định) + Đơn trả + Phiếu nhặt (tab ngang).
 if _cc_role == "nv":
-    # PAGE_OPS gộp Tổng quan + Báo cáo cuối ngày + Phiếu nhặt hàng. Kho: thêm Đơn trả + Dự đoán SX.
-    _rolepg = [PAGE_RETURNS, PAGE_PRODUCTION] if _cc_emp == "kho" else [PAGE_TTKH]
+    _rolepg = [PAGE_PRODUCTION] if _cc_emp == "kho" else [PAGE_TTKH]
     _opts = [PAGE_OPS] + _rolepg + [PAGE_CHAMCONG, PAGE_LUONG]
     _default = PAGE_CHAMCONG if st.query_params.get("tk") else PAGE_OPS   # quét QR → về Chấm công
 elif _cc_role == "shop":                    # máy shop: CHỈ thấy trang hiện mã QR chấm công
     _opts = [PAGE_QRSHOP]
     _default = PAGE_QRSHOP
 elif _cc_role == "admin":
-    _opts = [PAGE_OPS, PAGE_PRODUCTION, PAGE_PRICE, PAGE_TTKH, PAGE_RETURNS, PAGE_QRSHOP, PAGE_QLCC]
+    _opts = [PAGE_OPS, PAGE_PRODUCTION, PAGE_PRICE, PAGE_TTKH, PAGE_QRSHOP, PAGE_QLCC]
     _default = PAGE_OPS
 else:
-    _opts = [PAGE_OPS, PAGE_PRODUCTION, PAGE_PRICE, PAGE_TTKH, PAGE_RETURNS]
+    _opts = [PAGE_OPS, PAGE_PRODUCTION, PAGE_PRICE, PAGE_TTKH]
     _default = PAGE_OPS
+if _is_owner:                               # chủ shop + zenzen197: thêm trang Tổng quan điều hành
+    _opts = [PAGE_OVERVIEW] + _opts
 _sees_production = PAGE_PRODUCTION in _opts   # kho/admin: hiện cảnh báo việc SX/cắt tay mọi tab
 _idx = _opts.index(_default) if _default in _opts else 0
 _page = st.sidebar.radio("Trang", _opts, index=_idx)
@@ -3653,28 +3659,15 @@ def _render_daily():
     return   # HẾT trang "Báo cáo cuối ngày" — mục đơn trả hàng đã TÁCH sang TRANG RIÊNG (sidebar)
 
 
-# ═════════════ TRANG GỘP: VẬN HÀNH (Tổng quan + Báo cáo cuối ngày + Phiếu nhặt hàng) ═════════════
-if _page == PAGE_OPS:
-    _tab_ov, _tab_daily, _tab_pick = st.tabs(
-        ["📊 Tổng quan điều hành", "📄 Báo cáo cuối ngày", "🧾 Phiếu nhặt hàng"])
-    with _tab_ov:
-        _render_overview()
-    with _tab_daily:
-        _render_daily()
-    with _tab_pick:
-        _render_pick()
-    st.stop()
-
-
-# ═════════════ TRANG RIÊNG: ĐƠN TRẢ HÀNG ĐANG XỬ LÝ (nút chọn trên sidebar) ═════════════
-if _page == PAGE_RETURNS:
+# ═════════════ HÀM RENDER: ĐƠN TRẢ HÀNG ĐANG XỬ LÝ (dùng trong tab Vận hành) ═════════════
+def _render_returns():
     st.title("📦 Đơn trả hàng đang xử lý (chưa nhập kho)")
     st.caption("Đơn trả CHƯA nhập kho (năm nay) — chia theo loại trả + tình trạng vận chuyển. "
                "Bấm 📋 để copy mã · dòng tô vàng = cần khiếu nại.")
     if not credential_present():
         st.warning("⚠️ Cần kết nối Sapo (API LIVE).")
-        st.stop()
-    if st.button("🔄 Tải lại số liệu"):
+        return
+    if st.button("🔄 Tải lại số liệu", key="returns_reload"):
         st.cache_data.clear()
         st.rerun()
     _return_top_search_slot = st.container()
@@ -5096,7 +5089,7 @@ if _page == PAGE_RETURNS:
                     } for r in _hits]), width="stretch", hide_index=True)
                 else:
                     st.caption("Không thấy trong kho (có thể chưa tới mốc lấy 13/16/19h, hoặc video ngoài phạm vi đã gom).")
-    st.stop()
+    return
 
 
 # ───────────────────────── Tiện ích ─────────────────────────
@@ -5141,6 +5134,28 @@ def load_demo():
 @st.cache_data(ttl=300)
 def load_snap():
     return L.load_snapshot()
+
+
+# ═════════════ TRANG RIÊNG: TỔNG QUAN ĐIỀU HÀNH (chỉ chủ shop + zenzen197) ═════════════
+if _page == PAGE_OVERVIEW:
+    _render_overview()
+    st.stop()
+
+# ═════════════ TRANG VẬN HÀNH: Báo cáo cuối ngày + Đơn trả + Phiếu nhặt (tab ngang) ═════════════
+# CSKH (nv không phải kho) chỉ thấy Báo cáo cuối ngày; kho/admin thấy đủ 3 tab.
+if _page == PAGE_OPS:
+    if _is_cskh:
+        _render_daily()
+    else:
+        _t_daily, _t_ret, _t_pick = st.tabs(
+            ["📄 Báo cáo cuối ngày", "📦 Đơn trả hàng", "🧾 Phiếu nhặt hàng"])
+        with _t_daily:
+            _render_daily()
+        with _t_ret:
+            _render_returns()
+        with _t_pick:
+            _render_pick()
+    st.stop()
 
 
 # ───────────────────────── Sidebar: chọn nguồn dữ liệu ─────────────────────────
