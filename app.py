@@ -1015,6 +1015,36 @@ def _variant_label(row):
     return f"{sku} — {title[:78]} — {tail}" if title else f"{sku} — {tail}"
 
 
+def _cover_text(stock, monthly_out, cover_months):
+    """Tồn hiện tại bán được bao lâu nữa (theo tốc độ bán bình quân/tháng)."""
+    stock = int(round(stock or 0))
+    out = float(monthly_out or 0)
+    cover = float(cover_months or 0)
+    if out <= 0:
+        return "— chưa bán"            # không bán trong kỳ → không tính được
+    if stock <= 0:
+        return "❗Hết hàng"             # đang bán mà hết → khẩn cấp
+    if cover >= 999:
+        return "— chưa bán"
+    if cover < 1:
+        return f"~{cover * 30:.0f} ngày"
+    return f"{cover:.1f} tháng"
+
+
+def _cover_sort_val(g):
+    """Khóa sắp xếp: đang-bán-mà-hết lên đầu, tồn sắp hết kế tiếp, không bán xuống cuối."""
+    stock = int(round(g.get("totalStock") or 0))
+    out = float(g.get("avgMonthlyOut") or 0)
+    cover = float(g.get("stockCoverMonths") or 0)
+    if out <= 0:
+        return 1e9                      # không bán → cuối danh sách
+    if stock <= 0:
+        return -1.0                     # đang bán mà hết hàng → khẩn cấp nhất
+    if cover >= 999:
+        return 1e9
+    return cover
+
+
 def _production_group_df(groups):
     return pd.DataFrame([{
         "Mức": g.get("suggestionType"),
@@ -1024,10 +1054,90 @@ def _production_group_df(groups):
         "Màu vải": g.get("fabricColorGroup"),
         "Bán kỳ": int(round(g.get("totalOut") or 0)),
         "Tồn": int(round(g.get("totalStock") or 0)),
+        "Tồn đủ bán": _cover_text(g.get("totalStock"), g.get("avgMonthlyOut"), g.get("stockCoverMonths")),
         "Cần SX": int(round(g.get("totalNeed") or 0)),
         "Cây": int(round(g.get("rollsNeeded") or 0)),
         "Size cần": g.get("sizeNeedText") or g.get("sizeNeedAllText") or "",
     } for g in groups])
+
+
+def _stock_cover_group_df(groups):
+    """Gom theo NHÓM MÃ + MÀU (cùng nhóm mới cắt chung đợt), sắp sắp-hết-hàng lên đầu."""
+    gs = sorted(groups, key=_cover_sort_val)
+    return pd.DataFrame([{
+        "Mã": g.get("productCode"),
+        "Màu": g.get("colorCode") or "",
+        "Chất liệu": g.get("family"),
+        "Tồn": int(round(g.get("totalStock") or 0)),
+        "Bán/tháng": round(float(g.get("avgMonthlyOut") or 0), 1),
+        "Tồn đủ bán": _cover_text(g.get("totalStock"), g.get("avgMonthlyOut"), g.get("stockCoverMonths")),
+        "Cần SX": int(round(g.get("totalNeed") or 0)),
+        "Tồn theo size": g.get("activeSizeText") or "",
+    } for g in gs])
+
+
+def _style_cover(val):
+    s = str(val)
+    if "Hết hàng" in s:
+        return "background-color:#fee2e2;color:#991b1b;font-weight:700"
+    if "ngày" in s:
+        return "background-color:#ffedd5;color:#9a3412;font-weight:700"
+    if "chưa bán" in s:
+        return "color:#9ca3af"
+    if "tháng" in s:
+        try:
+            n = float(s.split()[0])
+        except Exception:
+            n = 99.0
+        if n < 2:
+            return "background-color:#fef9c3;color:#854d0e;font-weight:700"
+        if n < 4:
+            return "color:#15803d;font-weight:600"
+    return ""
+
+
+def _style_muc(val):
+    s = str(val)
+    if "Bắt buộc" in s:
+        return "background-color:#fee2e2;color:#991b1b;font-weight:700"
+    if "Gợi ý" in s:
+        return "background-color:#ffedd5;color:#9a3412;font-weight:600"
+    if "Tự cắt" in s:
+        return "color:#6b7280"
+    return ""
+
+
+def _style_need(val):
+    try:
+        n = int(float(val))
+    except Exception:
+        n = 0
+    return "font-weight:700;color:#b91c1c" if n > 0 else "color:#cbd5e1"
+
+
+def _style_status(val):
+    s = str(val)
+    if s == "Hết hàng":
+        return "background-color:#fee2e2;color:#991b1b;font-weight:700"
+    if s == "Cần SX":
+        return "background-color:#ffedd5;color:#9a3412;font-weight:700"
+    return "color:#6b7280"
+
+
+def _style_prod(df):
+    """Tô màu bảng dự đoán SX cho nổi bật: hết hàng đỏ, sắp hết cam/vàng, cần SX đỏ đậm."""
+    if getattr(df, "empty", True):
+        return df
+    sty = df.style
+    if "Tồn đủ bán" in df.columns:
+        sty = sty.map(_style_cover, subset=["Tồn đủ bán"])
+    if "Cần SX" in df.columns:
+        sty = sty.map(_style_need, subset=["Cần SX"])
+    if "Mức" in df.columns:
+        sty = sty.map(_style_muc, subset=["Mức"])
+    if "Trạng thái" in df.columns:
+        sty = sty.map(_style_status, subset=["Trạng thái"])
+    return sty
 
 
 def _production_detail_df(rows):
@@ -1038,6 +1148,7 @@ def _production_detail_df(rows):
         "Tên SP": r.get("productName") or "",
         "Size": (r.get("parsed") or {}).get("size") or "",
         "Tồn": int(round(r.get("endingStock") or 0)),
+        "Tồn đủ bán": _cover_text(r.get("endingStock"), r.get("avgMonthlyOut"), r.get("stockCoverMonths")),
         "Bán kỳ": int(round(r.get("totalOut") or 0)),
         "Bình quân/tháng": round(float(r.get("avgMonthlyOut") or 0), 2),
         "Tồn mục tiêu": round(float(r.get("targetStock") or 0), 2),
@@ -1083,18 +1194,18 @@ def _render_production_page():
     crit = rep.get("critical") or {}
     st.caption(
         f"Nguồn Sapo: {src.get('sku_count', 0):,} SKU / {src.get('variant_count', 0):,} biến thể · "
-        f"{src.get('movement_rows', 0):,}/{src.get('movement_count', 0):,} dòng báo cáo xuất nhập tồn "
+        f"{src.get('order_count', 0):,} đơn bán (tính từ đơn hàng) "
         f"từ {src.get('start_date')} đến {src.get('end_date')}."
     )
     m = st.columns(6)
     m[0].metric("SKU Sapo", f"{src.get('sku_count', 0):,}")
-    m[1].metric("SP xuất kho kỳ", f"{src.get('sold_items', 0):,}", f"Nhập {src.get('inward_items', 0):,} · Tồn cuối {src.get('closing_items', 0):,}")
+    m[1].metric("SP đã bán kỳ", f"{src.get('sold_items', 0):,}", f"{src.get('order_count', 0):,} đơn")
     m[2].metric("Tổng cần SX", f"{sum(float(x.get('needQty') or 0) for x in rep.get('needRows', [])):,.0f}")
     m[3].metric("Bắt buộc SX", len(crit.get("mustProduceGroups") or []))
     m[4].metric("Gợi ý SX", len(crit.get("suggestGroups") or []))
     m[5].metric("Tự cắt tay", len(crit.get("manualCutGroups") or []))
 
-    tabs = st.tabs(["Cần sản xuất", "Cắt chung theo vải", "Chi tiết SKU", "Cảnh báo"])
+    tabs = st.tabs(["🧵 Cần sản xuất", "🕒 Tồn còn bán bao lâu", "✂️ Cắt chung theo vải", "Chi tiết SKU", "Cảnh báo"])
     with tabs[0]:
         important = [g for g in rep.get("groupRows", []) if float(g.get("totalNeed") or 0) > 0]
         df = _production_group_df(important)
@@ -1104,10 +1215,23 @@ def _render_production_page():
             level = st.multiselect("Lọc mức", ["Bắt buộc SX", "Gợi ý SX", "Tự cắt tay"],
                                    default=["Bắt buộc SX", "Gợi ý SX", "Tự cắt tay"])
             view = df[df["Mức"].isin(level)] if level else df
-            st.dataframe(view, width="stretch", hide_index=True)
+            st.dataframe(_style_prod(view), width="stretch", hide_index=True)
             st.download_button("⬇️ Tải CSV cần sản xuất", view.to_csv(index=False).encode("utf-8-sig"),
                                "du-doan-san-xuat.csv", "text/csv")
     with tabs[1]:
+        st.caption("Tồn hiện tại **gom theo NHÓM MÃ + MÀU** (cùng nhóm mới cắt chung đợt), "
+                   "sắp **sắp hết hàng lên đầu**. 🔴 đỏ = hết · 🟠 cam = còn dưới 1 tháng · 🟡 vàng = dưới 2 tháng.")
+        gcov = _stock_cover_group_df(rep.get("groupRows", []))
+        if gcov.empty:
+            st.info("Chưa có dữ liệu nhóm.")
+        else:
+            fams = sorted({str(x) for x in gcov["Chất liệu"] if x})
+            pick = st.multiselect("Lọc chất liệu", fams, default=[], key="cover_fam")
+            vv = gcov[gcov["Chất liệu"].isin(pick)] if pick else gcov
+            st.dataframe(_style_prod(vv), width="stretch", hide_index=True)
+            st.download_button("⬇️ Tải CSV tồn đủ bán theo nhóm", vv.to_csv(index=False).encode("utf-8-sig"),
+                               "ton-du-ban-theo-nhom.csv", "text/csv")
+    with tabs[2]:
         cut_df = pd.DataFrame([{
             "Chất liệu": g.get("family"),
             "Màu vải": g.get("colorCode"),
@@ -1119,7 +1243,7 @@ def _render_production_page():
             st.info("Chưa có nhóm cắt chung theo vải.")
         else:
             st.dataframe(cut_df, width="stretch", hide_index=True)
-    with tabs[2]:
+    with tabs[3]:
         q = st.text_input("Tìm SKU / mã đầu", placeholder="VD: CVBC, OL, SD…", key="prod_sku_q")
         detail = rep.get("aggregated", [])
         if q.strip():
@@ -1131,22 +1255,22 @@ def _render_production_page():
         if ddf.empty:
             st.info("Không có SKU phù hợp.")
         else:
-            st.dataframe(ddf, width="stretch", hide_index=True)
+            st.dataframe(_style_prod(ddf), width="stretch", hide_index=True)
             st.download_button("⬇️ Tải CSV chi tiết SKU", ddf.to_csv(index=False).encode("utf-8-sig"),
                                "chi-tiet-sku-du-doan.csv", "text/csv")
-    with tabs[3]:
+    with tabs[4]:
         for msg in crit.get("alerts") or []:
             st.warning(msg)
         c1, c2, c3 = st.columns(3)
         with c1:
-            st.markdown("**SKU hết hàng**")
-            st.dataframe(_production_detail_df(rep.get("outSkuList", [])[:80]), width="stretch", hide_index=True)
+            st.markdown("**🔴 SKU hết hàng**")
+            st.dataframe(_style_prod(_production_detail_df(rep.get("outSkuList", [])[:80])), width="stretch", hide_index=True)
         with c2:
-            st.markdown("**Có tồn nhưng không bán**")
-            st.dataframe(_production_detail_df(rep.get("zeroSalesList", [])[:80]), width="stretch", hide_index=True)
+            st.markdown("**⚪ Có tồn nhưng không bán**")
+            st.dataframe(_style_prod(_production_detail_df(rep.get("zeroSalesList", [])[:80])), width="stretch", hide_index=True)
         with c3:
-            st.markdown("**Tồn chậm/dư**")
-            st.dataframe(_production_detail_df(rep.get("slowStockList", [])[:80]), width="stretch", hide_index=True)
+            st.markdown("**🟡 Tồn chậm/dư**")
+            st.dataframe(_style_prod(_production_detail_df(rep.get("slowStockList", [])[:80])), width="stretch", hide_index=True)
 
 
 def _pick_variant_ui(variants, *, query_key, select_key, label, placeholder):
