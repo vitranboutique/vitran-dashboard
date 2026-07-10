@@ -30,7 +30,7 @@ import cham_cong
 import cham_cong_ui
 from sapo_address import resolve_address
 from sapo_client import (
-    SapoAuthError, build_session, build_report_session, credential_present, make_fetch_json,
+    SapoAuthError, build_session, credential_present, make_fetch_json,
     find_order_returns_by_codes, get_order_return, parse_codes,
     update_order_customer_info, update_order_note, update_order_return_note,
     customer_exists_by_phone, upsert_customer_from_info,
@@ -985,17 +985,17 @@ def load_price_tool_html():
 def load_production_tool(data_months, forecast_months, safety_factor, round_mode, end_date_iso,
                          max_product_pages=80, max_report_pages=80):
     end_date = datetime.fromisoformat(end_date_iso).date()
-    session = build_report_session()   # báo cáo cần phiên admin (cookie), không dùng key/secret
-    return PT.get_production_forecast_from_sapo_report(
-        session,
-        make_fetch_json(session),
+    # Tính từ ĐƠN HÀNG + tồn kho sản phẩm qua Open API (key/secret) — CHẠY NHƯ CÁC TAB KHÁC,
+    # KHÔNG cần phiên admin/cookie (endpoint báo cáo xuất-nhập-tồn bị 403 với key/secret).
+    return PT.get_production_forecast(
+        make_fetch_json(build_session()),
         data_months=int(data_months),
         forecast_months=int(forecast_months),
         safety_factor=float(safety_factor),
         round_mode=round_mode,
         end_date=end_date,
         max_product_pages=int(max_product_pages),
-        max_report_pages=int(max_report_pages),
+        max_order_pages=int(max_report_pages),
     )
 
 
@@ -1049,7 +1049,7 @@ def _production_detail_df(rows):
 
 def _render_production_page():
     st.title("🧵 Dự đoán sản xuất")
-    st.caption("Lấy toàn bộ SKU từ danh sách sản phẩm Sapo và số đầu kỳ/nhập/xuất/cuối kỳ từ báo cáo xuất nhập tồn. Công thức giữ logic tool cũ: bán/xuất ≥30 = bắt buộc SX, 10–29 = gợi ý, dưới 10 = tự cắt tay.")
+    st.caption("Lấy toàn bộ SKU + tồn kho từ danh sách sản phẩm Sapo và số BÁN/XUẤT từ đơn hàng (qua Open API, như các tab khác). Công thức giữ logic tool cũ: bán/xuất ≥30 = bắt buộc SX, 10–29 = gợi ý, dưới 10 = tự cắt tay.")
     if not credential_present():
         st.warning("⚠️ Trang này cần credential Sapo LIVE.")
         st.stop()
@@ -1073,15 +1073,7 @@ def _render_production_page():
         rep = load_production_tool(data_months, forecast_months, safety_factor, round_mode, end_date.isoformat(),
                                    max_product_pages, max_report_pages)
     except requests.HTTPError as e:
-        if getattr(getattr(e, "response", None), "status_code", None) in (401, 403):
-            st.error("❌ Báo cáo xuất-nhập-tồn cần **phiên đăng nhập admin** (cookie), API key/secret "
-                     "không truy cập được. Cookie `SAPO_REPORT_COOKIE` chưa có hoặc đã hết hạn.")
-            st.info("Cách sửa: đăng nhập Sapo admin trên Chrome → F12 → Network → mở 1 báo cáo → bấm "
-                    "request `query.json` → Request Headers → copy giá trị dòng `cookie:` → dán vào "
-                    "Streamlit Secrets: `SAPO_REPORT_COOKIE = \"...\"` → Save. (Cookie hết hạn định kỳ, "
-                    "khi lỗi lại thì lấy cookie mới. Các trang đơn/khách/TTKH KHÔNG bị ảnh hưởng.)")
-        else:
-            st.error(f"❌ Lỗi gọi API Sapo: `{e}`")
+        st.error(f"❌ Lỗi gọi API Sapo: `{e}`")
         st.stop()
     except Exception as e:
         st.error(f"❌ Không tính được dự đoán sản xuất: `{e}`")

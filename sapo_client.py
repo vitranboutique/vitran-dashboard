@@ -72,23 +72,6 @@ def build_session() -> requests.Session:
     return s
 
 
-def build_report_session() -> requests.Session:
-    """Session RIÊNG cho báo cáo admin (/admin/reports/query.json).
-
-    Endpoint báo cáo CHỈ nhận phiên đăng nhập admin (cookie) — API key/secret bị 403.
-    Ưu tiên SAPO_REPORT_COOKIE (cookie trình duyệt admin, chỉ dùng cho trang báo cáo/
-    dự đoán). Cookie hết hạn thì CHỈ các trang báo cáo lỗi, còn đơn/khách/TTKH vẫn chạy
-    bình thường bằng key/secret (build_session). Không cấu hình cookie riêng → rơi về
-    build_session() như cũ."""
-    cookie = _get_secret("SAPO_REPORT_COOKIE")
-    if cookie:
-        s = requests.Session()
-        s.headers.update({"User-Agent": "Mozilla/5.0", "Accept": "application/json"})
-        s.headers["Cookie"] = cookie
-        return s
-    return build_session()
-
-
 def make_fetch_json(session: requests.Session):
     """Trả về hàm fetch_json(path, **params) -> dict (đã raise_for_status)."""
     def fetch_json(path: str, **params):

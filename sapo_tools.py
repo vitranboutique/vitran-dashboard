@@ -297,13 +297,13 @@ def get_sales_by_sku(
     total_items = 0
     fields = "id,name,status,cancelled_on,created_on,source_name,line_items"
     for page in range(1, int(max_pages) + 1):
+        # KHÔNG gửi status/financial_status/fulfillment_status="any": Sapo Open API
+        # (key/secret) trả về RỖNG với "any". Bỏ đi → API trả TẤT CẢ đơn mọi trạng thái;
+        # đơn hủy được lọc bằng tay bên dưới.
         rows = fetch_json(
             "/admin/orders.json",
             limit=250,
             page=page,
-            status="any",
-            financial_status="any",
-            fulfillment_status="any",
             created_on_min=_date_to_utc_iso_vn(start_date),
             created_on_max=_date_to_utc_iso_vn(end_date, end_of_day=True),
             fields=fields,
