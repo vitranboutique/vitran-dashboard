@@ -1359,32 +1359,42 @@ def _render_cutbatch_by_material(cut_batches):
         } for b in items]), width="stretch", hide_index=True)
 
 
-def _render_stock_cover_grouped(groups):
-    """Tồn còn bán bao lâu — CHIA THEO NHÓM MÃ+MÀU, mỗi nhóm liệt kê SIZE; nhóm ngăn nhau
-    bằng GẠCH NGANG ĐẬM; nhóm còn ÍT HÀNG NHẤT (đủ bán ít nhất) lên đầu."""
+def _render_stock_cover_grouped(skus_flat):
+    """Tồn còn bán bao lâu — CHIA THEO MÃ (1 mã = 1 nhóm, gồm mọi màu+size), nhóm ngăn nhau
+    bằng GẠCH NGANG ĐẬM; nhóm còn ÍT HÀNG NHẤT lên đầu; trong nhóm, màu/size sắp hết lên trên."""
+    from collections import defaultdict
+    groups = defaultdict(list)
+    for s in skus_flat:
+        k = (s.get("parsed") or {}).get("productCode") or s.get("sku")
+        groups[k].append(s)
+
+    def _gsort(items):
+        stock = sum(float(x.get("endingStock") or 0) for x in items)
+        out = sum(float(x.get("avgMonthlyOut") or 0) for x in items)
+        if out <= 0:
+            return 1e9
+        if stock <= 0:
+            return -1.0
+        cov = stock / out
+        return cov if cov < 999 else 1e9
+
+    order = sorted(groups.items(), key=lambda kv: _gsort(kv[1]))
     _TD = "padding:4px 9px;border-bottom:1px solid rgba(148,163,184,.22);white-space:nowrap;"
     _TH = "padding:5px 9px;border-bottom:2px solid #94a3b8;font-weight:700;text-align:left;white-space:nowrap;"
-    _GRP = "border-top:3px solid #475569;"
-
-    def _cov(s):
-        avg = float(s.get("avgMonthlyOut") or 0)
-        st_ = float(s.get("endingStock") or 0)
-        return (st_ / avg) if avg > 0 else (999.0 if st_ > 0 else 0.0)
-
-    gs = sorted(groups, key=_cover_sort_val)   # ít hàng nhất lên đầu
-    headers = ["Mã", "Màu", "Chất liệu", "Size", "Tồn", "Bán/tháng", "Đủ bán", "Cần SX"]
+    headers = ["Mã", "Màu", "Chất liệu", "Size", "Tồn", "Bán/th", "Đủ bán", "Cần SX"]
     rows = []
-    for gi, g in enumerate(gs):
-        skus = sorted(g.get("skus") or [], key=_cov)   # size sắp hết lên trên trong nhóm
-        for ri, s in enumerate(skus):
-            grp = _GRP if (ri == 0 and gi > 0) else ""
-            scov = _cover_text(s.get("endingStock"), s.get("avgMonthlyOut"), _cov(s))
+    for gi, (_code, items) in enumerate(order):
+        items.sort(key=_sku_cover)   # màu/size sắp hết lên trên trong nhóm
+        for ri, s in enumerate(items):
+            grp = "border-top:3px solid #475569;" if (ri == 0 and gi > 0) else ""
+            scov = _cover_text(s.get("endingStock"), s.get("avgMonthlyOut"), _sku_cover(s))
             need = int(round(float(s.get("needQty") or 0)))
+            ps = s.get("parsed") or {}
             cells = [
-                ((g.get("productCode") or "") if ri == 0 else "", "font-weight:600;"),
-                ((g.get("colorCode") or "") if ri == 0 else "", ""),
-                ((g.get("family") or "") if ri == 0 else "", ""),
-                ((s.get("parsed") or {}).get("size") or "-", ""),
+                ((ps.get("productCode") or "") if ri == 0 else "", "font-weight:600;"),
+                (ps.get("colorCode") or "", ""),
+                ((s.get("family") or "") if ri == 0 else "", ""),
+                (ps.get("size") or "-", ""),
                 (f"{int(round(s.get('endingStock') or 0)):,}", ""),
                 (f"{float(s.get('avgMonthlyOut') or 0):.1f}", ""),
                 (scov, _style_cover(scov)),
@@ -1410,7 +1420,7 @@ def _render_detail_search_table(rows):
     from collections import OrderedDict
     groups = OrderedDict()
     for r in rows:
-        k = (r.get("parsed") or {}).get("productColorKey") or (r.get("parsed") or {}).get("productCode") or r.get("sku")
+        k = (r.get("parsed") or {}).get("productCode") or r.get("sku")   # nhóm = MÃ (gồm mọi màu)
         groups.setdefault(k, []).append(r)
     headers = ["SKU", "Chất liệu", "Size", "Tồn đầu", "Nhập NCC", "Nhập hoàn", "Bán kỳ", "Tồn cuối", "Đủ bán", "Cần SX"]
     body = []
@@ -1436,15 +1446,17 @@ def _render_detail_search_table(rows):
             tds = "".join(f'<td style="padding:3px 8px;border-bottom:1px solid rgba(148,163,184,.22);white-space:nowrap;{grp}{stl}">{_esc(str(v))}</td>' for v, stl in vals)
             body.append(f'<tr data-k="{key}">{tds}</tr>')
     thead = "".join(f'<th style="padding:5px 8px;border-bottom:2px solid #94a3b8;text-align:left;position:sticky;top:0;background:#fff;white-space:nowrap">{_esc(h)}</th>' for h in headers)
-    html = ('<input id="q" placeholder="Gõ SKU / mã… lọc ngay khi gõ" oninput="flt()" '
-            'style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:15px;border:1px solid #cbd5e1;border-radius:6px;margin:0 0 6px">'
+    _font = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif"
+    html = (f'<div style="font-family:{_font};color:#1e293b">'
+            '<input id="q" placeholder="Gõ SKU / mã… lọc ngay khi gõ" oninput="flt()" '
+            f'style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:15px;font-family:{_font};border:1px solid #cbd5e1;border-radius:6px;margin:0 0 6px">'
             '<div id="cnt" style="font-size:.8rem;color:#64748b;margin-bottom:4px"></div>'
             '<div style="overflow:auto;max-height:470px"><table style="border-collapse:collapse;width:100%;font-size:.84rem">'
             '<thead><tr>' + thead + '</tr></thead><tbody id="tb">' + "".join(body) + '</tbody></table></div>'
             '<script>function flt(){var v=document.getElementById("q").value.toUpperCase().trim();'
             'var rs=document.querySelectorAll("#tb tr");var n=0;'
             'rs.forEach(function(r){var m=(!v||r.getAttribute("data-k").indexOf(v)>-1);r.style.display=m?"":"none";if(m)n++;});'
-            'document.getElementById("cnt").textContent=n+" SKU khớp";}flt();</script>')
+            'document.getElementById("cnt").textContent=n+" SKU khớp";}flt();</script></div>')
     components.html(html, height=560, scrolling=True)
 
 
@@ -1457,7 +1469,7 @@ def _render_skus_grouped(skus, order_by="stock", limit=250):
         return
     groups = defaultdict(list)
     for s in skus:
-        k = (s.get("parsed") or {}).get("productColorKey") or (s.get("parsed") or {}).get("productCode") or s.get("sku")
+        k = (s.get("parsed") or {}).get("productCode") or s.get("sku")   # nhóm = MÃ (gồm mọi màu)
         groups[k].append(s)
 
     def _gv(items):
@@ -1468,7 +1480,7 @@ def _render_skus_grouped(skus, order_by="stock", limit=250):
     order = sorted(groups.items(), key=lambda kv: -_gv(kv[1]))
     _TD = "padding:4px 9px;border-bottom:1px solid rgba(148,163,184,.22);white-space:nowrap;"
     _TH = "padding:5px 9px;border-bottom:2px solid #94a3b8;font-weight:700;text-align:left;white-space:nowrap;"
-    headers = ["Mã", "Màu", "Size", "Tồn", "Bán/tháng", "Đủ bán", "Cần SX"]
+    headers = ["Mã", "Màu", "Size", "Tồn", "Bán/th", "Đủ bán", "Cần SX"]
     rows = []
     for gi, (_k, items) in enumerate(order[:limit]):
         items.sort(key=lambda s: -(float(s.get("needQty") or 0) if order_by == "need" else float(s.get("endingStock") or 0)))
@@ -1479,7 +1491,7 @@ def _render_skus_grouped(skus, order_by="stock", limit=250):
             ps = s.get("parsed") or {}
             vals = [
                 ((ps.get("productCode") or "") if ri == 0 else "", "font-weight:600;"),
-                ((ps.get("colorCode") or "") if ri == 0 else "", ""),
+                (ps.get("colorCode") or "", ""),
                 (ps.get("size") or "-", ""),
                 (f"{int(round(s.get('endingStock') or 0)):,}", ""),
                 (f"{float(s.get('avgMonthlyOut') or 0):.1f}", ""),
@@ -1633,20 +1645,19 @@ def _render_production_page():
                                    _production_group_df(mc).to_csv(index=False).encode("utf-8-sig"),
                                    "tu-cat-tay.csv", "text/csv")
     with tabs[3]:
-        st.caption("Tồn còn bán được bao lâu — **chia theo nhóm MÃ+MÀU** (ngăn nhau bằng gạch đậm, "
-                   "mỗi nhóm liệt kê size), **nhóm còn ít hàng nhất lên đầu**. "
-                   "🔴 hết · 🟠 dưới 1 tháng · 🟡 dưới 2 tháng.")
-        _gr = rep.get("groupRows", [])
-        if not _gr:
-            st.info("Chưa có dữ liệu nhóm.")
+        st.caption("Tồn còn bán được bao lâu — **chia theo MÃ** (ngăn bằng gạch đậm, gồm mọi màu+size), "
+                   "**mã còn ít hàng nhất lên đầu**. 🔴 hết · 🟠 dưới 1 tháng · 🟡 dưới 2 tháng.")
+        _agg = rep.get("aggregated", [])
+        if not _agg:
+            st.info("Chưa có dữ liệu.")
         else:
-            _fams = sorted({str(g.get("family")) for g in _gr if g.get("family")})
+            _fams = sorted({str(s.get("family")) for s in _agg if s.get("family")})
             _pick = st.multiselect("Lọc chất liệu", _fams, default=[], key="cover_fam")
-            _view = [g for g in _gr if str(g.get("family")) in _pick] if _pick else _gr
+            _view = [s for s in _agg if str(s.get("family")) in _pick] if _pick else _agg
             _render_stock_cover_grouped(_view)
-            st.download_button("⬇️ Tải CSV tồn đủ bán theo nhóm",
-                               _stock_cover_group_df(_view).to_csv(index=False).encode("utf-8-sig"),
-                               "ton-du-ban-theo-nhom.csv", "text/csv")
+            st.download_button("⬇️ Tải CSV tồn đủ bán",
+                               _production_detail_df(_view).to_csv(index=False).encode("utf-8-sig"),
+                               "ton-du-ban.csv", "text/csv")
     with tabs[4]:
         st.caption("Gõ SKU/mã vào ô dưới — danh sách **lọc ngay khi gõ** (gõ đúng mã → còn 1 SKU). "
                    "Gom theo **nhóm mã+màu**, ngăn bằng gạch đậm.")
@@ -1661,12 +1672,16 @@ def _render_production_page():
     with tabs[5]:
         for msg in crit.get("alerts") or []:
             st.warning(msg)
-        st.markdown("#### 🔴 SKU hết hàng — xếp **Cần SX nhiều → ít**")
-        _render_skus_grouped(rep.get("outSkuList", []), order_by="need")
-        st.markdown("#### ⚪ Có tồn nhưng không bán — xếp **tồn nhiều → ít**")
-        _render_skus_grouped(rep.get("zeroSalesList", []), order_by="stock")
-        st.markdown("#### 🟡 Tồn chậm/dư — xếp **tồn nhiều → ít**")
-        _render_skus_grouped(rep.get("slowStockList", []), order_by="stock")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.markdown("**🔴 Hết hàng** · Cần SX nhiều→ít")
+            _render_skus_grouped(rep.get("outSkuList", []), order_by="need")
+        with c2:
+            st.markdown("**⚪ Có tồn, không bán** · tồn nhiều→ít")
+            _render_skus_grouped(rep.get("zeroSalesList", []), order_by="stock")
+        with c3:
+            st.markdown("**🟡 Tồn chậm/dư** · tồn nhiều→ít")
+            _render_skus_grouped(rep.get("slowStockList", []), order_by="stock")
 
 
 def _pick_variant_ui(variants, *, query_key, select_key, label, placeholder):
