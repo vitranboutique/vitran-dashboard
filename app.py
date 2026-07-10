@@ -1172,6 +1172,48 @@ def _render_fabric_groups(groups):
         )
 
 
+def _manual_cut_print_html(groups):
+    """Tạo phiếu HTML khổ A4 để in danh sách CẮT TAY (gom theo chất liệu + màu vải)."""
+    from collections import defaultdict
+    now = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%d/%m/%Y %H:%M")
+    fams = defaultdict(list)
+    for g in groups:
+        fams[g.get("family") or "(khác)"].append(g)
+    fam_order = sorted(fams.items(), key=lambda kv: -sum(float(x.get("totalNeed") or 0) for x in kv[1]))
+    blocks = []
+    total = 0
+    for fam, items in fam_order:
+        by_color = defaultdict(list)
+        for g in items:
+            by_color[g.get("fabricColorGroup") or "(không màu)"].append(g)
+        color_order = sorted(by_color.items(), key=lambda kv: -sum(float(x.get("totalNeed") or 0) for x in kv[1]))
+        fam_need = int(round(sum(float(x.get("totalNeed") or 0) for x in items)))
+        total += fam_need
+        rows = []
+        for ci, (fcol, cg) in enumerate(color_order):
+            cg.sort(key=lambda x: -float(x.get("totalNeed") or 0))
+            for ri, g in enumerate(cg):
+                bd = ' style="border-top:2.5px solid #000"' if (ri == 0 and ci > 0) else ""
+                code = f"{g.get('productCode') or ''}{'-' + g.get('colorCode') if g.get('colorCode') else ''}"
+                vals = [fcol if ri == 0 else "", code, str(int(round(g.get("totalNeed") or 0))),
+                        g.get("sizeNeedText") or g.get("sizeNeedAllText") or "", ""]
+                rows.append("<tr>" + "".join(f"<td{bd}>{_esc(str(v))}</td>" for v in vals) + "</tr>")
+        blocks.append(
+            f"<h3>🧵 {_esc(fam)} — {fam_need} cái</h3><table>"
+            "<thead><tr><th>Màu vải</th><th>Mã</th><th>Cần SX</th><th>Size cần</th><th>Đã cắt</th></tr></thead>"
+            f"<tbody>{''.join(rows)}</tbody></table>")
+    css = ("@page{size:A4;margin:12mm}*{font-family:Arial,'Segoe UI',sans-serif}"
+           "h1{font-size:18px;margin:0}.sub{color:#444;font-size:12px;margin:2px 0 10px}"
+           "h3{font-size:14px;margin:12px 0 4px;background:#eee;padding:3px 6px}"
+           "table{border-collapse:collapse;width:100%;font-size:12px;margin-bottom:6px}"
+           "th,td{border:1px solid #999;padding:4px 6px;text-align:left}th{background:#f0f0f0}"
+           "td:last-child,th:last-child{width:64px}")
+    return (f"<!doctype html><html lang='vi'><head><meta charset='utf-8'><title>Phiếu cắt tay</title>"
+            f"<style>{css}</style></head><body><h1>PHIẾU CẮT TAY</h1>"
+            f"<div class='sub'>Tổng {total} cái · in lúc {now} · (Cần SX &lt; 5 cái/nhóm)</div>"
+            f"{''.join(blocks) or '<p>Không có nhóm cắt tay.</p>'}</body></html>")
+
+
 def _stock_cover_group_df(groups):
     """Gom theo NHÓM MÃ + MÀU (cùng nhóm mới cắt chung đợt), sắp sắp-hết-hàng lên đầu."""
     gs = sorted(groups, key=_cover_sort_val)
@@ -1277,8 +1319,9 @@ def _render_production_page():
     st.title("🧵 Dự đoán sản xuất")
     st.caption("**Công thức cố định:** nhu cầu/tháng = tổng bán **3 tháng gần nhất ÷ 3** · "
                "tồn mục tiêu = nhu cầu/tháng **× 1,5** (dự phòng tránh hết hàng) · làm tròn LÊN. "
-               "Cần SX = tồn mục tiêu − tồn hiện tại. Phân loại theo logic cũ: bán nhiều = Bắt buộc SX, "
-               "vừa = Gợi ý, ít = Tự cắt tay. (Lấy trung bình 3 tháng gần nhất nên tự bám mùa mua.)")
+               "Cần SX = tồn mục tiêu − tồn hiện tại. Phân loại: cần **< 5 cái** = Tự cắt tay; "
+               "cần ≥ 5 & bán ≥ 30/kỳ = Bắt buộc SX; còn lại = Gợi ý. "
+               "(Lấy trung bình 3 tháng gần nhất nên tự bám mùa mua.)")
     if not credential_present():
         st.warning("⚠️ Trang này cần credential Sapo LIVE.")
         st.stop()
@@ -1325,11 +1368,11 @@ def _render_production_page():
                      "Cần SX = Tồn mục tiêu − Tồn hiện tại (làm tròn LÊN). "
                      "Tồn mục tiêu = (tổng bán 3 tháng gần nhất ÷ 3) × 1,5.")
     m[3].metric("Bắt buộc SX", len(crit.get("mustProduceGroups") or []),
-                help="Số NHÓM (mã+màu) bắt buộc sản xuất — theo logic tool cũ: bán/xuất ≥ 30 cái/kỳ mà tồn thiếu.")
+                help="Số NHÓM (mã+màu) bắt buộc SX: cần ≥ 5 cái VÀ bán ≥ 30 cái/kỳ (bán chạy, cắt cây).")
     m[4].metric("Gợi ý SX", len(crit.get("suggestGroups") or []),
-                help="Số nhóm nên cân nhắc SX: bán/xuất 10–29 cái/kỳ.")
+                help="Số nhóm nên cân nhắc SX: cần ≥ 5 cái nhưng bán < 30 cái/kỳ.")
     m[5].metric("Tự cắt tay", len(crit.get("manualCutGroups") or []),
-                help="Số nhóm bán ít (dưới 10 cái/kỳ) — không cắt cả cây, tự cắt tay khi cần.")
+                help="Số nhóm cần SX < 5 cái — số nhỏ, cắt cả cây vải phí nên để cắt tay.")
 
     _agg = rep.get("aggregated", []) or []
     def _sig(k):
@@ -1382,16 +1425,31 @@ def _render_production_page():
             st.download_button("⬇️ Tải CSV tồn đủ bán theo nhóm", vv.to_csv(index=False).encode("utf-8-sig"),
                                "ton-du-ban-theo-nhom.csv", "text/csv")
     with tabs[2]:
-        st.caption("Hàng **bán ít** (dưới ~10 cái/kỳ) — KHÔNG cắt cả cây vải, để nhân viên "
-                   "**cắt tay** theo nhu cầu. Gom theo **chất liệu + màu vải** cho thợ cắt.")
+        st.caption("Nhóm **cần SX < 5 cái** — số nhỏ, cắt cả cây vải phí nên để nhân viên **cắt tay**. "
+                   "Gom theo **chất liệu + màu vải** cho thợ cắt.")
         mc = crit.get("manualCutGroups") or []
         if not mc:
             st.info("Không có nhóm tự cắt tay.")
         else:
+            _print_html = _manual_cut_print_html(mc)
+            components.html(
+                '<button onclick="printCut()" style="padding:8px 16px;font-size:15px;font-weight:600;'
+                'background:#2563eb;color:#fff;border:none;border-radius:6px;cursor:pointer">🖨️ In A4 để cắt</button>'
+                "<script>function printCut(){var h=" + json.dumps(_print_html) + ";"
+                "var w=window.open('','_blank');"
+                "if(!w){alert('Trình duyệt chặn popup — cho phép popup cho trang này rồi bấm lại.');return;}"
+                "w.document.open();w.document.write(h);w.document.close();w.focus();"
+                "setTimeout(function(){w.print();},400);}</script>",
+                height=54,
+            )
+            st.caption("Bấm **In A4** để mở phiếu in. Nếu bị chặn popup thì tải **phiếu HTML** rồi mở bằng trình duyệt → Ctrl+P.")
             _render_fabric_groups(mc)
-            st.download_button("⬇️ Tải CSV tự cắt tay",
-                               _production_group_df(mc).to_csv(index=False).encode("utf-8-sig"),
-                               "tu-cat-tay.csv", "text/csv")
+            _dl = st.columns(2)
+            _dl[0].download_button("🖨️ Tải phiếu in (HTML)", _print_html.encode("utf-8"),
+                                   "phieu-cat-tay.html", "text/html")
+            _dl[1].download_button("⬇️ Tải CSV tự cắt tay",
+                                   _production_group_df(mc).to_csv(index=False).encode("utf-8-sig"),
+                                   "tu-cat-tay.csv", "text/csv")
     with tabs[3]:
         cut_df = pd.DataFrame([{
             "Chất liệu": g.get("family"),

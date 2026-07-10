@@ -672,9 +672,11 @@ def compute_production_forecast(
         out_rate = rec["outSkuCount"] / rec["sizeCount"] if rec["sizeCount"] else 0
         no_sales_rate = rec["zeroSalesSkuCount"] / rec["sizeCount"] if rec["sizeCount"] else 0
         stock_cover = rec["totalStock"] / rec["avgMonthlyOut"] if rec["avgMonthlyOut"] > 0 else (999 if rec["totalStock"] > 0 else 0)
-        must = rec["totalNeed"] > 0 and rec["totalOut"] >= 30
-        suggest = rec["totalNeed"] > 0 and 10 <= rec["totalOut"] < 30
-        manual = rec["totalNeed"] > 0 and rec["totalOut"] < 10
+        # Cần SX < 5 cái → TỰ CẮT TAY (số nhỏ, cắt cả cây phí). Cần ≥ 5 mới cắt cây:
+        # bán ≥ 30/kỳ = bắt buộc, còn lại = gợi ý.
+        manual = 0 < rec["totalNeed"] < 5
+        must = rec["totalNeed"] >= 5 and rec["totalOut"] >= 30
+        suggest = rec["totalNeed"] >= 5 and rec["totalOut"] < 30
         rolls = math.ceil(rec["totalNeed"] / max(rec["cutCapacity"], 1)) if rec["totalNeed"] > 0 else 0
         size_text = _size_need_text([
             {"size": x["parsed"]["size"], "needQty": x["needQty"], "sizeRatio": x["sizeRatio"]}
