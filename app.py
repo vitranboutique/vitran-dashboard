@@ -1123,27 +1123,53 @@ def _production_group_df(groups):
 
 
 def _render_fabric_groups(groups):
-    """Gom các nhóm mã+màu theo CHẤT LIỆU + MÀU VẢI (cùng vải cắt chung 1 đợt).
-    Mỗi khối: tiêu đề (vải, tổng cần, số cây, danh sách mã) + bảng chi tiết các mã."""
+    """1 BẢNG cho mỗi CHẤT LIỆU (chất liệu cần nhiều lên trên). Trong bảng, các MÀU VẢI
+    ngăn nhau bằng GẠCH NGANG ĐẬM; màu/mã cần nhiều xếp trên. Cùng màu vải = cắt chung."""
     from collections import defaultdict
-    buckets = defaultdict(list)
+    _TD = "padding:4px 9px;border-bottom:1px solid rgba(148,163,184,.22);white-space:nowrap;"
+    _TH = "padding:5px 9px;border-bottom:2px solid #94a3b8;font-weight:700;text-align:left;white-space:nowrap;"
+    _GRP = "border-top:3px solid #475569;"
+    fams = defaultdict(list)
     for g in groups:
-        buckets[(g.get("family") or "(khác)", g.get("fabricColorGroup") or "(không màu)")].append(g)
-    # Gom các khối CÙNG CHẤT LIỆU đứng cạnh nhau; trong 1 chất liệu, cần nhiều xếp trước.
-    order = sorted(buckets.items(),
-                   key=lambda kv: (str(kv[0][0]), -sum(float(x.get("totalNeed") or 0) for x in kv[1])))
-    for (fam, fcol), items in order:
-        items.sort(key=lambda x: -float(x.get("totalNeed") or 0))
-        need = int(round(sum(float(x.get("totalNeed") or 0) for x in items)))
-        cap = max((int(x.get("cutCapacity") or 0) for x in items), default=0) or 1
-        rolls = -(-need // cap) if need > 0 else 0
-        codes = " · ".join(
-            f"{x.get('productCode')}{'-' + x.get('colorCode') if x.get('colorCode') else ''}"
-            for x in items)
-        st.markdown(f"**🧵 {fam} · màu vải {fcol}** — {len(items)} mã · cần **{need}** cái · ~**{rolls}** cây")
-        st.caption(f"Cùng vải này cắt chung được các mã: {codes}")
-        dfg = _production_group_df(items).drop(columns=["Chất liệu"], errors="ignore")
-        st.dataframe(_style_prod(dfg), width="stretch", hide_index=True)
+        fams[g.get("family") or "(khác)"].append(g)
+    fam_order = sorted(fams.items(), key=lambda kv: -sum(float(x.get("totalNeed") or 0) for x in kv[1]))
+    headers = ["Mức", "Mã", "Màu", "Màu vải", "Tồn cuối", "Đủ bán (size thiếu)", "Cần SX", "Cây (cả màu)", "Size cần"]
+    for fam, items in fam_order:
+        by_color = defaultdict(list)
+        for g in items:
+            by_color[g.get("fabricColorGroup") or "(không màu)"].append(g)
+        color_order = sorted(by_color.items(), key=lambda kv: -sum(float(x.get("totalNeed") or 0) for x in kv[1]))
+        fam_need = int(round(sum(float(x.get("totalNeed") or 0) for x in items)))
+        st.markdown(f"### 🧵 {fam} — cần {fam_need} cái")
+        rows = []
+        for ci, (fcol, cg) in enumerate(color_order):
+            cg.sort(key=lambda x: -float(x.get("totalNeed") or 0))
+            cneed = int(round(sum(float(x.get("totalNeed") or 0) for x in cg)))
+            cap = max((int(x.get("cutCapacity") or 0) for x in cg), default=0) or 1
+            crolls = -(-cneed // cap) if cneed > 0 else 0
+            for ri, g in enumerate(cg):
+                cover = _group_bind_cover(g)
+                need = int(round(g.get("totalNeed") or 0))
+                cells = [
+                    (g.get("suggestionType") or "", _style_muc(g.get("suggestionType") or "")),
+                    (g.get("productCode") or "", "font-weight:600;"),
+                    (g.get("colorCode") or "", ""),
+                    (fcol if ri == 0 else "", "font-weight:600;"),
+                    (f"{int(round(g.get('totalStock') or 0)):,}", ""),
+                    (cover, _style_cover(cover)),
+                    (str(need), _style_need(need)),
+                    (f"{crolls} cây" if ri == 0 else "", "font-weight:600;"),
+                    (g.get("sizeNeedText") or g.get("sizeNeedAllText") or "", ""),
+                ]
+                grp = _GRP if (ri == 0 and ci > 0) else ""
+                tds = "".join(f'<td style="{_TD}{grp}{stl}">{_esc(str(v))}</td>' for v, stl in cells)
+                rows.append(f"<tr>{tds}</tr>")
+        thead = "".join(f'<th style="{_TH}">{_esc(h)}</th>' for h in headers)
+        st.markdown(
+            '<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;font-size:.86rem">'
+            f'<thead><tr>{thead}</tr></thead><tbody>{"".join(rows)}</tbody></table></div>',
+            unsafe_allow_html=True,
+        )
 
 
 def _stock_cover_group_df(groups):
@@ -1324,9 +1350,9 @@ def _render_production_page():
     tabs = st.tabs(["🧵 Cần sản xuất", "🕒 Tồn còn bán bao lâu", "✋ Tự cắt tay",
                     "✂️ Cắt chung theo vải", "📋 Chi tiết SKU", "⚠️ Cảnh báo"])
     with tabs[0]:
-        st.caption("Gom theo **chất liệu + màu vải** — cùng loại vải cắt chung 1 đợt, mỗi khối liệt kê "
-                   "các mã cắt được. 'Cần SX' & 'Đủ bán (size thiếu)' tính theo **SIZE đang thiếu** "
-                   "(nhóm còn nhiều nhưng 1 size sắp hết vẫn phải SX bù — xem cột 'Size cần').")
+        st.caption("**1 bảng / chất liệu** (chất liệu cần nhiều xếp trên), các **màu vải** ngăn nhau "
+                   "bằng **gạch ngang đậm** — cùng màu vải là cắt chung 1 cây. 'Cần SX' & 'Đủ bán' tính "
+                   "theo **SIZE đang thiếu** (nhóm còn nhiều nhưng 1 size sắp hết vẫn phải SX — xem 'Size cần').")
         important = [g for g in rep.get("groupRows", [])
                      if float(g.get("totalNeed") or 0) > 0 and not g.get("manualCut")]
         if not important:
