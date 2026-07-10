@@ -248,6 +248,26 @@ def _summarize_picking(orders):
     }
 
 
+def _order_not_deliverable(o) -> bool:
+    """Đơn KHÔNG còn cần lấy TTKH: đã hủy / hoàn tiền / trả hàng về.
+
+    Đơn hủy phía TikTok về Sapo thường KHÔNG có status='cancelled' mà là
+    status='closed' + return_status='returned' + refund_status='refunded'
+    (fulfillment shipment_status='returned'). Bắt đủ các tín hiệu này."""
+    if not isinstance(o, dict):
+        return False
+    if str(o.get("status") or "").lower() in ("cancelled", "canceled") or o.get("cancelled_on"):
+        return True
+    if str(o.get("return_status") or "").lower() in ("returned", "returning"):
+        return True
+    if str(o.get("refund_status") or "").lower() == "refunded":
+        return True
+    for f in (o.get("fulfillments") or []):
+        if isinstance(f, dict) and str(f.get("shipment_status") or "").lower() in ("returned", "returning", "cancelled", "canceled"):
+            return True
+    return False
+
+
 def get_tt_customer_candidates(fetch_json, days: int = 15, max_pages: int = 30, channel_filter: str = "tiktok",
                                pending_ids=None) -> dict:
     """Đơn còn thiếu SĐT/TTKH trong ghi chú để NV lấy thông tin từ TikTok rồi ghi ngược vào SAPO.
@@ -316,7 +336,7 @@ def get_tt_customer_candidates(fetch_json, days: int = 15, max_pages: int = 30, 
             if created_vn < cutoff_vn:
                 continue
             page_has_recent = True
-            if str(o.get("status") or "").lower() == "cancelled" or o.get("cancelled_on"):
+            if _order_not_deliverable(o):
                 continue
             note = o.get("note") or ""
             # Đơn "chờ tạo khách" (đã ghi đơn nhưng phần khách hàng lỗi) thì GIỮ LẠI
@@ -729,7 +749,7 @@ def audit_orders_missing_customer(fetch_json, good_phone_set, days: int = 30,
         oid = str(o.get("id"))
         if not oid or oid in seen:
             return
-        if str(o.get("status") or "").lower() == "cancelled" or o.get("cancelled_on"):
+        if _order_not_deliverable(o):
             return
         phone = ""
         for key in ("shipping_address", "billing_address"):
