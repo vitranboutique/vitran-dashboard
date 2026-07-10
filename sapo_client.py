@@ -731,6 +731,61 @@ def _save_customer_address(session: requests.Session, customer_id, info: dict, a
     return False
 
 
+def update_customer_address_from_info(session: requests.Session, customer_id, info: dict) -> dict:
+    """Update one existing customer's default address with structured Sapo codes.
+
+    This is intentionally customer-id based: it never searches by phone and never
+    creates a new customer, so a batch repair cannot overwrite the wrong contact.
+    """
+    attempts: list[str] = []
+    cid = str(customer_id or "").strip()
+    if not cid:
+        return {"ok": False, "reason": "missing_customer_id", "attempts": attempts}
+    try:
+        get_customer(session, cid)
+    except Exception as e:
+        attempts.append(f"GET customer before address -> {type(e).__name__}: {e}")
+        return {"ok": False, "reason": "customer_not_found", "attempts": attempts}
+
+    page_url = f"{BASE}/admin/customers/{cid}"
+    token = _page_csrf_token(session, page_url, attempts)
+    try:
+        saved = _save_customer_address(session, cid, info or {}, attempts, token)
+    except Exception as e:
+        attempts.append(f"save customer address -> {type(e).__name__}: {e}")
+        saved = False
+
+    customer = {}
+    verified = False
+    try:
+        customer = get_customer(session, cid)
+        verified = _customer_info_saved(customer, info or {})
+    except Exception as e:
+        attempts.append(f"GET customer final verify -> {type(e).__name__}: {e}")
+
+    if saved or verified:
+        return {
+            "ok": True,
+            "reason": "updated",
+            "customer_id": cid,
+            "address": (customer.get("default_address") or {}) if isinstance(customer, dict) else {},
+            "attempts": attempts,
+        }
+    if any("429" in str(a) for a in attempts):
+        reason = "rate_limited"
+    elif any("401" in str(a) or "403" in str(a) for a in attempts):
+        reason = "auth_failed"
+    else:
+        reason = "verify_failed"
+    return {
+        "ok": False,
+        "reason": reason,
+        "customer_id": cid,
+        "address": (customer.get("default_address") or {}) if isinstance(customer, dict) else {},
+        "attempts": attempts,
+    }
+
+
 def customer_exists_by_phone(session: requests.Session, phone: str) -> bool:
     """True nếu ĐÃ có khách hàng với SĐT này trong Sapo (tìm theo số). Public wrapper."""
     try:

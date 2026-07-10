@@ -23,6 +23,7 @@ import streamlit_authenticator as stauth
 
 import sapo_logic as L
 import sapo_tools as PT
+import customer_address_fix as CAF
 import picklog
 import dohana
 import daily_report
@@ -31,9 +32,9 @@ import cham_cong_ui
 from sapo_address import resolve_address
 from sapo_client import (
     SapoAuthError, build_session, credential_present, make_fetch_json,
-    find_order_returns_by_codes, get_order_return, parse_codes,
+    find_order_returns_by_codes, get_customer, get_order_return, parse_codes,
     update_order_customer_info, update_order_note, update_order_return_note,
-    customer_exists_by_phone, upsert_customer_from_info,
+    customer_exists_by_phone, update_customer_address_from_info, upsert_customer_from_info,
 )
 from picking_render import picking_html
 
@@ -2480,21 +2481,224 @@ if _page == PAGE_TTKH:
                                            file_name="khach_chua_chuan.csv", mime="text/csv")
                     st.caption("File gồm tối đa 2.000 khách/nhóm. Cần TOÀN BỘ thì dùng script `scan_customers.py`.")
 
+                _fix_cats = list(CAF.FIXABLE_CATEGORIES)
+                _fix_rows = []
+                for _cat in _fix_cats:
+                    for _m in (_ca.get("samples") or {}).get(_cat) or []:
+                        if str(_m.get("id") or "").strip():
+                            _fix_rows.append({"cat": _cat, **_m})
+                _pending_fix_cat = st.session_state.pop("cust_addr_fix_action_cat", "")
+                _run_fix_rows = [r for r in _fix_rows if r.get("cat") == _pending_fix_cat] if _pending_fix_cat else _fix_rows
+                _total_fixable = sum(int(_counts.get(_cat, 0) or 0) for _cat in _fix_cats)
+                st.markdown("#### 🛠️ Sửa tự động địa chỉ khớp chắc")
+                st.caption("Áp dụng cho 2 nhóm: **Thiếu mã tỉnh** và **Thiếu mã tỉnh + SĐT**. "
+                           "App đọc lại từng khách từ Sapo, chỉ ghi khi phân được địa chỉ cũ/mới và đủ mã vùng. "
+                           "Dòng mơ hồ/mâu thuẫn sẽ được bỏ qua và ghi rõ lý do.")
+                _fx = st.columns([1.1, 1.1, 1.2, 3.2])
+                _fx[0].metric("Trong 2 nhóm", f"{_total_fixable:,}")
+                _fx[1].metric("Đang có mẫu", f"{len(_fix_rows):,}")
+                _batch_n = _fx[2].number_input("Số khách/lượt", min_value=5, max_value=60, value=30, step=5,
+                                               key="cust_addr_fix_batch")
+                _fx[3].caption("Mỗi lượt xử lý tối đa số khách đã chọn để tránh Sapo chặn 429. "
+                               "Khách sửa xong sẽ tự gỡ khỏi danh sách đã lưu.")
+
+                def _cust_fix_reason_vi(code, detail=""):
+                    text = {
+                        "no_address": "Không có địa chỉ để suy ra tỉnh/phường.",
+                        "address_unresolved": "Chưa khớp chắc tỉnh/quận/phường từ text địa chỉ.",
+                        "address_conflict": "Địa chỉ có dấu hiệu mâu thuẫn phường/xã.",
+                        "no_valid_phone": "Không có SĐT hợp lệ để lưu vào địa chỉ.",
+                        "unsupported_category": "Nhóm lỗi này chưa bật sửa tự động.",
+                        "bad_customer": "Dữ liệu khách không hợp lệ.",
+                        "customer_not_found": "Không đọc được khách từ Sapo.",
+                        "rate_limited": "Sapo đang chặn ghi 429, nghỉ 5-10 phút rồi bấm tiếp.",
+                        "auth_failed": "Phiên/credential Sapo hết hạn hoặc không đủ quyền.",
+                        "verify_failed": "Đã gửi nhưng đọc lại chưa thấy đủ mã vùng.",
+                        "missing_customer_id": "Thiếu mã khách hàng.",
+                    }.get(str(code or ""), str(code or "Không rõ lỗi"))
+                    return f"{text} ({detail})" if detail else text
+
+                def _cust_fix_attempt_reason(result):
+                    _attempts = [str(x) for x in (result or {}).get("attempts") or []]
+                    if any("429" in x for x in _attempts):
+                        return "rate_limited"
+                    if any("401" in x or "403" in x for x in _attempts):
+                        return "auth_failed"
+                    return (result or {}).get("reason") or "verify_failed"
+
+                if _pending_fix_cat:
+                    st.info(f"Đang chạy sửa nhóm: **{L.CUST_ERR_LABELS.get(_pending_fix_cat, _pending_fix_cat)}**")
+                if st.button(f"🛠️ Sửa tự động dòng khớp chắc — xử lý {min(len(_fix_rows), int(_batch_n))} khách",
+                             key="cust_addr_fix_run", use_container_width=True) or bool(_pending_fix_cat):
+                    if not _run_fix_rows:
+                        st.info("Không có khách nào trong 2 nhóm khả thi để xử lý.")
+                    else:
+                        _batch = _run_fix_rows[:int(_batch_n)]
+                        _sess = build_session()
+                        _prog = st.progress(0.0, text="Đang chuẩn bị sửa địa chỉ khách…")
+                        _results, _done_ids, _success_by_cat = [], [], {}
+                        _consec_429, _stopped_429 = 0, False
+                        for _i, _row in enumerate(_batch, start=1):
+                            _cid = str(_row.get("id") or "").strip()
+                            _cat = str(_row.get("cat") or "")
+                            _label = L.CUST_ERR_LABELS.get(_cat, _cat)
+                            _base = {
+                                "Nhóm": _label,
+                                "Mã KH": _cid,
+                                "Tên": _row.get("ten") or "",
+                                "SĐT": _row.get("sdt") or "",
+                                "Link Sapo": f"https://vitranboutiquehcm.mysapo.net/admin/customers/{_cid}" if _cid else "",
+                            }
+                            try:
+                                _cust = get_customer(_sess, _cid)
+                                _prep = CAF.customer_fix_info(_cust, _cat)
+                                if not _prep.get("ok"):
+                                    _results.append({
+                                        **_base,
+                                        "Kết quả": "Bỏ qua",
+                                        "Loại địa chỉ": "",
+                                        "Mã tỉnh": "",
+                                        "Mã quận": "",
+                                        "Mã phường": "",
+                                        "Lý do / cách xử lý": _cust_fix_reason_vi(
+                                            _prep.get("reason"),
+                                            _prep.get("conflict") or "",
+                                        ),
+                                    })
+                                    _consec_429 = 0
+                                else:
+                                    _info = _prep["info"]
+                                    _saved = update_customer_address_from_info(_sess, _cid, _info)
+                                    if _saved.get("ok"):
+                                        _done_ids.append(_cid)
+                                        _success_by_cat[_cat] = _success_by_cat.get(_cat, 0) + 1
+                                        _results.append({
+                                            **_base,
+                                            "Kết quả": "Đã sửa",
+                                            "Loại địa chỉ": "Mới" if _info.get("address_format") == "new" else "Cũ",
+                                            "Mã tỉnh": _info.get("province_code") or "",
+                                            "Mã quận": "" if _info.get("address_format") == "new" else (_info.get("district_code") or ""),
+                                            "Mã phường": _info.get("ward_code") or "",
+                                            "Lý do / cách xử lý": f"{_info.get('ward') or ''}, {_info.get('district') or ''}, {_info.get('province') or ''}".strip(", "),
+                                        })
+                                        _consec_429 = 0
+                                    else:
+                                        _reason = _cust_fix_attempt_reason(_saved)
+                                        _results.append({
+                                            **_base,
+                                            "Kết quả": "Lỗi ghi Sapo",
+                                            "Loại địa chỉ": "Mới" if _info.get("address_format") == "new" else "Cũ",
+                                            "Mã tỉnh": _info.get("province_code") or "",
+                                            "Mã quận": "" if _info.get("address_format") == "new" else (_info.get("district_code") or ""),
+                                            "Mã phường": _info.get("ward_code") or "",
+                                            "Lý do / cách xử lý": _cust_fix_reason_vi(_reason),
+                                        })
+                                        _consec_429 = _consec_429 + 1 if _reason == "rate_limited" else 0
+                                        if _consec_429 >= 3:
+                                            _stopped_429 = True
+                                            break
+                            except Exception as _ex:
+                                _results.append({
+                                    **_base,
+                                    "Kết quả": "Lỗi app/Sapo",
+                                    "Loại địa chỉ": "",
+                                    "Mã tỉnh": "",
+                                    "Mã quận": "",
+                                    "Mã phường": "",
+                                    "Lý do / cách xử lý": f"{type(_ex).__name__}: {_ex}"[:260],
+                                })
+                                _consec_429 = 0
+                            _prog.progress(_i / max(len(_batch), 1),
+                                           text=f"Đã xử lý {_i}/{len(_batch)} · sửa được {len(_done_ids)} khách")
+                            time.sleep(0.7)
+                        _prog.empty()
+
+                        if _done_ids:
+                            _done_set = set(_done_ids)
+                            for _cat in _fix_cats:
+                                _old = ((_ca.get("samples") or {}).get(_cat) or [])
+                                (_ca.setdefault("samples", {}))[_cat] = [
+                                    _m for _m in _old if str(_m.get("id") or "") not in _done_set
+                                ]
+                            for _cat, _n_ok_cat in _success_by_cat.items():
+                                _counts[_cat] = max(int(_counts.get(_cat, 0) or 0) - int(_n_ok_cat), 0)
+                            _ca["counts"] = _counts
+                            st.session_state["cust_audit"] = _ca
+                            try:
+                                if picklog.configured():
+                                    picklog.save_cust_audit(_ca)
+                            except Exception:
+                                pass
+                        _now_fix = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%H:%M:%S %d/%m/%Y")
+                        st.session_state["cust_addr_fix_result"] = {
+                            "ts": _now_fix,
+                            "rows": _results,
+                            "stopped_429": _stopped_429,
+                        }
+
+                _last_cust_fix = st.session_state.get("cust_addr_fix_result")
+                if _last_cust_fix:
+                    _fr = _last_cust_fix.get("rows") or []
+                    _ok = sum(1 for r in _fr if r.get("Kết quả") == "Đã sửa")
+                    _skip = sum(1 for r in _fr if r.get("Kết quả") == "Bỏ qua")
+                    _fail = len(_fr) - _ok - _skip
+                    if _last_cust_fix.get("stopped_429"):
+                        st.warning(f"Đợt sửa gần nhất ({_last_cust_fix.get('ts')}): đã sửa {_ok}, bỏ qua {_skip}, lỗi {_fail}. "
+                                   "Đã dừng sớm vì Sapo trả 429 liên tiếp, nghỉ 5-10 phút rồi bấm tiếp.")
+                    elif _fail or _skip:
+                        st.warning(f"Đợt sửa gần nhất ({_last_cust_fix.get('ts')}): đã sửa {_ok}, bỏ qua {_skip}, lỗi {_fail}. "
+                                   "Các dòng bỏ qua là dòng chưa đủ chắc để auto sửa.")
+                    else:
+                        st.success(f"Đợt sửa gần nhất ({_last_cust_fix.get('ts')}): đã sửa thành công {_ok}/{len(_fr)} khách.")
+                    with st.expander("Chi tiết kết quả sửa tự động gần nhất", expanded=bool(_skip or _fail)):
+                        if _fr:
+                            st.dataframe(
+                                pd.DataFrame(_fr),
+                                hide_index=True,
+                                width="stretch",
+                                column_config={
+                                    "Link Sapo": st.column_config.LinkColumn("Link Sapo", display_text="Mở"),
+                                    "Lý do / cách xử lý": st.column_config.TextColumn(width="large"),
+                                },
+                            )
+
+                def _render_cust_samples(_smp):
+                    if _smp:
+                        _df = pd.DataFrame([{
+                            "Ngày": m.get("ngay"), "Mã KH": m.get("id"), "Tên": m.get("ten"),
+                            "SĐT": ("⚠️ " + str(m.get("sdt") or "") if m.get("sdt_xau") else m.get("sdt")),
+                            "Địa chỉ": m.get("dia_chi"),
+                            "Mở Sapo": f"https://vitranboutiquehcm.mysapo.net/admin/customers/{m.get('id')}",
+                        } for m in _smp])
+                        st.dataframe(_df, hide_index=True, width="stretch",
+                                     column_config={"Mở Sapo": st.column_config.LinkColumn("Mở Sapo", display_text="Mở")})
+
                 for _cat, _label in L.CUST_ERR_LABELS.items():
                     _n = _counts.get(_cat, 0)
                     if not _n:
                         continue
                     _smp = (_ca.get("samples") or {}).get(_cat) or []
-                    with st.expander(f"• {_label} — {_n:,} khách" + (f" (hiện {len(_smp)} mẫu)" if _n > len(_smp) else "")):
-                        if _smp:
-                            _df = pd.DataFrame([{
-                                "Ngày": m.get("ngay"), "Mã KH": m.get("id"), "Tên": m.get("ten"),
-                                "SĐT": ("⚠️ " + str(m.get("sdt") or "") if m.get("sdt_xau") else m.get("sdt")),
-                                "Địa chỉ": m.get("dia_chi"),
-                                "Mở Sapo": f"https://vitranboutiquehcm.mysapo.net/admin/customers/{m.get('id')}",
-                            } for m in _smp])
-                            st.dataframe(_df, hide_index=True, width="stretch",
-                                         column_config={"Mở Sapo": st.column_config.LinkColumn("Mở Sapo", display_text="Mở")})
+                    _title = f"• {_label} — {_n:,} khách" + (f" (hiện {len(_smp)} mẫu)" if _n > len(_smp) else "")
+                    if _cat in _fix_cats:
+                        _erow = st.columns([6, 1.2])
+                        with _erow[0]:
+                            with st.expander(_title):
+                                _render_cust_samples(_smp)
+                        with _erow[1]:
+                            st.write("")
+                            _can_run = bool(_smp)
+                            if st.button(
+                                f"🛠️ Sửa {min(len(_smp), int(_batch_n))}",
+                                key=f"cust_addr_fix_run_{_cat}",
+                                use_container_width=True,
+                                disabled=not _can_run,
+                            ):
+                                st.session_state["cust_addr_fix_action_cat"] = _cat
+                                st.rerun()
+                            st.caption("khớp chắc")
+                    else:
+                        with st.expander(_title):
+                            _render_cust_samples(_smp)
                 st.caption("SĐT có **⚠️** = sai định dạng. Mỗi nhóm 1 kiểu lỗi → code fix riêng ở bước sau. "
                            "Nhóm 'thiếu SĐT' đã fix xong (1.327 khách).")
 
