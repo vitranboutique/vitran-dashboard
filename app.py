@@ -1090,6 +1090,20 @@ def _cover_sort_val(g):
     return cover
 
 
+def _group_bind_cover(g):
+    """Ở bảng Cần SX: 'Tồn đủ bán' tính theo SIZE ĐANG THIẾU nhất (lý do phải SX) —
+    vì tồn trung bình cả nhóm dễ gây hiểu lầm (nhóm còn nhiều nhưng 1 size sắp hết)."""
+    def _cov(s):
+        avg = float(s.get("avgMonthlyOut") or 0)
+        st_ = float(s.get("endingStock") or 0)
+        return (st_ / avg) if avg > 0 else (999.0 if st_ > 0 else 0.0)
+    needing = [s for s in (g.get("skus") or []) if float(s.get("needQty") or 0) > 0]
+    if needing:
+        s = min(needing, key=_cov)
+        return _cover_text(s.get("endingStock"), s.get("avgMonthlyOut"), _cov(s))
+    return _cover_text(g.get("totalStock"), g.get("avgMonthlyOut"), g.get("stockCoverMonths"))
+
+
 def _production_group_df(groups):
     return pd.DataFrame([{
         "Mức": g.get("suggestionType"),
@@ -1101,7 +1115,7 @@ def _production_group_df(groups):
         "Nhập hoàn": int(round(g.get("inReturn") or 0)),
         "Bán kỳ": int(round(g.get("totalOut") or 0)),
         "Tồn cuối": int(round(g.get("totalStock") or 0)),
-        "Tồn đủ bán": _cover_text(g.get("totalStock"), g.get("avgMonthlyOut"), g.get("stockCoverMonths")),
+        "Đủ bán (size thiếu)": _group_bind_cover(g),
         "Cần SX": int(round(g.get("totalNeed") or 0)),
         "Cây": int(round(g.get("rollsNeeded") or 0)),
         "Size cần": g.get("sizeNeedText") or g.get("sizeNeedAllText") or "",
@@ -1176,8 +1190,9 @@ def _style_prod(df):
     if getattr(df, "empty", True):
         return df
     sty = df.style
-    if "Tồn đủ bán" in df.columns:
-        sty = sty.map(_style_cover, subset=["Tồn đủ bán"])
+    _cover_cols = [c for c in df.columns if "đủ bán" in str(c).lower()]
+    if _cover_cols:
+        sty = sty.map(_style_cover, subset=_cover_cols)
     if "Cần SX" in df.columns:
         sty = sty.map(_style_need, subset=["Cần SX"])
     if "Mức" in df.columns:
@@ -1285,6 +1300,9 @@ def _render_production_page():
     tabs = st.tabs(["🧵 Cần sản xuất", "🕒 Tồn còn bán bao lâu", "✋ Tự cắt tay",
                     "✂️ Cắt chung theo vải", "📋 Chi tiết SKU", "⚠️ Cảnh báo"])
     with tabs[0]:
+        st.caption("**Cần SX theo từng SIZE**, không phải cả nhóm. Nhóm bán chạy tồn tổng còn nhiều "
+                   "nhưng **1 size sắp hết** thì vẫn phải SX bù size đó → cột **'Đủ bán (size thiếu)'** "
+                   "là tồn của SIZE đang gấp, cột **'Size cần'** cho biết size nào + bao nhiêu.")
         important = [g for g in rep.get("groupRows", []) if float(g.get("totalNeed") or 0) > 0]
         df = _production_group_df(important)
         if df.empty:
