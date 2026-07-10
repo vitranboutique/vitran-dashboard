@@ -1420,7 +1420,7 @@ def _render_production_page():
     mm[4].metric("🟰 Tồn cuối (nay)", f"{_sig('endingStock'):,}",
                  help="Tồn kho THỰC hiện tại trên Sapo = Tồn đầu + Nhập − Bán.")
 
-    tabs = st.tabs(["🧵 Cần sản xuất", "🕒 Tồn còn bán bao lâu", "✋ Tự cắt tay",
+    tabs = st.tabs(["🧵 Cần sản xuất", "✋ Tự cắt tay", "🕒 Tồn còn bán bao lâu",
                     "✂️ Cắt chung theo vải", "📋 Chi tiết SKU", "⚠️ Cảnh báo"])
     with tabs[0]:
         st.caption("**1 bảng / chất liệu** (chất liệu cần nhiều xếp trên), các **màu vải** ngăn nhau "
@@ -1441,7 +1441,7 @@ def _render_production_page():
                 st.download_button("⬇️ Tải CSV cần sản xuất",
                                    _production_group_df(sel).to_csv(index=False).encode("utf-8-sig"),
                                    "du-doan-san-xuat.csv", "text/csv")
-    with tabs[1]:
+    with tabs[2]:
         st.caption("Tồn hiện tại **gom theo NHÓM MÃ + MÀU** (cùng nhóm mới cắt chung đợt), "
                    "sắp **sắp hết hàng lên đầu**. 🔴 đỏ = hết · 🟠 cam = còn dưới 1 tháng · 🟡 vàng = dưới 2 tháng.")
         gcov = _stock_cover_group_df(rep.get("groupRows", []))
@@ -1454,7 +1454,7 @@ def _render_production_page():
             st.dataframe(_style_prod(vv), width="stretch", hide_index=True)
             st.download_button("⬇️ Tải CSV tồn đủ bán theo nhóm", vv.to_csv(index=False).encode("utf-8-sig"),
                                "ton-du-ban-theo-nhom.csv", "text/csv")
-    with tabs[2]:
+    with tabs[1]:
         st.caption("Nhóm **cần SX ≤ 5 cái** — số nhỏ, cắt cả cây vải phí nên để nhân viên **cắt tay**. "
                    "Gom theo **chất liệu + màu vải** cho thợ cắt.")
         mc = crit.get("manualCutGroups") or []
