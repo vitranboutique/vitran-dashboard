@@ -1197,13 +1197,27 @@ def _render_production_page():
         f"{src.get('order_count', 0):,} đơn bán (tính từ đơn hàng) "
         f"từ {src.get('start_date')} đến {src.get('end_date')}."
     )
+    _start, _end = src.get("start_date"), src.get("end_date")
     m = st.columns(6)
-    m[0].metric("SKU Sapo", f"{src.get('sku_count', 0):,}")
-    m[1].metric("SP đã bán kỳ", f"{src.get('sold_items', 0):,}", f"{src.get('order_count', 0):,} đơn")
-    m[2].metric("Tổng cần SX", f"{sum(float(x.get('needQty') or 0) for x in rep.get('needRows', [])):,.0f}")
-    m[3].metric("Bắt buộc SX", len(crit.get("mustProduceGroups") or []))
-    m[4].metric("Gợi ý SX", len(crit.get("suggestGroups") or []))
-    m[5].metric("Tự cắt tay", len(crit.get("manualCutGroups") or []))
+    m[0].metric("SKU Sapo", f"{src.get('sku_count', 0):,}",
+                help="Tổng số SKU (biến thể sản phẩm) trong danh sách sản phẩm Sapo. "
+                     "Số **Tồn** của từng SKU lấy từ tồn kho THỰC trên Sapo — đã gồm sẵn "
+                     "nhập từ NCC + nhập hàng hoàn − bán ra (là tồn hiện tại, không cần cộng lại).")
+    m[1].metric("SP đã bán kỳ", f"{src.get('sold_items', 0):,}", f"{src.get('order_count', 0):,} đơn",
+                help=f"Tổng SỐ CÁI bán ra từ {_start} đến {_end}, cộng từ dòng hàng của MỌI đơn "
+                     f"(mọi kênh TikTok/Shopee/…, mọi trạng thái TRỪ đơn hủy). Đây là số BÁN/XUẤT để "
+                     f"tính nhu cầu — KHÔNG phải nhập kho. Dòng dưới ({src.get('order_count', 0):,}) là số ĐƠN. "
+                     f"Muốn số nhỏ/sát hơn thì lọc bỏ đơn hoàn/trả — báo mình bật.")
+    m[2].metric("Tổng cần SX", f"{sum(float(x.get('needQty') or 0) for x in rep.get('needRows', [])):,.0f}",
+                help="Tổng số cái cần sản xuất = cộng 'Cần SX' của các nhóm. "
+                     "Cần SX = Tồn mục tiêu − Tồn hiện tại (làm tròn theo tùy chọn). "
+                     "Tồn mục tiêu = bán bình quân/tháng × số tháng dự báo × hệ số an toàn.")
+    m[3].metric("Bắt buộc SX", len(crit.get("mustProduceGroups") or []),
+                help="Số NHÓM (mã+màu) bắt buộc sản xuất — theo logic tool cũ: bán/xuất ≥ 30 cái/kỳ mà tồn thiếu.")
+    m[4].metric("Gợi ý SX", len(crit.get("suggestGroups") or []),
+                help="Số nhóm nên cân nhắc SX: bán/xuất 10–29 cái/kỳ.")
+    m[5].metric("Tự cắt tay", len(crit.get("manualCutGroups") or []),
+                help="Số nhóm bán ít (dưới 10 cái/kỳ) — không cắt cả cây, tự cắt tay khi cần.")
 
     tabs = st.tabs(["🧵 Cần sản xuất", "🕒 Tồn còn bán bao lâu", "✂️ Cắt chung theo vải", "Chi tiết SKU", "Cảnh báo"])
     with tabs[0]:

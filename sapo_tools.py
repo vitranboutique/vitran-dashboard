@@ -150,6 +150,26 @@ def _date_to_utc_iso_vn(d: date, end_of_day=False) -> str:
     return utc_dt.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "")
 
 
+def _created_vn_date(iso_str):
+    """Đổi created_on (UTC ISO của Sapo) → NGÀY theo giờ VN (UTC+7). None nếu không đọc được."""
+    s = str(iso_str or "").strip()
+    if not s:
+        return None
+    s = s.replace("Z", "+00:00")
+    dt = None
+    for cand in (s, s[:19]):
+        try:
+            dt = datetime.fromisoformat(cand)
+            break
+        except Exception:
+            continue
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return (dt.astimezone(timezone.utc) + timedelta(hours=7)).date()
+
+
 def _extract_root(data: dict, *keys):
     for key in keys:
         val = data.get(key)
@@ -296,6 +316,7 @@ def get_sales_by_sku(
     total_orders = 0
     total_items = 0
     fields = "id,name,status,cancelled_on,created_on,source_name,line_items"
+    stop = False
     for page in range(1, int(max_pages) + 1):
         # KHÔNG gửi status/financial_status/fulfillment_status="any": Sapo Open API
         # (key/secret) trả về RỖNG với "any". Bỏ đi → API trả TẤT CẢ đơn mọi trạng thái;
@@ -311,6 +332,15 @@ def get_sales_by_sku(
         if not rows:
             break
         for order in rows:
+            # Sapo Open API BỎ QUA created_on_min/max (trả cả ngoài khoảng) → tự lọc theo
+            # NGÀY giờ VN. Đơn xếp mới→cũ nên gặp đơn cũ hơn đầu kỳ thì DỪNG (khỏi kéo cả năm).
+            cvd = _created_vn_date(order.get("created_on"))
+            if cvd is not None:
+                if cvd > end_date:
+                    continue
+                if cvd < start_date:
+                    stop = True
+                    continue
             if not include_cancelled and (order.get("status") == "cancelled" or order.get("cancelled_on")):
                 continue
             total_orders += 1
@@ -334,7 +364,7 @@ def get_sales_by_sku(
                 total_items += qty
             for sku in touched:
                 sales[sku]["orders"] += 1
-        if len(rows) < 250:
+        if stop or len(rows) < 250:
             break
     return {
         "sales": sales,
