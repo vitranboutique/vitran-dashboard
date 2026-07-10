@@ -659,7 +659,8 @@ PAGE_QLCC = "🛠️ Quản lý chấm công"
 _cc_role = cham_cong.role_of(CUR_USER)
 _cc_emp = cham_cong.emp_of(CUR_USER)
 if _cc_role == "nv":
-    _rolepg = [PAGE_PICK, PAGE_RETURNS] if _cc_emp == "kho" else [PAGE_TTKH]
+    # Kho: thêm Phiếu nhặt + Đơn trả + DỰ ĐOÁN SX (để cắt hàng). CSKH: chỉ Lấy-lưu TTKH.
+    _rolepg = [PAGE_PICK, PAGE_RETURNS, PAGE_PRODUCTION] if _cc_emp == "kho" else [PAGE_TTKH]
     _opts = [PAGE_DAILY, PAGE_OVERVIEW] + _rolepg + [PAGE_CHAMCONG, PAGE_LUONG]
     _default = PAGE_CHAMCONG if st.query_params.get("tk") else PAGE_DAILY   # quét QR → về Chấm công
 elif _cc_role == "shop":                    # máy shop: CHỈ thấy trang hiện mã QR chấm công
@@ -672,6 +673,7 @@ elif _cc_role == "admin":
 else:
     _opts = [PAGE_OVERVIEW, PAGE_PRODUCTION, PAGE_PRICE, PAGE_PICK, PAGE_TTKH, PAGE_DAILY, PAGE_RETURNS]
     _default = PAGE_OVERVIEW
+_sees_production = PAGE_PRODUCTION in _opts   # kho/admin: hiện cảnh báo việc SX/cắt tay mọi tab
 _idx = _opts.index(_default) if _default in _opts else 0
 _page = st.sidebar.radio("Trang", _opts, index=_idx)
 st.sidebar.divider()
@@ -915,25 +917,29 @@ def load_alerts():
     return L.get_alerts(make_fetch_json(build_session()))
 
 
-def render_alert_popup():
-    """Popup CẢNH BÁO cố định, hiện ở MỌI trang (position:fixed)."""
+def render_alert_popup(sees_production=False):
+    """Popup CẢNH BÁO cố định, hiện ở MỌI trang (position:fixed).
+    sees_production=True (kho/admin): thêm việc CẦN SX / CẮT TAY để nhắc mọi tab."""
     if not credential_present():
         return
     try:
         a = load_alerts()
     except Exception:
+        a = None
+    if a is None and not sees_production:
         return
+    a = a or {}
     # (label, value, [danh sách dòng phụ con])
     items = [
-        ("🕒 Xác nhận sau 18h", a["conf_after18"], None),
+        ("🕒 Xác nhận sau 18h", a.get("conf_after18", 0), None),
         # Đơn xác nhận trễ = đặt TRƯỚC 18h (trong giờ) nhưng mãi SAU 18h mới xác nhận
-        ("📌 Đơn xác nhận trễ", a["late_confirm"], None),
-        ("📦 Đơn xót lại (chờ shipper)", a["chua_giao"], [
+        ("📌 Đơn xác nhận trễ", a.get("late_confirm", 0), None),
+        ("📦 Đơn xót lại (chờ shipper)", a.get("chua_giao", 0), [
             ("chưa đóng hàng", a.get("xot_chua_dong", 0)),
             ("đã đóng hàng", a.get("xot_da_dong", 0)),
         ]),
-        ("🔴 Hỏa tốc chưa giao", a["express_pending"], None),
-        ("↩️ Hủy sau gói cần LẤY LẠI", a["cancel_retrieve"], [
+        ("🔴 Hỏa tốc chưa giao", a.get("express_pending", 0), None),
+        ("↩️ Hủy sau gói cần LẤY LẠI", a.get("cancel_retrieve", 0), [
             ("🔴 hỏa tốc", a.get("cancel_retrieve_express", 0)),
         ]),
     ]
@@ -951,6 +957,24 @@ def render_alert_popup():
             rows += ('<div class="row" style="padding-left:16px;font-size:.72rem;'
                      'border-bottom:0;opacity:.8">'
                      f'<span>↳ trong đó: {" · ".join(parts)}</span></div>')
+    # KHO/admin: nhắc VIỆC SẢN XUẤT (cần SX / cắt tay) trên mọi tab. Số lấy từ lần mở
+    # trang Dự đoán SX gần nhất (session) để KHỎI tính lại nặng ở mỗi trang.
+    if sees_production:
+        _pt = st.session_state.get("prod_todo")
+        if _pt:
+            _cansx = int(_pt.get("must", 0)) + int(_pt.get("suggest", 0))
+            _cattay = int(_pt.get("manual", 0))
+            if _cattay:
+                n_hot += 1
+            rows += ('<div class="row" style="border-top:2px solid #475569">'
+                     '<span>🧵 Cần SX / ✋ Cắt tay (nhóm)</span>'
+                     f'<span class="v {"hot" if _cattay else ""}">{_cansx} / {_cattay}</span></div>'
+                     '<div class="row" style="padding-left:16px;font-size:.72rem;border-bottom:0;opacity:.85">'
+                     '<span>↳ mở <b>Dự đoán sản xuất</b> để cắt & in phiếu cắt tay</span></div>')
+        else:
+            rows += ('<div class="row" style="border-top:2px solid #475569">'
+                     '<span>🧵 Mở <b>Dự đoán sản xuất</b> xem việc cần làm (cắt tay…)</span>'
+                     '<span class="v">›</span></div>')
     badge = f'⚠️ Cảnh báo ({n_hot})' if n_hot else '✅ Cảnh báo (0)'
     body = rows if n_hot else '<div class="ok">✅ Không có cảnh báo</div>' + rows
     st.markdown(
@@ -1210,7 +1234,7 @@ def _manual_cut_print_html(groups):
            "td:last-child,th:last-child{width:64px}")
     return (f"<!doctype html><html lang='vi'><head><meta charset='utf-8'><title>Phiếu cắt tay</title>"
             f"<style>{css}</style></head><body><h1>PHIẾU CẮT TAY</h1>"
-            f"<div class='sub'>Tổng {total} cái · in lúc {now} · (Cần SX &lt; 5 cái/nhóm)</div>"
+            f"<div class='sub'>Tổng {total} cái · in lúc {now} · (Cần SX ≤ 5 cái/nhóm)</div>"
             f"{''.join(blocks) or '<p>Không có nhóm cắt tay.</p>'}</body></html>")
 
 
@@ -1319,8 +1343,8 @@ def _render_production_page():
     st.title("🧵 Dự đoán sản xuất")
     st.caption("**Công thức cố định:** nhu cầu/tháng = tổng bán **3 tháng gần nhất ÷ 3** · "
                "tồn mục tiêu = nhu cầu/tháng **× 1,5** (dự phòng tránh hết hàng) · làm tròn LÊN. "
-               "Cần SX = tồn mục tiêu − tồn hiện tại. Phân loại: cần **< 5 cái** = Tự cắt tay; "
-               "cần ≥ 5 & bán ≥ 30/kỳ = Bắt buộc SX; còn lại = Gợi ý. "
+               "Cần SX = tồn mục tiêu − tồn hiện tại. Phân loại: cần **≤ 5 cái** = Tự cắt tay; "
+               "cần > 5 & bán ≥ 30/kỳ = Bắt buộc SX; còn lại = Gợi ý. "
                "(Lấy trung bình 3 tháng gần nhất nên tự bám mùa mua.)")
     if not credential_present():
         st.warning("⚠️ Trang này cần credential Sapo LIVE.")
@@ -1347,6 +1371,12 @@ def _render_production_page():
 
     src = rep.get("source") or {}
     crit = rep.get("critical") or {}
+    # Lưu số việc SX vào session để popup cảnh báo hiện trên MỌI tab của nhân viên kho.
+    st.session_state["prod_todo"] = {
+        "must": len(crit.get("mustProduceGroups") or []),
+        "suggest": len(crit.get("suggestGroups") or []),
+        "manual": len(crit.get("manualCutGroups") or []),
+    }
     st.caption(
         f"Nguồn Sapo: {src.get('sku_count', 0):,} SKU / {src.get('variant_count', 0):,} biến thể · "
         f"{src.get('order_count', 0):,} đơn bán (tính từ đơn hàng) "
@@ -1368,11 +1398,11 @@ def _render_production_page():
                      "Cần SX = Tồn mục tiêu − Tồn hiện tại (làm tròn LÊN). "
                      "Tồn mục tiêu = (tổng bán 3 tháng gần nhất ÷ 3) × 1,5.")
     m[3].metric("Bắt buộc SX", len(crit.get("mustProduceGroups") or []),
-                help="Số NHÓM (mã+màu) bắt buộc SX: cần ≥ 5 cái VÀ bán ≥ 30 cái/kỳ (bán chạy, cắt cây).")
+                help="Số NHÓM (mã+màu) bắt buộc SX: cần > 5 cái VÀ bán ≥ 30 cái/kỳ (bán chạy, cắt cây).")
     m[4].metric("Gợi ý SX", len(crit.get("suggestGroups") or []),
-                help="Số nhóm nên cân nhắc SX: cần ≥ 5 cái nhưng bán < 30 cái/kỳ.")
+                help="Số nhóm nên cân nhắc SX: cần > 5 cái nhưng bán < 30 cái/kỳ.")
     m[5].metric("Tự cắt tay", len(crit.get("manualCutGroups") or []),
-                help="Số nhóm cần SX < 5 cái — số nhỏ, cắt cả cây vải phí nên để cắt tay.")
+                help="Số nhóm cần SX ≤ 5 cái — số nhỏ, cắt cả cây vải phí nên để cắt tay.")
 
     _agg = rep.get("aggregated", []) or []
     def _sig(k):
@@ -1425,7 +1455,7 @@ def _render_production_page():
             st.download_button("⬇️ Tải CSV tồn đủ bán theo nhóm", vv.to_csv(index=False).encode("utf-8-sig"),
                                "ton-du-ban-theo-nhom.csv", "text/csv")
     with tabs[2]:
-        st.caption("Nhóm **cần SX < 5 cái** — số nhỏ, cắt cả cây vải phí nên để nhân viên **cắt tay**. "
+        st.caption("Nhóm **cần SX ≤ 5 cái** — số nhỏ, cắt cả cây vải phí nên để nhân viên **cắt tay**. "
                    "Gom theo **chất liệu + màu vải** cho thợ cắt.")
         mc = crit.get("manualCutGroups") or []
         if not mc:
@@ -1575,8 +1605,8 @@ def _render_price_page():
     components.html(_price_tool_html_with_sapo_product(html, product), height=1380, scrolling=True)
 
 
-# Popup cảnh báo cố định — hiện ở MỌI trang
-render_alert_popup()
+# Popup cảnh báo cố định — hiện ở MỌI trang (kho/admin thêm việc SX/cắt tay)
+render_alert_popup(_sees_production)
 
 
 if _page == PAGE_PRODUCTION:
