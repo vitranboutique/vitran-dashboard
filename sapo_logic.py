@@ -1244,12 +1244,16 @@ def get_week_summary(fetch_json, days: int = 7) -> dict:
             _bump("shipper_nhan", di)
         if dp and f.get("shipment_status") == "delivered":
             _bump("giao_khach", dp)
+    huy_codes_day = {}   # iso -> [mã VĐ/đơn hủy] để app.py tách hủy trước/sau soạn (đối chiếu phiếu nhặt)
     try:
         canc = get_cancelled(fetch_json, days=max(days, days_this_month))
         for o in canc.get("packed", []):
             d = _vn_date_of(o.get("cancelled_on"))
             if d:
                 _bump("huy", d)
+                _c = (f0(o).get("tracking_number") or o.get("name") or "").strip()
+                if _c:
+                    huy_codes_day.setdefault(d.isoformat(), []).append(_c)
     except Exception:
         pass
 
@@ -1289,6 +1293,7 @@ def get_week_summary(fetch_json, days: int = 7) -> dict:
         out.append({
             "ngay": d.strftime("%d/%m"), "thu": _wd[d.weekday()], "iso": d.isoformat(),
             "dong_goi": a["dong_goi"], "huy": a["huy"],
+            "huy_codes": huy_codes_day.get(d.isoformat(), []),   # mã đơn hủy → tách trước/sau soạn ở app.py
             "soan": a["soan"],                       # số đơn in phiếu giao/nhặt (shipment_created_on) trong ngày
             "shipper_nhan": a["shipper_nhan"], "giao_khach": a["giao_khach"],
             "hoan_don": a["hoan_don"], "hoan_sp": a["hoan_sp"],

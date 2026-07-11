@@ -213,7 +213,8 @@ def _week_table_html(data):
             # ── ĐÓNG HÀNG (xanh) — luồng: soạn (SP · đơn) → đóng gói THẬT (video) → mất hàng → hủy → giao ──
             ("soan_sp", "Soạn (SP)"), ("soan", "Soạn (đơn)"),
             ("vid_dong", "Đóng gói (video)"), ("tag_dong", "⚠️ Mất hàng (đóng)"),
-            ("huy", "Hủy"), ("shipper_nhan", "Shipper nhận"), ("giao_khach", "Giao khách"),
+            ("huy_sau", "Hủy sau soạn"), ("huy_truoc", "Hủy trước soạn"),
+            ("shipper_nhan", "Shipper nhận"), ("giao_khach", "Giao khách"),
             # ── HOÀN HÀNG (cam) ──
             ("hoan_don", "Hoàn (đơn)"), ("hoan_sp", "Hoàn SP"), ("vid_hoan", "Vid hoàn"),
             ("thieu", "Thiếu SP"), ("tag_hoan", "Tag hoàn"),
@@ -224,10 +225,10 @@ def _week_table_html(data):
     _bd = "border:1px solid #aab2c2;"
     _tagcols = ("tag_dong", "tag_hoan")
     _txt = ("ngay", "thu", "tag_dong", "tag_hoan", "ghi_chu")
-    _dong = ("soan_sp", "soan", "vid_dong", "tag_dong", "huy", "shipper_nhan", "giao_khach")   # ĐÓNG → XANH
+    _dong = ("soan_sp", "soan", "vid_dong", "tag_dong", "huy_sau", "huy_truoc", "shipper_nhan", "giao_khach")  # ĐÓNG → XANH
     _hoan = ("hoan_don", "hoan_sp", "vid_hoan", "thieu", "tag_hoan")                            # HOÀN → CAM
-    _redkeys = ("huy", "thieu")             # > 0 = có vấn đề → tô đỏ
-    _numkeys = ("soan_sp", "soan", "vid_dong", "huy", "shipper_nhan", "giao_khach",
+    _redkeys = ("huy_sau", "thieu")   # > 0 = có vấn đề → tô đỏ (huy_truoc = khách hủy sớm, bình thường)
+    _numkeys = ("soan_sp", "soan", "vid_dong", "huy_sau", "huy_truoc", "shipper_nhan", "giao_khach",
                 "hoan_don", "hoan_sp", "vid_hoan", "thieu")
 
     def _bg(k, kind):                       # kind: head | cell | tot
@@ -270,9 +271,9 @@ def _week_table_html(data):
         for k, lech, tip in (
             ("vid_dong", _n("soan") - _n("vid_dong"), "Soạn − Đóng gói(video): đơn đã nhặt mà chưa gói/quay video"),
             ("vid_hoan", _n("hoan_don") - _n("vid_hoan"), "Hoàn đơn − Vid hoàn (lệch video hoàn)"),
-            ("shipper_nhan", (0 if d.get("is_today") else _n("soan") - _n("huy") - _n("shipper_nhan")),
-             "Shipper nhận phải = Soạn (đơn) − Hủy. Lệch = đơn đã soạn/gói mà CHƯA giao shipper (cần lấy lại) "
-             "hoặc lệch ngày giao."),
+            ("shipper_nhan", (0 if d.get("is_today") else _n("soan") - _n("huy_sau") - _n("shipper_nhan")),
+             "Shipper nhận nên = Soạn (đơn) − Hủy sau soạn. Lệch = đơn đã soạn mà chưa giao shipper "
+             "(còn tồn / hủy sau soạn chưa trừ / lệch ngày giao)."),
         ):
             if not lech:
                 continue
@@ -969,17 +970,27 @@ def load_week_summary():
     try:
         if picklog.configured():
             _pl = picklog._read_all() or {}
-            _psum, _psp = {}, {}    # _psum = tổng ĐƠN nhặt/ngày · _psp = tổng SP nhặt/ngày
+            _psum, _psp, _pcode = {}, {}, {}   # đơn/ngày · SP/ngày · SET mã đơn phiếu nhặt/ngày
             for _r in _pl.get("logs", []):
                 _iso = _r.get("ngay")
                 if _iso:
                     _psum[_iso] = _psum.get(_iso, 0) + int(_r.get("so_don") or 0)
                     _psp[_iso] = _psp.get(_iso, 0) + int(_r.get("so_sp") or 0)
+                    if _r.get("codes"):
+                        _pcode.setdefault(_iso, set()).update(
+                            str(c).strip() for c in _r["codes"] if c)
             for _d in data.get("days", []):
-                if _d.get("iso") in _psum:
-                    _d["soan"] = _psum[_d["iso"]]
-                    _d["soan_sp"] = _psp.get(_d["iso"], 0)
+                _iso = _d.get("iso")
+                if _iso in _psum:
+                    _d["soan"] = _psum[_iso]
+                    _d["soan_sp"] = _psp.get(_iso, 0)
                     _d["soan_src"] = "pick"      # lấy từ phiếu nhặt (chính xác)
+                # Tách HỦY trước/sau soạn: mã đơn hủy ∈ mã phiếu nhặt ngày đó = hủy SAU soạn.
+                _pc = _pcode.get(_iso) or set()
+                _hc = _d.get("huy_codes") or []
+                _hsau = sum(1 for c in _hc if str(c).strip() in _pc) if _pc else 0
+                _d["huy_sau"] = _hsau
+                _d["huy_truoc"] = max(0, int(_d.get("huy") or 0) - _hsau)
             if isinstance(data.get("month"), dict) and _psum:
                 _mpref = (data.get("days") or [{}])[0].get("iso", "")[:7]
                 _mtot = sum(v for k, v in _psum.items() if str(k)[:7] == _mpref)
@@ -987,14 +998,20 @@ def load_week_summary():
                 if _mtot:
                     data["month"]["soan"] = _mtot
                     data["month"]["soan_sp"] = _msp
+            if isinstance(data.get("month"), dict):
+                _msau = sum(d.get("huy_sau", 0) for d in data.get("days", []))
+                data["month"]["huy_sau"] = _msau
+                data["month"]["huy_truoc"] = max(0, int(data["month"].get("huy") or 0) - _msau)
     except Exception:
         pass
     # SỐ VIDEO đóng/hoàn + TAG (Khách tráo / Đã sử dụng / Hư hỏng...) từ kho video Dohana, theo NGÀY.
     for day in data.get("days", []):
-        for _k, _v in (("vid_dong", 0), ("vid_hoan", 0), ("tag_dong", ""), ("tag_hoan", ""), ("soan_sp", 0)):
+        for _k, _v in (("vid_dong", 0), ("vid_hoan", 0), ("tag_dong", ""), ("tag_hoan", ""),
+                       ("soan_sp", 0), ("huy_truoc", 0), ("huy_sau", 0)):
             day.setdefault(_k, _v)
     if isinstance(data.get("month"), dict):
-        for _k, _v in (("vid_dong", 0), ("vid_hoan", 0), ("tag_dong", ""), ("tag_hoan", ""), ("soan_sp", 0)):
+        for _k, _v in (("vid_dong", 0), ("vid_hoan", 0), ("tag_dong", ""), ("tag_hoan", ""),
+                       ("soan_sp", 0), ("huy_truoc", 0), ("huy_sau", 0)):
             data["month"].setdefault(_k, _v)
     try:
         if picklog.configured():
@@ -5117,8 +5134,11 @@ def _render_daily():
                        '🟢 **▲ ✓ tráo/đã dùng** (xanh lá): Vid hoàn dư vì hàng khách tráo / đã dùng / hư / '
                        'thiếu — NV **không nhập kho là ĐÚNG**, KHÔNG tính lỗi (chỉ sai nếu các đơn này lại '
                        'bị nhập kho). '
-                       'Đối chiếu đóng: **Soạn** vs **Đóng gói (video)** · **Shipper nhận** phải = **Soạn (đơn) − Hủy** '
-                       '(lệch → cảnh báo: đơn đã soạn mà chưa giao shipper) · Đối chiếu hoàn: **Vid hoàn** vs Hoàn đơn. '
+                       'Đối chiếu đóng: **Soạn** vs **Đóng gói (video)** · **Shipper nhận** nên = **Soạn (đơn) − Hủy sau soạn** '
+                       '(lệch → cảnh báo) · Đối chiếu hoàn: **Vid hoàn** vs Hoàn đơn. '
+                       '2 cột hủy: **Hủy sau soạn** (đỏ) = mã đơn hủy CÓ trên phiếu nhặt = đã cầm hàng ra kho → cần lấy lại; '
+                       '**Hủy trước soạn** = khách hủy trước khi soạn (bình thường). Chỉ tách được cho ngày phiếu nhặt đã '
+                       'lưu mã đơn (từ bản này trở đi); ngày cũ gom hết vào "Hủy trước soạn". '
                        'Nếu Đóng gói(video) *thiếu* đúng bằng Vid hoàn *dư* (hoặc ngược lại) → gần chắc là quay lộn 2 bên. '
                        'Cột **⚠️ Mất hàng (đóng)** (đỏ) = video đóng bị gắn tag *đóng thiếu/sai SP*: soạn & quay đủ '
                        'nhưng cuối bị thiếu → **mất hàng khi đóng**, cần truy. Vạch dọc đậm ngăn khối **Đóng hàng** (xanh) '
