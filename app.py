@@ -2226,6 +2226,47 @@ def _render_pick():
             if not picklog.configured():
                 st.caption("⚠️ Cần bật kho lưu (xem hướng dẫn trên).")
 
+    if picklog.configured():
+        with st.expander("📅 Lịch sử nhặt hàng 30 ngày (số đợt · SP mỗi đợt)", expanded=False):
+            _all = picklog._read_all() or {}
+            _today = (datetime.now(timezone.utc) + timedelta(hours=7)).date()
+            _from = (_today - timedelta(days=29)).isoformat()
+            _logs = [r for r in _all.get("logs", []) if str(r.get("ngay") or "") >= _from]
+            if not _logs:
+                st.caption("Chưa có lượt nhặt nào được lưu trong 30 ngày. Bấm **🖨️ In + lưu đợt** để bắt đầu lưu.")
+            else:
+                from collections import defaultdict as _dd
+                _by_day = _dd(list)
+                for _r in _logs:
+                    _by_day[str(_r.get("ngay"))].append(_r)
+                _wd = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"]
+                _summ = []
+                for _d in sorted(_by_day, reverse=True):
+                    _rows = _by_day[_d]
+                    try:
+                        _dt = date.fromisoformat(_d)
+                        _thu, _lbl = _wd[_dt.weekday()], _dt.strftime("%d/%m")
+                    except Exception:
+                        _thu, _lbl = "", _d
+                    _summ.append({"Ngày": _lbl, "Thứ": _thu, "Số đợt": len(_rows),
+                                  "Tổng đơn": sum(int(x.get("so_don") or 0) for x in _rows),
+                                  "Tổng SP": sum(int(x.get("so_sp") or 0) for x in _rows),
+                                  "iso": _d})
+                _sdf = pd.DataFrame(_summ)
+                st.markdown(f"**{len(_by_day)} ngày** · {int(_sdf['Số đợt'].sum())} đợt · "
+                            f"{int(_sdf['Tổng đơn'].sum())} đơn · {int(_sdf['Tổng SP'].sum())} SP")
+                render_compact_table(_sdf.drop(columns=["iso"]))
+                _sel = st.selectbox(
+                    "Xem chi tiết từng đợt của ngày", options=list(range(len(_summ))),
+                    format_func=lambda i: f"{_summ[i]['Ngày']} — {_summ[i]['Số đợt']} đợt · {_summ[i]['Tổng SP']} SP",
+                    key="pick_hist_day")
+                _day_rows = sorted(_by_day[_summ[_sel]["iso"]], key=lambda x: str(x.get("gio") or ""))
+                _ddf = pd.DataFrame([{"Đợt": i + 1, "Giờ": r.get("gio", ""),
+                                      "Số đơn": r.get("so_don", 0), "Số SP": r.get("so_sp", 0),
+                                      "Số SKU": r.get("so_sku", 0), "HT": r.get("ht_don", 0),
+                                      "Thường": r.get("th_don", 0)} for i, r in enumerate(_day_rows)])
+                render_compact_table(_ddf)
+
     with st.expander("📄 Hoặc: tạo phiếu từ file Excel (upload thủ công)"):
         _html_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "picking_slip.html")
         with open(_html_path, encoding="utf-8") as _f:
