@@ -1946,6 +1946,18 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
     xac_nhan_today += sum(1 for o in huy_goi_orders
                           if _vn_date_of(f0(o).get("shipment_created_on")) == today)
     xot_truoc = max(0, xac_nhan - xac_nhan_today)
+    # + Đơn TỒN CŨ CÒN CHỜ giao: tạo vận đơn hôm TRƯỚC, còn pending, HÔM NAY chưa đụng tới
+    #   (chưa gói/xuất). Trước đây bị bỏ sót nên ô "Đơn xót hôm trước" ra 0 dù còn tồn → nay
+    #   cộng vào cho khớp 'Đơn sót' ở Tổng quan. Cộng vào cả TỔNG cần gửi để phễu vẫn đúng.
+    def _ton_cho_cu(o):
+        f = f0(o)
+        d = _vn_date_of(f.get("shipment_created_on"))
+        return (d is not None and d < today
+                and f.get("shipment_status") == "pending"
+                and not _today_pipeline(o))
+    _ton_cho = sum(1 for o in open_orders if _ton_cho_cu(o))
+    xot_truoc += _ton_cho
+    xac_nhan += _ton_cho
     funnel = {
         "xac_nhan": xac_nhan,                    # = tổng đơn cần gửi hôm nay (baseline phễu)
         "xac_nhan_today": xac_nhan_today,        # xác nhận HÔM NAY (tạo vận đơn hôm nay)
