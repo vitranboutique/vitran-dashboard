@@ -1247,7 +1247,9 @@ def get_week_summary(fetch_json, days: int = 7) -> dict:
     huy_codes_day = {}   # iso -> [mã VĐ/đơn hủy] để app.py tách hủy trước/sau soạn (đối chiếu phiếu nhặt)
     try:
         canc = get_cancelled(fetch_json, days=max(days, days_this_month))
-        for o in canc.get("packed", []):
+        # Đếm CẢ packed + not_packed (khớp "Hủy hôm nay" ở báo cáo cuối ngày). Đơn not_packed
+        # (hủy rất sớm) chắc chắn TRƯỚC soạn; đơn packed cần đối chiếu mã phiếu nhặt để biết.
+        for o in (canc.get("packed", []) + canc.get("not_packed", [])):
             d = _vn_date_of(o.get("cancelled_on"))
             if d:
                 _bump("huy", d)
