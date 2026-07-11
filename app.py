@@ -210,8 +210,8 @@ def _week_table_html(data):
     else:                                   # dự phòng shape cũ (list)
         wk, month, mlabel = data, {}, ""
     cols = [("ngay", "Ngày"), ("thu", "Thứ"),
-            # ── ĐÓNG HÀNG (xanh) — luồng: cũ tồn + xác nhận → soạn → đóng gói THẬT (video) → mất hàng → hủy → giao ──
-            ("so_cu", "Cũ (tồn)"), ("dong_goi", "Xác nhận"), ("soan", "Soạn"),
+            # ── ĐÓNG HÀNG (xanh) — luồng: soạn (SP · đơn) → đóng gói THẬT (video) → mất hàng → hủy → giao ──
+            ("soan_sp", "Soạn (SP)"), ("soan", "Soạn (đơn)"),
             ("vid_dong", "Đóng gói (video)"), ("tag_dong", "⚠️ Mất hàng (đóng)"),
             ("huy", "Hủy"), ("shipper_nhan", "Shipper nhận"), ("giao_khach", "Giao khách"),
             # ── HOÀN HÀNG (cam) ──
@@ -224,10 +224,10 @@ def _week_table_html(data):
     _bd = "border:1px solid #aab2c2;"
     _tagcols = ("tag_dong", "tag_hoan")
     _txt = ("ngay", "thu", "tag_dong", "tag_hoan", "ghi_chu")
-    _dong = ("dong_goi", "soan", "so_cu", "vid_dong", "tag_dong", "huy", "shipper_nhan", "giao_khach")   # ĐÓNG → XANH
+    _dong = ("soan_sp", "soan", "vid_dong", "tag_dong", "huy", "shipper_nhan", "giao_khach")   # ĐÓNG → XANH
     _hoan = ("hoan_don", "hoan_sp", "vid_hoan", "thieu", "tag_hoan")                            # HOÀN → CAM
     _redkeys = ("huy", "thieu")             # > 0 = có vấn đề → tô đỏ
-    _numkeys = ("dong_goi", "soan", "so_cu", "vid_dong", "huy", "shipper_nhan", "giao_khach",
+    _numkeys = ("soan_sp", "soan", "vid_dong", "huy", "shipper_nhan", "giao_khach",
                 "hoan_don", "hoan_sp", "vid_hoan", "thieu")
 
     def _bg(k, kind):                       # kind: head | cell | tot
@@ -946,41 +946,32 @@ def load_week_summary():
     try:
         if picklog.configured():
             _pl = picklog._read_all() or {}
-            _psum, _pcu = {}, {}    # _psum = tổng đơn nhặt/ngày · _pcu = đơn CŨ (tồn) nhặt/ngày
+            _psum, _psp = {}, {}    # _psum = tổng ĐƠN nhặt/ngày · _psp = tổng SP nhặt/ngày
             for _r in _pl.get("logs", []):
                 _iso = _r.get("ngay")
                 if _iso:
                     _psum[_iso] = _psum.get(_iso, 0) + int(_r.get("so_don") or 0)
-                    _pcu[_iso] = _pcu.get(_iso, 0) + int(_r.get("so_cu") or 0)
+                    _psp[_iso] = _psp.get(_iso, 0) + int(_r.get("so_sp") or 0)
             for _d in data.get("days", []):
                 if _d.get("iso") in _psum:
                     _d["soan"] = _psum[_d["iso"]]
-                    _d["so_cu"] = _pcu.get(_d["iso"], 0)
+                    _d["soan_sp"] = _psp.get(_d["iso"], 0)
                     _d["soan_src"] = "pick"      # lấy từ phiếu nhặt (chính xác)
             if isinstance(data.get("month"), dict) and _psum:
                 _mpref = (data.get("days") or [{}])[0].get("iso", "")[:7]
                 _mtot = sum(v for k, v in _psum.items() if str(k)[:7] == _mpref)
-                _mcu = sum(v for k, v in _pcu.items() if str(k)[:7] == _mpref)
+                _msp = sum(v for k, v in _psp.items() if str(k)[:7] == _mpref)
                 if _mtot:
                     data["month"]["soan"] = _mtot
-                    data["month"]["so_cu"] = _mcu
-    except Exception:
-        pass
-    # CŨ (TỒN) HÔM NAY = "Đơn xót hôm trước" (xot_truoc) LIVE từ báo cáo cuối ngày → khớp đúng ô đó.
-    # (Ngày cũ dùng số đã lưu ở picklog; hôm nay tính live vì đơn tồn còn thay đổi.)
-    try:
-        _fn = (load_daily_report() or {}).get("funnel") or {}
-        _xt = _fn.get("xot_truoc")
-        if _xt is not None and data.get("days"):
-            data["days"][0]["so_cu"] = int(_xt)
+                    data["month"]["soan_sp"] = _msp
     except Exception:
         pass
     # SỐ VIDEO đóng/hoàn + TAG (Khách tráo / Đã sử dụng / Hư hỏng...) từ kho video Dohana, theo NGÀY.
     for day in data.get("days", []):
-        for _k, _v in (("vid_dong", 0), ("vid_hoan", 0), ("tag_dong", ""), ("tag_hoan", ""), ("so_cu", 0)):
+        for _k, _v in (("vid_dong", 0), ("vid_hoan", 0), ("tag_dong", ""), ("tag_hoan", ""), ("soan_sp", 0)):
             day.setdefault(_k, _v)
     if isinstance(data.get("month"), dict):
-        for _k, _v in (("vid_dong", 0), ("vid_hoan", 0), ("tag_dong", ""), ("tag_hoan", ""), ("so_cu", 0)):
+        for _k, _v in (("vid_dong", 0), ("vid_hoan", 0), ("tag_dong", ""), ("tag_hoan", ""), ("soan_sp", 0)):
             data["month"].setdefault(_k, _v)
     try:
         if picklog.configured():
@@ -5094,12 +5085,9 @@ def _render_daily():
                        'Cột **⚠️ Mất hàng (đóng)** (đỏ) = video đóng bị gắn tag *đóng thiếu/sai SP*: soạn & quay đủ '
                        'nhưng cuối bị thiếu → **mất hàng khi đóng**, cần truy. Vạch dọc đậm ngăn khối **Đóng hàng** (xanh) '
                        'với khối **Hoàn hàng** (cam).')
-            st.caption('🔑 **Luồng đóng hàng:** **Xác nhận** (đơn đã xác nhận, mốc Sapo `packed_on`) → '
-                       '**Soạn** (nhặt hàng theo phiếu nhặt) → **Đóng gói (video)** = số đơn ĐÓNG GÓI THẬT có video → '
-                       'Shipper nhận → Giao khách. '
-                       'Cột **Cũ (tồn)** = trong Soạn, số đơn **xác nhận hôm trước** nay mới nhặt (dòng *Đơn cũ* trên phiếu). '
-                       'Vì thế **Soạn − Cũ ≈ Xác nhận**; ngày nào Soạn > Xác nhận là do nhặt nhiều đơn tồn cũ '
-                       '(vd thứ 2 sau CN nghỉ). Các bước lệch ngày nhau nên số các cột không cần bằng tuyệt đối.')
+            st.caption('🔑 **Luồng đóng hàng:** **Soạn** (nhặt hàng theo phiếu nhặt — **SL SP** = tổng sản phẩm, '
+                       '**SL đơn** = tổng đơn) → **Đóng gói (video)** = số đơn ĐÓNG GÓI THẬT có video → '
+                       'Shipper nhận → Giao khách. Soạn (SP/đơn) lấy từ đợt phiếu nhặt đã lưu.')
             st.caption('ℹ️ Cột **Đóng gói (video) / Vid hoàn** tự đồng bộ ~28 ngày gần nhất từ Dohana mỗi khi mở bảng, '
                        'lưu bền vào kho. **Dohana chỉ giữ ~25 ngày** → ngày cũ hơn 25 ngày không đồng bộ lại được: '
                        'nếu kho lúc đó chưa lưu kịp thì badge hiện ⬜ **"kho cũ" (xám)** thay vì "thiếu" đỏ — '
