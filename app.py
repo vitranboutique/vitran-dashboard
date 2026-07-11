@@ -3590,6 +3590,35 @@ if _page == PAGE_TTKH:
         text = re.sub(r"\s+", " ", str(reason or "")).strip()
         return (text[:80] + "...") if len(text) > 80 else (text or "Chưa rõ")
 
+    def _ttkh_group_icon(label):
+        label = str(label or "")
+        if "Đã sửa" in label:
+            return "✅"
+        if "Sapo bận" in label:
+            return "⏳"
+        if "Không thấy" in label:
+            return "🔎"
+        if "thiếu SĐT" in label or "SĐT" in label:
+            return "📞"
+        if "mã tỉnh" in label or "mã" in label:
+            return "📍"
+        if "từ chối" in label:
+            return "⛔"
+        if "Phiên" in label:
+            return "🔐"
+        return "⚠️"
+
+    def _ttkh_history_row_style(row):
+        status = str(row.get("Trạng thái") or "")
+        group = str(row.get("Nhóm lỗi") or "")
+        if status.startswith("✅"):
+            color = "#ecfdf5"
+        elif "Sapo bận" in group:
+            color = "#fffbeb"
+        else:
+            color = "#fef2f2"
+        return [f"background-color: {color}"] * len(row)
+
     def _ttkh_repair_customer_from_sapo(codes, limit=60, source_rows_by_code=None):
         """Kiểm/sửa phần khách hàng cho các mã đơn lỗi và ghi lại lý do vào nhật ký."""
         seen, clean_codes = set(), []
@@ -4213,13 +4242,14 @@ if _page == PAGE_TTKH:
             for _c, _rec in _fail_log.items():
                 _latest = _latest_log.get(_c) or {}
                 _is_latest_ok = _latest_ok(_c)
-                _latest_status = "OK" if _is_latest_ok else "Còn lỗi"
+                _latest_status = "✅ OK" if _is_latest_ok else "❌ Còn lỗi"
                 _latest_reason = _latest.get("ly_do") or _latest.get("chi_tiet") or _rec.get("Lý do") or ""
+                _group_label = "Đã sửa" if _is_latest_ok else _ttkh_reason_brief(_latest_reason)
                 _fl_rows.append({
                     **_rec,
                     "Lúc": f"{_latest.get('gio') or ''} {_latest.get('ngay') or ''}".strip() or _rec.get("Lúc"),
                     "Trạng thái": _latest_status,
-                    "Nhóm lỗi": "Đã sửa" if _is_latest_ok else _ttkh_reason_brief(_latest_reason),
+                    "Nhóm lỗi": f"{_ttkh_group_icon(_group_label)} {_group_label}",
                     "Lý do": _latest_reason,
                     "Kiểm khách": (f"https://vitranboutiquehcm.mysapo.net/admin/customers?query={quote_plus(_rec['SĐT'])}"
                                    if _rec.get("SĐT") else ""),
@@ -4227,10 +4257,12 @@ if _page == PAGE_TTKH:
                 })
             with st.expander(f"🔎 Lịch sử lỗi ({len(_fl_rows)} đơn)",
                              expanded=_n_unresolved > 0 and _n_unresolved <= 5):
+                _history_df = pd.DataFrame(_fl_rows)[["Mã đơn", "SĐT", "Lúc", "Trạng thái", "Nhóm lỗi", "Kiểm khách", "Mở đơn"]]
                 st.dataframe(
-                    pd.DataFrame(_fl_rows)[["Mã đơn", "SĐT", "Lúc", "Trạng thái", "Nhóm lỗi", "Kiểm khách", "Mở đơn"]],
+                    _history_df.style.apply(_ttkh_history_row_style, axis=1),
                     hide_index=True, width="stretch",
                     column_config={
+                        "Trạng thái": st.column_config.TextColumn(width="small"),
                         "Nhóm lỗi": st.column_config.TextColumn(width="medium"),
                         "Kiểm khách": st.column_config.LinkColumn("Kiểm khách", display_text="Mở khách"),
                         "Mở đơn": st.column_config.LinkColumn("Mở đơn", display_text="Mở đơn"),
@@ -4282,32 +4314,58 @@ if _page == PAGE_TTKH:
                                 st.session_state["ttkh_diag_result"] = _ttkh_repair_customer_from_sapo(_codes_to_fix, limit=60)
                             load_customer_phone_set.clear()
                 if st.session_state.get("ttkh_diag_result"):
-                    _ok_list = [d for d in st.session_state["ttkh_diag_result"] if d.get("luc")]
+                    _diag_result = st.session_state["ttkh_diag_result"]
+                    _ok_list = [d for d in _diag_result if d.get("luc")]
+                    _bad_list = [d for d in _diag_result if not d.get("luc")]
+                    st.markdown("**Kết quả sửa gần nhất:**")
+                    _dm = st.columns(3)
+                    _dm[0].metric("Đã sửa", len(_ok_list))
+                    _dm[1].metric("Còn lỗi", len(_bad_list))
+                    _dm[2].metric("Tổng chạy", len(_diag_result))
                     if _ok_list:
                         _last_time = max(d["luc"] for d in _ok_list)
-                        st.success(f"✅ CẬP NHẬT THÀNH CÔNG {len(_ok_list)} khách — thời điểm hoàn tất: **{_last_time}** (giờ VN). Dùng mốc này để đối chiếu.")
-                    st.markdown("**Kết quả chẩn đoán:**")
-                    for _dg in st.session_state["ttkh_diag_result"]:
+                        st.success(f"Đã cập nhật {len(_ok_list)} khách, hoàn tất lúc {_last_time}.")
+                    if _bad_list:
+                        st.warning(f"Còn {len(_bad_list)} dòng chưa sửa được. Xem nhóm lỗi trong bảng dưới.")
+
+                    _diag_rows = []
+                    for _dg in _diag_result:
                         _k = _dg.get("ket_qua") or _dg.get("Kết quả") or ""
-                        st.markdown(f"**{_dg.get('Mã đơn')}** · SĐT {_dg.get('phone','')} → {_k}")
-                        if _dg.get("dia_chi"):
-                            st.caption(f"📍 Địa chỉ app gửi: {_dg['dia_chi']}")
-                        if _dg.get("raw"):
-                            _rw = _dg["raw"]
-                            st.caption("🧾 DỮ LIỆU THÔ trên đơn (Sapo trả): "
-                                       f"ward={_rw.get('ward_name') or _rw.get('ward') or '-'!r} · "
-                                       f"district={_rw.get('district_name') or _rw.get('district') or '-'!r} · "
-                                       f"province={_rw.get('province_name') or _rw.get('province') or '-'!r} · "
-                                       f"address1={_rw.get('address1') or '-'!r}")
-                        _ats = [str(a) for a in (_dg.get("attempts") or ([_dg.get("Chi tiết")] if _dg.get("Chi tiết") else []))]
-                        _writes = [a for a in _ats if any(w in a for w in ("POST", "PUT", "PATCH"))]
-                        _reads = [a for a in _ats if a not in _writes]
-                        if _writes:
-                            st.caption("🖊️ Bước TẠO/GHI khách (quan trọng nhất):")
-                            st.code("\n".join(_writes), language="text")
-                        if _reads:
-                            st.caption("🔎 Các bước tìm/đọc (phụ):")
-                            st.code("\n".join(_reads), language="text")
+                        _ok = bool(_dg.get("luc"))
+                        _brief = "Đã sửa" if _ok else _ttkh_reason_brief(_k)
+                        _diag_rows.append({
+                            "Mã đơn": _dg.get("Mã đơn"),
+                            "SĐT": _dg.get("phone", ""),
+                            "Kết quả": f"✅ {_brief}" if _ok else f"{_ttkh_group_icon(_brief)} {_brief}",
+                            "Địa chỉ": re.sub(r"\s+", " ", str(_dg.get("dia_chi") or "")).strip()[:120],
+                            "Link khách": _dg.get("link_khach", ""),
+                        })
+                    if _diag_rows:
+                        st.dataframe(
+                            pd.DataFrame(_diag_rows),
+                            hide_index=True,
+                            width="stretch",
+                            column_config={
+                                "Kết quả": st.column_config.TextColumn(width="medium"),
+                                "Địa chỉ": st.column_config.TextColumn(width="large"),
+                                "Link khách": st.column_config.LinkColumn(width="small"),
+                            },
+                        )
+
+                    with st.expander("Chi tiết kỹ thuật khi cần kiểm tra", expanded=False):
+                        for _dg in _diag_result:
+                            _k = _dg.get("ket_qua") or _dg.get("Kết quả") or ""
+                            st.markdown(f"**{_dg.get('Mã đơn')}** · SĐT {_dg.get('phone','')} → {_k}")
+                            if _dg.get("raw"):
+                                _rw = _dg["raw"]
+                                st.caption("Dữ liệu thô: "
+                                           f"ward={_rw.get('ward_name') or _rw.get('ward') or '-'!r} · "
+                                           f"district={_rw.get('district_name') or _rw.get('district') or '-'!r} · "
+                                           f"province={_rw.get('province_name') or _rw.get('province') or '-'!r} · "
+                                           f"address1={_rw.get('address1') or '-'!r}")
+                            _ats = [str(a) for a in (_dg.get("attempts") or ([_dg.get("Chi tiết")] if _dg.get("Chi tiết") else []))]
+                            if _ats:
+                                st.code("\n".join(_ats[-12:]), language="text")
         with st.expander("📅 Xem lịch sử theo từng ngày (30 ngày)", expanded=False):
             if _stat_rows:
                 _daily = pd.DataFrame(_stat_rows).rename(columns={"Thất bại": "Lỗi"})
