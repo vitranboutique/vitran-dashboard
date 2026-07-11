@@ -680,6 +680,8 @@ else:
     _default = PAGE_OPS
 if _is_owner:                               # chủ shop + zenzen197: thêm trang Tổng quan điều hành
     _opts = [PAGE_OVERVIEW] + _opts
+if (st.query_params.get("page_ttkh") or st.query_params.get("ttkh_phone")) and PAGE_TTKH in _opts:
+    _default = PAGE_TTKH
 _sees_production = PAGE_PRODUCTION in _opts   # kho/admin: hiện cảnh báo việc SX/cắt tay mọi tab
 _idx = _opts.index(_default) if _default in _opts else 0
 _page = st.sidebar.radio("Trang", _opts, index=_idx)
@@ -2130,6 +2132,29 @@ if _page == PAGE_TTKH:
         st.warning("⚠️ Trang này cần kết nối Sapo (API LIVE).")
         st.stop()
 
+    def _ttkh_phone_key(raw):
+        digits = re.sub(r"\D+", "", str(raw or ""))
+        if not digits:
+            return ""
+        if digits.startswith("00"):
+            digits = digits[2:]
+        if digits.startswith("84"):
+            rest = digits[2:]
+            if len(rest) == 9:
+                digits = "0" + rest
+            elif len(rest) == 10 and rest.startswith("0"):
+                digits = rest
+        digits = "0" + digits.lstrip("0")
+        return digits if len(digits) == 10 else ""
+
+    def _sapo_order_search_url(query):
+        q = _ttkh_phone_key(query) or str(query or "").strip()
+        return f"https://vitranboutiquehcm.mysapo.net/admin/orders?query={quote_plus(q)}" if q else ""
+
+    def _ttkh_app_search_url(query):
+        q = _ttkh_phone_key(query) or str(query or "").strip()
+        return f"?page_ttkh=1&ttkh_phone={quote_plus(q)}" if q else ""
+
     _top = st.columns([1, 1.3, 1, 4.7])
     _days = _top[0].number_input("Số ngày gần nhất", min_value=1, max_value=30, value=15, step=1)
     _channel_label = _top[1].selectbox("Kênh", ["TikTok Shop", "Shopee", "Tất cả"], index=0)
@@ -2382,7 +2407,10 @@ if _page == PAGE_TTKH:
             else:
                 _counts = _ca.get("counts") or {}
                 _tot_bad = sum(_counts.values())
-                st.error(f"⚠️ {_tot_bad:,} / {_ca.get('total','?')} khách CHƯA CHUẨN (quét {_ca.get('ts','?')}).")
+                _order_note_missing = int(_ca.get("order_note_missing") or 0)
+                _bad_label = f"{_tot_bad:,} dòng CHƯA CHUẨN"
+                _bad_tail = f" · gồm {_order_note_missing:,} đơn có SĐT nhưng thiếu ghi chú" if _order_note_missing else ""
+                st.error(f"⚠️ {_bad_label} / {_ca.get('total','?')} khách đã quét (quét {_ca.get('ts','?')}){_bad_tail}.")
                 if _ca.get("hit_cap"):
                     st.warning("Có thể chưa quét hết (chạm giới hạn/429) — quét lại nếu cần.")
 
@@ -2875,17 +2903,37 @@ if _page == PAGE_TTKH:
                             },
                         )
 
-                def _render_cust_samples(_smp):
+                def _render_cust_samples(_smp, _cat=""):
                     if _smp:
+                        _is_note_group = _cat == "thieu_ghi_chu"
                         _df = pd.DataFrame([{
-                            "Ngày": m.get("ngay"), "Mã KH": m.get("id"), "Tên": m.get("ten"),
-                            "SĐT": ("⚠️ " + str(m.get("sdt") or "") if m.get("sdt_xau") else m.get("sdt")),
+                            "Ngày": m.get("ngay"),
+                            "Loại": "Đơn" if m.get("row_type") == "order" else "Khách",
+                            "Mã": m.get("order_code") if m.get("row_type") == "order" else m.get("id"),
+                            "Mã KH": m.get("id"),
+                            "Tên": m.get("ten"),
+                            "SĐT": (_sapo_order_search_url(m.get("sdt")) if _is_note_group
+                                    else ("⚠️ " + str(m.get("sdt") or "") if m.get("sdt_xau") else m.get("sdt"))),
+                            "Tìm trong app": _ttkh_app_search_url(m.get("sdt")) if _is_note_group else "",
                             "Địa chỉ": m.get("dia_chi"),
-                            "Auto fix": "Để qua bên" if str(m.get("id") or "").strip() in _blocked_ids else "Chờ sửa",
-                            "Mở Sapo": f"https://vitranboutiquehcm.mysapo.net/admin/customers/{m.get('id')}",
+                            "Auto fix": "Cần ghi chú" if _is_note_group else ("Để qua bên" if str(m.get("id") or "").strip() in _blocked_ids else "Chờ sửa"),
+                            "Mở Sapo": (f"https://vitranboutiquehcm.mysapo.net/admin/orders/{m.get('order_id') or m.get('id')}"
+                                         if m.get("row_type") == "order"
+                                         else f"https://vitranboutiquehcm.mysapo.net/admin/customers/{m.get('id')}"),
                         } for m in _smp])
-                        st.dataframe(_df, hide_index=True, width="stretch",
-                                     column_config={"Mở Sapo": st.column_config.LinkColumn("Mở Sapo", display_text="Mở")})
+                        _cols = ["Ngày", "Mã", "Tên", "SĐT"]
+                        if _is_note_group:
+                            _cols = ["Ngày", "Loại", "Mã", "Tên", "SĐT", "Tìm trong app"]
+                        _cols.extend(["Địa chỉ", "Auto fix", "Mở Sapo"])
+                        _config = {"Mở Sapo": st.column_config.LinkColumn("Mở Sapo", display_text="Mở")}
+                        if _is_note_group:
+                            _config.update({
+                                "SĐT": st.column_config.LinkColumn("SĐT", display_text=r"query=([^&]+)"),
+                                "Tìm trong app": st.column_config.LinkColumn("Tìm trong app", display_text="Mở DS đơn"),
+                            })
+                            st.caption("Nhóm này không tự sửa an toàn. Bấm **SĐT** để mở Sapo > Đơn hàng đã lọc theo số; "
+                                       "hoặc bấm **Mở DS đơn** để tìm số đó trong danh sách đơn đang hiện.")
+                        st.dataframe(_df[_cols], hide_index=True, width="stretch", column_config=_config)
 
                 _cat_fix_notes = {
                     "sdt_sai": "chỉ sửa số chuẩn hóa chắc",
@@ -2911,7 +2959,7 @@ if _page == PAGE_TTKH:
                     _erow = st.columns([6, 1.6])
                     with _erow[0]:
                         with st.expander(_title):
-                            _render_cust_samples(_smp)
+                            _render_cust_samples(_smp, _cat)
                     with _erow[1]:
                         st.write("")
                         if _cat in _fix_cats:
@@ -3759,10 +3807,18 @@ if _page == PAGE_TTKH:
         # 🔎 Tìm mã đơn → chỉ hiện đúng dòng cần lấy TTKH
         def _clear_ttkh_search():
             st.session_state["ttkh_search"] = ""
+            try:
+                st.query_params.pop("ttkh_phone", None)
+                st.query_params.pop("page_ttkh", None)
+            except Exception:
+                pass
 
         _sc = st.columns([3, 1])
-        _search = _sc[0].text_input("🔎 Tìm mã đơn", key="ttkh_search",
-                                    placeholder="Dán/nhập mã đơn (sàn hoặc Sapo) để nhảy tới đúng dòng…",
+        _phone_from_link = _ttkh_phone_key(st.query_params.get("ttkh_phone") or "")
+        if _phone_from_link and not str(st.session_state.get("ttkh_search") or "").strip():
+            st.session_state["ttkh_search"] = _phone_from_link
+        _search = _sc[0].text_input("🔎 Tìm mã đơn / SĐT", key="ttkh_search",
+                                    placeholder="Dán/nhập mã đơn hoặc SĐT để nhảy tới đúng dòng…",
                                     label_visibility="collapsed")
         _sc[1].button("Xóa tìm", use_container_width=True, on_click=_clear_ttkh_search)
 
@@ -3770,12 +3826,18 @@ if _page == PAGE_TTKH:
             return re.sub(r"\s+", "", str(v or "")).lower()
 
         _q = _norm_code(_search)
+        _q_phone = _ttkh_phone_key(_search)
 
         def _match(row):
             if not _q:
                 return True
-            hay = " ".join(_norm_code(row.get(k)) for k in ("name", "sapo_name", "source_identifier"))
-            return _q in hay
+            hay = " ".join(_norm_code(row.get(k)) for k in ("name", "sapo_name", "source_identifier", "shipping_phone"))
+            if _q in hay:
+                return True
+            if _q_phone:
+                row_phone = _ttkh_phone_key(row.get("shipping_phone") or "")
+                return bool(row_phone and _q_phone == row_phone)
+            return False
 
         _multi = [r for r in _tt["multi"] if _match(r)]
         _single = [r for r in _tt["single"] if _match(r)]

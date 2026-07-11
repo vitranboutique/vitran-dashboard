@@ -559,6 +559,30 @@ def note_missing_order_code(note) -> bool:
     return bool(re.search(r"sdt\s*:", t, flags=re.I))
 
 
+def _order_contact_phone(order) -> str:
+    if not isinstance(order, dict):
+        return ""
+    fields = [order.get("phone"), order.get("phone_number"), order.get("mobile")]
+    cust = order.get("customer") if isinstance(order.get("customer"), dict) else {}
+    fields.extend(cust.get(k) for k in ("phone", "phone_number", "mobile"))
+    for key in ("shipping_address", "billing_address"):
+        addr = order.get(key) or {}
+        if isinstance(addr, dict):
+            fields.extend(addr.get(k) for k in ("phone", "phone_number", "mobile"))
+    for value in fields:
+        phone = _canon_phone(value)
+        if phone:
+            return phone
+    return ""
+
+
+def order_missing_ttkh_note(order) -> bool:
+    """True nếu đơn đã có SĐT ở dữ liệu đơn nhưng note đơn chưa có block TTKH (`sdt:`)."""
+    if not _order_contact_phone(order):
+        return False
+    return not _has_customer_phone((order or {}).get("note") or "")
+
+
 def phone_is_bad(p) -> bool:
     """True nếu SĐT CÓ nhưng SAI ĐỊNH DẠNG. Chuẩn = '0'+9 số HOẶC '+84'+9 số.
     Còn lại (vd '00971213738' dư 0, có khoảng trắng, sai đầu số) = sai — kể cả khi
@@ -594,6 +618,7 @@ def _classify_customer_addr(a, contact_phone="") -> str:
 
 
 def audit_customers(fetch_json, max_pages: int = 220, throttle: float = 0.35,
+                    max_order_pages: int | None = None,
                     per_cat_keep: int = 500, progress_cb=None) -> dict:
     """Quét TẤT CẢ khách hàng, phân loại theo nhóm lỗi địa chỉ.
 
@@ -603,6 +628,7 @@ def audit_customers(fetch_json, max_pages: int = 220, throttle: float = 0.35,
     counts = Counter()
     samples = {k: [] for k in CUST_ERR_LABELS}
     total = 0
+    order_note_missing = 0
     hit_cap = False
     for page in range(1, int(max_pages) + 1):
         data = None
@@ -654,6 +680,61 @@ def audit_customers(fetch_json, max_pages: int = 220, throttle: float = 0.35,
             break
         if page == int(max_pages):
             hit_cap = True
+    # Nhóm "thiếu ghi chú mã đơn" cần bắt cả đơn đã có SĐT nhưng note đơn chưa có
+    # `sdt:`. Đây là dữ liệu theo đơn, không phải lỗi địa chỉ khách, nên đánh dấu
+    # row_type=order để UI mở về Sapo > Đơn hàng thay vì hồ sơ khách.
+    order_pages = int(max_order_pages or max_pages)
+    for page in range(1, order_pages + 1):
+        data = None
+        for attempt in range(4):
+            try:
+                time.sleep(throttle)
+                data = fetch_json("/admin/orders.json", limit=250, page=page)
+                break
+            except Exception as e:
+                if getattr(getattr(e, "response", None), "status_code", None) == 429:
+                    time.sleep(2 * (attempt + 1)); continue
+                data = None; break
+        if data is None:
+            hit_cap = True; break
+        orders = data.get("orders", []) or []
+        if not orders:
+            break
+        for o in orders:
+            if _order_not_deliverable(o):
+                continue
+            phone = _order_contact_phone(o)
+            if not phone or not order_missing_ttkh_note(o):
+                continue
+            customer = o.get("customer") if isinstance(o.get("customer"), dict) else {}
+            order_note_missing += 1
+            counts["thieu_ghi_chu"] += 1
+            addr = o.get("shipping_address") or o.get("billing_address") or {}
+            if not isinstance(addr, dict):
+                addr = {}
+            created = o.get("created_on") or o.get("modified_on") or ""
+            cv = _parse_vn(created)
+            samples["thieu_ghi_chu"].append({
+                "id": o.get("id"),
+                "row_type": "order",
+                "order_id": o.get("id"),
+                "order_code": o.get("source_identifier") or o.get("name") or o.get("code") or o.get("id"),
+                "ten": addr.get("name") or customer.get("name") or "",
+                "sdt": phone,
+                "dia_chi": str(addr.get("address1") or "")[:90],
+                "sdt_xau": False,
+                "ngay": cv.strftime("%d/%m/%y") if cv else "",
+                "_sk": str(created or ""),
+            })
+        if progress_cb:
+            try:
+                progress_cb(max_pages + page, total, sum(counts.values()))
+            except Exception:
+                pass
+        if len(orders) < 250:
+            break
+        if page == order_pages:
+            hit_cap = True
     # Sắp xếp MỚI → CŨ (theo ngày tạo, rồi id) và cắt còn per_cat_keep — đơn cũ quá bỏ dần
     for cat in samples:
         samples[cat].sort(key=lambda x: (x.get("_sk") or "", int(x.get("id") or 0)), reverse=True)
@@ -661,6 +742,7 @@ def audit_customers(fetch_json, max_pages: int = 220, throttle: float = 0.35,
         for x in samples[cat]:
             x.pop("_sk", None)
     return {"total": total, "counts": dict(counts), "samples": samples,
+            "order_note_missing": order_note_missing,
             "hit_cap": hit_cap, "ts": (_now_utc() + timedelta(hours=7)).strftime("%H:%M %d/%m")}
 
 
