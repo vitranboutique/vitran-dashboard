@@ -1192,7 +1192,7 @@ def get_week_summary(fetch_json, days: int = 7) -> dict:
     day_set = set(day_list)
 
     def _blank():
-        return {"dong_goi": 0, "huy": 0, "shipper_nhan": 0, "giao_khach": 0,
+        return {"soan": 0, "dong_goi": 0, "huy": 0, "shipper_nhan": 0, "giao_khach": 0,
                 "hoan_don": 0, "hoan_sp": 0, "thieu": 0, "trao": 0}
     agg = {d: _blank() for d in day_set}
     mon = _blank()
@@ -1227,8 +1227,13 @@ def get_week_summary(fetch_json, days: int = 7) -> dict:
 
     for o in orders:
         f = f0(o)
+        # SOẠN = đơn được IN PHIẾU GIAO/NHẶT (vào soạn) trong ngày — mốc shipment_created_on
+        # (trước lúc đóng gói). Fallback fulfillment.created_on nếu thiếu.
+        ds = _vn_date_of(f.get("shipment_created_on") or f.get("created_on"))
         dp = _vn_date_of(f.get("packed_on"))
         di = _vn_date_of(f.get("issued_on"))
+        if ds:
+            _bump("soan", ds)
         if dp:
             _bump("dong_goi", dp)
         if di:
@@ -1280,13 +1285,12 @@ def get_week_summary(fetch_json, days: int = 7) -> dict:
         out.append({
             "ngay": d.strftime("%d/%m"), "thu": _wd[d.weekday()], "iso": d.isoformat(),
             "dong_goi": a["dong_goi"], "huy": a["huy"],
-            "soan": a["dong_goi"] + a["huy"],
+            "soan": a["soan"],                       # số đơn in phiếu giao/nhặt (shipment_created_on) trong ngày
             "shipper_nhan": a["shipper_nhan"], "giao_khach": a["giao_khach"],
             "hoan_don": a["hoan_don"], "hoan_sp": a["hoan_sp"],
             "thieu": a["thieu"], "trao": a["trao"],
             "is_today": d == today,
         })
-    mon["soan"] = mon["dong_goi"] + mon["huy"]
     return {"days": out, "month": mon, "month_label": today.strftime("%m/%Y")}
 
 
