@@ -253,9 +253,13 @@ def _week_table_html(data):
              "Soạn − (Hủy + Shipper nhận) — chưa khớp"),
         ):
             if lech:
-                sym = "▼" if lech > 0 else "▲"
-                out[k] = (f' <span title="{tip}" style="color:#dc2626;font-size:9.5px;'
-                          f'font-weight:800;white-space:nowrap">{sym}{abs(lech)}</span>')
+                if lech > 0:      # THIẾU (đỏ) — bên này thiếu video, cần quay bù / chuyển tới
+                    sym, fg, bgc, word = "▼", "#b91c1c", "#fee2e2", "thiếu"
+                else:             # DƯ (xanh) — bên này dư video, có thể quay lộn sang → chuyển đi
+                    sym, fg, bgc, word = "▲", "#1d4ed8", "#dbeafe", "dư"
+                out[k] = (f' <span title="{tip}" style="color:{fg};background:{bgc};font-size:9px;'
+                          f'font-weight:800;white-space:nowrap;padding:1px 4px;border-radius:4px;'
+                          f'margin-left:3px">{sym}{abs(lech)} {word}</span>')
         return out
 
     head = "".join(
@@ -4091,9 +4095,12 @@ def _render_daily():
             for _d in _wk.get("days", []):
                 _d["ghi_chu"] = _notes.get(_d.get("iso"), "")
             st.markdown(_week_table_html(_wk), unsafe_allow_html=True)
-            st.caption('🔴 Badge lệch (▼/▲) cạnh số: **Vid đóng** = Đóng gói − Vid đóng · '
-                       '**Vid hoàn** = Hoàn đơn − Vid hoàn · **Shipper nhận** = Soạn − (Hủy + Shipper nhận). '
-                       'Có badge nghĩa là 2 số chưa khớp — cần kiểm lại video/đơn.')
+            st.caption('Badge lệch cạnh số — 🔴 **▼ thiếu** (đỏ): bên này THIẾU video, cần quay bù '
+                       'hoặc chuyển video từ bên kia sang · 🔵 **▲ dư** (xanh): bên này DƯ video, '
+                       'có thể NV quay lộn vị trí → chuyển bớt sang bên kia. '
+                       'Đối chiếu: **Vid đóng** vs Đóng gói · **Vid hoàn** vs Hoàn đơn · '
+                       '**Shipper nhận** = Soạn − (Hủy + Shipper nhận). '
+                       'Nếu Vid đóng *thiếu* đúng bằng Vid hoàn *dư* (hoặc ngược lại) → gần chắc là quay lộn 2 bên.')
             if picklog.configured():
                 st.caption("✏️ Gõ ghi chú theo ngày rồi bấm **Lưu** — sẽ hiện vào cột *Ghi chú* của bảng trên (lưu bền, lần sau mở vẫn còn).")
                 _ndf = pd.DataFrame([{"Ngày": d["ngay"], "Thứ": d["thu"], "iso": d["iso"],
