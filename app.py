@@ -3564,11 +3564,12 @@ if _page == PAGE_TTKH:
     def _ttkh_repair_customer_from_sapo(codes, limit=60, source_rows_by_code=None):
         """Kiểm/sửa phần khách hàng cho các mã đơn lỗi và ghi lại lý do vào nhật ký."""
         seen, clean_codes = set(), []
-        for raw in (codes or []):
-            code = re.sub(r"\s+", "", str(raw or ""))
-            if code and code not in seen:
-                seen.add(code)
-                clean_codes.append(code)
+        raw_items = [codes] if isinstance(codes, str) else (codes or [])
+        for raw in raw_items:
+            for code in parse_codes(str(raw or "")):
+                if code and code not in seen:
+                    seen.add(code)
+                    clean_codes.append(code)
         clean_codes = clean_codes[:max(1, int(limit or 60))]
         if not clean_codes:
             return []
@@ -4211,7 +4212,7 @@ if _page == PAGE_TTKH:
                                            key="ttkh_diag_code", placeholder="Vd 584725942718924544")
                 _run_diag = st.button("🔧 Kiểm/Sửa các đơn còn lỗi & lưu lý do", key="ttkh_diag_fail")
                 if _run_diag:
-                    _codes_to_fix = [_diag_code.strip()] if _diag_code.strip() else _still_bad[:60]
+                    _codes_to_fix = parse_codes(_diag_code)[:60] if _diag_code.strip() else _still_bad[:60]
                     if not _codes_to_fix:
                         st.info("Không có đơn nào để xử lý (nhập mã đơn vào ô trên).")
                     else:
