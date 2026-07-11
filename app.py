@@ -213,7 +213,8 @@ def _week_table_html(data):
         wk, month, mlabel = data, {}, ""
     cols = [("ngay", "Ngày"), ("thu", "Thứ"),
             # ── ĐÓNG HÀNG (xanh) — luồng: xác nhận → soạn → đóng gói THẬT (video) → mất hàng → hủy → giao ──
-            ("dong_goi", "Xác nhận"), ("soan", "Soạn"), ("vid_dong", "Đóng gói (video)"), ("tag_dong", "⚠️ Mất hàng (đóng)"),
+            ("dong_goi", "Xác nhận"), ("soan", "Soạn"), ("so_cu", "Cũ (tồn)"),
+            ("vid_dong", "Đóng gói (video)"), ("tag_dong", "⚠️ Mất hàng (đóng)"),
             ("huy", "Hủy"), ("shipper_nhan", "Shipper nhận"), ("giao_khach", "Giao khách"),
             # ── HOÀN HÀNG (cam) ──
             ("hoan_don", "Hoàn (đơn)"), ("hoan_sp", "Hoàn SP"), ("vid_hoan", "Vid hoàn"),
@@ -225,10 +226,10 @@ def _week_table_html(data):
     _bd = "border:1px solid #aab2c2;"
     _tagcols = ("tag_dong", "tag_hoan")
     _txt = ("ngay", "thu", "tag_dong", "tag_hoan", "ghi_chu")
-    _dong = ("dong_goi", "vid_dong", "tag_dong", "huy", "soan", "shipper_nhan", "giao_khach")   # ĐÓNG → XANH
+    _dong = ("dong_goi", "soan", "so_cu", "vid_dong", "tag_dong", "huy", "shipper_nhan", "giao_khach")   # ĐÓNG → XANH
     _hoan = ("hoan_don", "hoan_sp", "vid_hoan", "thieu", "tag_hoan")                            # HOÀN → CAM
     _redkeys = ("huy", "thieu")             # > 0 = có vấn đề → tô đỏ
-    _numkeys = ("dong_goi", "vid_dong", "huy", "soan", "shipper_nhan", "giao_khach",
+    _numkeys = ("dong_goi", "soan", "so_cu", "vid_dong", "huy", "shipper_nhan", "giao_khach",
                 "hoan_don", "hoan_sp", "vid_hoan", "thieu")
 
     def _bg(k, kind):                       # kind: head | cell | tot
@@ -947,28 +948,32 @@ def load_week_summary():
     try:
         if picklog.configured():
             _pl = picklog._read_all() or {}
-            _psum = {}
+            _psum, _pcu = {}, {}    # _psum = tổng đơn nhặt/ngày · _pcu = đơn CŨ (tồn) nhặt/ngày
             for _r in _pl.get("logs", []):
                 _iso = _r.get("ngay")
                 if _iso:
                     _psum[_iso] = _psum.get(_iso, 0) + int(_r.get("so_don") or 0)
+                    _pcu[_iso] = _pcu.get(_iso, 0) + int(_r.get("so_cu") or 0)
             for _d in data.get("days", []):
                 if _d.get("iso") in _psum:
                     _d["soan"] = _psum[_d["iso"]]
+                    _d["so_cu"] = _pcu.get(_d["iso"], 0)
                     _d["soan_src"] = "pick"      # lấy từ phiếu nhặt (chính xác)
             if isinstance(data.get("month"), dict) and _psum:
                 _mpref = (data.get("days") or [{}])[0].get("iso", "")[:7]
                 _mtot = sum(v for k, v in _psum.items() if str(k)[:7] == _mpref)
+                _mcu = sum(v for k, v in _pcu.items() if str(k)[:7] == _mpref)
                 if _mtot:
                     data["month"]["soan"] = _mtot
+                    data["month"]["so_cu"] = _mcu
     except Exception:
         pass
     # SỐ VIDEO đóng/hoàn + TAG (Khách tráo / Đã sử dụng / Hư hỏng...) từ kho video Dohana, theo NGÀY.
     for day in data.get("days", []):
-        for _k, _v in (("vid_dong", 0), ("vid_hoan", 0), ("tag_dong", ""), ("tag_hoan", "")):
+        for _k, _v in (("vid_dong", 0), ("vid_hoan", 0), ("tag_dong", ""), ("tag_hoan", ""), ("so_cu", 0)):
             day.setdefault(_k, _v)
     if isinstance(data.get("month"), dict):
-        for _k, _v in (("vid_dong", 0), ("vid_hoan", 0), ("tag_dong", ""), ("tag_hoan", "")):
+        for _k, _v in (("vid_dong", 0), ("vid_hoan", 0), ("tag_dong", ""), ("tag_hoan", ""), ("so_cu", 0)):
             data["month"].setdefault(_k, _v)
     try:
         if picklog.configured():
@@ -2186,6 +2191,7 @@ def _render_pick():
                         "so_don": exp["total_orders"] + nor["total_orders"],
                         "so_sp": exp["total_qty"] + nor["total_qty"], "so_sku": len(_allsku),
                         "ht_don": exp["total_orders"], "th_don": nor["total_orders"],
+                        "so_cu": exp["old"] + nor["old"],   # đơn CŨ (xác nhận hôm trước, nay mới nhặt)
                     })
                     if not _ok:
                         st.error(_msg)
@@ -2226,17 +2232,48 @@ def _render_pick():
                     "so_don": exp["total_orders"] + nor["total_orders"],
                     "so_sp": exp["total_qty"] + nor["total_qty"], "so_sku": len(_allsku),
                     "ht_don": exp["total_orders"], "th_don": nor["total_orders"],
+                    "so_cu": exp["old"] + nor["old"],
                 })
                 (st.success(msg + " Bấm 🔄 Tải lại để thấy.") if ok else st.error(msg))
             if not picklog.configured():
                 st.caption("⚠️ Cần bật kho lưu (xem hướng dẫn trên).")
 
-    if picklog.configured():
+    # Quyền SỬA/XÓA lịch sử phiếu nhặt: CHỈ admin / chủ shop. NV kho chỉ xem + in.
+    _can_edit_pick = _is_owner or (_cc_role == "admin")
+
+    if picklog.configured() and _can_edit_pick:
+        # ── XÓA 1 đợt (chỉ admin) ──
+        with st.expander("🗑️ Xóa đợt phiếu nhặt (chỉ admin) — sửa số liệu sai", expanded=False):
+            _all_del = picklog._read_all() or {}
+            _dtoday = (datetime.now(timezone.utc) + timedelta(hours=7)).date()
+            _dfrom = (_dtoday - timedelta(days=29)).isoformat()
+            _del_logs = [r for r in _all_del.get("logs", []) if str(r.get("ngay") or "") >= _dfrom]
+            _del_logs = sorted(_del_logs, key=lambda r: (str(r.get("ngay") or ""), str(r.get("gio") or "")),
+                               reverse=True)
+            if not _del_logs:
+                st.caption("Không có đợt nào trong 30 ngày.")
+            else:
+                _del_opts = [f"{r.get('ngay')} · {r.get('gio', '—')} — {int(r.get('so_don') or 0)} đơn / "
+                             f"{int(r.get('so_sp') or 0)} SP" for r in _del_logs]
+                _sel_del = st.selectbox("Chọn đợt cần xóa", options=list(range(len(_del_logs))),
+                                        format_func=lambda i: _del_opts[i], key="pick_del_sel")
+                _r = _del_logs[_sel_del]
+                st.caption(f"Sẽ xóa: **{_del_opts[_sel_del]}**")
+                if st.button("🗑️ Xóa đợt này", type="primary", key="pick_del_btn"):
+                    _ok, _msg = picklog.delete_log(_r.get("ngay"), _r.get("gio"),
+                                                   _r.get("so_don"), _r.get("so_sp"))
+                    if _ok:
+                        st.success(f"✅ {_msg} Mở lại bảng 30 ngày để thấy cột Soạn cập nhật.")
+                        st.cache_data.clear()
+                        st.rerun()
+                    else:
+                        st.error(_msg)
+
         with st.expander("➕ Bù đợt thủ công (nhập lại đợt đã in mà chưa lưu)", expanded=False):
             st.caption("Nhìn phiếu nhặt đã in rồi gõ lại từng đợt — dùng khi NV in mà quên bấm lưu. "
                        "Mỗi đợt bấm **Lưu** một lần.")
             with st.form("pick_manual_add", clear_on_submit=True):
-                _mc = st.columns([1.2, 1.4, 1, 1, 1])
+                _mc = st.columns([1.2, 1.3, 1, 1, 1, 1])
                 _m_date = _mc[0].date_input(
                     "Ngày", value=(datetime.now(timezone.utc) + timedelta(hours=7)).date(),
                     key="pm_date")
@@ -2244,6 +2281,7 @@ def _render_pick():
                 _m_don = _mc[2].number_input("Số đơn", min_value=0, value=0, step=1, key="pm_don")
                 _m_sp = _mc[3].number_input("Số SP", min_value=0, value=0, step=1, key="pm_sp")
                 _m_ht = _mc[4].number_input("Hỏa tốc", min_value=0, value=0, step=1, key="pm_ht")
+                _m_cu = _mc[5].number_input("Cũ (tồn)", min_value=0, value=0, step=1, key="pm_cu")
                 _m_ok = st.form_submit_button("💾 Lưu đợt này")
             if _m_ok:
                 if int(_m_don) <= 0:
@@ -2253,7 +2291,7 @@ def _render_pick():
                         "ngay": _m_date.isoformat(), "gio": str(_m_gio or "").strip() or "—",
                         "so_don": int(_m_don), "so_sp": int(_m_sp), "so_sku": 0,
                         "ht_don": int(_m_ht), "th_don": max(0, int(_m_don) - int(_m_ht)),
-                        "source": "manual"})
+                        "so_cu": int(_m_cu), "source": "manual"})
                     if _ok:
                         st.success(f"✅ Đã lưu đợt {_m_gio or ''} — {int(_m_don)} đơn / {int(_m_sp)} SP. "
                                    "Mở lại bảng 30 ngày để thấy cột Soạn cập nhật.")
@@ -2262,9 +2300,10 @@ def _render_pick():
                         st.error(_msg)
 
         with st.expander("📥 Nạp nhiều đợt cùng lúc (dán danh sách — bù cả tháng)", expanded=False):
-            st.caption("Mỗi dòng 1 đợt: **`NGÀY, ĐỢT/GIỜ, SỐ ĐƠN, SỐ SP`** — ví dụ `2026-07-11, Đợt 1, 74, 83`. "
-                       "Ngày nhận `YYYY-MM-DD` hoặc `DD/MM/YYYY`. Đợt trùng (cùng ngày+tên+số đơn) tự bỏ qua "
-                       "→ dán lại nhiều lần không bị đếm đôi.")
+            st.caption("Mỗi dòng 1 đợt: **`NGÀY, ĐỢT/GIỜ, SỐ ĐƠN, SỐ SP, SỐ CŨ`** — ví dụ "
+                       "`2026-07-11, Đợt 1, 74, 83, 4`. Cột **SỐ CŨ (tồn)** không bắt buộc (bỏ trống = 0). "
+                       "Ngày nhận `YYYY-MM-DD` hoặc `DD/MM/YYYY`. Đợt trùng tự bỏ qua nhưng **cập nhật số cũ** "
+                       "nếu trước đó chưa có → dán lại để bổ sung cột Cũ.")
             _bulk = st.text_area("Dán danh sách đợt ở đây", height=180, key="pick_bulk_text",
                                  placeholder="2026-07-11, Đợt 1, 74, 83\n2026-07-11, Đợt 2, 44, 50\n2026-07-11, Hỏa tốc, 4, 4")
             if st.button("💾 Nạp tất cả vào lịch sử", key="pick_bulk_save",
@@ -2289,20 +2328,21 @@ def _render_pick():
                         continue
                     _sd = int(re.sub(r"\D", "", _p[2]) or 0)
                     _sp = int(re.sub(r"\D", "", _p[3]) or 0)
+                    _cu = int(re.sub(r"\D", "", _p[4]) or 0) if len(_p) >= 5 else 0
                     if _sd <= 0:
                         _errln.append(_ln)
                         continue
                     _ht = _sd if re.search(r"h[ỏo]a\s*t[ốo]c", _p[1].lower()) else 0
                     _payloads.append({"ngay": _iso, "gio": _p[1], "so_don": _sd, "so_sp": _sp,
                                       "so_sku": 0, "ht_don": _ht, "th_don": max(0, _sd - _ht),
-                                      "source": "bulk"})
+                                      "so_cu": _cu, "source": "bulk"})
                 if not _payloads:
                     st.error("Không có dòng hợp lệ. Kiểm tra định dạng.")
                 else:
-                    _ok, _add, _skip, _msg = picklog.log_batches(_payloads)
+                    _ok, _add, _upd, _skip, _msg = picklog.log_batches(_payloads)
                     if _ok:
-                        st.success(f"✅ Nạp xong: thêm **{_add}** đợt, bỏ qua trùng {_skip}. "
-                                   "Mở lại bảng 30 ngày để thấy cột Soạn cập nhật.")
+                        st.success(f"✅ Nạp xong: thêm **{_add}** đợt, cập nhật cũ {_upd}, bỏ qua trùng {_skip}. "
+                                   "Mở lại bảng 30 ngày để thấy cột Soạn/Cũ cập nhật.")
                         st.cache_data.clear()
                     else:
                         st.error(_msg)
@@ -2348,6 +2388,9 @@ def _render_pick():
                                       "Số SKU": r.get("so_sku", 0), "HT": r.get("ht_don", 0),
                                       "Thường": r.get("th_don", 0)} for i, r in enumerate(_day_rows)])
                 render_compact_table(_ddf)
+
+    if picklog.configured() and not _can_edit_pick:
+        st.caption("ℹ️ Lịch sử & sửa/xóa phiếu nhặt chỉ dành cho tài khoản **admin/chủ shop**.")
 
     with st.expander("📄 Hoặc: tạo phiếu từ file Excel (upload thủ công)"):
         _html_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "picking_slip.html")
@@ -4802,9 +4845,11 @@ def _render_daily():
                        'nhưng cuối bị thiếu → **mất hàng khi đóng**, cần truy. Vạch dọc đậm ngăn khối **Đóng hàng** (xanh) '
                        'với khối **Hoàn hàng** (cam).')
             st.caption('🔑 **Luồng đóng hàng:** **Xác nhận** (đơn đã xác nhận, mốc Sapo `packed_on`) → '
-                       '**Soạn** (nhặt hàng theo phiếu nhặt — tổng đơn các đợt đã bấm *In + lưu đợt*; ngày chưa lưu → '
-                       'ước lượng từ Sapo) → **Đóng gói (video)** = số đơn ĐÓNG GÓI THẬT có video → Shipper nhận → Giao khách. '
-                       'Các bước **lệch ngày** nhau (nhặt hôm nay có thể gói/giao hôm sau) nên số giữa các cột không cần bằng nhau tuyệt đối.')
+                       '**Soạn** (nhặt hàng theo phiếu nhặt) → **Đóng gói (video)** = số đơn ĐÓNG GÓI THẬT có video → '
+                       'Shipper nhận → Giao khách. '
+                       'Cột **Cũ (tồn)** = trong Soạn, số đơn **xác nhận hôm trước** nay mới nhặt (dòng *Đơn cũ* trên phiếu). '
+                       'Vì thế **Soạn − Cũ ≈ Xác nhận**; ngày nào Soạn > Xác nhận là do nhặt nhiều đơn tồn cũ '
+                       '(vd thứ 2 sau CN nghỉ). Các bước lệch ngày nhau nên số các cột không cần bằng tuyệt đối.')
             st.caption('ℹ️ Cột **Đóng gói (video) / Vid hoàn** tự đồng bộ ~28 ngày gần nhất từ Dohana mỗi khi mở bảng, '
                        'lưu bền vào kho. **Dohana chỉ giữ ~25 ngày** → ngày cũ hơn 25 ngày không đồng bộ lại được: '
                        'nếu kho lúc đó chưa lưu kịp thì badge hiện ⬜ **"kho cũ" (xám)** thay vì "thiếu" đỏ — '

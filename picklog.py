@@ -138,34 +138,73 @@ def log_batch(payload: dict):
 
 def log_batches(payloads: list):
     """Ghi NHIỀU đợt trong 1 lần (đọc gist 1 lần → append → patch 1 lần) → nhanh, đỡ rate-limit.
-    Khử trùng theo (ngay, gio, so_don): đợt đã có thì bỏ qua. Trả (ok, added, skipped, msg)."""
+    Khử trùng theo (ngay, gio, so_don): đợt đã có thì BỎ QUA — nhưng nếu payload có so_cu mà đợt cũ
+    chưa có thì CẬP NHẬT so_cu (để bổ sung cột Cũ về sau). Trả (ok, added, updated, skipped, msg)."""
     gid = _resolve_gid()
     if not gid:
-        return False, 0, 0, "Chưa cấu hình GitHub token (kho lưu)."
+        return False, 0, 0, 0, "Chưa cấu hình GitHub token (kho lưu)."
     data = _read_all()
     if data is None:
-        return False, 0, 0, "Không đọc được gist (token/mạng?)."
+        return False, 0, 0, 0, "Không đọc được gist (token/mạng?)."
     logs = data.setdefault("logs", [])
-    existing = {(r.get("ngay"), str(r.get("gio", "")), int(r.get("so_don") or 0)) for r in logs}
-    added = skipped = 0
+    existing = {}
+    for r in logs:
+        existing[(r.get("ngay"), str(r.get("gio", "")), int(r.get("so_don") or 0))] = r
+    added = updated = skipped = 0
     for p in (payloads or []):
         key = (p.get("ngay"), str(p.get("gio", "")), int(p.get("so_don") or 0))
-        if key in existing:
-            skipped += 1
+        old = existing.get(key)
+        if old is not None:
+            if int(p.get("so_cu") or 0) and not int(old.get("so_cu") or 0):
+                old["so_cu"] = int(p.get("so_cu") or 0)
+                updated += 1
+            else:
+                skipped += 1
             continue
         logs.append(p)
-        existing.add(key)
+        existing[key] = p
         added += 1
-    if not added:
-        return True, 0, skipped, "Không có đợt mới (tất cả đã có)."
+    if not (added or updated):
+        return True, 0, 0, skipped, "Không có đợt mới (tất cả đã có)."
     try:
         body = {"files": {_FILE: {"content": json.dumps(data, ensure_ascii=False)}}}
         r = requests.patch(f"{_API}/gists/{gid}", headers=_hdr(), data=json.dumps(body), timeout=25)
         if r.status_code == 200:
-            return True, added, skipped, "OK"
-        return False, 0, skipped, f"Lỗi lưu gist ({r.status_code})."
+            return True, added, updated, skipped, "OK"
+        return False, 0, 0, skipped, f"Lỗi lưu gist ({r.status_code})."
     except Exception as e:
-        return False, 0, skipped, f"Lỗi kết nối: {e}"
+        return False, 0, 0, skipped, f"Lỗi kết nối: {e}"
+
+
+def delete_log(ngay, gio, so_don, so_sp=None):
+    """XÓA 1 đợt phiếu nhặt khớp (ngay, gio, so_don[, so_sp]) — xóa ĐÚNG 1 dòng đầu khớp.
+    Trả (ok, msg). Chỉ gọi cho tài khoản admin/chủ shop."""
+    gid = _resolve_gid()
+    if not gid:
+        return False, "Chưa cấu hình GitHub token (kho lưu)."
+    data = _read_all()
+    if data is None:
+        return False, "Không đọc được gist (token/mạng?)."
+    logs = data.get("logs", [])
+    _sd = int(so_don or 0)
+    idx = None
+    for i, r in enumerate(logs):
+        if (r.get("ngay") == ngay and str(r.get("gio", "")) == str(gio)
+                and int(r.get("so_don") or 0) == _sd
+                and (so_sp is None or int(r.get("so_sp") or 0) == int(so_sp or 0))):
+            idx = i
+            break
+    if idx is None:
+        return False, "Không tìm thấy đợt cần xóa (có thể đã xóa rồi)."
+    removed = logs.pop(idx)
+    try:
+        body = {"files": {_FILE: {"content": json.dumps(data, ensure_ascii=False)}}}
+        r = requests.patch(f"{_API}/gists/{gid}", headers=_hdr(), data=json.dumps(body), timeout=20)
+        if r.status_code == 200:
+            return True, f"Đã xóa đợt {removed.get('gio', '')} — {removed.get('so_don', 0)} đơn."
+        return False, f"Lỗi lưu gist ({r.status_code})."
+    except Exception as e:
+        return False, f"Lỗi kết nối: {e}"
 
 
 def read_today() -> list:
