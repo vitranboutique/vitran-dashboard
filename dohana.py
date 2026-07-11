@@ -185,7 +185,15 @@ def _records_from(vids, typ):
 #   [dohana.tags]
 #   "2380d014-46be-4a1b-a549-a6dac57904d8" = "Khách tráo!"
 _TAG_NAMES = {
-    "2380d014-46be-4a1b-a549-a6dac57904d8": "Khách tráo!",
+    # Lấy trực tiếp từ Dohana /dpm/v1/tag (UUID → tên nhãn video đóng/khui hàng).
+    "0768ccc3-871c-4070-afe5-68865e0ca10d": "Đóng thiếu 2 sp",
+    "c781dc26-5d67-4b18-b80e-c7dca1d57d82": "Đóng thiếu 1 sp",
+    "4c975c2c-7707-433f-8b07-e84b26a3e610": "Đóng thiếu sp",
+    "8b5216a5-727b-4f74-9f03-6e0531bf6cfb": "Đóng sai sp",
+    "2380d014-46be-4a1b-a549-a6dac57904d8": "Khách tráo hàng",
+    "1b2b16bb-7dea-41e8-9af9-257a16a5ffab": "Trả hàng thiếu",
+    "45433c95-4b29-49a7-a981-69f559f2f0eb": "Đã sử dụng",
+    "5b863771-0b22-4bcd-9922-472b9790862c": "Hàng hư hỏng",
 }
 
 
