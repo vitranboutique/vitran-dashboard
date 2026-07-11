@@ -2475,6 +2475,26 @@ if _page == PAGE_TTKH:
                         return "Cần kiểm tra khách còn tồn tại trong Sapo."
                     return "Cần xem chi tiết; chưa đủ dữ liệu để kết luận."
 
+                def _cust_fix_reason_code_from_text(reason_text=""):
+                    raw = str(reason_text or "").lower()
+                    if "address_unresolved" in raw or "chưa khớp chắc" in raw:
+                        return "address_unresolved"
+                    if "address_conflict" in raw or "mâu thuẫn" in raw:
+                        return "address_conflict"
+                    if "verify_failed" in raw or "đọc lại chưa thấy" in raw:
+                        return "verify_failed"
+                    if "no_address" in raw or "không có địa chỉ" in raw:
+                        return "no_address"
+                    if "no_valid_phone" in raw or "không có sđt" in raw or "không có sdt" in raw:
+                        return "no_valid_phone"
+                    if "rate_limited" in raw or "429" in raw:
+                        return "rate_limited"
+                    if "auth_failed" in raw or "401" in raw or "403" in raw:
+                        return "auth_failed"
+                    if "customer_not_found" in raw or "không đọc được khách" in raw:
+                        return "customer_not_found"
+                    return ""
+
                 def _cust_fix_attempt_reason(result):
                     _attempts = [str(x) for x in (result or {}).get("attempts") or []]
                     if any("429" in x for x in _attempts):
@@ -2705,7 +2725,25 @@ if _page == PAGE_TTKH:
                             pass
                         st.rerun()
                     with st.expander(f"Khách đã để qua bên — {len(_blocked_rows):,} khách cần xem lại code/dữ liệu"):
-                        _df_blk = pd.DataFrame(_blocked_rows)
+                        _sample_by_id = {}
+                        for _items in (_ca.get("samples") or {}).values():
+                            for _m in (_items or []):
+                                _sid = str(_m.get("id") or _m.get("Mã KH") or "").strip()
+                                if _sid:
+                                    _sample_by_id[_sid] = _m
+                        _blocked_enriched = []
+                        for _r in _blocked_rows:
+                            _rr = dict(_r or {})
+                            _sid = str(_rr.get("Mã KH") or _rr.get("id") or "").strip()
+                            _sample = _sample_by_id.get(_sid) or {}
+                            if not str(_rr.get("Địa chỉ") or "").strip():
+                                _rr["Địa chỉ"] = _sample.get("dia_chi") or _sample.get("Địa chỉ") or ""
+                            if not str(_rr.get("Mã lỗi") or "").strip():
+                                _rr["Mã lỗi"] = _cust_fix_reason_code_from_text(_rr.get("Lý do / cách xử lý"))
+                            if not str(_rr.get("Đánh giá fix code") or "").strip():
+                                _rr["Đánh giá fix code"] = _cust_fix_judgement(_rr.get("Mã lỗi"), _rr.get("Lý do / cách xử lý"))
+                            _blocked_enriched.append(_rr)
+                        _df_blk = pd.DataFrame(_blocked_enriched)
                         if not _df_blk.empty:
                             if "Mã lỗi" not in _df_blk.columns:
                                 _df_blk["Mã lỗi"] = ""
@@ -2720,8 +2758,31 @@ if _page == PAGE_TTKH:
                             _can_code_fix = int(_df_blk["Đánh giá fix code"].astype(str).str.contains("Có thể fix code", case=False, na=False).sum())
                             _manual_fix = len(_df_blk) - _can_code_fix
                             st.caption(f"Đọc lỗi nhanh: {_can_code_fix:,} khách có khả năng viết thêm rule/code; {_manual_fix:,} khách cần xem tay/thiếu dữ liệu/không nên auto.")
-                        _blk_cols = ["Nhóm", "Mã KH", "Tên", "SĐT", "Kết quả", "Mã lỗi", "Đánh giá fix code",
-                                     "Lý do / cách xử lý", "Địa chỉ", "Link Sapo", "ts"]
+                        _blk_cols = ["Nhóm", "Mã KH", "Tên", "SĐT", "Kết quả", "Mã lỗi", "Địa chỉ",
+                                     "Lý do / cách xử lý", "Đánh giá fix code", "Link Sapo", "ts"]
+                        if not _df_blk.empty:
+                            _csv_cols = [c for c in _blk_cols if c in _df_blk.columns]
+                            _csv_blk = _df_blk[_csv_cols].to_csv(index=False).encode("utf-8-sig")
+                            _dl_cols = st.columns([1.3, 3])
+                            _dl_cols[0].download_button(
+                                "📥 Tải CSV khách để qua bên",
+                                _csv_blk,
+                                file_name="khach_de_qua_ben_can_xem_lai.csv",
+                                mime="text/csv",
+                                key="cust_addr_blocked_csv",
+                                use_container_width=True,
+                            )
+                            _reason_df = (
+                                _df_blk.assign(**{
+                                    "Mã lỗi": _df_blk.get("Mã lỗi", "").astype(str).replace("", "không rõ"),
+                                    "Đánh giá fix code": _df_blk.get("Đánh giá fix code", "").astype(str).replace("", "Cần xem chi tiết"),
+                                })
+                                .groupby(["Mã lỗi", "Đánh giá fix code"], dropna=False)
+                                .size()
+                                .reset_index(name="Số khách")
+                                .sort_values("Số khách", ascending=False)
+                            )
+                            _dl_cols[1].dataframe(_reason_df, hide_index=True, width="stretch")
                         st.dataframe(
                             _df_blk[[c for c in _blk_cols if c in _df_blk.columns]],
                             hide_index=True,
