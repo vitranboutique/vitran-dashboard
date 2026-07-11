@@ -254,6 +254,15 @@ def _week_table_html(data):
             _stale = (_today_vn - date.fromisoformat(str(d.get("iso") or ""))).days > _DOHANA_RETENTION
         except Exception:
             _stale = False
+        # Video khui có TAG TRANH CHẤP (khách tráo / đã dùng / hư hỏng / trả thiếu) → NV KHÔNG nhập
+        # kho là ĐÚNG QUY TRÌNH → giải thích phần "dư" của Vid hoàn (không tính lỗi).
+        _dispute = sum(int(x) for x in re.findall(r"×\s*(\d+)", str(d.get("tag_hoan") or "")))
+
+        def _badge(sym, fg, bgc, word, n, tip):
+            return (f' <span title="{tip}" style="color:{fg};background:{bgc};font-size:9px;'
+                    f'font-weight:800;white-space:nowrap;padding:1px 4px;border-radius:4px;'
+                    f'margin-left:3px">{sym}{n} {word}</span>')
+
         out = {}
         for k, lech, tip in (
             ("vid_dong", _n("dong_goi") - _n("vid_dong"), "Đóng gói − Vid đóng (thiếu video đóng)"),
@@ -265,19 +274,31 @@ def _week_table_html(data):
                 continue
             _is_vid = k in ("vid_dong", "vid_hoan")
             if _is_vid and _stale and lech > 0:   # ngoài hạn Dohana → xám, không đổ lỗi NV
-                out[k] = (' <span title="Ngày đã quá hạn Dohana (~25 ngày) — không đồng bộ lại được. '
-                          'Số video có thể thiếu do kho lưu lúc đó chưa đầy, KHÔNG chắc NV quên quay" '
-                          'style="color:#64748b;background:#f1f5f9;font-size:9px;font-weight:700;'
-                          'white-space:nowrap;padding:1px 4px;border-radius:4px;margin-left:3px">'
-                          f'▽{abs(lech)} kho cũ</span>')
+                out[k] = _badge("▽", "#64748b", "#f1f5f9", "kho cũ", abs(lech),
+                                "Ngày đã quá hạn Dohana (~25 ngày) — không đồng bộ lại được. "
+                                "Số video có thể thiếu do kho lưu lúc đó chưa đầy, KHÔNG chắc NV quên quay")
+                continue
+            if k == "vid_hoan" and lech < 0:   # DƯ video hoàn → tách phần tranh chấp (đúng) vs dư thật
+                du = -lech
+                ok = min(du, _dispute)         # phần dư giải thích được bởi tag tranh chấp = ĐÚNG QUY TRÌNH
+                extra = du - ok                # phần dư còn lại = cảnh báo
+                _b = ""
+                if ok:
+                    _b += _badge("▲", "#047857", "#d1fae5", "✓ tráo/đã dùng", ok,
+                                 "Video khui có tag tranh chấp (tráo/đã dùng/hư/thiếu) → NV KHÔNG nhập "
+                                 "kho là ĐÚNG QUY TRÌNH, không tính lỗi. ⚠️ Nếu các đơn này LẠI được nhập "
+                                 "kho thì mới là sai.")
+                if extra:
+                    _b += _badge("▲", "#1d4ed8", "#dbeafe", "dư", extra,
+                                 "Video khui DƯ hơn cả đơn hoàn lẫn tag tranh chấp — kiểm lại "
+                                 "(quay lộn vị trí / quay dư / thiếu gắn tag).")
+                if _b:
+                    out[k] = _b
                 continue
             if lech > 0:      # THIẾU (đỏ) — bên này thiếu video, cần quay bù / chuyển tới
-                sym, fg, bgc, word = "▼", "#b91c1c", "#fee2e2", "thiếu"
+                out[k] = _badge("▼", "#b91c1c", "#fee2e2", "thiếu", abs(lech), tip)
             else:             # DƯ (xanh) — bên này dư video, có thể quay lộn sang → chuyển đi
-                sym, fg, bgc, word = "▲", "#1d4ed8", "#dbeafe", "dư"
-            out[k] = (f' <span title="{tip}" style="color:{fg};background:{bgc};font-size:9px;'
-                      f'font-weight:800;white-space:nowrap;padding:1px 4px;border-radius:4px;'
-                      f'margin-left:3px">{sym}{abs(lech)} {word}</span>')
+                out[k] = _badge("▲", "#1d4ed8", "#dbeafe", "dư", abs(lech), tip)
         return out
 
     head = "".join(
@@ -4132,8 +4153,11 @@ def _render_daily():
                 _d["ghi_chu"] = _notes.get(_d.get("iso"), "")
             st.markdown(_week_table_html(_wk), unsafe_allow_html=True)
             st.caption('Badge lệch cạnh số — 🔴 **▼ thiếu** (đỏ): bên này THIẾU video, cần quay bù '
-                       'hoặc chuyển video từ bên kia sang · 🔵 **▲ dư** (xanh): bên này DƯ video, '
-                       'có thể NV quay lộn vị trí → chuyển bớt sang bên kia. '
+                       'hoặc chuyển video từ bên kia sang · 🔵 **▲ dư** (xanh dương): bên này DƯ video, '
+                       'có thể NV quay lộn vị trí → chuyển bớt sang bên kia · '
+                       '🟢 **▲ ✓ tráo/đã dùng** (xanh lá): Vid hoàn dư vì hàng khách tráo / đã dùng / hư / '
+                       'thiếu — NV **không nhập kho là ĐÚNG**, KHÔNG tính lỗi (chỉ sai nếu các đơn này lại '
+                       'bị nhập kho). '
                        'Đối chiếu: **Vid đóng** vs Đóng gói · **Vid hoàn** vs Hoàn đơn · '
                        '**Shipper nhận** = Soạn − (Hủy + Shipper nhận). '
                        'Nếu Vid đóng *thiếu* đúng bằng Vid hoàn *dư* (hoặc ngược lại) → gần chắc là quay lộn 2 bên.')
