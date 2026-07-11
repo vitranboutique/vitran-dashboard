@@ -2511,9 +2511,9 @@ if _page == PAGE_TTKH:
                 _fx[0].metric("Trong 2 nhóm", f"{_total_fixable:,}")
                 _fx[1].metric("Chờ sửa", f"{len(_fix_rows):,}")
                 _fx[2].metric("Để qua bên", f"{len(_blocked_ids):,}")
-                _batch_n = _fx[3].number_input("Số khách/lượt", min_value=5, max_value=60, value=30, step=5,
-                                               key="cust_addr_fix_batch")
-                _fx[4].caption("Mỗi lượt xử lý tối đa số khách đã chọn để tránh Sapo chặn 429. "
+                _batch_n = 60
+                _fx[3].metric("Số khách/lượt", f"{_batch_n}")
+                _fx[4].caption("Mỗi lượt xử lý cố định 60 khách. Nếu Sapo trả 429 liên tiếp, app sẽ dừng sớm để tránh bị chặn nặng hơn. "
                                "Khách sửa xong sẽ tự gỡ khỏi danh sách đã lưu.")
 
                 def _cust_fix_reason_vi(code, detail=""):
@@ -2531,6 +2531,26 @@ if _page == PAGE_TTKH:
                         "missing_customer_id": "Thiếu mã khách hàng.",
                     }.get(str(code or ""), str(code or "Không rõ lỗi"))
                     return f"{text} ({detail})" if detail else text
+
+                def _cust_fix_judgement(code, reason_text=""):
+                    raw = f"{code or ''} {reason_text or ''}".lower()
+                    if any(x in raw for x in ("address_unresolved", "chưa khớp chắc")):
+                        return "Có thể fix code nếu địa chỉ có đủ tỉnh/quận/phường trong text."
+                    if any(x in raw for x in ("address_conflict", "mâu thuẫn")):
+                        return "Không auto an toàn; cần xem tay hoặc thêm rule sau khi xác nhận đúng."
+                    if any(x in raw for x in ("verify_failed", "đọc lại chưa thấy")):
+                        return "Có thể fix code/endpoint ghi Sapo, cần xem phản hồi và payload."
+                    if any(x in raw for x in ("no_address", "không có địa chỉ")):
+                        return "Không fix bằng code; thiếu địa chỉ gốc."
+                    if any(x in raw for x in ("no_valid_phone", "không có sđt", "không có sdt")):
+                        return "Không fix bằng code; thiếu SĐT hợp lệ."
+                    if any(x in raw for x in ("rate_limited", "429")):
+                        return "Tạm thời do Sapo chặn; chờ rồi chạy lại, không phải lỗi rule."
+                    if any(x in raw for x in ("auth_failed", "401", "403")):
+                        return "Lỗi phiên/credential Sapo; cần cập nhật đăng nhập."
+                    if any(x in raw for x in ("customer_not_found", "không đọc được khách")):
+                        return "Cần kiểm tra khách còn tồn tại trong Sapo."
+                    return "Cần xem chi tiết; chưa đủ dữ liệu để kết luận."
 
                 def _cust_fix_attempt_reason(result):
                     _attempts = [str(x) for x in (result or {}).get("attempts") or []]
@@ -2553,14 +2573,17 @@ if _page == PAGE_TTKH:
                         _results, _done_ids, _new_blocked, _success_by_cat = [], [], [], {}
                         _consec_429, _stopped_429 = 0, False
 
-                        def _block_customer(_base, cat, ket_qua, reason):
+                        def _block_customer(_base, cat, ket_qua, reason, code="", address=""):
                             return {
                                 "Nhóm": _base.get("Nhóm") or L.CUST_ERR_LABELS.get(cat, cat),
                                 "Mã KH": _base.get("Mã KH") or "",
                                 "Tên": _base.get("Tên") or "",
                                 "SĐT": _base.get("SĐT") or "",
+                                "Địa chỉ": address or _base.get("Địa chỉ") or "",
                                 "Kết quả": ket_qua,
+                                "Mã lỗi": code or "",
                                 "Lý do / cách xử lý": reason,
+                                "Đánh giá fix code": _cust_fix_judgement(code, reason),
                                 "Link Sapo": _base.get("Link Sapo") or "",
                                 "cat": cat,
                                 "ts": (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%H:%M:%S %d/%m/%Y"),
@@ -2575,16 +2598,20 @@ if _page == PAGE_TTKH:
                                 "Mã KH": _cid,
                                 "Tên": _row.get("ten") or "",
                                 "SĐT": _row.get("sdt") or "",
+                                "Địa chỉ": _row.get("dia_chi") or "",
                                 "Link Sapo": f"https://vitranboutiquehcm.mysapo.net/admin/customers/{_cid}" if _cid else "",
                             }
                             try:
                                 _cust = get_customer(_sess, _cid)
                                 _prep = CAF.customer_fix_info(_cust, _cat)
                                 if not _prep.get("ok"):
+                                    _reason_code = _prep.get("reason") or ""
                                     _reason_text = _cust_fix_reason_vi(
-                                        _prep.get("reason"),
+                                        _reason_code,
                                         _prep.get("conflict") or "",
                                     )
+                                    _source_addr = _prep.get("source_address") or _base.get("Địa chỉ") or ""
+                                    _judge = _cust_fix_judgement(_reason_code, _reason_text)
                                     _results.append({
                                         **_base,
                                         "Kết quả": "Bỏ qua",
@@ -2592,9 +2619,12 @@ if _page == PAGE_TTKH:
                                         "Mã tỉnh": "",
                                         "Mã quận": "",
                                         "Mã phường": "",
+                                        "Mã lỗi": _reason_code,
                                         "Lý do / cách xử lý": _reason_text,
+                                        "Đánh giá fix code": _judge,
+                                        "Địa chỉ": _source_addr,
                                     })
-                                    _new_blocked.append(_block_customer(_base, _cat, "Bỏ qua", _reason_text))
+                                    _new_blocked.append(_block_customer(_base, _cat, "Bỏ qua", _reason_text, _reason_code, _source_addr))
                                     _consec_429 = 0
                                 else:
                                     _info = _prep["info"]
@@ -2609,12 +2639,16 @@ if _page == PAGE_TTKH:
                                             "Mã tỉnh": _info.get("province_code") or "",
                                             "Mã quận": "" if _info.get("address_format") == "new" else (_info.get("district_code") or ""),
                                             "Mã phường": _info.get("ward_code") or "",
+                                            "Mã lỗi": "",
                                             "Lý do / cách xử lý": f"{_info.get('ward') or ''}, {_info.get('district') or ''}, {_info.get('province') or ''}".strip(", "),
+                                            "Đánh giá fix code": "Đã sửa được bằng rule hiện tại.",
+                                            "Địa chỉ": _info.get("address1") or _base.get("Địa chỉ") or "",
                                         })
                                         _consec_429 = 0
                                     else:
                                         _reason = _cust_fix_attempt_reason(_saved)
                                         _reason_text = _cust_fix_reason_vi(_reason)
+                                        _judge = _cust_fix_judgement(_reason, _reason_text)
                                         _results.append({
                                             **_base,
                                             "Kết quả": "Lỗi ghi Sapo",
@@ -2622,16 +2656,20 @@ if _page == PAGE_TTKH:
                                             "Mã tỉnh": _info.get("province_code") or "",
                                             "Mã quận": "" if _info.get("address_format") == "new" else (_info.get("district_code") or ""),
                                             "Mã phường": _info.get("ward_code") or "",
+                                            "Mã lỗi": _reason,
                                             "Lý do / cách xử lý": _reason_text,
+                                            "Đánh giá fix code": _judge,
+                                            "Địa chỉ": _info.get("address1") or _base.get("Địa chỉ") or "",
                                         })
                                         if _reason not in {"rate_limited", "auth_failed"}:
-                                            _new_blocked.append(_block_customer(_base, _cat, "Lỗi ghi Sapo", _reason_text))
+                                            _new_blocked.append(_block_customer(_base, _cat, "Lỗi ghi Sapo", _reason_text, _reason, _info.get("address1") or ""))
                                         _consec_429 = _consec_429 + 1 if _reason == "rate_limited" else 0
                                         if _consec_429 >= 3:
                                             _stopped_429 = True
                                             break
                             except Exception as _ex:
                                 _reason_text = f"{type(_ex).__name__}: {_ex}"[:260]
+                                _judge = _cust_fix_judgement("exception", _reason_text)
                                 _results.append({
                                     **_base,
                                     "Kết quả": "Lỗi app/Sapo",
@@ -2639,9 +2677,11 @@ if _page == PAGE_TTKH:
                                     "Mã tỉnh": "",
                                     "Mã quận": "",
                                     "Mã phường": "",
+                                    "Mã lỗi": "exception",
                                     "Lý do / cách xử lý": _reason_text,
+                                    "Đánh giá fix code": _judge,
                                 })
-                                _new_blocked.append(_block_customer(_base, _cat, "Lỗi app/Sapo", _reason_text))
+                                _new_blocked.append(_block_customer(_base, _cat, "Lỗi app/Sapo", _reason_text, "exception"))
                                 _consec_429 = 0
                             _prog.progress(_i / max(len(_batch), 1),
                                            text=f"Đã xử lý {_i}/{len(_batch)} · sửa được {len(_done_ids)} khách")
@@ -2701,9 +2741,18 @@ if _page == PAGE_TTKH:
                         if _fr:
                             _show_cols = [
                                 "Nhóm", "Mã KH", "Tên", "SĐT", "Kết quả", "Loại địa chỉ",
-                                "Mã tỉnh", "Mã quận", "Mã phường", "Lý do / cách xử lý", "Link Sapo",
+                                "Mã tỉnh", "Mã quận", "Mã phường", "Mã lỗi", "Đánh giá fix code",
+                                "Lý do / cách xử lý", "Địa chỉ", "Link Sapo",
                             ]
                             _df_fr = pd.DataFrame(_fr)
+                            if not _df_fr.empty:
+                                if "Mã lỗi" not in _df_fr.columns:
+                                    _df_fr["Mã lỗi"] = ""
+                                if "Đánh giá fix code" not in _df_fr.columns:
+                                    _df_fr["Đánh giá fix code"] = _df_fr.apply(
+                                        lambda r: _cust_fix_judgement(r.get("Mã lỗi"), r.get("Lý do / cách xử lý")),
+                                        axis=1,
+                                    )
                             st.dataframe(
                                 _df_fr[[c for c in _show_cols if c in _df_fr.columns]],
                                 hide_index=True,
@@ -2711,6 +2760,8 @@ if _page == PAGE_TTKH:
                                 column_config={
                                     "Link Sapo": st.column_config.LinkColumn("Link Sapo", display_text="Mở"),
                                     "Lý do / cách xử lý": st.column_config.TextColumn(width="large"),
+                                    "Đánh giá fix code": st.column_config.TextColumn(width="large"),
+                                    "Địa chỉ": st.column_config.TextColumn(width="large"),
                                 },
                             )
 
@@ -2732,7 +2783,22 @@ if _page == PAGE_TTKH:
                         st.rerun()
                     with st.expander(f"Khách đã để qua bên — {len(_blocked_rows):,} khách cần xem lại code/dữ liệu"):
                         _df_blk = pd.DataFrame(_blocked_rows)
-                        _blk_cols = ["Nhóm", "Mã KH", "Tên", "SĐT", "Kết quả", "Lý do / cách xử lý", "Link Sapo", "ts"]
+                        if not _df_blk.empty:
+                            if "Mã lỗi" not in _df_blk.columns:
+                                _df_blk["Mã lỗi"] = ""
+                            if "Đánh giá fix code" not in _df_blk.columns:
+                                _df_blk["Đánh giá fix code"] = _df_blk.apply(
+                                    lambda r: _cust_fix_judgement(r.get("Mã lỗi"), r.get("Lý do / cách xử lý")),
+                                    axis=1,
+                                )
+                        _can_code_fix = 0
+                        _manual_fix = 0
+                        if not _df_blk.empty and "Đánh giá fix code" in _df_blk.columns:
+                            _can_code_fix = int(_df_blk["Đánh giá fix code"].astype(str).str.contains("Có thể fix code", case=False, na=False).sum())
+                            _manual_fix = len(_df_blk) - _can_code_fix
+                            st.caption(f"Đọc lỗi nhanh: {_can_code_fix:,} khách có khả năng viết thêm rule/code; {_manual_fix:,} khách cần xem tay/thiếu dữ liệu/không nên auto.")
+                        _blk_cols = ["Nhóm", "Mã KH", "Tên", "SĐT", "Kết quả", "Mã lỗi", "Đánh giá fix code",
+                                     "Lý do / cách xử lý", "Địa chỉ", "Link Sapo", "ts"]
                         st.dataframe(
                             _df_blk[[c for c in _blk_cols if c in _df_blk.columns]],
                             hide_index=True,
@@ -2740,6 +2806,8 @@ if _page == PAGE_TTKH:
                             column_config={
                                 "Link Sapo": st.column_config.LinkColumn("Link Sapo", display_text="Mở"),
                                 "Lý do / cách xử lý": st.column_config.TextColumn(width="large"),
+                                "Đánh giá fix code": st.column_config.TextColumn(width="large"),
+                                "Địa chỉ": st.column_config.TextColumn(width="large"),
                             },
                         )
 

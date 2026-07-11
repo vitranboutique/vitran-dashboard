@@ -403,15 +403,15 @@ def customer_fix_info(customer: dict, category: str) -> dict:
     text = full_address_text(addr)
     resolved = resolve_text_address(text)
     if not resolved.get("ok"):
-        return resolved
+        return {**resolved, "source_address": text}
 
     addr_phone = normalize_phone(addr.get("phone") or addr.get("phone_number") or addr.get("mobile"))
     contact_phone = normalize_phone(customer.get("phone") or customer.get("phone_number") or customer.get("mobile"))
     phone = addr_phone or contact_phone
     if category == "thieu_ca_2" and not phone:
-        return {"ok": False, "reason": "no_valid_phone"}
+        return {"ok": False, "reason": "no_valid_phone", "source_address": text}
     if not phone:
-        return {"ok": False, "reason": "no_valid_phone"}
+        return {"ok": False, "reason": "no_valid_phone", "source_address": text}
 
     name = str(customer.get("name") or f"{customer.get('first_name') or ''} {customer.get('last_name') or ''}".strip()).strip()
     address1 = str(addr.get("address1") or text).strip()
