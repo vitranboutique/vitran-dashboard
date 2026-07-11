@@ -2232,6 +2232,35 @@ def _render_pick():
                 st.caption("⚠️ Cần bật kho lưu (xem hướng dẫn trên).")
 
     if picklog.configured():
+        with st.expander("➕ Bù đợt thủ công (nhập lại đợt đã in mà chưa lưu)", expanded=False):
+            st.caption("Nhìn phiếu nhặt đã in rồi gõ lại từng đợt — dùng khi NV in mà quên bấm lưu. "
+                       "Mỗi đợt bấm **Lưu** một lần.")
+            with st.form("pick_manual_add", clear_on_submit=True):
+                _mc = st.columns([1.2, 1.4, 1, 1, 1])
+                _m_date = _mc[0].date_input(
+                    "Ngày", value=(datetime.now(timezone.utc) + timedelta(hours=7)).date(),
+                    key="pm_date")
+                _m_gio = _mc[1].text_input("Giờ (HH:MM)", value="", placeholder="10:08", key="pm_gio")
+                _m_don = _mc[2].number_input("Số đơn", min_value=0, value=0, step=1, key="pm_don")
+                _m_sp = _mc[3].number_input("Số SP", min_value=0, value=0, step=1, key="pm_sp")
+                _m_ht = _mc[4].number_input("Hỏa tốc", min_value=0, value=0, step=1, key="pm_ht")
+                _m_ok = st.form_submit_button("💾 Lưu đợt này")
+            if _m_ok:
+                if int(_m_don) <= 0:
+                    st.error("Số đơn phải > 0.")
+                else:
+                    _ok, _msg = picklog.log_batch({
+                        "ngay": _m_date.isoformat(), "gio": str(_m_gio or "").strip() or "—",
+                        "so_don": int(_m_don), "so_sp": int(_m_sp), "so_sku": 0,
+                        "ht_don": int(_m_ht), "th_don": max(0, int(_m_don) - int(_m_ht)),
+                        "source": "manual"})
+                    if _ok:
+                        st.success(f"✅ Đã lưu đợt {_m_gio or ''} — {int(_m_don)} đơn / {int(_m_sp)} SP. "
+                                   "Mở lại bảng 30 ngày để thấy cột Soạn cập nhật.")
+                        st.cache_data.clear()
+                    else:
+                        st.error(_msg)
+
         with st.expander("📅 Lịch sử nhặt hàng 30 ngày (số đợt · SP mỗi đợt)", expanded=False):
             _all = picklog._read_all() or {}
             _today = (datetime.now(timezone.utc) + timedelta(hours=7)).date()
