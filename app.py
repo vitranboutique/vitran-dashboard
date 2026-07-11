@@ -237,6 +237,27 @@ def _week_table_html(data):
     def _red(k, v):
         return "color:#dc2626;font-weight:800;" if (k in _redkeys and isinstance(v, (int, float)) and v > 0) else ""
 
+    def _lech_badge(d):
+        """Trả badge lệch cho từng cột cần đối chiếu (▼ thiếu · ▲ dư):
+        Vid đóng vs Đóng gói · Vid hoàn vs Hoàn đơn · Shipper nhận: Soạn = Hủy+Shipper (ngày đã qua)."""
+        def _n(key):
+            try:
+                return int(round(float(d.get(key) or 0)))
+            except Exception:
+                return 0
+        out = {}
+        for k, lech, tip in (
+            ("vid_dong", _n("dong_goi") - _n("vid_dong"), "Đóng gói − Vid đóng (thiếu video đóng)"),
+            ("vid_hoan", _n("hoan_don") - _n("vid_hoan"), "Hoàn đơn − Vid hoàn (lệch video hoàn)"),
+            ("shipper_nhan", (0 if d.get("is_today") else _n("soan") - _n("huy") - _n("shipper_nhan")),
+             "Soạn − (Hủy + Shipper nhận) — chưa khớp"),
+        ):
+            if lech:
+                sym = "▼" if lech > 0 else "▲"
+                out[k] = (f' <span title="{tip}" style="color:#dc2626;font-size:9.5px;'
+                          f'font-weight:800;white-space:nowrap">{sym}{abs(lech)}</span>')
+        return out
+
     head = "".join(
         f'<th style="position:sticky;top:0;z-index:3;text-align:{"left" if k in _txt else "right"};'
         f'padding:6px 8px;{_bd}background:{_bg(k, "head")};color:#16233f'
@@ -254,6 +275,7 @@ def _week_table_html(data):
         wtop = "border-top:3px solid #334155;" if (prev_wk is not None and _wkkey != prev_wk) else ""
         prev_wk = _wkkey
         cells = ""
+        _badges = _lech_badge(r)
         for k, _ in cols:
             al = "left" if k in _txt else "right"
             if k == "ghi_chu" or k in _tagcols:
@@ -267,11 +289,12 @@ def _week_table_html(data):
             wt = "font-weight:800;" if hot else ""
             bg = "#fff2e0" if hot else _bg(k, "cell")     # hôm nay: nền cam nhạt cả dòng
             cells += (f'<td style="text-align:{al};padding:5px 8px;{_bd}{wtop}{mw}background:{bg};{wt}{_red(k, v)}{_tagclr}">'
-                      f'{v}{_nay}</td>')
+                      f'{v}{_nay}{_badges.get(k, "")}</td>')
         body += f'<tr>{cells}</tr>'
 
     def _tot_row(label, src, label_bg):
         cells = f'<td colspan="2" style="text-align:left;padding:6px 8px;{_bd}background:{label_bg}">{label}</td>'
+        _tbadge = _lech_badge(src)
         for k, _ in cols[2:]:
             if k == "ghi_chu":
                 cells += f'<td style="padding:6px 8px;{_bd}background:#ffffff"></td>'
@@ -283,7 +306,7 @@ def _week_table_html(data):
                 continue
             v = src.get(k, 0)
             cells += (f'<td style="text-align:right;padding:6px 8px;{_bd}background:{_bg(k, "tot")};'
-                      f'{_red(k, v)}">{v}</td>')
+                      f'{_red(k, v)}">{v}{_tbadge.get(k, "")}</td>')
         return f'<tr style="font-weight:800;color:#16233f">{cells}</tr>'
 
     tot_all = {k: sum(r.get(k, 0) for r in wk) for k in _numkeys}
@@ -4068,6 +4091,9 @@ def _render_daily():
             for _d in _wk.get("days", []):
                 _d["ghi_chu"] = _notes.get(_d.get("iso"), "")
             st.markdown(_week_table_html(_wk), unsafe_allow_html=True)
+            st.caption('🔴 Badge lệch (▼/▲) cạnh số: **Vid đóng** = Đóng gói − Vid đóng · '
+                       '**Vid hoàn** = Hoàn đơn − Vid hoàn · **Shipper nhận** = Soạn − (Hủy + Shipper nhận). '
+                       'Có badge nghĩa là 2 số chưa khớp — cần kiểm lại video/đơn.')
             if picklog.configured():
                 st.caption("✏️ Gõ ghi chú theo ngày rồi bấm **Lưu** — sẽ hiện vào cột *Ghi chú* của bảng trên (lưu bền, lần sau mở vẫn còn).")
                 _ndf = pd.DataFrame([{"Ngày": d["ngay"], "Thứ": d["thu"], "iso": d["iso"],
@@ -5303,10 +5329,23 @@ def _render_returns():
                     return "Giao hàng thất bại"
                 return "Khác"
 
-            def _sub_table(items, h, show_type=False, show_reason=False, merge_delivery_vd=False, show_location=False):
+            def _sub_table(items, h, show_type=False, show_reason=False, merge_delivery_vd=False, show_location=False, pg_key=None):
                 if not items:
                     st.caption("— Không có —")
                     return
+                _PER = 14                                   # tối đa 14 đơn/trang, còn lại qua trang sau
+                _start = 0
+                if pg_key and len(items) > _PER:
+                    _total = len(items)
+                    _npages = (_total + _PER - 1) // _PER
+                    _pc = st.columns([2, 3])
+                    _pg = int(_pc[0].number_input(
+                        f"Trang (14 đơn/trang · tổng {_total} đơn · {_npages} trang)",
+                        min_value=1, max_value=_npages, value=1, step=1, key=f"rpg_{pg_key}"))
+                    _start = (_pg - 1) * _PER
+                    items = items[_start:_start + _PER]
+                    h = min(h, 92 + 42 * len(items))
+                    _pc[1].caption(f"Đang xem đơn {_start + 1}–{_start + len(items)} / {_total}")
                 def _safe(v, default=""):
                     return _esc(str(v if v not in (None, "") else default))
                 def _doisoat(d):   # 1 LINK đối soát TikTok/Shopee, tự chọn tab: note CÓ kết quả KN
@@ -5340,7 +5379,7 @@ def _render_returns():
                 _sticky_n = cols.index("Mã trả hàng") + 1   # cố định các cột đầu → hết "Mã trả hàng"
                 thead = "".join(f"<th>{c}</th>" for c in cols)
                 body = ""
-                for i, d in enumerate(items, 1):
+                for i, d in enumerate(items, _start + 1):
                     bg = "background:#fff3cd" if d.get("need_kn") else ""
                     note = d.get("note") or ""
                     tds = [f"<td class='r'>{i}</td>"]
@@ -5413,13 +5452,13 @@ def _render_returns():
                 st.markdown(f"### {title} — {len(items)} đơn")
                 if hoan:
                     st.markdown(f"**🚚 Đang hoàn hàng — {len(hoan)} đơn**")
-                    _sub_table(hoan, 260, merge_delivery_vd=(code == "delivery_failed"))
+                    _sub_table(hoan, 260, merge_delivery_vd=(code == "delivery_failed"), pg_key=f"{code}_hoan")
                 if giao:
                     st.markdown(f"**📥 Đã giao người bán — {len(giao)} đơn**")
-                    _sub_table(giao, 260, merge_delivery_vd=(code == "delivery_failed"))
+                    _sub_table(giao, 260, merge_delivery_vd=(code == "delivery_failed"), pg_key=f"{code}_giao")
                 if khong_hoan:
                     st.markdown(f"**🚫 Không có hàng hoàn về — {len(khong_hoan)} đơn**")
-                    _sub_table(khong_hoan, 260)
+                    _sub_table(khong_hoan, 260, pg_key=f"{code}_khong")
 
             with _return_top_search_slot:
                 st.markdown("##### 🔎 Tìm nhanh mã đơn / mã trả / vận đơn")
@@ -5547,12 +5586,12 @@ def _render_returns():
             st.caption("Gồm các đơn CHƯA có ghi chú kết quả chuẩn (THẮNG/THUA/KHÔNG CẦN KN/HẾT HẠN): "
                        "đã giao người bán chưa nhập kho, đang hoàn hơn 5 ngày, hoặc chỉ hoàn tiền/không có hàng hoàn về. "
                        "Đây chính là các dòng tô vàng — NV lấy làm khiếu nại.")
-            _sub_table(_ckn_list, 360, show_reason=True)
+            _sub_table(_ckn_list, 360, show_reason=True, pg_key="ckn")
             st.markdown(f"**🏷️ + Đơn Dohana gắn tag KHUI HÀNG (tráo · đã dùng · trả thiếu · hư hỏng) — {len(_dtag_kn)} đơn**")
             _dohana_tag_tbl(_dtag_kn)
             st.subheader("⛔ Đơn không cần KN — đã có kết luận", anchor="don-khong-can-kn")
             st.caption("Các đơn trong bảng detail đã có ghi chú KHÔNG CẦN KN: đã nhận hàng, đã nhận/được đền tiền, hoặc shop đóng thiếu thật. Nhóm này không trộn vào danh sách CẦN KN.")
-            _sub_table(_khong_can_kn_list, 300)
+            _sub_table(_khong_can_kn_list, 300, pg_key="khong_can_kn")
             st.markdown(f"**🏷️ + Đơn Dohana gắn tag ĐÓNG HÀNG (đóng thiếu SP) — {len(_dtag_nokn)} đơn**")
             _dohana_tag_tbl(_dtag_nokn)
             st.divider()
@@ -5565,7 +5604,7 @@ def _render_returns():
                       and d["ship_code"] != "no_return"]
             if _other:
                 st.markdown(f"### Khác — {len(_other)} đơn")
-                _sub_table(_other, 200)
+                _sub_table(_other, 200, pg_key="other")
 
         with _tabs[2]:
             # ── 🎥 KHO VIDEO DOHANA (lưu CẢ NĂM, vượt hạn 30 ngày của Dohana) — tra cứu metadata ──
