@@ -2388,26 +2388,30 @@ if _page == PAGE_TTKH:
         q = _ttkh_phone_key(query) or str(query or "").strip()
         return f"?page_ttkh=1&ttkh_phone={quote_plus(q)}" if q else ""
 
-    _top = st.columns([1, 1.3, 1, 4.7])
-    _days = _top[0].number_input("Số ngày gần nhất", min_value=1, max_value=30, value=15, step=1)
-    _channel_label = _top[1].selectbox("Kênh", ["TikTok Shop", "Shopee", "Tất cả"], index=0)
-    _channel_filter = {"TikTok Shop": "tiktok", "Shopee": "shopee", "Tất cả": "all"}[_channel_label]
-    if _top[2].button("🔄 Tải lại", use_container_width=True):
-        st.cache_data.clear()
-        st.rerun()
-
-    try:
-        _tt = load_ttkh_candidates(int(_days), _channel_filter)
-    except Exception as _e:
-        st.error(f"❌ Lỗi lọc đơn TTKH: `{_e}`")
-        st.stop()
-
     _tabA, _tabB = st.tabs(["📝 Lấy - lưu TTKH (nhập & lưu Sapo)", "🔍 Kiểm tra & dọn khách đã lưu"])
 
     with _tabB:
         # ── 🔍 KIỂM TRA SÓT KHÁCH: đối chiếu đơn ↔ khách theo SĐT (chắc chắn) ──
-        st.caption("Đơn CHƯA nhập đủ 2 nơi, HOẶC khách địa chỉ text → bấm **Quét đối chiếu**. "
-                   "Kết quả được LƯU, tải lại trang vẫn còn (khỏi quét lại mỗi lần).")
+        st.markdown("### 🔍 Kiểm tra & dọn khách đã lưu")
+        st.caption("Tab này chỉ dùng để sửa dữ liệu khách đã lưu sai/chưa chuẩn trong Sapo. Kết quả quét được lưu lại, tải lại trang vẫn còn.")
+
+        def _cust_cat_title(cat, label):
+            base = str(label or cat)
+            for token in ("🔴", "🟡", "⚪", "🟠", "— CẦN FIX", "— CẦN KIỂM/SỬA", "— sửa dần"):
+                base = base.replace(token, "")
+            return re.sub(r"\s+", " ", base).strip(" -")
+
+        def _cust_cat_icon(cat):
+            return {
+                "sdt_sai": "📞",
+                "thieu_ma_tinh": "📍",
+                "thieu_ca_2": "📍",
+                "khong_dia_chi": "🧊",
+                "thieu_sdt": "📞",
+                "thieu_ma_phuong": "📍",
+                "thieu_ghi_chu": "📝",
+            }.get(str(cat or ""), "⚠️")
+
         # Giữ kết quả quét gần nhất qua tải lại: nếu phiên chưa có thì đọc từ Gist
         if "ttkh_audit" not in st.session_state and picklog.configured():
             try:
@@ -2447,7 +2451,7 @@ if _page == PAGE_TTKH:
                                            text=f"Đối chiếu tháng {win_i}/{win_n} · đã xét {n_seen} đơn · tìm thấy {n_found} đơn cần xử lý")
 
                         _missing = L.audit_orders_missing_customer(
-                            _fj, _good, days=int(_audit_days), channel_filter=_channel_filter,
+                            _fj, _good, days=int(_audit_days), channel_filter="all",
                             all_phone_set=_cores, progress_cb=_audit_prog)
                         st.session_state["ttkh_audit"] = {
                             "missing": _missing, "cap": _cap, "n_suspect": len(_missing), "days": int(_audit_days),
@@ -2605,9 +2609,8 @@ if _page == PAGE_TTKH:
 
         # ── 🧹 KHÁCH HÀNG LƯU CHƯA CHUẨN (phân theo nhóm lỗi) ──
         st.divider()
-        st.markdown("### 🧹 Khách hàng lưu chưa chuẩn (theo nhóm)")
-        st.caption("Quét toàn bộ khách, phân nhóm lỗi địa chỉ (thiếu SĐT / thiếu mã tỉnh / thiếu mã phường…) "
-                   "để xử lý theo nhóm. Kết quả LƯU, tải lại vẫn còn.")
+        st.markdown("### 🧹 Khách hàng chưa chuẩn")
+        st.caption("Quét toàn bộ khách, gom theo loại lỗi và bấm sửa theo nhóm. App chỉ ghi khi khớp chắc, dòng mơ hồ sẽ để riêng.")
         if "cust_audit" not in st.session_state and picklog.configured():
             try:
                 _sc_saved = picklog.read_cust_audit()
@@ -2646,9 +2649,11 @@ if _page == PAGE_TTKH:
                 _counts = _ca.get("counts") or {}
                 _tot_bad = sum(_counts.values())
                 _order_note_missing = int(_ca.get("order_note_missing") or 0)
-                _bad_label = f"{_tot_bad:,} dòng CHƯA CHUẨN"
-                _bad_tail = f" · gồm {_order_note_missing:,} đơn có SĐT nhưng thiếu ghi chú" if _order_note_missing else ""
-                st.error(f"⚠️ {_bad_label} / {_ca.get('total','?')} khách đã quét (quét {_ca.get('ts','?')}){_bad_tail}.")
+                _dash = st.columns(4)
+                _dash[0].metric("Chưa chuẩn", f"{_tot_bad:,}")
+                _dash[1].metric("Đã quét", f"{_ca.get('total','?')}")
+                _dash[2].metric("Thiếu ghi chú", f"{_order_note_missing:,}")
+                _dash[3].metric("Lần quét", str(_ca.get("ts", "?")))
                 if _ca.get("hit_cap"):
                     st.warning("Có thể chưa quét hết (chạm giới hạn/429) — quét lại nếu cần.")
 
@@ -2746,18 +2751,14 @@ if _page == PAGE_TTKH:
                     sum(int(_counts.get(_cat, 0) or 0) for _cat in _fix_cats)
                     + int(_counts.get("thieu_ghi_chu", 0) or 0)
                 )
-                st.markdown("#### 🛠️ Sửa tự động theo từng nhóm lỗi")
-                st.caption("Mỗi nút chỉ ghi Sapo khi dòng đó khớp chắc với đúng loại lỗi: SĐT sửa được thì chuẩn hóa SĐT, "
-                           "địa chỉ sửa được thì phải phân được địa chỉ cũ/mới và đủ mã tỉnh/quận/phường. "
-                           "Dòng mơ hồ/mâu thuẫn/thiếu dữ liệu sẽ được để qua bên kèm lý do, không ghi bừa.")
+                st.markdown("#### 🛠️ Sửa theo nhóm lỗi")
                 _fx = st.columns([1.1, 1.1, 1.1, 1.2, 2.2])
-                _fx[0].metric("Có nút sửa", f"{_total_fixable:,}")
+                _fx[0].metric("Có thể sửa", f"{_total_fixable:,}")
                 _fx[1].metric("Chờ sửa", f"{len(_fix_rows):,}")
-                _fx[2].metric("Để qua bên", f"{len(_blocked_ids):,}")
+                _fx[2].metric("Cần xem lại", f"{len(_blocked_ids):,}")
                 _batch_n = 60
-                _fx[3].metric("Số khách/lượt", f"{_batch_n}")
-                _fx[4].caption("Mỗi lượt xử lý cố định 60 khách. Nếu Sapo trả 429 liên tiếp, app sẽ dừng sớm để tránh bị chặn nặng hơn. "
-                               "Khách sửa xong sẽ tự gỡ khỏi danh sách đã lưu.")
+                _fx[3].metric("Mỗi lượt", f"{_batch_n}")
+                _fx[4].caption("Bấm sửa theo nhóm. Nếu Sapo trả 429 liên tiếp, app tự dừng; nghỉ 5-10 phút rồi bấm tiếp.")
 
                 def _cust_fix_reason_vi(code, detail=""):
                     text = {
@@ -3219,10 +3220,10 @@ if _page == PAGE_TTKH:
                         if str((r or {}).get("cat") or "").strip() in _fix_cats
                     ]
                     _bc = st.columns([1.2, 1.2, 1.8, 2.4])
-                    _bc[0].metric("Để qua bên", f"{len(_blocked_rows):,}")
-                    _bc[1].caption("Các khách này sẽ KHÔNG tự retry trong lượt sau.")
+                    _bc[0].metric("Cần xem lại", f"{len(_blocked_rows):,}")
+                    _bc[1].caption("Các khách này không tự chạy lại trong lượt sau.")
                     if _bc[2].button(
-                        f"🛠️ Thử sửa {min(len(_retryable_blocked), int(_batch_n))} khách để qua bên",
+                        f"🛠️ Thử sửa {min(len(_retryable_blocked), int(_batch_n))} khách cần xem lại",
                         key="cust_addr_fix_retry_blocked",
                         use_container_width=True,
                         disabled=not bool(_retryable_blocked),
@@ -3242,7 +3243,7 @@ if _page == PAGE_TTKH:
                         except Exception:
                             pass
                         st.rerun()
-                    with st.expander(f"Khách đã để qua bên — {len(_blocked_rows):,} khách cần xem lại code/dữ liệu"):
+                    with st.expander(f"Khách cần xem lại — {len(_blocked_rows):,} khách"):
                         _sample_by_id = {}
                         for _items in (_ca.get("samples") or {}).values():
                             for _m in (_items or []):
@@ -3326,7 +3327,7 @@ if _page == PAGE_TTKH:
                                     else ("⚠️ " + str(m.get("sdt") or "") if m.get("sdt_xau") else m.get("sdt"))),
                             "Tìm trong app": _ttkh_app_search_url(m.get("sdt")) if _is_note_group else "",
                             "Địa chỉ": m.get("dia_chi"),
-                            "Auto fix": "Cần ghi chú" if _is_note_group else ("Để qua bên" if str(m.get("id") or "").strip() in _blocked_ids else "Chờ sửa"),
+                            "Auto fix": "Cần ghi chú" if _is_note_group else ("Cần xem lại" if str(m.get("id") or "").strip() in _blocked_ids else "Chờ sửa"),
                             "Mở Sapo": (f"https://vitranboutiquehcm.mysapo.net/admin/orders/{m.get('order_id') or m.get('id')}"
                                          if m.get("row_type") == "order"
                                          else f"https://vitranboutiquehcm.mysapo.net/admin/customers/{m.get('id')}"),
@@ -3354,6 +3355,7 @@ if _page == PAGE_TTKH:
                     "khong_dia_chi": "không có địa chỉ gốc để suy ra",
                     "thieu_ghi_chu": "tìm đơn theo SĐT rồi ghi sdt/đơn vào note khách",
                 }
+                st.markdown("**Danh sách nhóm lỗi**")
                 for _cat, _label in L.CUST_ERR_LABELS.items():
                     _n = _counts.get(_cat, 0)
                     if not _n:
@@ -3362,52 +3364,51 @@ if _page == PAGE_TTKH:
                     _active_smp = [_m for _m in _smp if str(_m.get("id") or "").strip() not in _blocked_ids]
                     _blocked_in_group = len(_smp) - len(_active_smp)
                     _unit = "dòng" if _cat == "thieu_ghi_chu" else "khách"
-                    _title = f"• {_label} — {_n:,} {_unit}" + (f" (hiện {len(_smp):,} mẫu)" if _n > len(_smp) else "")
+                    _short = _cust_cat_title(_cat, _label)
+                    _icon = _cust_cat_icon(_cat)
+                    _erow = st.columns([3.3, 1, 1, 1, 1.35])
+                    _erow[0].markdown(f"**{_icon} {_short}**")
+                    _erow[1].metric("Tổng", f"{_n:,}", help=f"{_unit} trong nhóm này")
                     if _cat in _fix_cats:
-                        _title += f" · chờ sửa {len(_active_smp)}"
-                        if _blocked_in_group:
-                            _title += f" · để qua bên {_blocked_in_group}"
-                    _erow = st.columns([6, 1.6])
-                    with _erow[0]:
-                        with st.expander(_title):
-                            _render_cust_samples(_smp, _cat)
-                    with _erow[1]:
-                        st.write("")
-                        if _cat in _fix_cats:
-                            _can_run = bool(_active_smp)
-                            if st.button(
-                                f"🛠️ Sửa {min(len(_active_smp), int(_batch_n))}",
-                                key=f"cust_addr_fix_run_{_cat}",
-                                use_container_width=True,
-                                disabled=not _can_run,
-                            ):
-                                st.session_state["cust_addr_fix_action_cat"] = _cat
-                                st.rerun()
-                            st.caption(_cat_fix_notes.get(_cat, "chỉ ghi khi khớp chắc"))
-                        elif _cat == "thieu_ghi_chu":
-                            _can_note = bool(_smp)
-                            if st.button(
-                                f"📝 Ghi chú {min(len(_smp), int(_batch_n))}",
-                                key="cust_note_fix_run_thieu_ghi_chu",
-                                use_container_width=True,
-                                disabled=not _can_note,
-                            ):
-                                _fix_missing_note_rows(_smp)
-                                st.rerun()
-                            st.caption(_cat_fix_notes.get(_cat, "ghi chú mã đơn"))
-                        else:
-                            st.button(
-                                "🚫 Không auto",
-                                key=f"cust_addr_no_auto_{_cat}",
-                                use_container_width=True,
-                                disabled=True,
-                            )
-                            st.caption(_cat_fix_notes.get(_cat, "cần xem tay"))
-                st.caption("SĐT có **⚠️** = sai định dạng. App có nút sửa cho nhóm có thể xác định chắc; "
-                           "nhóm thiếu dữ liệu/mâu thuẫn sẽ không ghi Sapo để tránh sai bộ lọc.")
+                        _erow[2].metric("Chờ sửa", f"{len(_active_smp):,}")
+                        _erow[3].metric("Cần xem", f"{_blocked_in_group:,}")
+                        _can_run = bool(_active_smp)
+                        if _erow[4].button(
+                            f"🛠️ Sửa {min(len(_active_smp), int(_batch_n))}",
+                            key=f"cust_addr_fix_run_{_cat}",
+                            use_container_width=True,
+                            disabled=not _can_run,
+                        ):
+                            st.session_state["cust_addr_fix_action_cat"] = _cat
+                            st.rerun()
+                    elif _cat == "thieu_ghi_chu":
+                        _erow[2].metric("Chờ ghi", f"{len(_smp):,}")
+                        _erow[3].caption(_cat_fix_notes.get(_cat, "ghi chú mã đơn"))
+                        _can_note = bool(_smp)
+                        if _erow[4].button(
+                            f"📝 Ghi {min(len(_smp), int(_batch_n))}",
+                            key="cust_note_fix_run_thieu_ghi_chu",
+                            use_container_width=True,
+                            disabled=not _can_note,
+                        ):
+                            _fix_missing_note_rows(_smp)
+                            st.rerun()
+                    else:
+                        _erow[2].metric("Chờ xem", f"{len(_smp):,}")
+                        _erow[3].caption(_cat_fix_notes.get(_cat, "cần xem tay"))
+                        _erow[4].button(
+                            "🚫 Không auto",
+                            key=f"cust_addr_no_auto_{_cat}",
+                            use_container_width=True,
+                            disabled=True,
+                        )
+                    with st.expander(f"Xem mẫu: {_short} ({len(_smp):,})", expanded=False):
+                        st.caption(_cat_fix_notes.get(_cat, "chỉ ghi khi khớp chắc"))
+                        _render_cust_samples(_smp, _cat)
+                st.caption("App chỉ tự ghi khi dữ liệu khớp chắc. Nhóm thiếu dữ liệu hoặc mâu thuẫn sẽ nằm ở 'Cần xem lại'.")
 
         with st.expander("ℹ️ Điều kiện lọc đơn"):
-            st.caption("Đơn trong `Tất cả`, không hủy, tạo trong số ngày chọn, ghi chú/địa chỉ SAPO chưa có SĐT khách.")
+            st.caption("Đơn trong `Tất cả`, không hủy, tạo trong số ngày quét của tab này, ghi chú/địa chỉ SAPO chưa có SĐT khách.")
 
     _phone_re = re.compile(r"\b(?:\+?84|0)\d[\d\s.\-]{8,12}\b")
     _masked_phone_re = re.compile(r"(?:\+?84|0)?\d[\d\s().\-]*\*+[\d\s().\-]*\d")
@@ -4273,6 +4274,20 @@ if _page == PAGE_TTKH:
     with _tabA:
         if "ttkh_pending_inputs" not in st.session_state:
             st.session_state["ttkh_pending_inputs"] = {}
+
+        _top = st.columns([1, 1.3, 1, 4.7])
+        _days = _top[0].number_input("Số ngày gần nhất", min_value=1, max_value=30, value=15, step=1)
+        _channel_label = _top[1].selectbox("Kênh", ["TikTok Shop", "Shopee", "Tất cả"], index=0)
+        _channel_filter = {"TikTok Shop": "tiktok", "Shopee": "shopee", "Tất cả": "all"}[_channel_label]
+        if _top[2].button("🔄 Tải lại", use_container_width=True):
+            st.cache_data.clear()
+            st.rerun()
+
+        try:
+            _tt = load_ttkh_candidates(int(_days), _channel_filter)
+        except Exception as _e:
+            st.error(f"❌ Lỗi lọc đơn TTKH: `{_e}`")
+            _tt = {"multi": [], "single": [], "total": 0, "generated_at_vn": "Lỗi tải"}
 
         st.markdown("##### 🔎 Đơn cần lấy TTKH")
         _m = st.columns(4)
