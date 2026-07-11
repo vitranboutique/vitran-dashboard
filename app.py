@@ -210,8 +210,8 @@ def _week_table_html(data):
     else:                                   # dự phòng shape cũ (list)
         wk, month, mlabel = data, {}, ""
     cols = [("ngay", "Ngày"), ("thu", "Thứ"),
-            # ── ĐÓNG HÀNG (xanh) — luồng: xác nhận → soạn → đóng gói THẬT (video) → mất hàng → hủy → giao ──
-            ("dong_goi", "Xác nhận"), ("soan", "Soạn"), ("so_cu", "Cũ (tồn)"),
+            # ── ĐÓNG HÀNG (xanh) — luồng: cũ tồn + xác nhận → soạn → đóng gói THẬT (video) → mất hàng → hủy → giao ──
+            ("so_cu", "Cũ (tồn)"), ("dong_goi", "Xác nhận"), ("soan", "Soạn"),
             ("vid_dong", "Đóng gói (video)"), ("tag_dong", "⚠️ Mất hàng (đóng)"),
             ("huy", "Hủy"), ("shipper_nhan", "Shipper nhận"), ("giao_khach", "Giao khách"),
             # ── HOÀN HÀNG (cam) ──
