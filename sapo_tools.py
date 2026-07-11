@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import math
 import re
+import unicodedata
 from datetime import date, datetime, time, timedelta, timezone
+from difflib import SequenceMatcher
 
 
 SAPO_BASE = "https://vitranboutiquehcm.mysapo.net"
@@ -37,6 +39,48 @@ def money(value) -> int:
 
 def normalize_sku(sku) -> str:
     return str(sku or "").strip().upper()
+
+
+def _fold_text(value) -> str:
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    text = text.upper().replace("Đ", "D")
+    return re.sub(r"[^A-Z0-9]+", " ", text).strip()
+
+
+def _variant_search_text(row: dict) -> str:
+    return _fold_text(" ".join(str(row.get(k) or "") for k in (
+        "sku", "product_name", "variant_name", "product_type", "tags", "barcode"
+    )))
+
+
+def _variant_score(row: dict, query: str) -> float:
+    q = _fold_text(query)
+    if not q:
+        return 1
+    sku = _fold_text(row.get("sku"))
+    name = _fold_text(row.get("product_name"))
+    variant = _fold_text(row.get("variant_name"))
+    hay = " ".join(x for x in (sku, name, variant, _fold_text(row.get("product_type")), _fold_text(row.get("tags")), _fold_text(row.get("barcode"))) if x)
+    compact_q = q.replace(" ", "")
+    compact_sku = sku.replace(" ", "")
+    words = [w for w in q.split() if w]
+    score = 0.0
+    if compact_q and compact_sku.startswith(compact_q):
+        score += 120
+    elif compact_q and compact_q in compact_sku:
+        score += 95
+    if q in hay:
+        score += 80
+    if words:
+        matched = sum(1 for w in words if w in hay)
+        score += matched / len(words) * 55
+        if matched == len(words):
+            score += 25
+    score += SequenceMatcher(None, q, sku).ratio() * 35
+    score += SequenceMatcher(None, q, name).ratio() * 30
+    score += SequenceMatcher(None, q, f"{name} {variant}".strip()).ratio() * 25
+    return score
 
 
 def parse_sku(sku) -> dict:
@@ -288,20 +332,20 @@ def movement_by_sku(rows: list[dict]) -> dict[str, dict]:
 
 
 def filter_variants(variants: list[dict], query: str, *, limit: int = 50) -> list[dict]:
-    q = str(query or "").strip().upper()
+    q = str(query or "").strip()
     if not q:
         return variants[:limit]
-    words = [w for w in re.split(r"\s+", q) if w]
-    hits = []
+    scored = []
     for row in variants:
-        hay = " ".join(str(row.get(k) or "").upper() for k in (
-            "sku", "product_name", "variant_name", "product_type", "tags", "barcode"
-        ))
-        if all(w in hay for w in words):
-            hits.append(row)
-            if len(hits) >= limit:
-                break
-    return hits
+        score = _variant_score(row, q)
+        if score >= 30:
+            scored.append((score, row))
+    scored.sort(key=lambda item: (
+        -item[0],
+        -int(_fold_text(item[1].get("sku")).replace(" ", "").startswith(_fold_text(q).replace(" ", ""))),
+        str(item[1].get("sku") or ""),
+    ))
+    return [row for _, row in scored[:limit]]
 
 
 def get_sales_by_sku(
@@ -938,10 +982,7 @@ def calculate_selling_price(data: dict) -> dict:
     lining_width = _num(data.get("lining_width_cm"))
     width_diff = _num(data.get("size_width_diff_cm"), 2)
     length_diff = _num(data.get("size_length_diff_cm"), 1)
-    base_size = str(data.get("base_size") or "M").upper()
     base_index = size_list.index("M") if "M" in size_list else max(0, len(size_list) // 2)
-    if base_size in size_list:
-        base_index = size_list.index(base_size)
     rows = []
     for size in size_list:
         offset = 0 if size == "FREESIZE" else size_list.index(size) - base_index

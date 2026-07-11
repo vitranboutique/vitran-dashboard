@@ -5,13 +5,11 @@ Chạy:  streamlit run app.py
 DEMO:  tự bật khi chưa cấu hình credential (xem README để chuyển sang LIVE).
 """
 import os
-import json
 import re
 import time
 import unicodedata
 from datetime import date, datetime, timedelta, timezone
 from html import escape as _esc
-from pathlib import Path
 from urllib.parse import quote_plus
 
 import pandas as pd
@@ -1123,12 +1121,6 @@ def load_sapo_catalog(max_pages=80):
     return PT.get_catalog_variants(make_fetch_json(build_session()), max_pages=max_pages)
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
-def load_price_tool_html():
-    path = Path(__file__).resolve().parent / "tools" / "tinh-gia-ban.html"
-    return path.read_text(encoding="utf-8")
-
-
 def _attach_inbound(rep, inbound):
     """Ghép NHẬP KHO trong kỳ (NCC + hàng hoàn) vào từng SKU/nhóm + suy ra TỒN ĐẦU KỲ.
     Tồn đầu kỳ = Tồn cuối (hiện tại) − Nhập + Bán trong kỳ."""
@@ -1922,47 +1914,16 @@ def _pick_variant_ui(variants, *, query_key, select_key, label, placeholder):
     q = st.text_input(label, placeholder=placeholder, key=query_key)
     matches = PT.filter_variants(variants, q, limit=80) if q.strip() else []
     if not matches:
-        st.caption("Nhập vài ký tự SKU/tên để tìm trong danh mục Sapo.")
+        st.caption("Gõ mã SKU, tên sản phẩm, tên phiên bản hoặc barcode để hiện gợi ý gần đúng từ Sapo.")
         return None
-    idx = st.selectbox("Chọn từ Sapo", list(range(len(matches))), key=select_key,
+    idx = st.selectbox("Gợi ý gần đúng từ Sapo", list(range(len(matches))), key=select_key,
                        format_func=lambda i: _variant_label(matches[i]))
     return matches[idx] if idx is not None else None
 
 
-def _price_tool_html_with_sapo_product(html, product):
-    if not product:
-        return html
-    payload = json.dumps({
-        "sku": product.get("sku") or "",
-        "name": product.get("product_name") or "",
-        "variant": product.get("variant_name") or "",
-        "price": product.get("price") or 0,
-        "stock": product.get("inventory_quantity") or 0,
-    }, ensure_ascii=False)
-    inject = f"""
-  <script>
-    (function() {{
-      var picked = {payload};
-      window.VT_SAPO_PRODUCT = picked;
-      try {{
-        var key = "vt_tool_cost_calculator";
-        var saved = JSON.parse(localStorage.getItem(key) || "{{}}") || {{}};
-        saved.form = Object.assign({{}}, saved.form || {{}}, {{ productSku: picked.sku }});
-        localStorage.setItem(key, JSON.stringify(saved));
-      }} catch (error) {{
-        console.warn("Không đổ được SKU Sapo vào tool tính giá", error);
-      }}
-    }})();
-  </script>
-"""
-    if "</head>" in html:
-        return html.replace("</head>", inject + "\n</head>", 1)
-    return inject + html
-
-
 def _render_price_page():
     st.title("🧮 Tính giá bán")
-    st.caption("Giữ nguyên công cụ tính giá gốc; phần trên chỉ lấy SKU sản phẩm trực tiếp từ Sapo và tự điền vào ô `Mã SKU sản phẩm`.")
+    st.caption("Giao diện gọn lại theo app, công thức giữ theo tool gốc. SKU sản phẩm và SKU vải có thể tìm trực tiếp từ Sapo.")
     if not credential_present():
         st.warning("⚠️ Trang này cần credential Sapo LIVE.")
         st.stop()
@@ -1972,33 +1933,190 @@ def _render_price_page():
         st.rerun()
     try:
         variants = load_sapo_catalog()
-        html = load_price_tool_html()
     except requests.HTTPError as e:
         st.error(f"❌ Lỗi gọi API Sapo: `{e}`")
         st.stop()
     except Exception as e:
-        st.error(f"❌ Không tải được công cụ tính giá hoặc danh mục Sapo: `{e}`")
+        st.error(f"❌ Không tải được danh mục Sapo: `{e}`")
         st.stop()
 
-    q = st.text_input("Tìm SKU sản phẩm từ Sapo", placeholder="VD: CVBC, SD-DE-M, A18…", key="price_product_q")
-    product = None
-    if q.strip():
-        matches = PT.filter_variants(variants, q, limit=80)
-        if matches:
-            idx = st.selectbox("Chọn SKU để đổ vào công cụ", list(range(len(matches))), key="price_product_pick",
-                               format_func=lambda i: _variant_label(matches[i]))
-            product = matches[idx]
-            cols = st.columns(4)
-            cols[0].metric("SKU chọn", product.get("sku"))
-            cols[1].metric("Giá Sapo", _vnd(product.get("price")))
-            cols[2].metric("Tồn", f"{int(product.get('inventory_quantity') or 0):,}".replace(",", "."))
-            cols[3].metric("Biến thể", product.get("variant_name") or "—")
-        else:
-            st.warning("Không thấy SKU sản phẩm phù hợp trong Sapo. Tool bên dưới vẫn nhập tay được.")
-    else:
-        st.info("Nhập/tìm SKU ở ô trên nếu muốn tự điền từ Sapo; không chọn thì tool gốc vẫn dùng nháp cũ hoặc nhập tay.")
+    st.markdown("#### 1. Mã sản phẩm và vải")
+    sku_cols = st.columns(2)
+    with sku_cols[0]:
+        product = _pick_variant_ui(
+            variants,
+            query_key="price_product_q",
+            select_key="price_product_pick",
+            label="Mã SKU sản phẩm / tên sản phẩm Sapo",
+            placeholder="Bấm vào đây rồi gõ tên hoặc mã, VD: áo phông, A18, CVBC…",
+        )
+        product_sku = product.get("sku") if product else st.text_input("Hoặc nhập SKU sản phẩm", key="price_product_manual")
+    with sku_cols[1]:
+        fabric = _pick_variant_ui(
+            variants,
+            query_key="price_fabric_q",
+            select_key="price_fabric_pick",
+            label="Tìm SKU vải từ Sapo",
+            placeholder="VD: mã vải / tên vải…",
+        )
+        fabric_sku = fabric.get("sku") if fabric else st.text_input("Hoặc nhập SKU vải", key="price_fabric_manual")
 
-    components.html(_price_tool_html_with_sapo_product(html, product), height=1380, scrolling=True)
+    if product or fabric:
+        info_cols = st.columns(4)
+        if product:
+            info_cols[0].metric("SKU SP", product.get("sku"))
+            info_cols[1].metric("Giá SP trên Sapo", _vnd(product.get("price")))
+            info_cols[2].metric("Tồn SP", f"{int(product.get('inventory_quantity') or 0):,}".replace(",", "."))
+        if fabric:
+            info_cols[3].metric("Tồn vải", f"{int(fabric.get('inventory_quantity') or 0):,}".replace(",", "."))
+
+    specs = PT.extract_fabric_specs(
+        *(x for x in (
+            (fabric or {}).get("sku"),
+            (fabric or {}).get("product_name"),
+            (fabric or {}).get("variant_name"),
+            (fabric or {}).get("tags"),
+        ) if x)
+    )
+    fabric_key = re.sub(r"[^A-Za-z0-9_]+", "_", str(fabric_sku or "manual"))
+    st.markdown("#### 2. Thông số vải và định mức")
+    f1 = st.columns(5)
+    fabric_width = f1[0].number_input("Khổ vải (cm)", min_value=0.0, value=float(specs.get("fabric_width_cm") or 160), step=1.0, key=f"price_width_{fabric_key}")
+    meters_per_kg = f1[1].number_input("Chiều dài/kg (m/kg)", min_value=0.0, value=float(specs.get("meters_per_kg") or 2.8), step=0.05, key=f"price_mkg_{fabric_key}")
+    price_per_kg = f1[2].number_input("Giá 1kg vải", min_value=0.0, value=float((fabric or {}).get("price") or 0), step=1000.0, key=f"price_pkg_{fabric_key}")
+    waste = f1[3].number_input("Hao hụt khi cắt (%)", min_value=0.0, value=5.0, step=0.5, key="price_waste")
+    markup = f1[4].number_input("Hệ số giá bán sàn", min_value=0.0, value=4.0, step=0.1, key="price_markup")
+
+    r1 = st.columns(4)
+    main_length = r1[0].number_input("Dài lớp chính (cm)", min_value=0.0, value=60.0, step=1.0, key="price_main_l")
+    main_width = r1[1].number_input("Ngang lớp chính (cm)", min_value=0.0, value=50.0, step=1.0, key="price_main_w")
+    main_layers = r1[2].number_input("Số lớp chính", min_value=0.0, value=1.0, step=1.0, key="price_main_layers")
+    size_count = r1[3].selectbox("Số size", [1, 2, 3, 4, 5, 6], index=4, key="price_size_count")
+
+    r2 = st.columns(4)
+    lining_length = r2[0].number_input("Dài lớp lót (cm)", min_value=0.0, value=0.0, step=1.0, key="price_lining_l")
+    lining_width = r2[1].number_input("Ngang lớp lót (cm)", min_value=0.0, value=0.0, step=1.0, key="price_lining_w")
+    lining_layers = r2[2].number_input("Số lớp lót", min_value=0.0, value=0.0, step=1.0, key="price_lining_layers")
+    base_size = r2[3].selectbox("Size làm gốc", ["M", "FREESIZE"], index=0, key="price_base_size")
+
+    r3 = st.columns(2)
+    width_diff = r3[0].number_input("Chênh ngang mỗi size (cm)", min_value=0.0, value=2.0, step=0.5, key="price_width_diff")
+    length_diff = r3[1].number_input("Chênh dài mỗi size (cm)", min_value=0.0, value=1.0, step=0.5, key="price_length_diff")
+
+    st.markdown("#### 3. Chi phí sản xuất")
+    c1 = st.columns(4)
+    cut_cost = c1[0].number_input("Cắt", min_value=0.0, value=0.0, step=1000.0, key="price_cut_cost")
+    sewing_cost = c1[1].number_input("May", min_value=0.0, value=0.0, step=1000.0, key="price_sewing_cost")
+    iron_pack_cost = c1[2].number_input("Ủi gói", min_value=0.0, value=0.0, step=1000.0, key="price_iron_cost")
+    operation_cost = c1[3].number_input("Vận hành/sp", min_value=0.0, value=5000.0, step=1000.0, key="price_operation_cost")
+
+    c2 = st.columns(4)
+    zipper_cost = c2[0].number_input("Dây kéo", min_value=0.0, value=0.0, step=1000.0, key="price_zipper_cost")
+    thread_cost = c2[1].number_input("Chỉ may", min_value=0.0, value=0.0, step=1000.0, key="price_thread_cost")
+    tag_cost = c2[2].number_input("Nhãn tag", min_value=0.0, value=0.0, step=1000.0, key="price_tag_cost")
+    button_cost = c2[3].number_input("Cúc", min_value=0.0, value=0.0, step=1000.0, key="price_button_cost")
+
+    c3 = st.columns(4)
+    elastic_cost = c3[0].number_input("Lưng thun", min_value=0.0, value=0.0, step=1000.0, key="price_elastic_cost")
+    glue_cost = c3[1].number_input("Keo", min_value=0.0, value=0.0, step=1000.0, key="price_glue_cost")
+    lace_cost = c3[2].number_input("Ren", min_value=0.0, value=0.0, step=1000.0, key="price_lace_cost")
+    other_cost = c3[3].number_input("Khác", min_value=0.0, value=0.0, step=1000.0, key="price_other_cost")
+
+    required_missing = []
+    if not str(product_sku or "").strip():
+        required_missing.append("SKU sản phẩm")
+    if not str(fabric_sku or "").strip():
+        required_missing.append("SKU vải")
+    for label, value in (
+        ("khổ vải", fabric_width),
+        ("chiều dài/kg", meters_per_kg),
+        ("giá 1kg vải", price_per_kg),
+        ("dài lớp chính", main_length),
+        ("ngang lớp chính", main_width),
+        ("số lớp chính", main_layers),
+        ("hệ số giá bán", markup),
+    ):
+        if float(value or 0) <= 0:
+            required_missing.append(label)
+
+    if lining_layers > 0 and (lining_length <= 0 or lining_width <= 0):
+        required_missing.append("dài/ngang lớp lót")
+
+    if required_missing:
+        st.warning("Nhập đủ các mục bắt buộc để tính: " + ", ".join(required_missing) + ".")
+        return
+
+    try:
+        result = PT.calculate_selling_price({
+            "product_sku": product_sku,
+            "fabric_sku": fabric_sku,
+            "fabric_width_cm": fabric_width,
+            "meters_per_kg": meters_per_kg,
+            "price_per_kg": price_per_kg,
+            "main_length_cm": main_length,
+            "main_width_cm": main_width,
+            "main_layers": main_layers,
+            "lining_length_cm": lining_length,
+            "lining_width_cm": lining_width,
+            "lining_layers": lining_layers,
+            "size_count": size_count,
+            "base_size": base_size,
+            "size_width_diff_cm": width_diff,
+            "size_length_diff_cm": length_diff,
+            "waste_percent": waste,
+            "markup_multiplier": markup,
+            "cut_cost": cut_cost,
+            "sewing_cost": sewing_cost,
+            "iron_pack_cost": iron_pack_cost,
+            "zipper_cost": zipper_cost,
+            "thread_cost": thread_cost,
+            "tag_cost": tag_cost,
+            "operation_cost": operation_cost,
+            "button_cost": button_cost,
+            "elastic_cost": elastic_cost,
+            "glue_cost": glue_cost,
+            "lace_cost": lace_cost,
+            "other_cost": other_cost,
+        })
+    except Exception as e:
+        st.error(f"❌ Chưa tính được: {e}")
+        return
+
+    st.markdown("#### 4. Kết quả")
+    summary = result["summary"]
+    kpi = st.columns(5)
+    kpi[0].metric("Giá/m vải", _vnd(summary["meterPrice"]))
+    kpi[1].metric("Mét vải TB/SP", f"{summary['avgFabricMeters']:.3f} m")
+    kpi[2].metric("Tiền vải TB", _vnd(summary["avgFabricCost"]))
+    kpi[3].metric("Giá vốn TB", _vnd(summary["avgCostPrice"]))
+    kpi[4].metric("Giá bán đề xuất", _vnd(summary["avgSellingPrice"]))
+
+    if product and product.get("price"):
+        diff = int(round(summary["avgSellingPrice"] - float(product.get("price") or 0)))
+        st.caption(f"Giá Sapo hiện tại: **{_vnd(product.get('price'))}** · Chênh với đề xuất: **{_vnd(diff)}**")
+
+    out = pd.DataFrame([{
+        "SKU SP": r["productSku"],
+        "SKU vải": r["fabricSku"],
+        "Size": r["size"],
+        "Dài chính": round(r["mainLengthCm"], 1),
+        "Ngang chính": round(r["mainWidthCm"], 1),
+        "Dài lót": round(r["liningLengthCm"], 1),
+        "Ngang lót": round(r["liningWidthCm"], 1),
+        "Diện tích m²": round(r["totalAreaM2"], 4),
+        "Mét vải/SP": round(r["fabricMeters"], 3),
+        "Tiền vải": int(round(r["fabricCost"])),
+        "Chi phí SX": int(round(r["productionCost"])),
+        "Giá vốn": int(round(r["costPrice"])),
+        "Giá bán sàn": int(round(r["sellingPrice"])),
+    } for r in result["rows"]])
+    st.dataframe(out, width="stretch", hide_index=True)
+    st.download_button(
+        "⬇️ Tải CSV tính giá",
+        out.to_csv(index=False).encode("utf-8-sig"),
+        "tinh-gia-ban.csv",
+        "text/csv",
+    )
 
 
 # Popup cảnh báo cố định — hiện ở MỌI trang (kho/admin thêm việc SX/cắt tay)
