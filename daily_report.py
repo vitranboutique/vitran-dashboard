@@ -175,13 +175,16 @@ def _huy_rows(detail):
     return body or '<tr><td colspan="5">Không có đơn hủy đã đóng gói.</td></tr>'
 
 
-def _grouped_tick_rows(detail, mark_packed=False):
-    """Liệt kê đơn GOM THEO ĐVVC, mỗi đơn 1 ô tick + mã đơn + mã VĐ + SKU×SL."""
+def _grouped_tick_rows(detail, mark_packed=False, force_pk=False, tick=True):
+    """Liệt kê đơn GOM THEO ĐVVC, mỗi đơn 1 ô tick + mã đơn + mã VĐ + SKU×SL.
+    force_pk=True → mọi đơn đều gắn 'cần lấy lại' (nhóm đã soạn). tick=False → bỏ ô tick."""
     if not detail:
         return '<div class="dline" style="color:#9aa3af">— Không có đơn —</div>'
     groups = OrderedDict()
     for d in detail:
         groups.setdefault(str(d.get("carrier") or "?"), []).append(d)
+    _box = ('<span class="cbox2"></span> ' if tick
+            else '<span style="display:inline-block;width:.85em;margin-right:2px"></span>')
     html = ""
     for cr, items in groups.items():
         html += f'<div class="dvgrp">▸ {_e(cr)} ({len(items)})</div>'
@@ -189,10 +192,35 @@ def _grouped_tick_rows(detail, mark_packed=False):
             nm = _e(str(d.get("name") or "?"))
             tk = str(d.get("tracking") or "")
             tk_html = f' · <span class="vd">{_e(tk)}</span>' if tk and tk != d.get("name") else ""
-            pk = ' <span class="pk">📦 cần lấy lại</span>' if (mark_packed and d.get("packed")) else ""
-            html += (f'<div class="dline"><span class="cbox2"></span> '
+            pk = (' <span class="pk">📦 cần lấy lại</span>'
+                  if (force_pk or (mark_packed and d.get("packed"))) else "")
+            html += (f'<div class="dline">{_box}'
                      f'<b>{nm}</b>{tk_html} · {_e(str(d.get("sku", "")))}{pk}</div>')
     return html
+
+
+def _huy_split_html(huy_all, soan_known):
+    """Tách đơn hủy 2 nhóm: ĐÃ SOẠN (mã ∈ phiếu nhặt → cầm hàng ra kho → CẦN LẤY LẠI) vs
+    CHƯA SOẠN (mã không có trong phiếu nhặt → hủy sớm, KHỎI lấy lại).
+    soan_known=False (ngày chưa lưu mã phiếu nhặt) → chưa tách được, dùng danh sách cũ + ghi chú."""
+    if not huy_all:
+        return '<div class="dline" style="color:#9aa3af">— Không có đơn —</div>'
+    if not soan_known:
+        return (_grouped_tick_rows(huy_all, mark_packed=True)
+                + '<div class="dline" style="color:#9aa3af;font-size:.9em">'
+                  '(Ngày này phiếu nhặt chưa lưu mã đơn nên chưa tách được nhóm "cần lấy lại thật")</div>')
+    _soan = [d for d in huy_all if d.get("soan")]
+    _som = [d for d in huy_all if not d.get("soan")]
+    h = ""
+    if _soan:
+        h += ('<div style="color:#b91c1c;font-weight:800;margin:1px 0 2px">'
+              f'📦 CẦN LẤY LẠI — đã soạn, đã cầm hàng ra kho ({len(_soan)}) · tick khi đã nhận lại</div>'
+              + _grouped_tick_rows(_soan, force_pk=True))
+    if _som:
+        h += ('<div style="color:#6b7280;font-weight:800;margin:5px 0 2px">'
+              f'⚪ HỦY SỚM — chưa soạn, KHỎI lấy lại ({len(_som)})</div>'
+              + _grouped_tick_rows(_som, tick=False))
+    return h
 
 
 def _conxot_rows(packed, unpacked, collapse=False):
@@ -657,9 +685,8 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
         detail_block = (
             '<div class="fdetail">'
             '<div class="fdcol fdcol-huy">'
-            f'<div class="fdhead" style="color:#b91c1c">❌ ĐƠN HỦY HÔM NAY ({len(_huy_all)}) '
-            '— tick khi đã nhận lại hàng</div>'
-            f'{_grouped_tick_rows(_huy_all, mark_packed=True)}</div>'
+            f'<div class="fdhead" style="color:#b91c1c">❌ ĐƠN HỦY HÔM NAY ({len(_huy_all)})</div>'
+            f'{_huy_split_html(_huy_all, rep.get("huy_soan_known"))}</div>'
             '<div class="fdcol fdcol-xot">'
             f'<div class="fdhead" style="color:#b45309">⏳ CÒN XÓT LẠI ({len(_conxot)}) '
             '— đã xác nhận, CHƯA giao shipper</div>'

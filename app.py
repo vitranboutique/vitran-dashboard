@@ -941,6 +941,26 @@ def load_daily_report(date_iso=None):
     return L.get_daily_report(make_fetch_json(build_session()), target_date=td)
 
 
+def _inject_huy_soan(rep, date_iso):
+    """Cắm cờ 'soan' cho từng đơn HỦY: mã (VĐ/đơn) ∈ mã phiếu nhặt đã lưu ngày đó = ĐÃ SOẠN
+    (cầm hàng ra kho → cần lấy lại). Không có trong phiếu nhặt = hủy sớm, khỏi lấy.
+    Chỉ tách được khi phiếu nhặt ngày đó có lưu mã đơn (từ bản cập nhật này trở đi)."""
+    if not (picklog.configured() and isinstance(rep, dict) and rep.get("huy_all_detail")):
+        return
+    try:
+        _codes = set()
+        for _e in picklog.read_date(date_iso):
+            _codes |= {str(c).strip() for c in (_e.get("codes") or []) if c}
+        if not _codes:
+            return   # ngày chưa lưu mã phiếu nhặt → không tách được (giữ list cũ)
+        for _h in rep["huy_all_detail"]:
+            _h["soan"] = bool(str(_h.get("tracking") or "").strip() in _codes
+                              or str(_h.get("name") or "").strip() in _codes)
+        rep["huy_soan_known"] = True
+    except Exception:
+        pass
+
+
 @st.cache_data(ttl=600, show_spinner="Đang tổng hợp 30 ngày (1 tháng)…")
 def load_week_summary():
     data = L.get_week_summary(make_fetch_json(build_session()), days=30)
@@ -5159,6 +5179,7 @@ def _render_daily():
             _pl = picklog.read_date(_iso)
             _rep["funnel"]["soan"] = sum(r.get("so_don", 0) or 0 for r in _pl) or None
             _rep["funnel"]["soan_sp"] = sum(r.get("so_sp", 0) or 0 for r in _pl) or None
+        _inject_huy_soan(_rep, _iso)
         st.info(f"🗂️ Báo cáo ngày **{_disp}** — query lại từ Sapo, **video lấy từ kho đã lưu** "
                 "(Dohana chỉ giữ ~30 ngày; kho Gist lưu bền cả năm). Ngày trước khi bật lưu có thể trống video.")
         _nrep = f"{_disp} (xem lại)"
@@ -5186,6 +5207,7 @@ def _render_daily():
         _pl = picklog.read_today()
         _rep["funnel"]["soan"] = sum(r.get("so_don", 0) or 0 for r in _pl) or None
         _rep["funnel"]["soan_sp"] = sum(r.get("so_sp", 0) or 0 for r in _pl) or None
+    _inject_huy_soan(_rep, _today_iso_vn())
     _now_vn = datetime.now(timezone.utc) + timedelta(hours=7)
     _nrep = _now_vn.strftime("%H:%M %d/%m/%Y")
     _nrec = len((_rep.get("nhap_kho") or {}).get("recon_rows") or [])
