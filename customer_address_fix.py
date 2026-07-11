@@ -8,8 +8,8 @@ from functools import lru_cache
 from pathlib import Path
 
 
-FIXABLE_CATEGORIES = ("thieu_ma_tinh", "thieu_ca_2")
-FIX_VERSION = "2026-07-11-unique-component-v2"
+FIXABLE_CATEGORIES = ("sdt_sai", "thieu_ma_tinh", "thieu_ca_2", "thieu_sdt", "thieu_ma_phuong")
+FIX_VERSION = "2026-07-11-customer-fix-buttons-v3"
 
 ADMIN_PREFIXES = (
     "THANH PHO",
@@ -554,6 +554,41 @@ def normalize_phone(value: str) -> str:
     return digits if re.match(r"^0\d{9}$", digits) else ""
 
 
+def normalize_phone_strict(value: str) -> str:
+    """Return a Sapo-safe VN phone only when the source is clearly repairable."""
+    raw = str(value or "").strip()
+    if not raw or "*" in raw:
+        return ""
+    digits = re.sub(r"\D+", "", raw)
+    if raw.startswith("+84") and len(digits) == 11 and digits.startswith("84"):
+        return "+84" + digits[2:]
+    if digits.startswith("0084") and len(digits) == 13:
+        return "+84" + digits[4:]
+    if digits.startswith("840") and len(digits) == 12:
+        rest = digits[3:]
+        return "+84" + rest if len(rest) == 9 else ""
+    if digits.startswith("84") and len(digits) == 11:
+        return "+84" + digits[2:]
+    if digits.startswith("00") and len(digits) == 11:
+        fixed = "0" + digits[2:]
+        return fixed if re.match(r"^0\d{9}$", fixed) else ""
+    if digits.startswith("0") and len(digits) == 10:
+        return digits
+    return ""
+
+
+def phone_core(value: str) -> str:
+    fixed = normalize_phone_strict(value)
+    return fixed[-9:] if fixed else ""
+
+
+def phone_format_bad(value: str) -> bool:
+    value = str(value or "").strip()
+    if not value or "*" in value:
+        return False
+    return not (re.match(r"^0\d{9}$", value) or re.match(r"^\+84\d{9}$", value))
+
+
 def primary_address(customer: dict) -> dict:
     addr = customer.get("default_address") if isinstance(customer, dict) else {}
     if isinstance(addr, dict) and (addr.get("address1") or addr.get("id")):
@@ -575,33 +610,55 @@ def full_address_text(addr: dict) -> str:
     return ", ".join(parts)
 
 
-def customer_fix_info(customer: dict, category: str) -> dict:
-    if category not in FIXABLE_CATEGORIES:
-        return {"ok": False, "reason": "unsupported_category"}
-    if not isinstance(customer, dict) or not customer.get("id"):
-        return {"ok": False, "reason": "bad_customer"}
+def customer_name(customer: dict) -> str:
+    return str(
+        customer.get("name")
+        or f"{customer.get('first_name') or ''} {customer.get('last_name') or ''}".strip()
+        or ""
+    ).strip()
 
+
+def address_code_value(addr: dict, *keys: str) -> str:
+    for key in keys:
+        value = str((addr or {}).get(key) or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def structured_info_from_existing(customer: dict, phone: str) -> dict | None:
+    addr = primary_address(customer)
+    province_code = address_code_value(addr, "province_code", "province_id", "city_id", "municipality_id")
+    ward_code = address_code_value(addr, "ward_code", "ward_id", "commune_code", "commune_id", "location_id", "new_ward_id")
+    if not province_code and not ward_code:
+        return None
+    district_code = address_code_value(addr, "district_code", "district_id")
+    return {
+        "name": customer_name(customer),
+        "phone": phone,
+        "address1": str(addr.get("address1") or full_address_text(addr)).strip()[:255],
+        "address_format": "old" if district_code else "new",
+        "province": str(addr.get("province_name") or addr.get("province") or addr.get("city") or "").strip(),
+        "province_code": province_code,
+        "district": str(addr.get("district_name") or addr.get("district") or "").strip(),
+        "district_code": district_code,
+        "ward": str(addr.get("ward_name") or addr.get("ward") or "").strip(),
+        "ward_code": ward_code,
+    }
+
+
+def resolved_info_from_text(customer: dict, phone: str) -> dict:
     addr = primary_address(customer)
     text = full_address_text(addr)
     resolved = resolve_text_address(text)
     if not resolved.get("ok"):
         return {**resolved, "source_address": text}
 
-    addr_phone = normalize_phone(addr.get("phone") or addr.get("phone_number") or addr.get("mobile"))
-    contact_phone = normalize_phone(customer.get("phone") or customer.get("phone_number") or customer.get("mobile"))
-    phone = addr_phone or contact_phone
-    if category == "thieu_ca_2" and not phone:
-        return {"ok": False, "reason": "no_valid_phone", "source_address": text}
-    if not phone:
-        return {"ok": False, "reason": "no_valid_phone", "source_address": text}
-
-    name = str(customer.get("name") or f"{customer.get('first_name') or ''} {customer.get('last_name') or ''}".strip()).strip()
     address1 = str(addr.get("address1") or text).strip()
     if len(address1) > 255:
         address1 = address1[:255]
-
     info = {
-        "name": name,
+        "name": customer_name(customer),
         "phone": phone,
         "address1": address1,
         "address_format": resolved.get("format"),
@@ -613,3 +670,64 @@ def customer_fix_info(customer: dict, category: str) -> dict:
         "ward_code": str(resolved.get("ward_code") or ""),
     }
     return {"ok": True, "info": info, "resolved": resolved, "source_address": text}
+
+
+def customer_fix_info(customer: dict, category: str) -> dict:
+    if category not in FIXABLE_CATEGORIES:
+        return {"ok": False, "reason": "unsupported_category"}
+    if not isinstance(customer, dict) or not customer.get("id"):
+        return {"ok": False, "reason": "bad_customer"}
+
+    addr = primary_address(customer)
+    text = full_address_text(addr)
+    addr_raw = addr.get("phone") or addr.get("phone_number") or addr.get("mobile")
+    contact_raw = customer.get("phone") or customer.get("phone_number") or customer.get("mobile")
+    addr_phone = normalize_phone(addr_raw)
+    contact_phone = normalize_phone(contact_raw)
+    phone = addr_phone or contact_phone
+
+    if category == "sdt_sai":
+        candidates = []
+        for raw in (contact_raw, addr_raw):
+            fixed = normalize_phone_strict(raw)
+            if fixed:
+                candidates.append(fixed)
+        cores = {phone_core(p) for p in candidates if phone_core(p)}
+        if not cores:
+            return {"ok": False, "reason": "no_valid_phone", "source_address": text}
+        if len(cores) > 1:
+            return {"ok": False, "reason": "phone_conflict", "source_address": text}
+        phone = candidates[0]
+        existing = structured_info_from_existing(customer, phone)
+        if existing:
+            existing["require_contact_phone"] = phone_format_bad(contact_raw)
+            return {"ok": True, "info": existing, "source_address": text}
+        resolved = resolved_info_from_text(customer, phone)
+        if resolved.get("ok"):
+            resolved["info"]["require_contact_phone"] = phone_format_bad(contact_raw)
+            return resolved
+        if text:
+            return resolved
+        return {
+            "ok": True,
+            "info": {
+                "name": customer_name(customer),
+                "phone": phone,
+                "phone_only": True,
+                "require_contact_phone": True,
+            },
+            "source_address": text,
+        }
+
+    if category == "thieu_sdt":
+        phone = normalize_phone_strict(contact_raw) or normalize_phone(contact_raw)
+        if not phone:
+            return {"ok": False, "reason": "no_valid_phone", "source_address": text}
+        existing = structured_info_from_existing(customer, phone)
+        if existing and existing.get("province_code") and existing.get("ward_code"):
+            return {"ok": True, "info": existing, "source_address": text}
+        return resolved_info_from_text(customer, phone)
+
+    if not phone:
+        return {"ok": False, "reason": "no_valid_phone", "source_address": text}
+    return resolved_info_from_text(customer, phone)

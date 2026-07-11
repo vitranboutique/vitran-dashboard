@@ -543,8 +543,8 @@ CUST_ERR_LABELS = {
     "thieu_ma_tinh": "🔴 Thiếu mã tỉnh (địa chỉ chỉ có text) — CẦN FIX",
     "thieu_ca_2": "🔴 Thiếu mã tỉnh + SĐT — CẦN FIX",
     "khong_dia_chi": "🔴 Không có địa chỉ",
-    "thieu_sdt": "🟡 Đủ mã vùng, thiếu SĐT ở địa chỉ (đã fix hàng loạt)",
-    "thieu_ma_phuong": "⚪ Có Tỉnh, thiếu mã Phường (ĐA SỐ bình thường — địa chỉ cũ)",
+    "thieu_sdt": "🟡 Đủ mã vùng, thiếu SĐT ở địa chỉ — CẦN FIX",
+    "thieu_ma_phuong": "⚪ Có Tỉnh, thiếu mã Phường — CẦN KIỂM/SỬA",
     "thieu_ghi_chu": "🟠 Thiếu ghi chú mã đơn (username + mã đơn để đối chiếu) — sửa dần",
 }
 

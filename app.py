@@ -2452,14 +2452,37 @@ if _page == PAGE_TTKH:
                         if _mid and _mid not in _blocked_ids:
                             _fix_rows.append({"cat": _cat, **_m})
                 _pending_fix_cat = st.session_state.pop("cust_addr_fix_action_cat", "")
-                _run_fix_rows = [r for r in _fix_rows if r.get("cat") == _pending_fix_cat] if _pending_fix_cat else _fix_rows
+                _pending_retry_ids = {
+                    str(x).strip()
+                    for x in (st.session_state.pop("cust_addr_fix_retry_ids", []) or [])
+                    if str(x).strip()
+                }
+                _retry_rows = []
+                if _pending_retry_ids:
+                    for _bid in _pending_retry_ids:
+                        _br = _blocked_by_id.get(_bid) or {}
+                        _bcat = str(_br.get("cat") or "").strip()
+                        if _bcat in _fix_cats:
+                            _retry_rows.append({
+                                "cat": _bcat,
+                                "id": _bid,
+                                "ten": _br.get("Tên") or "",
+                                "sdt": _br.get("SĐT") or "",
+                                "dia_chi": _br.get("Địa chỉ") or "",
+                            })
+                if _pending_retry_ids:
+                    _run_fix_rows = _retry_rows
+                elif _pending_fix_cat:
+                    _run_fix_rows = [r for r in _fix_rows if r.get("cat") == _pending_fix_cat]
+                else:
+                    _run_fix_rows = _fix_rows
                 _total_fixable = sum(int(_counts.get(_cat, 0) or 0) for _cat in _fix_cats)
-                st.markdown("#### 🛠️ Sửa tự động địa chỉ khớp chắc")
-                st.caption("Áp dụng cho 2 nhóm: **Thiếu mã tỉnh** và **Thiếu mã tỉnh + SĐT**. "
-                           "App đọc lại từng khách từ Sapo, chỉ ghi khi phân được địa chỉ cũ/mới và đủ mã vùng. "
-                           "Dòng mơ hồ/mâu thuẫn sẽ được bỏ qua và ghi rõ lý do.")
+                st.markdown("#### 🛠️ Sửa tự động theo từng nhóm lỗi")
+                st.caption("Mỗi nút chỉ ghi Sapo khi dòng đó khớp chắc với đúng loại lỗi: SĐT sửa được thì chuẩn hóa SĐT, "
+                           "địa chỉ sửa được thì phải phân được địa chỉ cũ/mới và đủ mã tỉnh/quận/phường. "
+                           "Dòng mơ hồ/mâu thuẫn/thiếu dữ liệu sẽ được để qua bên kèm lý do, không ghi bừa.")
                 _fx = st.columns([1.1, 1.1, 1.1, 1.2, 2.2])
-                _fx[0].metric("Trong 2 nhóm", f"{_total_fixable:,}")
+                _fx[0].metric("Có nút sửa", f"{_total_fixable:,}")
                 _fx[1].metric("Chờ sửa", f"{len(_fix_rows):,}")
                 _fx[2].metric("Để qua bên", f"{len(_blocked_ids):,}")
                 _batch_n = 60
@@ -2473,6 +2496,7 @@ if _page == PAGE_TTKH:
                         "address_unresolved": "Chưa khớp chắc tỉnh/quận/phường từ text địa chỉ.",
                         "address_conflict": "Địa chỉ có dấu hiệu mâu thuẫn phường/xã.",
                         "no_valid_phone": "Không có SĐT hợp lệ để lưu vào địa chỉ.",
+                        "phone_conflict": "SĐT khách và SĐT địa chỉ mâu thuẫn sau khi chuẩn hóa.",
                         "unsupported_category": "Nhóm lỗi này chưa bật sửa tự động.",
                         "bad_customer": "Dữ liệu khách không hợp lệ.",
                         "customer_not_found": "Không đọc được khách từ Sapo.",
@@ -2495,6 +2519,8 @@ if _page == PAGE_TTKH:
                         return "Không fix bằng code; thiếu địa chỉ gốc."
                     if any(x in raw for x in ("no_valid_phone", "không có sđt", "không có sdt")):
                         return "Không fix bằng code; thiếu SĐT hợp lệ."
+                    if any(x in raw for x in ("phone_conflict", "mâu thuẫn sđt", "mâu thuẫn sdt")):
+                        return "Không auto an toàn; cần xem tay vì có nhiều SĐT khác nhau."
                     if any(x in raw for x in ("rate_limited", "429")):
                         return "Tạm thời do Sapo chặn; chờ rồi chạy lại, không phải lỗi rule."
                     if any(x in raw for x in ("auth_failed", "401", "403")):
@@ -2515,6 +2541,8 @@ if _page == PAGE_TTKH:
                         return "no_address"
                     if "no_valid_phone" in raw or "không có sđt" in raw or "không có sdt" in raw:
                         return "no_valid_phone"
+                    if "phone_conflict" in raw or "mâu thuẫn sđt" in raw or "mâu thuẫn sdt" in raw:
+                        return "phone_conflict"
                     if "rate_limited" in raw or "429" in raw:
                         return "rate_limited"
                     if "auth_failed" in raw or "401" in raw or "403" in raw:
@@ -2533,10 +2561,12 @@ if _page == PAGE_TTKH:
 
                 if _pending_fix_cat:
                     st.info(f"Đang chạy sửa nhóm: **{L.CUST_ERR_LABELS.get(_pending_fix_cat, _pending_fix_cat)}**")
-                if st.button(f"🛠️ Sửa tự động dòng khớp chắc — xử lý {min(len(_fix_rows), int(_batch_n))} khách",
-                             key="cust_addr_fix_run", use_container_width=True) or bool(_pending_fix_cat):
+                if _pending_retry_ids:
+                    st.info(f"Đang thử sửa lại **{len(_retry_rows):,} khách đã để qua bên** bằng rule hiện tại.")
+                if st.button(f"🛠️ Sửa tất cả nhóm đang sửa được — xử lý {min(len(_fix_rows), int(_batch_n))} khách",
+                             key="cust_addr_fix_run", use_container_width=True) or bool(_pending_fix_cat) or bool(_pending_retry_ids):
                     if not _run_fix_rows:
-                        st.info("Không có khách nào trong 2 nhóm khả thi để xử lý.")
+                        st.info("Không có khách nào trong nhóm khả thi để xử lý.")
                     else:
                         _batch = _run_fix_rows[:int(_batch_n)]
                         _sess = build_session()
@@ -2604,15 +2634,16 @@ if _page == PAGE_TTKH:
                                     if _saved.get("ok"):
                                         _done_ids.append(_cid)
                                         _success_by_cat[_cat] = _success_by_cat.get(_cat, 0) + 1
+                                        _is_phone_only = bool(_info.get("phone_only"))
                                         _results.append({
                                             **_base,
                                             "Kết quả": "Đã sửa",
-                                            "Loại địa chỉ": "Mới" if _info.get("address_format") == "new" else "Cũ",
+                                            "Loại địa chỉ": "Chỉ SĐT" if _is_phone_only else ("Mới" if _info.get("address_format") == "new" else "Cũ"),
                                             "Mã tỉnh": _info.get("province_code") or "",
-                                            "Mã quận": "" if _info.get("address_format") == "new" else (_info.get("district_code") or ""),
+                                            "Mã quận": "" if _is_phone_only or _info.get("address_format") == "new" else (_info.get("district_code") or ""),
                                             "Mã phường": _info.get("ward_code") or "",
                                             "Mã lỗi": "",
-                                            "Lý do / cách xử lý": f"{_info.get('ward') or ''}, {_info.get('district') or ''}, {_info.get('province') or ''}".strip(", "),
+                                            "Lý do / cách xử lý": "Đã chuẩn hóa SĐT chính của khách." if _is_phone_only else f"{_info.get('ward') or ''}, {_info.get('district') or ''}, {_info.get('province') or ''}".strip(", "),
                                             "Đánh giá fix code": "Đã sửa được bằng rule hiện tại.",
                                             "Địa chỉ": _info.get("address1") or _base.get("Địa chỉ") or "",
                                         })
@@ -2624,9 +2655,9 @@ if _page == PAGE_TTKH:
                                         _results.append({
                                             **_base,
                                             "Kết quả": "Lỗi ghi Sapo",
-                                            "Loại địa chỉ": "Mới" if _info.get("address_format") == "new" else "Cũ",
+                                            "Loại địa chỉ": "Chỉ SĐT" if _info.get("phone_only") else ("Mới" if _info.get("address_format") == "new" else "Cũ"),
                                             "Mã tỉnh": _info.get("province_code") or "",
-                                            "Mã quận": "" if _info.get("address_format") == "new" else (_info.get("district_code") or ""),
+                                            "Mã quận": "" if _info.get("phone_only") or _info.get("address_format") == "new" else (_info.get("district_code") or ""),
                                             "Mã phường": _info.get("ward_code") or "",
                                             "Mã lỗi": _reason,
                                             "Lý do / cách xử lý": _reason_text,
@@ -2670,7 +2701,11 @@ if _page == PAGE_TTKH:
                             for _cat, _n_ok_cat in _success_by_cat.items():
                                 _counts[_cat] = max(int(_counts.get(_cat, 0) or 0) - int(_n_ok_cat), 0)
                             _ca["counts"] = _counts
-                            _merged_blocked = dict(_blocked_by_id)
+                            _merged_blocked = {
+                                _bid: _brow
+                                for _bid, _brow in dict(_blocked_by_id).items()
+                                if _bid not in _done_set
+                            }
                             for _row_block in _new_blocked:
                                 _bid = str(_row_block.get("Mã KH") or "").strip()
                                 if _bid and _bid not in _done_set:
@@ -2741,10 +2776,26 @@ if _page == PAGE_TTKH:
                 if isinstance(_blocked_rows, dict):
                     _blocked_rows = list(_blocked_rows.values())
                 if _blocked_rows:
-                    _bc = st.columns([1.4, 1.4, 4])
+                    _retryable_blocked = [
+                        r for r in _blocked_rows
+                        if str((r or {}).get("cat") or "").strip() in _fix_cats
+                    ]
+                    _bc = st.columns([1.2, 1.2, 1.8, 2.4])
                     _bc[0].metric("Để qua bên", f"{len(_blocked_rows):,}")
                     _bc[1].caption("Các khách này sẽ KHÔNG tự retry trong lượt sau.")
-                    if _bc[2].button("🔁 Cho thử lại toàn bộ khách đã để qua bên", key="cust_addr_fix_unblock"):
+                    if _bc[2].button(
+                        f"🛠️ Thử sửa {min(len(_retryable_blocked), int(_batch_n))} khách để qua bên",
+                        key="cust_addr_fix_retry_blocked",
+                        use_container_width=True,
+                        disabled=not bool(_retryable_blocked),
+                    ):
+                        st.session_state["cust_addr_fix_retry_ids"] = [
+                            str((r or {}).get("Mã KH") or (r or {}).get("id") or "").strip()
+                            for r in _retryable_blocked[:int(_batch_n)]
+                            if str((r or {}).get("Mã KH") or (r or {}).get("id") or "").strip()
+                        ]
+                        st.rerun()
+                    if _bc[3].button("🔁 Mở lại toàn bộ để chạy từ đầu", key="cust_addr_fix_unblock", use_container_width=True):
                         _ca["auto_fix_blocked"] = []
                         st.session_state["cust_audit"] = _ca
                         try:
@@ -2836,6 +2887,15 @@ if _page == PAGE_TTKH:
                         st.dataframe(_df, hide_index=True, width="stretch",
                                      column_config={"Mở Sapo": st.column_config.LinkColumn("Mở Sapo", display_text="Mở")})
 
+                _cat_fix_notes = {
+                    "sdt_sai": "chỉ sửa số chuẩn hóa chắc",
+                    "thieu_ma_tinh": "địa chỉ text đủ tỉnh/quận/phường",
+                    "thieu_ca_2": "đủ địa chỉ + lấy được SĐT hợp lệ",
+                    "thieu_sdt": "copy SĐT chính vào địa chỉ",
+                    "thieu_ma_phuong": "suy ra phường từ text chắc",
+                    "khong_dia_chi": "không có địa chỉ gốc để suy ra",
+                    "thieu_ghi_chu": "cần mã đơn gốc để đối chiếu",
+                }
                 for _cat, _label in L.CUST_ERR_LABELS.items():
                     _n = _counts.get(_cat, 0)
                     if not _n:
@@ -2848,13 +2908,13 @@ if _page == PAGE_TTKH:
                         _title += f" · chờ sửa {len(_active_smp)}"
                         if _blocked_in_group:
                             _title += f" · để qua bên {_blocked_in_group}"
-                    if _cat in _fix_cats:
-                        _erow = st.columns([6, 1.2])
-                        with _erow[0]:
-                            with st.expander(_title):
-                                _render_cust_samples(_smp)
-                        with _erow[1]:
-                            st.write("")
+                    _erow = st.columns([6, 1.6])
+                    with _erow[0]:
+                        with st.expander(_title):
+                            _render_cust_samples(_smp)
+                    with _erow[1]:
+                        st.write("")
+                        if _cat in _fix_cats:
                             _can_run = bool(_active_smp)
                             if st.button(
                                 f"🛠️ Sửa {min(len(_active_smp), int(_batch_n))}",
@@ -2864,12 +2924,17 @@ if _page == PAGE_TTKH:
                             ):
                                 st.session_state["cust_addr_fix_action_cat"] = _cat
                                 st.rerun()
-                            st.caption("khớp chắc")
-                    else:
-                        with st.expander(_title):
-                            _render_cust_samples(_smp)
-                st.caption("SĐT có **⚠️** = sai định dạng. Mỗi nhóm 1 kiểu lỗi → code fix riêng ở bước sau. "
-                           "Nhóm 'thiếu SĐT' đã fix xong (1.327 khách).")
+                            st.caption(_cat_fix_notes.get(_cat, "chỉ ghi khi khớp chắc"))
+                        else:
+                            st.button(
+                                "🚫 Không auto",
+                                key=f"cust_addr_no_auto_{_cat}",
+                                use_container_width=True,
+                                disabled=True,
+                            )
+                            st.caption(_cat_fix_notes.get(_cat, "cần xem tay"))
+                st.caption("SĐT có **⚠️** = sai định dạng. App có nút sửa cho nhóm có thể xác định chắc; "
+                           "nhóm thiếu dữ liệu/mâu thuẫn sẽ không ghi Sapo để tránh sai bộ lọc.")
 
         with st.expander("ℹ️ Điều kiện lọc đơn"):
             st.caption("Đơn trong `Tất cả`, không hủy, tạo trong số ngày chọn, ghi chú/địa chỉ SAPO chưa có SĐT khách.")

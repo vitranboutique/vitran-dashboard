@@ -563,6 +563,11 @@ def _customer_phone_saved(customer: dict, expected_phone: str) -> bool:
     return False
 
 
+def _customer_top_phone_saved(customer: dict, expected_phone: str) -> bool:
+    phones = [customer.get("phone"), customer.get("mobile"), customer.get("phone_number")]
+    return any(_phone_matches(phone, expected_phone) for phone in phones)
+
+
 def _address_text(value) -> str:
     if not isinstance(value, dict):
         return ""
@@ -671,6 +676,37 @@ def _set_customer_default_address(session: requests.Session, customer_id, addres
     return resp.status_code < 400
 
 
+def _save_customer_core_fields(session: requests.Session, customer_id, info: dict, attempts: list[str], token: str | None) -> bool:
+    phone = str((info or {}).get("phone") or "").strip()
+    if not customer_id or not phone:
+        return False
+    payload = {
+        "customer": {
+            "id": customer_id,
+            "phone": phone,
+            "phone_number": phone,
+            "mobile": phone,
+        }
+    }
+    page_url = f"{BASE}/admin/customers/{customer_id}"
+    for method in ("put", "patch"):
+        resp = getattr(session, method)(
+            f"{BASE}/admin/customers/{customer_id}.json",
+            json=payload,
+            headers=_json_headers(page_url, token),
+            timeout=30,
+            allow_redirects=False,
+        )
+        attempts.append(_attempt_desc(resp))
+        if resp.status_code < 400:
+            try:
+                if _customer_top_phone_saved(get_customer(session, customer_id), phone):
+                    return True
+            except Exception as e:
+                attempts.append(f"GET customer after phone update -> {type(e).__name__}: {e}")
+    return False
+
+
 def _save_customer_address(session: requests.Session, customer_id, info: dict, attempts: list[str], token: str | None) -> bool:
     if not customer_id:
         return False
@@ -749,6 +785,44 @@ def update_customer_address_from_info(session: requests.Session, customer_id, in
 
     page_url = f"{BASE}/admin/customers/{cid}"
     token = _page_csrf_token(session, page_url, attempts)
+    core_saved = False
+    if (info or {}).get("phone"):
+        try:
+            core_saved = _save_customer_core_fields(session, cid, info or {}, attempts, token)
+        except Exception as e:
+            attempts.append(f"save customer phone -> {type(e).__name__}: {e}")
+            core_saved = False
+
+    if (info or {}).get("phone_only"):
+        verified = False
+        customer = {}
+        try:
+            customer = get_customer(session, cid)
+            verified = _customer_top_phone_saved(customer, str((info or {}).get("phone") or ""))
+        except Exception as e:
+            attempts.append(f"GET customer final phone verify -> {type(e).__name__}: {e}")
+        if core_saved or verified:
+            return {
+                "ok": True,
+                "reason": "updated",
+                "customer_id": cid,
+                "address": (customer.get("default_address") or {}) if isinstance(customer, dict) else {},
+                "attempts": attempts,
+            }
+        if any("429" in str(a) for a in attempts):
+            reason = "rate_limited"
+        elif any("401" in str(a) or "403" in str(a) for a in attempts):
+            reason = "auth_failed"
+        else:
+            reason = "verify_failed"
+        return {
+            "ok": False,
+            "reason": reason,
+            "customer_id": cid,
+            "address": (customer.get("default_address") or {}) if isinstance(customer, dict) else {},
+            "attempts": attempts,
+        }
+
     try:
         saved = _save_customer_address(session, cid, info or {}, attempts, token)
     except Exception as e:
@@ -760,10 +834,12 @@ def update_customer_address_from_info(session: requests.Session, customer_id, in
     try:
         customer = get_customer(session, cid)
         verified = _customer_info_saved(customer, info or {})
+        if verified and (info or {}).get("require_contact_phone"):
+            verified = _customer_top_phone_saved(customer, str((info or {}).get("phone") or ""))
     except Exception as e:
         attempts.append(f"GET customer final verify -> {type(e).__name__}: {e}")
 
-    if saved or verified:
+    if (saved and not (info or {}).get("require_contact_phone")) or verified:
         return {
             "ok": True,
             "reason": "updated",
