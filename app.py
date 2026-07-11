@@ -2171,24 +2171,28 @@ def _render_pick():
     # ── Phiếu in (trái) + Lịch sử in & nút Lưu (phải, KẾ BÊN phiếu) ──
     _cslip, _clog = st.columns([3, 2])
     with _cslip:
-        # Nút IN + TỰ LƯU ĐỢT: lưu picklog phía server (không vướng CORS) → rerun tự bung hộp in.
-        if pdata["total"] > 0 and picklog.configured():
-            if st.button("🖨️ In phiếu nhặt + tự lưu đợt", type="primary", width="stretch"):
-                _allsku = {s for s, _ in exp["skus"]} | {s for s, _ in nor["skus"]}
-                _ok, _msg = picklog.log_batch({
-                    "ngay": (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%Y-%m-%d"),
-                    "gio": now_str[:5],
-                    "so_don": exp["total_orders"] + nor["total_orders"],
-                    "so_sp": exp["total_qty"] + nor["total_qty"], "so_sku": len(_allsku),
-                    "ht_don": exp["total_orders"], "th_don": nor["total_orders"],
-                })
-                if _ok:
-                    st.session_state["_pick_autoprint"] = True
-                    st.rerun()
-                else:
-                    st.error(_msg)
-        elif pdata["total"] > 0 and not picklog.configured():
-            st.caption("⚙️ Bật kho lưu (mục bên phải) để dùng **In + tự lưu đợt**.")
+        # 1 NÚT DUY NHẤT: vừa IN vừa LƯU đợt (lưu phía server, không vướng CORS) → rerun tự bung hộp in.
+        # (Đã bỏ nút in trong phiếu để NV không in mà quên lưu.)
+        if pdata["total"] > 0:
+            _can_save = picklog.configured()
+            _lbl = ("🖨️ IN PHIẾU NHẶT — tự lưu vào lịch sử" if _can_save
+                    else "🖨️ In phiếu nhặt (chưa bật lưu lịch sử)")
+            if st.button(_lbl, type="primary", width="stretch"):
+                if _can_save:
+                    _allsku = {s for s, _ in exp["skus"]} | {s for s, _ in nor["skus"]}
+                    _ok, _msg = picklog.log_batch({
+                        "ngay": (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%Y-%m-%d"),
+                        "gio": now_str[:5],
+                        "so_don": exp["total_orders"] + nor["total_orders"],
+                        "so_sp": exp["total_qty"] + nor["total_qty"], "so_sku": len(_allsku),
+                        "ht_don": exp["total_orders"], "th_don": nor["total_orders"],
+                    })
+                    if not _ok:
+                        st.error(_msg)
+                st.session_state["_pick_autoprint"] = True
+                st.rerun()
+            if not _can_save:
+                st.caption("⚙️ Bật kho lưu (mục bên phải) để mỗi lần IN là **tự lưu vào lịch sử**.")
         _auto = st.session_state.pop("_pick_autoprint", False)
         if _auto:
             st.success("✅ Đã lưu đợt — đang bung hộp in (cho phép cửa sổ in).")
@@ -2212,8 +2216,9 @@ def _render_pick():
             else:
                 st.caption("Chưa lưu lượt nào hôm nay.")
         if pdata["total"] > 0:
-            st.caption("✅ Bấm **🖨️ In K80 + tự lưu đợt** ở phiếu là TỰ LƯU. Nút dưới chỉ để lưu THỦ CÔNG (nếu cần):")
-            if st.button("💾 Lưu đợt thủ công", disabled=not picklog.configured()):
+            st.caption("✅ Chỉ cần bấm nút xanh **🖨️ IN PHIẾU NHẶT** (bên trái) — nó **vừa in vừa tự lưu**. "
+                       "Nút dưới chỉ để lưu THỦ CÔNG khi cần (không in):")
+            if st.button("💾 Lưu đợt thủ công (không in)", disabled=not picklog.configured()):
                 _now_vn = datetime.now(timezone.utc) + timedelta(hours=7)
                 _allsku = {s for s, _ in exp["skus"]} | {s for s, _ in nor["skus"]}
                 ok, msg = picklog.log_batch({

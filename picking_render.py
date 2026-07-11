@@ -224,9 +224,10 @@ def picking_html(data, now_str, auto_print=False):
         "}"
         + ("setTimeout(printK80,500);" if auto_print else "")
     )
+    # KHÔNG còn nút in trong phiếu (tránh NV in mà không lưu). Chỉ nút Streamlit
+    # "In phiếu nhặt + tự lưu đợt" ở trên mới in — và nó LUÔN lưu vào lịch sử.
     return (
         "<style>" + RECEIPT_CSS + "</style>"
-        "<div class='toolbar'><button class='printbtn' onclick='printK80()'>🖨️ In lại (in liền khối, hỏa tốc trên)</button></div>"
         "<div id='slips'>" + blocks + "</div>"
         "<script>" + js + "</script>"
     )
