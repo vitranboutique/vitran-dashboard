@@ -59,7 +59,7 @@ def push_to_gist(token, fname, data):
 def main():
     fj = make_fetch_json(build_session())
     print("Quét khách hàng…")
-    res = L.audit_customers(fj, per_cat_keep=2000,
+    res = L.audit_customers(fj, per_cat_keep=10000,
                             progress_cb=lambda pg, tot, f: print(f"  trang {pg} · {tot} khách · {f} lỗi") if pg % 20 == 0 else None)
     print("Tổng:", res["total"], "| lỗi:", sum(res["counts"].values()), "|", res["counts"])
     gh = os.environ.get("GITHUB_TOKEN")

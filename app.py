@@ -35,6 +35,7 @@ from sapo_client import (
     find_order_returns_by_codes, get_customer, get_order_return, parse_codes,
     update_order_customer_info, update_order_note, update_order_return_note,
     customer_exists_by_phone, update_customer_address_from_info, upsert_customer_from_info,
+    find_orders_by_phone, update_customer_note_lines,
 )
 from picking_render import picking_html
 
@@ -2468,7 +2469,7 @@ if _page == PAGE_TTKH:
             try:
                 def _cust_prog(page, tot, found):
                     _cp.progress(min(page / 120, 1.0), text=f"Trang {page} · đã xét {tot} khách · lỗi {found}")
-                _res = L.audit_customers(make_fetch_json(build_session()), per_cat_keep=2000, progress_cb=_cust_prog)
+                _res = L.audit_customers(make_fetch_json(build_session()), per_cat_keep=10000, progress_cb=_cust_prog)
                 if _keep_blocked:
                     _res["auto_fix_blocked"] = _keep_blocked
                 st.session_state["cust_audit"] = _res
@@ -2517,7 +2518,7 @@ if _page == PAGE_TTKH:
                         _csv = pd.DataFrame(_all_rows).to_csv(index=False).encode("utf-8-sig")
                         st.download_button("📥 Tải danh sách (CSV)", _csv,
                                            file_name="khach_chua_chuan.csv", mime="text/csv")
-                    st.caption("File gồm tối đa 2.000 khách/nhóm. Cần TOÀN BỘ thì dùng script `scan_customers.py`.")
+                    st.caption("File gồm tối đa 10.000 dòng/nhóm. Cần TOÀN BỘ thì dùng script `scan_customers.py`.")
 
                 _fix_cats = list(CAF.FIXABLE_CATEGORIES)
                 _blocked_rows = _ca.get("auto_fix_blocked") or []
@@ -2588,7 +2589,10 @@ if _page == PAGE_TTKH:
                     _run_fix_rows = [r for r in _fix_rows if r.get("cat") == _pending_fix_cat]
                 else:
                     _run_fix_rows = _fix_rows
-                _total_fixable = sum(int(_counts.get(_cat, 0) or 0) for _cat in _fix_cats)
+                _total_fixable = (
+                    sum(int(_counts.get(_cat, 0) or 0) for _cat in _fix_cats)
+                    + int(_counts.get("thieu_ghi_chu", 0) or 0)
+                )
                 st.markdown("#### 🛠️ Sửa tự động theo từng nhóm lỗi")
                 st.caption("Mỗi nút chỉ ghi Sapo khi dòng đó khớp chắc với đúng loại lỗi: SĐT sửa được thì chuẩn hóa SĐT, "
                            "địa chỉ sửa được thì phải phân được địa chỉ cũ/mới và đủ mã tỉnh/quận/phường. "
@@ -2670,6 +2674,175 @@ if _page == PAGE_TTKH:
                     if any("401" in x or "403" in x for x in _attempts):
                         return "auth_failed"
                     return (result or {}).get("reason") or "verify_failed"
+
+                def _order_code_from_order(order):
+                    return str(
+                        (order or {}).get("source_identifier")
+                        or (order or {}).get("name")
+                        or (order or {}).get("code")
+                        or (order or {}).get("id")
+                        or ""
+                    ).strip()
+
+                def _note_fix_reason_vi(code, detail=""):
+                    text = {
+                        "missing_phone": "Thiếu SĐT để tìm đơn/khách.",
+                        "customer_not_found": "Không tìm thấy khách theo SĐT.",
+                        "customer_ambiguous": "Một SĐT ra nhiều khách, không tự chọn.",
+                        "order_not_found": "Không tìm thấy đơn theo SĐT.",
+                        "order_ambiguous": "Một SĐT ra nhiều đơn, cần xem tay để chọn đúng mã đơn.",
+                        "missing_customer_id": "Thiếu mã khách hàng.",
+                        "rate_limited": "Sapo đang chặn ghi 429, nghỉ 5-10 phút rồi bấm tiếp.",
+                        "auth_failed": "Phiên/credential Sapo hết hạn hoặc không đủ quyền.",
+                        "verify_failed": "Đã gửi nhưng đọc lại chưa thấy đủ ghi chú.",
+                    }.get(str(code or ""), str(code or "Không rõ lỗi"))
+                    return f"{text} ({detail})" if detail else text
+
+                def _customer_ids_by_phone(session, phone, known_customer_id=""):
+                    ids = []
+                    if str(known_customer_id or "").strip():
+                        ids.append(str(known_customer_id).strip())
+                    found = []
+                    for query in dict.fromkeys([phone, _ttkh_phone_key(phone), _ttkh_phone_key(phone)[-9:]]):
+                        if not query:
+                            continue
+                        try:
+                            resp = session.get(
+                                "https://vitranboutiquehcm.mysapo.net/admin/customers.json",
+                                params={"query": query, "limit": 10},
+                                timeout=30,
+                            )
+                            if resp.status_code >= 400:
+                                continue
+                            for customer in (resp.json().get("customers") or resp.json().get("data") or []):
+                                cid = str((customer or {}).get("id") or "").strip()
+                                if cid:
+                                    found.append(cid)
+                        except Exception:
+                            pass
+                    for cid in found:
+                        if cid not in ids:
+                            ids.append(cid)
+                    return ids
+
+                def _fix_missing_note_rows(rows):
+                    _sess = build_session()
+                    _batch = list(rows or [])[:int(_batch_n)]
+                    _prog = st.progress(0.0, text="Đang ghi chú mã đơn…")
+                    _results, _done_keys, _blocked = [], [], []
+
+                    for _i, _row in enumerate(_batch, start=1):
+                        _row_type = str(_row.get("row_type") or "customer")
+                        _phone = _ttkh_phone_key(_row.get("sdt") or "")
+                        _customer_id = str(_row.get("id") or "").strip() if _row_type != "order" else ""
+                        _order_id = str(_row.get("order_id") or _row.get("id") or "").strip() if _row_type == "order" else ""
+                        _order_code = str(_row.get("order_code") or "").strip()
+                        _base = {
+                            "Nhóm": L.CUST_ERR_LABELS.get("thieu_ghi_chu", "Thiếu ghi chú mã đơn"),
+                            "Loại": "Đơn" if _row_type == "order" else "Khách",
+                            "Mã": _order_code or _customer_id or _order_id,
+                            "Mã KH": _customer_id,
+                            "Tên": _row.get("ten") or "",
+                            "SĐT": _phone or (_row.get("sdt") or ""),
+                            "Link Sapo": (
+                                f"https://vitranboutiquehcm.mysapo.net/admin/orders/{_order_id}"
+                                if _row_type == "order" and _order_id
+                                else f"https://vitranboutiquehcm.mysapo.net/admin/customers/{_customer_id}" if _customer_id else ""
+                            ),
+                        }
+                        try:
+                            if not _phone:
+                                _code = "missing_phone"
+                                _reason = _note_fix_reason_vi(_code)
+                                _results.append({**_base, "Kết quả": "Bỏ qua", "Mã lỗi": _code, "Lý do / cách xử lý": _reason})
+                                _blocked.append({**_base, "Kết quả": "Bỏ qua", "Mã lỗi": _code, "Lý do / cách xử lý": _reason, "cat": "thieu_ghi_chu"})
+                                continue
+
+                            if _row_type == "order":
+                                _customer_ids = _customer_ids_by_phone(_sess, _phone)
+                                if not _customer_ids:
+                                    _code = "customer_not_found"
+                                    _reason = _note_fix_reason_vi(_code)
+                                    _results.append({**_base, "Kết quả": "Bỏ qua", "Mã lỗi": _code, "Lý do / cách xử lý": _reason})
+                                    _blocked.append({**_base, "Kết quả": "Bỏ qua", "Mã lỗi": _code, "Lý do / cách xử lý": _reason, "cat": "thieu_ghi_chu"})
+                                    continue
+                                if len(set(_customer_ids)) > 1:
+                                    _code = "customer_ambiguous"
+                                    _reason = _note_fix_reason_vi(_code, ", ".join(_customer_ids[:5]))
+                                    _results.append({**_base, "Kết quả": "Bỏ qua", "Mã lỗi": _code, "Lý do / cách xử lý": _reason})
+                                    _blocked.append({**_base, "Kết quả": "Bỏ qua", "Mã lỗi": _code, "Lý do / cách xử lý": _reason, "cat": "thieu_ghi_chu"})
+                                    continue
+                                _customer_id = _customer_ids[0]
+                                if not _order_code and _order_id:
+                                    try:
+                                        _order_code = _order_code_from_order(L.find_order_by_code(make_fetch_json(_sess), _order_id, days=120) or {})
+                                    except Exception:
+                                        pass
+                                if not _order_code:
+                                    _order_code = _order_id
+                            else:
+                                _orders, _attempts = find_orders_by_phone(_sess, _phone, limit=20)
+                                if not _orders:
+                                    _code = "order_not_found"
+                                    _reason = _note_fix_reason_vi(_code, "; ".join(_attempts[-3:])[:180])
+                                    _results.append({**_base, "Kết quả": "Bỏ qua", "Mã lỗi": _code, "Lý do / cách xử lý": _reason})
+                                    _blocked.append({**_base, "Kết quả": "Bỏ qua", "Mã lỗi": _code, "Lý do / cách xử lý": _reason, "cat": "thieu_ghi_chu"})
+                                    continue
+                                codes = [c for c in dict.fromkeys(_order_code_from_order(o) for o in _orders) if c]
+                                if len(codes) != 1:
+                                    _code = "order_ambiguous"
+                                    _reason = _note_fix_reason_vi(_code, ", ".join(codes[:5]))
+                                    _results.append({**_base, "Kết quả": "Bỏ qua", "Mã lỗi": _code, "Lý do / cách xử lý": _reason})
+                                    _blocked.append({**_base, "Kết quả": "Bỏ qua", "Mã lỗi": _code, "Lý do / cách xử lý": _reason, "cat": "thieu_ghi_chu"})
+                                    continue
+                                _order_code = codes[0]
+
+                            _lines = []
+                            if _phone:
+                                _lines.append(f"sdt: {_phone}")
+                            if _order_code:
+                                _lines.append(f"đơn: {_order_code}")
+                            _saved = update_customer_note_lines(_sess, _customer_id, _lines)
+                            if _saved.get("ok"):
+                                _done_keys.append(str(_row.get("id") or _row.get("order_id") or ""))
+                                _results.append({**_base, "Mã KH": _customer_id, "Mã đơn": _order_code, "Kết quả": "Đã ghi chú", "Mã lỗi": "", "Lý do / cách xử lý": "Đã bổ sung sdt/đơn vào ghi chú khách."})
+                            else:
+                                _code = _cust_fix_attempt_reason(_saved)
+                                _reason = _note_fix_reason_vi(_code, "; ".join([str(x) for x in (_saved.get("attempts") or [])][-3:])[:180])
+                                _results.append({**_base, "Mã KH": _customer_id, "Mã đơn": _order_code, "Kết quả": "Lỗi ghi Sapo", "Mã lỗi": _code, "Lý do / cách xử lý": _reason})
+                                if _code not in {"rate_limited", "auth_failed"}:
+                                    _blocked.append({**_base, "Mã KH": _customer_id, "Mã đơn": _order_code, "Kết quả": "Lỗi ghi Sapo", "Mã lỗi": _code, "Lý do / cách xử lý": _reason, "cat": "thieu_ghi_chu"})
+                        except Exception as _ex:
+                            _reason = f"{type(_ex).__name__}: {_ex}"[:260]
+                            _results.append({**_base, "Kết quả": "Lỗi app/Sapo", "Mã lỗi": "exception", "Lý do / cách xử lý": _reason})
+                            _blocked.append({**_base, "Kết quả": "Lỗi app/Sapo", "Mã lỗi": "exception", "Lý do / cách xử lý": _reason, "cat": "thieu_ghi_chu"})
+                        _prog.progress(_i / max(len(_batch), 1), text=f"Đã xử lý {_i}/{len(_batch)} · ghi được {sum(1 for x in _results if x.get('Kết quả') == 'Đã ghi chú')}")
+                        time.sleep(0.5)
+                    _prog.empty()
+
+                    done_set = set(_done_keys)
+                    if done_set or _blocked:
+                        old = (_ca.get("samples") or {}).get("thieu_ghi_chu") or []
+                        (_ca.setdefault("samples", {}))["thieu_ghi_chu"] = [
+                            m for m in old if str(m.get("id") or m.get("order_id") or "") not in done_set
+                        ]
+                        _counts["thieu_ghi_chu"] = max(int(_counts.get("thieu_ghi_chu", 0) or 0) - len(done_set), 0)
+                        _ca["counts"] = _counts
+                        if _blocked:
+                            _existing_block = list(_ca.get("auto_fix_blocked") or [])
+                            _existing_block.extend(_blocked)
+                            _ca["auto_fix_blocked"] = _existing_block
+                        st.session_state["cust_audit"] = _ca
+                        try:
+                            if picklog.configured():
+                                picklog.save_cust_audit(_ca)
+                        except Exception:
+                            pass
+                    st.session_state["cust_addr_fix_result"] = {
+                        "ts": (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%H:%M:%S %d/%m/%Y"),
+                        "rows": _results,
+                        "stopped_429": False,
+                    }
 
                 if _pending_fix_cat:
                     st.info(f"Đang chạy sửa nhóm: **{L.CUST_ERR_LABELS.get(_pending_fix_cat, _pending_fix_cat)}**")
@@ -2841,25 +3014,25 @@ if _page == PAGE_TTKH:
                 _last_cust_fix = st.session_state.get("cust_addr_fix_result")
                 if _last_cust_fix:
                     _fr = _last_cust_fix.get("rows") or []
-                    _ok = sum(1 for r in _fr if r.get("Kết quả") == "Đã sửa")
+                    _ok = sum(1 for r in _fr if r.get("Kết quả") in {"Đã sửa", "Đã ghi chú"})
                     _skip = sum(1 for r in _fr if r.get("Kết quả") == "Bỏ qua")
                     _fail = len(_fr) - _ok - _skip
                     if _last_cust_fix.get("stopped_429"):
-                        st.warning(f"Đợt sửa gần nhất ({_last_cust_fix.get('ts')}): đã sửa {_ok}, bỏ qua {_skip}, lỗi {_fail}. "
+                        st.warning(f"Đợt xử lý gần nhất ({_last_cust_fix.get('ts')}): thành công {_ok}, bỏ qua {_skip}, lỗi {_fail}. "
                                    "Đã dừng sớm vì Sapo trả 429 liên tiếp, nghỉ 5-10 phút rồi bấm tiếp.")
                     elif _fail or _skip:
-                        st.warning(f"Đợt sửa gần nhất ({_last_cust_fix.get('ts')}): đã sửa {_ok}, bỏ qua {_skip}, lỗi {_fail}. "
+                        st.warning(f"Đợt xử lý gần nhất ({_last_cust_fix.get('ts')}): thành công {_ok}, bỏ qua {_skip}, lỗi {_fail}. "
                                    "Các dòng bỏ qua là dòng chưa đủ chắc để auto sửa.")
                     else:
-                        st.success(f"Đợt sửa gần nhất ({_last_cust_fix.get('ts')}): đã sửa thành công {_ok}/{len(_fr)} khách.")
+                        st.success(f"Đợt xử lý gần nhất ({_last_cust_fix.get('ts')}): thành công {_ok}/{len(_fr)} dòng.")
                     _detail_title = (
-                        f"Chi tiết kết quả sửa tự động gần nhất — {len(_fr)} xử lý · "
-                        f"{_ok} đã sửa · {_skip + _fail} chưa sửa"
+                        f"Chi tiết kết quả xử lý tự động gần nhất — {len(_fr)} xử lý · "
+                        f"{_ok} thành công · {_skip + _fail} chưa xong"
                     )
                     with st.expander(_detail_title, expanded=bool(_skip or _fail)):
                         if _fr:
                             _show_cols = [
-                                "Nhóm", "Mã KH", "Tên", "SĐT", "Kết quả", "Loại địa chỉ",
+                                "Nhóm", "Loại", "Mã", "Mã KH", "Mã đơn", "Tên", "SĐT", "Kết quả", "Loại địa chỉ",
                                 "Mã tỉnh", "Mã quận", "Mã phường", "Mã lỗi", "Đánh giá fix code",
                                 "Lý do / cách xử lý", "Địa chỉ", "Link Sapo",
                             ]
@@ -3026,7 +3199,7 @@ if _page == PAGE_TTKH:
                     "thieu_sdt": "copy SĐT chính vào địa chỉ",
                     "thieu_ma_phuong": "suy ra phường từ text chắc",
                     "khong_dia_chi": "không có địa chỉ gốc để suy ra",
-                    "thieu_ghi_chu": "cần mã đơn gốc để đối chiếu",
+                    "thieu_ghi_chu": "tìm đơn theo SĐT rồi ghi sdt/đơn vào note khách",
                 }
                 for _cat, _label in L.CUST_ERR_LABELS.items():
                     _n = _counts.get(_cat, 0)
@@ -3035,7 +3208,8 @@ if _page == PAGE_TTKH:
                     _smp = (_ca.get("samples") or {}).get(_cat) or []
                     _active_smp = [_m for _m in _smp if str(_m.get("id") or "").strip() not in _blocked_ids]
                     _blocked_in_group = len(_smp) - len(_active_smp)
-                    _title = f"• {_label} — {_n:,} khách" + (f" (hiện {len(_smp)} mẫu)" if _n > len(_smp) else "")
+                    _unit = "dòng" if _cat == "thieu_ghi_chu" else "khách"
+                    _title = f"• {_label} — {_n:,} {_unit}" + (f" (hiện {len(_smp):,} mẫu)" if _n > len(_smp) else "")
                     if _cat in _fix_cats:
                         _title += f" · chờ sửa {len(_active_smp)}"
                         if _blocked_in_group:
@@ -3057,6 +3231,17 @@ if _page == PAGE_TTKH:
                                 st.session_state["cust_addr_fix_action_cat"] = _cat
                                 st.rerun()
                             st.caption(_cat_fix_notes.get(_cat, "chỉ ghi khi khớp chắc"))
+                        elif _cat == "thieu_ghi_chu":
+                            _can_note = bool(_smp)
+                            if st.button(
+                                f"📝 Ghi chú {min(len(_smp), int(_batch_n))}",
+                                key="cust_note_fix_run_thieu_ghi_chu",
+                                use_container_width=True,
+                                disabled=not _can_note,
+                            ):
+                                _fix_missing_note_rows(_smp)
+                                st.rerun()
+                            st.caption(_cat_fix_notes.get(_cat, "ghi chú mã đơn"))
                         else:
                             st.button(
                                 "🚫 Không auto",

@@ -870,6 +870,46 @@ def customer_exists_by_phone(session: requests.Session, phone: str) -> bool:
         return False
 
 
+def find_orders_by_phone(session: requests.Session, phone: str, limit: int = 20) -> tuple[list[dict], list[str]]:
+    """Find Sapo orders matching a phone, similar to the admin order list search."""
+    attempts: list[str] = []
+    expected = _norm_phone(phone)
+    if not expected:
+        return [], ["invalid_phone"]
+    found: dict[str, dict] = {}
+    queries = [phone, expected, expected[-9:]]
+    seen = set()
+    for query in queries:
+        query = str(query or "").strip()
+        if not query or query in seen:
+            continue
+        seen.add(query)
+        try:
+            resp = session.get(f"{BASE}/admin/orders.json", params={"query": query, "limit": limit}, timeout=30)
+            attempts.append(_attempt_desc(resp))
+            if resp.status_code >= 400:
+                continue
+            rows = _json_or_empty(resp).get("orders") or []
+            for order in rows:
+                if not isinstance(order, dict):
+                    continue
+                order_id = str(order.get("id") or "")
+                if not order_id:
+                    continue
+                phones = [order.get("phone"), order.get("phone_number"), order.get("mobile")]
+                cust = order.get("customer") if isinstance(order.get("customer"), dict) else {}
+                phones.extend(cust.get(k) for k in ("phone", "phone_number", "mobile"))
+                for key in ("shipping_address", "billing_address"):
+                    addr = order.get(key) or {}
+                    if isinstance(addr, dict):
+                        phones.extend(addr.get(k) for k in ("phone", "phone_number", "mobile"))
+                if any(_phone_matches(p, expected) for p in phones):
+                    found[order_id] = order
+        except Exception as e:
+            attempts.append(f"GET orders search -> {type(e).__name__}: {e}")
+    return list(found.values()), attempts
+
+
 def upsert_customer_from_info(session: requests.Session, info: dict, note: str = "", skip_search: bool = False) -> tuple:
     """Tạo/cập nhật khách hàng TỪ info (tên/SĐT/địa chỉ) — KHÔNG đụng đơn hàng.
     skip_search=True: bỏ tìm trùng SĐT (khi đã biết chắc chưa có khách) → ít request,
@@ -914,6 +954,64 @@ def _find_customer_by_phone(session: requests.Session, phone: str, attempts: lis
             except Exception as e:
                 attempts.append(f"GET customer search -> {type(e).__name__}: {e}")
     return None
+
+
+def _merge_note_lines(old_note: str, lines: list[str]) -> str:
+    old_note = str(old_note or "").strip()
+    existing = old_note.lower()
+    out = old_note
+    for line in lines:
+        line = str(line or "").strip()
+        if not line:
+            continue
+        if line.lower() in existing:
+            continue
+        out = f"{out}\n{line}".strip() if out else line
+        existing = out.lower()
+    return out
+
+
+def update_customer_note_lines(session: requests.Session, customer_id, lines: list[str]) -> dict:
+    attempts: list[str] = []
+    cid = str(customer_id or "").strip()
+    if not cid:
+        return {"ok": False, "reason": "missing_customer_id", "attempts": attempts}
+    try:
+        customer = get_customer(session, cid)
+    except Exception as e:
+        attempts.append(f"GET customer before note -> {type(e).__name__}: {e}")
+        return {"ok": False, "reason": "customer_not_found", "attempts": attempts}
+    old_note = str(customer.get("note") or "")
+    new_note = _merge_note_lines(old_note, lines)
+    if new_note == old_note.strip():
+        return {"ok": True, "reason": "unchanged", "customer_id": cid, "note": old_note, "attempts": attempts}
+    page_url = f"{BASE}/admin/customers/{cid}"
+    token = _page_csrf_token(session, page_url, attempts)
+    payload = {"customer": {"id": cid, "note": new_note}}
+    for method in ("put", "patch"):
+        resp = getattr(session, method)(
+            f"{BASE}/admin/customers/{cid}.json",
+            json=payload,
+            headers=_json_headers(page_url, token),
+            timeout=30,
+            allow_redirects=False,
+        )
+        attempts.append(_attempt_desc(resp))
+        if resp.status_code < 400:
+            try:
+                saved = get_customer(session, cid)
+                saved_note = str(saved.get("note") or "")
+                if all(str(line or "").strip() in saved_note for line in lines if str(line or "").strip()):
+                    return {"ok": True, "reason": "updated", "customer_id": cid, "note": saved_note, "attempts": attempts}
+            except Exception as e:
+                attempts.append(f"GET customer after note -> {type(e).__name__}: {e}")
+    if any("429" in str(a) for a in attempts):
+        reason = "rate_limited"
+    elif any("401" in str(a) or "403" in str(a) for a in attempts):
+        reason = "auth_failed"
+    else:
+        reason = "verify_failed"
+    return {"ok": False, "reason": reason, "customer_id": cid, "note": new_note, "attempts": attempts}
 
 
 def _customer_form_data(info: dict, note: str) -> dict:
