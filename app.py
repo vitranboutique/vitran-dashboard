@@ -2053,85 +2053,8 @@ def _render_pick():
     now_str = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%H:%M %d/%m/%Y")
     _picklog_today = picklog.read_today() if picklog.configured() else []
 
-    # ── 📦 Số ĐỢT SOẠN HÀNG hôm nay (đếm theo phiếu đã lưu) ──
-    if picklog.configured():
-        _ps = st.columns(3)
-        _ps[0].metric("📦 Số đợt soạn hôm nay", len(_picklog_today),
-                      help="Số lần bấm 'Lưu đợt vừa in' hôm nay = số đợt soạn/in phiếu.")
-        _ps[1].metric("Tổng đơn đã soạn", sum(r.get("so_don", 0) for r in _picklog_today))
-        _ps[2].metric("Tổng SP đã soạn", sum(r.get("so_sp", 0) for r in _picklog_today))
-    else:
-        st.info("📦 **Số đợt soạn hàng hôm nay** — bật lưu lịch sử in (mục ⚙️ bên phải phiếu) "
-                "để đếm theo số phiếu bạn lưu.")
-
-    # ── ⚠️ SP bị HỦY sau khi đã in phiếu nhặt (quan trọng, trên cùng) ──
-    cp = pdata.get("cancel_pick", {})
-    st.markdown('<div class="sec sec-red">⚠️ SP bị HỦY sau khi đã in phiếu nhặt</div>',
-                unsafe_allow_html=True)
-    if cp.get("rows"):
-        st.error(f"**{cp['tong_don']} đơn · {cp['tong_sp']} SP** đã in phiếu nhặt rồi BỊ HỦY hôm nay "
-                 "— cần lấy lại hàng / kiểm kho ngay.")
-        render_compact_table(pd.DataFrame(cp["rows"]))
-        st.caption("Đơn đã có vận đơn (đã in phiếu) rồi bị hủy. Dò **mã vận đơn + đợt in phiếu** để thu hồi hàng đúng đợt.")
-    else:
-        st.success("✅ Hôm nay chưa có đơn nào hủy sau khi in phiếu nhặt.")
-
-    # ── 🔍 Đối chiếu SP soạn hàng vs xuất kho hôm nay (theo SKU) ──
-    rec = pdata.get("reconcile", {})
-    if rec.get("rows"):
-        st.markdown("#### 🔍 Đối chiếu SP soạn hàng vs xuất kho hôm nay")
-        rc = st.columns(3)
-        rc[0].metric("📦 SP đã soạn (đóng gói)", rec["tong_soan"])
-        rc[1].metric("🚚 SP đã xuất kho (giao VC)", rec["tong_xuat"])
-        rc[2].metric("⚠️ SKU lệch", rec["so_sku_lech"], help="Số SKU có SL soạn ≠ SL xuất kho.")
-        if rec["so_sku_lech"] == 0 and rec["tong_soan"] == rec["tong_xuat"]:
-            st.success("✅ KHỚP hoàn toàn — số SP soạn = số SP xuất kho hôm nay.")
-        else:
-            st.warning(f"⚠️ Lệch tổng **{rec['tong_soan'] - rec['tong_xuat']:+d} SP** · "
-                       f"**{rec['so_sku_lech']} SKU** chưa khớp (xem các dòng tô đỏ).")
-        _rdf = pd.DataFrame(rec["rows"])
-        render_compact_table(_rdf, red_mask=(_rdf["Lệch"] != 0).tolist())
-        st.caption("**Soạn** = đóng gói hôm nay. **Xuất kho** = giao ĐVVC hôm nay. "
-                   "Lệch > 0 = đã soạn chưa xuất (chờ shipper); < 0 = xuất từ đơn soạn hôm trước. "
-                   "Cột **Lý do lệch** ghi rõ đơn nào.")
-
-    # ── 🎥 Video đóng hàng (Dohana): đối chiếu video vs đơn đã đóng + video trùng ──
-    st.markdown('<div class="sec sec-orange">🎥 Video đóng hàng (Dohana)</div>', unsafe_allow_html=True)
-    if not dohana.configured():
-        st.info("Chưa bật API Dohana — thêm key để đối chiếu video đóng hàng.")
-        with st.expander("⚙️ Cách bật (dán 1 dòng vào Secrets)"):
-            st.markdown(_DOHANA_SETUP)
-    else:
-        _dv = load_dohana() or {"total": 0, "codes": {}, "dup": {}, "match": set()}
-        _packed_ids = pdata.get("packed_ids", [])
-        _mset = _dv.get("match", set())
-        # Khớp CHỊU LỖI PHÔNG (mã video méo/dính), thay vì giao tập tuyệt đối.
-        _vmatch, _vfont = match_packing_videos(_packed_ids, _mset)
-        _missing = [ids for i, ids in enumerate(_packed_ids) if i not in _vmatch]
-        _dup = _dv["dup"]
-        _vc = st.columns(3)
-        _vc[0].metric("🎥 Video đóng hàng hôm nay", _dv["total"],
-                      help="Số video type=package tạo hôm nay trên Dohana.")
-        _vc[1].metric("📦 Đơn đã đóng (Sapo)", len(_packed_ids))
-        _vc[2].metric("⚠️ Đơn THIẾU video", len(_missing),
-                      help="Đơn đã đóng gói (Sapo) nhưng chưa tìm thấy video (khớp cả mã vận đơn + mã đơn, 3 ngày).")
-        if not _missing and not _dup and _packed_ids:
-            st.success("✅ KHỚP — mọi đơn đã đóng đều có video, không trùng.")
-        if _vfont:
-            _fl = ", ".join(f"{v}↔{o}" for v, o in _vfont[:8])
-            st.info(f"ℹ️ **{len(_vfont)} clip mã bị lỗi phông / dính mã** — đã TỰ khớp (NV quay đủ): {_fl}"
-                    + ("" if len(_vfont) <= 8 else f" …(+{len(_vfont) - 8})")
-                    + ". Nên sửa app đóng hàng để mã chuẩn, tránh phải dò tay.")
-        if _dup:
-            st.warning(f"⚠️ **{len(_dup)} mã có VIDEO TRÙNG** (quay ≥2 lần):")
-            render_compact_table(pd.DataFrame(
-                [{"Mã đơn": k, "Số video": v} for k, v in sorted(_dup.items(), key=lambda x: -x[1])]))
-        if _missing:
-            st.warning(f"⚠️ **{len(_missing)} đơn đã đóng nhưng THIẾU video** "
-                       "(chưa tìm thấy clip — có thể chưa quay / quay nhầm mục / mã lỗi phông nặng):")
-            render_compact_table(pd.DataFrame([{"Mã đơn": (ids[0] if ids else "")} for ids in _missing]))
-        st.caption("Đối chiếu Sapo (đóng hôm nay) ↔ video Dohana — khớp theo **mã vận đơn + mã đơn**, "
-                   "video **3 ngày** (bắt cả đơn sót). Trùng = 1 mã có ≥2 video. Thiếu = đã đóng mà chưa quay.")
+    # (Các ô báo cáo: số đợt soạn · SP hủy sau in phiếu · đối chiếu soạn↔xuất kho · video
+    #  đóng hàng — ĐÃ GỘP sang tab "Báo cáo cuối ngày" (tờ A4), bỏ ở đây tránh trùng.)
 
     # ── Phiếu in (trái) + Lịch sử in & nút Lưu (phải, KẾ BÊN phiếu) ──
     _cslip, _clog = st.columns([3, 2])
