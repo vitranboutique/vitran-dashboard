@@ -136,6 +136,38 @@ def log_batch(payload: dict):
         return False, f"Lỗi kết nối: {e}"
 
 
+def log_batches(payloads: list):
+    """Ghi NHIỀU đợt trong 1 lần (đọc gist 1 lần → append → patch 1 lần) → nhanh, đỡ rate-limit.
+    Khử trùng theo (ngay, gio, so_don): đợt đã có thì bỏ qua. Trả (ok, added, skipped, msg)."""
+    gid = _resolve_gid()
+    if not gid:
+        return False, 0, 0, "Chưa cấu hình GitHub token (kho lưu)."
+    data = _read_all()
+    if data is None:
+        return False, 0, 0, "Không đọc được gist (token/mạng?)."
+    logs = data.setdefault("logs", [])
+    existing = {(r.get("ngay"), str(r.get("gio", "")), int(r.get("so_don") or 0)) for r in logs}
+    added = skipped = 0
+    for p in (payloads or []):
+        key = (p.get("ngay"), str(p.get("gio", "")), int(p.get("so_don") or 0))
+        if key in existing:
+            skipped += 1
+            continue
+        logs.append(p)
+        existing.add(key)
+        added += 1
+    if not added:
+        return True, 0, skipped, "Không có đợt mới (tất cả đã có)."
+    try:
+        body = {"files": {_FILE: {"content": json.dumps(data, ensure_ascii=False)}}}
+        r = requests.patch(f"{_API}/gists/{gid}", headers=_hdr(), data=json.dumps(body), timeout=25)
+        if r.status_code == 200:
+            return True, added, skipped, "OK"
+        return False, 0, skipped, f"Lỗi lưu gist ({r.status_code})."
+    except Exception as e:
+        return False, 0, skipped, f"Lỗi kết nối: {e}"
+
+
 def read_today() -> list:
     """Các lượt in phiếu HÔM NAY."""
     return read_date(_today_vn())

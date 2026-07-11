@@ -2261,6 +2261,54 @@ def _render_pick():
                     else:
                         st.error(_msg)
 
+        with st.expander("📥 Nạp nhiều đợt cùng lúc (dán danh sách — bù cả tháng)", expanded=False):
+            st.caption("Mỗi dòng 1 đợt: **`NGÀY, ĐỢT/GIỜ, SỐ ĐƠN, SỐ SP`** — ví dụ `2026-07-11, Đợt 1, 74, 83`. "
+                       "Ngày nhận `YYYY-MM-DD` hoặc `DD/MM/YYYY`. Đợt trùng (cùng ngày+tên+số đơn) tự bỏ qua "
+                       "→ dán lại nhiều lần không bị đếm đôi.")
+            _bulk = st.text_area("Dán danh sách đợt ở đây", height=180, key="pick_bulk_text",
+                                 placeholder="2026-07-11, Đợt 1, 74, 83\n2026-07-11, Đợt 2, 44, 50\n2026-07-11, Hỏa tốc, 4, 4")
+            if st.button("💾 Nạp tất cả vào lịch sử", key="pick_bulk_save",
+                         disabled=not picklog.configured(), type="primary"):
+                _payloads, _errln = [], []
+                for _ln in (_bulk or "").splitlines():
+                    _ln = _ln.strip()
+                    if not _ln:
+                        continue
+                    _p = [x.strip() for x in _ln.split(",")]
+                    if len(_p) < 4:
+                        _errln.append(_ln)
+                        continue
+                    _md = re.match(r"^(\d{4})-(\d{1,2})-(\d{1,2})$", _p[0])
+                    _md2 = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})$", _p[0])
+                    if _md:
+                        _iso = f"{_md.group(1)}-{int(_md.group(2)):02d}-{int(_md.group(3)):02d}"
+                    elif _md2:
+                        _iso = f"{_md2.group(3)}-{int(_md2.group(2)):02d}-{int(_md2.group(1)):02d}"
+                    else:
+                        _errln.append(_ln)
+                        continue
+                    _sd = int(re.sub(r"\D", "", _p[2]) or 0)
+                    _sp = int(re.sub(r"\D", "", _p[3]) or 0)
+                    if _sd <= 0:
+                        _errln.append(_ln)
+                        continue
+                    _ht = _sd if re.search(r"h[ỏo]a\s*t[ốo]c", _p[1].lower()) else 0
+                    _payloads.append({"ngay": _iso, "gio": _p[1], "so_don": _sd, "so_sp": _sp,
+                                      "so_sku": 0, "ht_don": _ht, "th_don": max(0, _sd - _ht),
+                                      "source": "bulk"})
+                if not _payloads:
+                    st.error("Không có dòng hợp lệ. Kiểm tra định dạng.")
+                else:
+                    _ok, _add, _skip, _msg = picklog.log_batches(_payloads)
+                    if _ok:
+                        st.success(f"✅ Nạp xong: thêm **{_add}** đợt, bỏ qua trùng {_skip}. "
+                                   "Mở lại bảng 30 ngày để thấy cột Soạn cập nhật.")
+                        st.cache_data.clear()
+                    else:
+                        st.error(_msg)
+                if _errln:
+                    st.warning("⚠️ Dòng SAI định dạng (bỏ qua):\n" + "\n".join(f"• {x}" for x in _errln[:20]))
+
         with st.expander("📅 Lịch sử nhặt hàng 30 ngày (số đợt · SP mỗi đợt)", expanded=False):
             _all = picklog._read_all() or {}
             _today = (datetime.now(timezone.utc) + timedelta(hours=7)).date()
