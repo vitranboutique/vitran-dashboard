@@ -2435,12 +2435,15 @@ if _page == PAGE_TTKH:
             except Exception:
                 pass
         if st.button("🔄 Quét khách hàng (cập nhật)", key="cust_audit_run"):
+            _keep_blocked = (st.session_state.get("cust_audit") or {}).get("auto_fix_blocked") or []
             st.session_state.pop("cust_audit", None)
             _cp = st.progress(0.0, text="Đang quét khách hàng…")
             try:
                 def _cust_prog(page, tot, found):
                     _cp.progress(min(page / 120, 1.0), text=f"Trang {page} · đã xét {tot} khách · lỗi {found}")
                 _res = L.audit_customers(make_fetch_json(build_session()), per_cat_keep=2000, progress_cb=_cust_prog)
+                if _keep_blocked:
+                    _res["auto_fix_blocked"] = _keep_blocked
                 st.session_state["cust_audit"] = _res
                 if picklog.configured():
                     picklog.save_cust_audit(_res)
@@ -2482,10 +2485,20 @@ if _page == PAGE_TTKH:
                     st.caption("File gồm tối đa 2.000 khách/nhóm. Cần TOÀN BỘ thì dùng script `scan_customers.py`.")
 
                 _fix_cats = list(CAF.FIXABLE_CATEGORIES)
+                _blocked_rows = _ca.get("auto_fix_blocked") or []
+                if isinstance(_blocked_rows, dict):
+                    _blocked_rows = list(_blocked_rows.values())
+                _blocked_by_id = {
+                    str(r.get("Mã KH") or r.get("id") or "").strip(): r
+                    for r in _blocked_rows
+                    if str(r.get("Mã KH") or r.get("id") or "").strip()
+                }
+                _blocked_ids = set(_blocked_by_id)
                 _fix_rows = []
                 for _cat in _fix_cats:
                     for _m in (_ca.get("samples") or {}).get(_cat) or []:
-                        if str(_m.get("id") or "").strip():
+                        _mid = str(_m.get("id") or "").strip()
+                        if _mid and _mid not in _blocked_ids:
                             _fix_rows.append({"cat": _cat, **_m})
                 _pending_fix_cat = st.session_state.pop("cust_addr_fix_action_cat", "")
                 _run_fix_rows = [r for r in _fix_rows if r.get("cat") == _pending_fix_cat] if _pending_fix_cat else _fix_rows
@@ -2494,12 +2507,13 @@ if _page == PAGE_TTKH:
                 st.caption("Áp dụng cho 2 nhóm: **Thiếu mã tỉnh** và **Thiếu mã tỉnh + SĐT**. "
                            "App đọc lại từng khách từ Sapo, chỉ ghi khi phân được địa chỉ cũ/mới và đủ mã vùng. "
                            "Dòng mơ hồ/mâu thuẫn sẽ được bỏ qua và ghi rõ lý do.")
-                _fx = st.columns([1.1, 1.1, 1.2, 3.2])
+                _fx = st.columns([1.1, 1.1, 1.1, 1.2, 2.2])
                 _fx[0].metric("Trong 2 nhóm", f"{_total_fixable:,}")
-                _fx[1].metric("Đang có mẫu", f"{len(_fix_rows):,}")
-                _batch_n = _fx[2].number_input("Số khách/lượt", min_value=5, max_value=60, value=30, step=5,
+                _fx[1].metric("Chờ sửa", f"{len(_fix_rows):,}")
+                _fx[2].metric("Để qua bên", f"{len(_blocked_ids):,}")
+                _batch_n = _fx[3].number_input("Số khách/lượt", min_value=5, max_value=60, value=30, step=5,
                                                key="cust_addr_fix_batch")
-                _fx[3].caption("Mỗi lượt xử lý tối đa số khách đã chọn để tránh Sapo chặn 429. "
+                _fx[4].caption("Mỗi lượt xử lý tối đa số khách đã chọn để tránh Sapo chặn 429. "
                                "Khách sửa xong sẽ tự gỡ khỏi danh sách đã lưu.")
 
                 def _cust_fix_reason_vi(code, detail=""):
@@ -2536,8 +2550,22 @@ if _page == PAGE_TTKH:
                         _batch = _run_fix_rows[:int(_batch_n)]
                         _sess = build_session()
                         _prog = st.progress(0.0, text="Đang chuẩn bị sửa địa chỉ khách…")
-                        _results, _done_ids, _success_by_cat = [], [], {}
+                        _results, _done_ids, _new_blocked, _success_by_cat = [], [], [], {}
                         _consec_429, _stopped_429 = 0, False
+
+                        def _block_customer(_base, cat, ket_qua, reason):
+                            return {
+                                "Nhóm": _base.get("Nhóm") or L.CUST_ERR_LABELS.get(cat, cat),
+                                "Mã KH": _base.get("Mã KH") or "",
+                                "Tên": _base.get("Tên") or "",
+                                "SĐT": _base.get("SĐT") or "",
+                                "Kết quả": ket_qua,
+                                "Lý do / cách xử lý": reason,
+                                "Link Sapo": _base.get("Link Sapo") or "",
+                                "cat": cat,
+                                "ts": (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%H:%M:%S %d/%m/%Y"),
+                            }
+
                         for _i, _row in enumerate(_batch, start=1):
                             _cid = str(_row.get("id") or "").strip()
                             _cat = str(_row.get("cat") or "")
@@ -2553,6 +2581,10 @@ if _page == PAGE_TTKH:
                                 _cust = get_customer(_sess, _cid)
                                 _prep = CAF.customer_fix_info(_cust, _cat)
                                 if not _prep.get("ok"):
+                                    _reason_text = _cust_fix_reason_vi(
+                                        _prep.get("reason"),
+                                        _prep.get("conflict") or "",
+                                    )
                                     _results.append({
                                         **_base,
                                         "Kết quả": "Bỏ qua",
@@ -2560,11 +2592,9 @@ if _page == PAGE_TTKH:
                                         "Mã tỉnh": "",
                                         "Mã quận": "",
                                         "Mã phường": "",
-                                        "Lý do / cách xử lý": _cust_fix_reason_vi(
-                                            _prep.get("reason"),
-                                            _prep.get("conflict") or "",
-                                        ),
+                                        "Lý do / cách xử lý": _reason_text,
                                     })
+                                    _new_blocked.append(_block_customer(_base, _cat, "Bỏ qua", _reason_text))
                                     _consec_429 = 0
                                 else:
                                     _info = _prep["info"]
@@ -2584,6 +2614,7 @@ if _page == PAGE_TTKH:
                                         _consec_429 = 0
                                     else:
                                         _reason = _cust_fix_attempt_reason(_saved)
+                                        _reason_text = _cust_fix_reason_vi(_reason)
                                         _results.append({
                                             **_base,
                                             "Kết quả": "Lỗi ghi Sapo",
@@ -2591,13 +2622,16 @@ if _page == PAGE_TTKH:
                                             "Mã tỉnh": _info.get("province_code") or "",
                                             "Mã quận": "" if _info.get("address_format") == "new" else (_info.get("district_code") or ""),
                                             "Mã phường": _info.get("ward_code") or "",
-                                            "Lý do / cách xử lý": _cust_fix_reason_vi(_reason),
+                                            "Lý do / cách xử lý": _reason_text,
                                         })
+                                        if _reason not in {"rate_limited", "auth_failed"}:
+                                            _new_blocked.append(_block_customer(_base, _cat, "Lỗi ghi Sapo", _reason_text))
                                         _consec_429 = _consec_429 + 1 if _reason == "rate_limited" else 0
                                         if _consec_429 >= 3:
                                             _stopped_429 = True
                                             break
                             except Exception as _ex:
+                                _reason_text = f"{type(_ex).__name__}: {_ex}"[:260]
                                 _results.append({
                                     **_base,
                                     "Kết quả": "Lỗi app/Sapo",
@@ -2605,15 +2639,16 @@ if _page == PAGE_TTKH:
                                     "Mã tỉnh": "",
                                     "Mã quận": "",
                                     "Mã phường": "",
-                                    "Lý do / cách xử lý": f"{type(_ex).__name__}: {_ex}"[:260],
+                                    "Lý do / cách xử lý": _reason_text,
                                 })
+                                _new_blocked.append(_block_customer(_base, _cat, "Lỗi app/Sapo", _reason_text))
                                 _consec_429 = 0
                             _prog.progress(_i / max(len(_batch), 1),
                                            text=f"Đã xử lý {_i}/{len(_batch)} · sửa được {len(_done_ids)} khách")
                             time.sleep(0.7)
                         _prog.empty()
 
-                        if _done_ids:
+                        if _done_ids or _new_blocked:
                             _done_set = set(_done_ids)
                             for _cat in _fix_cats:
                                 _old = ((_ca.get("samples") or {}).get(_cat) or [])
@@ -2623,6 +2658,14 @@ if _page == PAGE_TTKH:
                             for _cat, _n_ok_cat in _success_by_cat.items():
                                 _counts[_cat] = max(int(_counts.get(_cat, 0) or 0) - int(_n_ok_cat), 0)
                             _ca["counts"] = _counts
+                            _merged_blocked = dict(_blocked_by_id)
+                            for _row_block in _new_blocked:
+                                _bid = str(_row_block.get("Mã KH") or "").strip()
+                                if _bid and _bid not in _done_set:
+                                    _merged_blocked[_bid] = _row_block
+                            _ca["auto_fix_blocked"] = list(_merged_blocked.values())
+                            _blocked_by_id = _merged_blocked
+                            _blocked_ids = set(_blocked_by_id)
                             st.session_state["cust_audit"] = _ca
                             try:
                                 if picklog.configured():
@@ -2650,10 +2693,19 @@ if _page == PAGE_TTKH:
                                    "Các dòng bỏ qua là dòng chưa đủ chắc để auto sửa.")
                     else:
                         st.success(f"Đợt sửa gần nhất ({_last_cust_fix.get('ts')}): đã sửa thành công {_ok}/{len(_fr)} khách.")
-                    with st.expander("Chi tiết kết quả sửa tự động gần nhất", expanded=bool(_skip or _fail)):
+                    _detail_title = (
+                        f"Chi tiết kết quả sửa tự động gần nhất — {len(_fr)} xử lý · "
+                        f"{_ok} đã sửa · {_skip + _fail} chưa sửa"
+                    )
+                    with st.expander(_detail_title, expanded=bool(_skip or _fail)):
                         if _fr:
+                            _show_cols = [
+                                "Nhóm", "Mã KH", "Tên", "SĐT", "Kết quả", "Loại địa chỉ",
+                                "Mã tỉnh", "Mã quận", "Mã phường", "Lý do / cách xử lý", "Link Sapo",
+                            ]
+                            _df_fr = pd.DataFrame(_fr)
                             st.dataframe(
-                                pd.DataFrame(_fr),
+                                _df_fr[[c for c in _show_cols if c in _df_fr.columns]],
                                 hide_index=True,
                                 width="stretch",
                                 column_config={
@@ -2662,12 +2714,42 @@ if _page == PAGE_TTKH:
                                 },
                             )
 
+                _blocked_rows = _ca.get("auto_fix_blocked") or []
+                if isinstance(_blocked_rows, dict):
+                    _blocked_rows = list(_blocked_rows.values())
+                if _blocked_rows:
+                    _bc = st.columns([1.4, 1.4, 4])
+                    _bc[0].metric("Để qua bên", f"{len(_blocked_rows):,}")
+                    _bc[1].caption("Các khách này sẽ KHÔNG tự retry trong lượt sau.")
+                    if _bc[2].button("🔁 Cho thử lại toàn bộ khách đã để qua bên", key="cust_addr_fix_unblock"):
+                        _ca["auto_fix_blocked"] = []
+                        st.session_state["cust_audit"] = _ca
+                        try:
+                            if picklog.configured():
+                                picklog.save_cust_audit(_ca)
+                        except Exception:
+                            pass
+                        st.rerun()
+                    with st.expander(f"Khách đã để qua bên — {len(_blocked_rows):,} khách cần xem lại code/dữ liệu"):
+                        _df_blk = pd.DataFrame(_blocked_rows)
+                        _blk_cols = ["Nhóm", "Mã KH", "Tên", "SĐT", "Kết quả", "Lý do / cách xử lý", "Link Sapo", "ts"]
+                        st.dataframe(
+                            _df_blk[[c for c in _blk_cols if c in _df_blk.columns]],
+                            hide_index=True,
+                            width="stretch",
+                            column_config={
+                                "Link Sapo": st.column_config.LinkColumn("Link Sapo", display_text="Mở"),
+                                "Lý do / cách xử lý": st.column_config.TextColumn(width="large"),
+                            },
+                        )
+
                 def _render_cust_samples(_smp):
                     if _smp:
                         _df = pd.DataFrame([{
                             "Ngày": m.get("ngay"), "Mã KH": m.get("id"), "Tên": m.get("ten"),
                             "SĐT": ("⚠️ " + str(m.get("sdt") or "") if m.get("sdt_xau") else m.get("sdt")),
                             "Địa chỉ": m.get("dia_chi"),
+                            "Auto fix": "Để qua bên" if str(m.get("id") or "").strip() in _blocked_ids else "Chờ sửa",
                             "Mở Sapo": f"https://vitranboutiquehcm.mysapo.net/admin/customers/{m.get('id')}",
                         } for m in _smp])
                         st.dataframe(_df, hide_index=True, width="stretch",
@@ -2678,7 +2760,13 @@ if _page == PAGE_TTKH:
                     if not _n:
                         continue
                     _smp = (_ca.get("samples") or {}).get(_cat) or []
+                    _active_smp = [_m for _m in _smp if str(_m.get("id") or "").strip() not in _blocked_ids]
+                    _blocked_in_group = len(_smp) - len(_active_smp)
                     _title = f"• {_label} — {_n:,} khách" + (f" (hiện {len(_smp)} mẫu)" if _n > len(_smp) else "")
+                    if _cat in _fix_cats:
+                        _title += f" · chờ sửa {len(_active_smp)}"
+                        if _blocked_in_group:
+                            _title += f" · để qua bên {_blocked_in_group}"
                     if _cat in _fix_cats:
                         _erow = st.columns([6, 1.2])
                         with _erow[0]:
@@ -2686,9 +2774,9 @@ if _page == PAGE_TTKH:
                                 _render_cust_samples(_smp)
                         with _erow[1]:
                             st.write("")
-                            _can_run = bool(_smp)
+                            _can_run = bool(_active_smp)
                             if st.button(
-                                f"🛠️ Sửa {min(len(_smp), int(_batch_n))}",
+                                f"🛠️ Sửa {min(len(_active_smp), int(_batch_n))}",
                                 key=f"cust_addr_fix_run_{_cat}",
                                 use_container_width=True,
                                 disabled=not _can_run,
