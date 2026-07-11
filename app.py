@@ -270,6 +270,9 @@ def _week_table_html(data):
         for k, lech, tip in (
             ("vid_dong", _n("soan") - _n("vid_dong"), "Soạn − Đóng gói(video): đơn đã nhặt mà chưa gói/quay video"),
             ("vid_hoan", _n("hoan_don") - _n("vid_hoan"), "Hoàn đơn − Vid hoàn (lệch video hoàn)"),
+            ("shipper_nhan", (0 if d.get("is_today") else _n("soan") - _n("huy") - _n("shipper_nhan")),
+             "Shipper nhận phải = Soạn (đơn) − Hủy. Lệch = đơn đã soạn/gói mà CHƯA giao shipper (cần lấy lại) "
+             "hoặc lệch ngày giao."),
         ):
             if not lech:
                 continue
@@ -5080,7 +5083,8 @@ def _render_daily():
                        '🟢 **▲ ✓ tráo/đã dùng** (xanh lá): Vid hoàn dư vì hàng khách tráo / đã dùng / hư / '
                        'thiếu — NV **không nhập kho là ĐÚNG**, KHÔNG tính lỗi (chỉ sai nếu các đơn này lại '
                        'bị nhập kho). '
-                       'Đối chiếu đóng: **Soạn** vs **Đóng gói (video)** · Đối chiếu hoàn: **Vid hoàn** vs Hoàn đơn. '
+                       'Đối chiếu đóng: **Soạn** vs **Đóng gói (video)** · **Shipper nhận** phải = **Soạn (đơn) − Hủy** '
+                       '(lệch → cảnh báo: đơn đã soạn mà chưa giao shipper) · Đối chiếu hoàn: **Vid hoàn** vs Hoàn đơn. '
                        'Nếu Đóng gói(video) *thiếu* đúng bằng Vid hoàn *dư* (hoặc ngược lại) → gần chắc là quay lộn 2 bên. '
                        'Cột **⚠️ Mất hàng (đóng)** (đỏ) = video đóng bị gắn tag *đóng thiếu/sai SP*: soạn & quay đủ '
                        'nhưng cuối bị thiếu → **mất hàng khi đóng**, cần truy. Vạch dọc đậm ngăn khối **Đóng hàng** (xanh) '
