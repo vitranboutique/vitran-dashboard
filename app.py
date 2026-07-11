@@ -3722,7 +3722,13 @@ if _page == PAGE_TTKH:
                 "ma_don": res.get("Mã đơn"),
                 "sdt": _phone_by_code.get(res.get("Mã đơn"), ""),
                 "ket_qua": _ttkh_result_cat(res.get("Kết quả")),
-                "chi_tiet": str(res.get("Kết quả") or ""),
+                "trang_thai": str(res.get("Kết quả") or ""),
+                "ly_do": str(res.get("Lý do") or ""),
+                "link_khach": str(res.get("Link khách") or ""),
+                "chi_tiet": (
+                    str(res.get("Kết quả") or "")
+                    + (f" | {str(res.get('Lý do') or '')}" if str(res.get("Lý do") or "").strip() else "")
+                )[:1800],
             } for res in results]
             if picklog.configured() and _log_records:
                 picklog.log_ttkh_batch(_log_records)
@@ -3887,7 +3893,7 @@ if _page == PAGE_TTKH:
         # ── HÀNG SỐ LIỆU: bên trái = đơn CẦN lấy, bên phải = đã LƯU 30 ngày (luôn hiện) ──
         # Gom số liệu thống kê 30 ngày trước để hiện metric (bảng chi tiết để trong expander)
         _stat_rows, _tot_saved, _tot_ok, _tot_fail = [], 0, 0, 0
-        _fail_log, _ok_codes = {}, set()
+        _fail_log, _latest_log, _ok_codes, _had_fail_codes = {}, {}, set(), set()
         _stat_msg = ""
         if not picklog.configured():
             _stat_msg = "⚠️ Chưa bật kho lưu Gist (`[picklog].github_token`) nên chưa thống kê được."
@@ -3899,15 +3905,23 @@ if _page == PAGE_TTKH:
             _today_vn = (datetime.now(timezone.utc) + timedelta(hours=7)).date()
             _from = (_today_vn - timedelta(days=29)).isoformat()
             _rows_by_day = {}
-            _fail_log = {}   # ma_don -> {ma_don, sdt, ngay, gio}  (lượt lỗi gần nhất mỗi đơn)
+            _fail_log = {}   # ma_don -> lỗi gần nhất từng phát sinh
+            _latest_log = {} # ma_don -> log mới nhất trong 30 ngày
+            _had_fail_codes = set()
             _ok_codes = set()
+            _logs_30d = []
             for _lg in _logs:
                 _d = str(_lg.get("ngay") or "")
                 if _d < _from:
                     continue
+                _logs_30d.append(_lg)
+            for _lg in sorted(_logs_30d, key=lambda x: str(x.get("ts") or f"{x.get('ngay') or ''} {x.get('gio') or ''}")):
+                _d = str(_lg.get("ngay") or "")
                 _agg = _rows_by_day.setdefault(_d, {"Ngày": _d, "Thành công": 0, "Thất bại": 0, "Bỏ qua": 0})
                 _kq = _lg.get("ket_qua")
                 _code = str(_lg.get("ma_don") or "")
+                if _code:
+                    _latest_log[_code] = _lg
                 if _kq == "thanh_cong":
                     _agg["Thành công"] += 1
                     _ok_codes.add(_code)
@@ -3915,8 +3929,12 @@ if _page == PAGE_TTKH:
                     _agg["Bỏ qua"] += 1
                 else:
                     _agg["Thất bại"] += 1
-                    _fail_log[_code] = {"Mã đơn": _code, "SĐT": _lg.get("sdt") or "",
-                                        "Lúc": f"{_lg.get('gio') or ''} {_d}".strip()}
+                    if _code:
+                        _had_fail_codes.add(_code)
+                        _fail_log[_code] = {"Mã đơn": _code, "SĐT": _lg.get("sdt") or "",
+                                            "Lúc": f"{_lg.get('gio') or ''} {_d}".strip(),
+                                            "Lý do": _lg.get("ly_do") or _lg.get("chi_tiet") or "",
+                                            "Link khách": _lg.get("link_khach") or ""}
             for _d in sorted(_rows_by_day, reverse=True):
                 _a = _rows_by_day[_d]
                 _a["Tổng đã lưu"] = _a["Thành công"] + _a["Thất bại"]
@@ -3927,9 +3945,12 @@ if _page == PAGE_TTKH:
 
         # (Metric "Đơn cần lấy TTKH" đã chuyển sang tab "Lấy - lưu TTKH")
         # Chỉ tính lỗi CHƯA xử lý (đơn đã ghi lại OK thì không báo lỗi ở trên nữa)
-        _unresolved_codes = [c for c in _fail_log if c not in _ok_codes]
+        def _latest_ok(_code):
+            return str((_latest_log.get(_code) or {}).get("ket_qua") or "") == "thanh_cong"
+
+        _unresolved_codes = [c for c in _fail_log if not _latest_ok(c)]
         _n_unresolved = len(_unresolved_codes)
-        _n_resolved = len(_fail_log) - _n_unresolved
+        _n_resolved = sum(1 for c in _had_fail_codes if _latest_ok(c))
         st.markdown("##### 📊 Đã lưu TTKH — 30 ngày (nhật ký)")
         _sc = st.columns(4)
         _sc[0].metric("Tổng đã lưu", _tot_saved, help="Tổng số LƯỢT ghi SAPO trong 30 ngày (nhật ký).")
@@ -3951,22 +3972,31 @@ if _page == PAGE_TTKH:
         if _fail_log:
             _fl_rows = []
             for _c, _rec in _fail_log.items():
+                _latest = _latest_log.get(_c) or {}
+                _latest_status = "✅ Đã ghi lại OK" if _latest_ok(_c) else "❌ Còn lỗi"
+                _latest_reason = _latest.get("ly_do") or _latest.get("chi_tiet") or _rec.get("Lý do") or ""
                 _fl_rows.append({
                     **_rec,
-                    "Trạng thái": "✅ Đã ghi lại OK" if _c in _ok_codes else "❌ Còn lỗi",
+                    "Lúc": f"{_latest.get('gio') or ''} {_latest.get('ngay') or ''}".strip() or _rec.get("Lúc"),
+                    "Trạng thái": _latest_status,
+                    "Lý do": _latest_reason,
                     "Kiểm khách": (f"https://vitranboutiquehcm.mysapo.net/admin/customers?query={quote_plus(_rec['SĐT'])}"
                                    if _rec.get("SĐT") else ""),
+                    "Mở đơn": f"https://vitranboutiquehcm.mysapo.net/admin/orders?query={quote_plus(_c)}" if _c else "",
                 })
             with st.expander(f"🔎 Lịch sử lỗi ({len(_fl_rows)} đơn) — mã đơn + link",
                              expanded=_n_unresolved > 0 and _n_unresolved <= 5):
                 st.dataframe(
-                    pd.DataFrame(_fl_rows)[["Mã đơn", "SĐT", "Lúc", "Trạng thái", "Kiểm khách"]],
+                    pd.DataFrame(_fl_rows)[["Mã đơn", "SĐT", "Lúc", "Trạng thái", "Lý do", "Kiểm khách", "Mở đơn"]],
                     hide_index=True, width="stretch",
-                    column_config={"Kiểm khách": st.column_config.LinkColumn("Kiểm khách", display_text="Mở Sapo")})
-                st.caption("‘Mở Sapo’ = tìm khách theo SĐT để kiểm/tạo. Muốn tới đơn trong danh sách bên dưới: "
-                           "copy Mã đơn dán vào ô 🔎 tìm mã đơn.")
+                    column_config={
+                        "Lý do": st.column_config.TextColumn(width="large"),
+                        "Kiểm khách": st.column_config.LinkColumn("Kiểm khách", display_text="Mở khách"),
+                        "Mở đơn": st.column_config.LinkColumn("Mở đơn", display_text="Mở đơn"),
+                    })
+                st.caption("‘Mở khách’ = tìm khách theo SĐT. ‘Mở đơn’ = mở danh sách đơn Sapo đã lọc theo mã đơn.")
 
-                _still_bad = [c for c in _fail_log if c not in _ok_codes]
+                _still_bad = [c for c in _fail_log if not _latest_ok(c)]
                 st.markdown("**🔧 Tạo / sửa địa chỉ khách (Tỉnh/Quận/Phường) cho đơn:**")
                 _diag_code = st.text_input("Nhập mã đơn bất kỳ để tạo/sửa (bỏ trống = xử lý các đơn còn lỗi)",
                                            key="ttkh_diag_code", placeholder="Vd 584725942718924544")
