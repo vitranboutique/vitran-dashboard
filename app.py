@@ -212,13 +212,16 @@ def _week_table_html(data):
     else:                                   # dự phòng shape cũ (list)
         wk, month, mlabel = data, {}, ""
     cols = [("ngay", "Ngày"), ("thu", "Thứ"),
-            # ── ĐÓNG HÀNG (xanh) ──
-            ("dong_goi", "Đóng gói"), ("vid_dong", "Vid đóng"), ("tag_dong", "Tag đóng"),
-            ("huy", "Hủy"), ("soan", "Soạn"), ("shipper_nhan", "Shipper nhận"), ("giao_khach", "Giao khách"),
+            # ── ĐÓNG HÀNG (xanh) — luồng: soạn → gói → quay video → mất hàng → hủy → giao ──
+            ("soan", "Soạn"), ("dong_goi", "Đóng gói"), ("vid_dong", "Vid đóng"), ("tag_dong", "⚠️ Mất hàng (đóng)"),
+            ("huy", "Hủy"), ("shipper_nhan", "Shipper nhận"), ("giao_khach", "Giao khách"),
             # ── HOÀN HÀNG (cam) ──
             ("hoan_don", "Hoàn (đơn)"), ("hoan_sp", "Hoàn SP"), ("vid_hoan", "Vid hoàn"),
             ("thieu", "Thiếu SP"), ("tag_hoan", "Tag hoàn"),
             ("ghi_chu", "Ghi chú")]
+    _sepkey = "hoan_don"                     # cột đầu khối HOÀN → kẻ vạch dọc ngăn 2 khối
+    def _lsep(k):
+        return "border-left:3px solid #64748b;" if k == _sepkey else ""
     _bd = "border:1px solid #aab2c2;"
     _tagcols = ("tag_dong", "tag_hoan")
     _txt = ("ngay", "thu", "tag_dong", "tag_hoan", "ghi_chu")
@@ -304,7 +307,8 @@ def _week_table_html(data):
 
     head = "".join(
         f'<th style="position:sticky;top:0;z-index:3;text-align:{"left" if k in _txt else "right"};'
-        f'padding:6px 8px;{_bd}background:{_bg(k, "head")};color:#16233f'
+        f'padding:6px 8px;{_bd}{_lsep(k)}background:{_bg(k, "head")};'
+        f'color:{"#b91c1c" if k == "tag_dong" else "#16233f"}'
         f'{";min-width:130px" if k == "ghi_chu" else ""}">{lbl}</th>'
         for k, lbl in cols)
 
@@ -329,10 +333,15 @@ def _week_table_html(data):
             mw = "min-width:110px;" if (k == "ghi_chu" or k in _tagcols) else ""
             _nay = (' <span style="color:#E24B4A;font-size:11px">• nay</span>'
                     if hot and k == "ngay" else "")
-            _tagclr = "color:#7c3aed;font-weight:700;" if (k in _tagcols and v) else ""
+            if k == "tag_dong" and v:      # đóng thiếu/sai sp = MẤT HÀNG / lỗi đóng → đỏ đậm
+                _tagclr = "color:#b91c1c;font-weight:800;"
+            elif k == "tag_hoan" and v:    # tag hoàn (tráo/đã dùng) → tím
+                _tagclr = "color:#7c3aed;font-weight:700;"
+            else:
+                _tagclr = ""
             wt = "font-weight:800;" if hot else ""
             bg = "#fff2e0" if hot else _bg(k, "cell")     # hôm nay: nền cam nhạt cả dòng
-            cells += (f'<td style="text-align:{al};padding:5px 8px;{_bd}{wtop}{mw}background:{bg};{wt}{_red(k, v)}{_tagclr}">'
+            cells += (f'<td style="text-align:{al};padding:5px 8px;{_bd}{_lsep(k)}{wtop}{mw}background:{bg};{wt}{_red(k, v)}{_tagclr}">'
                       f'{v}{_nay}{_badges.get(k, "")}</td>')
         body += f'<tr>{cells}</tr>'
 
@@ -345,11 +354,13 @@ def _week_table_html(data):
                 continue
             if k in _tagcols:
                 tv = str(src.get(k, "") or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                cells += (f'<td style="text-align:left;padding:6px 8px;{_bd}background:{_bg(k, "tot")};'
-                          f'{"color:#7c3aed;" if tv else ""}">{tv}</td>')
+                _tc = ("color:#b91c1c;font-weight:800;" if (k == "tag_dong" and tv)
+                       else ("color:#7c3aed;" if tv else ""))
+                cells += (f'<td style="text-align:left;padding:6px 8px;{_bd}{_lsep(k)}background:{_bg(k, "tot")};'
+                          f'{_tc}">{tv}</td>')
                 continue
             v = src.get(k, 0)
-            cells += (f'<td style="text-align:right;padding:6px 8px;{_bd}background:{_bg(k, "tot")};'
+            cells += (f'<td style="text-align:right;padding:6px 8px;{_bd}{_lsep(k)}background:{_bg(k, "tot")};'
                       f'{_red(k, v)}">{v}{_tbadge.get(k, "")}</td>')
         return f'<tr style="font-weight:800;color:#16233f">{cells}</tr>'
 
@@ -4345,7 +4356,10 @@ def _render_daily():
                        'bị nhập kho). '
                        'Đối chiếu: **Vid đóng** vs Đóng gói · **Vid hoàn** vs Hoàn đơn · '
                        '**Shipper nhận** = Soạn − (Hủy + Shipper nhận). '
-                       'Nếu Vid đóng *thiếu* đúng bằng Vid hoàn *dư* (hoặc ngược lại) → gần chắc là quay lộn 2 bên.')
+                       'Nếu Vid đóng *thiếu* đúng bằng Vid hoàn *dư* (hoặc ngược lại) → gần chắc là quay lộn 2 bên. '
+                       'Cột **⚠️ Mất hàng (đóng)** (đỏ) = video đóng bị gắn tag *đóng thiếu/sai SP*: soạn & quay đủ '
+                       'nhưng cuối bị thiếu → **mất hàng khi đóng**, cần truy. Vạch dọc đậm ngăn khối **Đóng hàng** (xanh) '
+                       'với khối **Hoàn hàng** (cam).')
             st.caption('ℹ️ Cột **Vid đóng / Vid hoàn** tự đồng bộ ~28 ngày gần nhất từ Dohana mỗi khi mở bảng, '
                        'lưu bền vào kho. **Dohana chỉ giữ ~25 ngày** → ngày cũ hơn 25 ngày không đồng bộ lại được: '
                        'nếu kho lúc đó chưa lưu kịp thì badge hiện ⬜ **"kho cũ" (xám)** thay vì "thiếu" đỏ — '
