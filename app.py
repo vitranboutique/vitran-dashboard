@@ -2411,6 +2411,34 @@ if _page == PAGE_TTKH:
                 _blocked_rows = _ca.get("auto_fix_blocked") or []
                 if isinstance(_blocked_rows, dict):
                     _blocked_rows = list(_blocked_rows.values())
+                def _blocked_row_code(r):
+                    code = str((r or {}).get("Mã lỗi") or (r or {}).get("reason") or "").strip()
+                    if code:
+                        return code
+                    raw = str((r or {}).get("Lý do / cách xử lý") or "").lower()
+                    if "address_unresolved" in raw or "chưa khớp chắc" in raw:
+                        return "address_unresolved"
+                    if "address_conflict" in raw or "mâu thuẫn" in raw:
+                        return "address_conflict"
+                    return ""
+
+                def _blocked_still_current(r):
+                    code = _blocked_row_code(r)
+                    if code == "address_unresolved":
+                        return str((r or {}).get("fix_version") or "") == str(getattr(CAF, "FIX_VERSION", ""))
+                    return True
+
+                _stale_blocked_rows = [r for r in _blocked_rows if not _blocked_still_current(r)]
+                if _stale_blocked_rows:
+                    _blocked_rows = [r for r in _blocked_rows if _blocked_still_current(r)]
+                    _ca["auto_fix_blocked"] = _blocked_rows
+                    st.session_state["cust_audit"] = _ca
+                    try:
+                        if picklog.configured():
+                            picklog.save_cust_audit(_ca)
+                    except Exception:
+                        pass
+                    st.info(f"Đã mở lại {len(_stale_blocked_rows):,} khách lỗi địa chỉ từ rule cũ để thử bằng rule mới.")
                 _blocked_by_id = {
                     str(r.get("Mã KH") or r.get("id") or "").strip(): r
                     for r in _blocked_rows
@@ -2529,6 +2557,7 @@ if _page == PAGE_TTKH:
                                 "Đánh giá fix code": _cust_fix_judgement(code, reason),
                                 "Link Sapo": _base.get("Link Sapo") or "",
                                 "cat": cat,
+                                "fix_version": getattr(CAF, "FIX_VERSION", ""),
                                 "ts": (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%H:%M:%S %d/%m/%Y"),
                             }
 
@@ -2759,7 +2788,7 @@ if _page == PAGE_TTKH:
                             _manual_fix = len(_df_blk) - _can_code_fix
                             st.caption(f"Đọc lỗi nhanh: {_can_code_fix:,} khách có khả năng viết thêm rule/code; {_manual_fix:,} khách cần xem tay/thiếu dữ liệu/không nên auto.")
                         _blk_cols = ["Nhóm", "Mã KH", "Tên", "SĐT", "Kết quả", "Mã lỗi", "Địa chỉ",
-                                     "Lý do / cách xử lý", "Đánh giá fix code", "Link Sapo", "ts"]
+                                     "Lý do / cách xử lý", "Đánh giá fix code", "fix_version", "Link Sapo", "ts"]
                         if not _df_blk.empty:
                             _csv_cols = [c for c in _blk_cols if c in _df_blk.columns]
                             _csv_blk = _df_blk[_csv_cols].to_csv(index=False).encode("utf-8-sig")

@@ -9,6 +9,7 @@ from pathlib import Path
 
 
 FIXABLE_CATEGORIES = ("thieu_ma_tinh", "thieu_ca_2")
+FIX_VERSION = "2026-07-11-unique-component-v2"
 
 ADMIN_PREFIXES = (
     "THANH PHO",
@@ -210,6 +211,24 @@ def best_unique(items: list[tuple[int, dict]]) -> tuple[int, dict] | None:
     return items[0]
 
 
+def _distinct_ward_items(items: list[tuple[int, dict]]) -> list[tuple[int, dict]]:
+    seen = set()
+    out = []
+    for score, ward in items:
+        code = str(ward.get("code") or "")
+        fmt = str(ward.get("_format") or "")
+        key = (fmt, code)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append((score, ward))
+    return out
+
+
+def best_unique_ward(items: list[tuple[int, dict]]) -> tuple[int, dict] | None:
+    return best_unique(_distinct_ward_items(items))
+
+
 def _ward_result(ward: dict, fmt: str, confidence: int, source: str) -> dict:
     return {
         "ok": True,
@@ -224,6 +243,50 @@ def _ward_result(ward: dict, fmt: str, confidence: int, source: str) -> dict:
         "confidence": confidence,
         "match_source": source,
     }
+
+
+def _key_present_with_boundary(key: str, address_key: str) -> bool:
+    if not key:
+        return False
+    if key[-1:].isdigit():
+        return re.search(re.escape(key) + r"(?!\d)", address_key) is not None
+    return key in address_key
+
+
+def loose_name_present(row: dict, address_key: str, address_words: str, min_len: int = 4) -> bool:
+    if phrase_present(row.get("name", ""), address_words):
+        return True
+    for key in row_key_variants(row):
+        if len(key) >= min_len and _key_present_with_boundary(key, address_key):
+            return True
+    return False
+
+
+def component_name_present(row: dict, parts: list[str], kind: str) -> bool:
+    row_keys = row_key_variants(row)
+    for part in parts:
+        keys = component_keys(part, kind)
+        if row_keys & keys:
+            return True
+    return False
+
+
+def province_hint(row: dict, address_key: str, address_words: str) -> bool:
+    if province_present(row, address_key, address_words):
+        return True
+    aliases = {
+        "HOCHIMINH": ("TPHCM", "HCM", "SAIGON"),
+        "HANOI": ("HN",),
+        "HUE": ("TTHUE", "THUATHIENHUE"),
+    }
+    for key in row_key_variants(row):
+        for alias in aliases.get(key, ()):
+            if len(alias) <= 2:
+                if f" {alias} " in f" {address_words} ":
+                    return True
+            elif alias in address_key:
+                return True
+    return False
 
 
 def exact_component_match(address: str) -> dict | None:
@@ -269,6 +332,59 @@ def exact_component_match(address: str) -> dict | None:
     return None
 
 
+def relaxed_tail_match(address: str) -> dict | None:
+    data = address_codes()
+    idx = indexes()
+    parts = meaningful_parts(address)
+    if len(parts) < 3:
+        return None
+
+    # Try several tail windows because Sapo/TikTok text often has duplicated
+    # ward/province pieces or a trailing "Viet Nam" fragment that was not clean.
+    old_matches = []
+    for start in range(max(0, len(parts) - 6), max(0, len(parts) - 2)):
+        tail = parts[start:]
+        if len(tail) < 3:
+            continue
+        ward_part, district_part, province_part = tail[-3], tail[-2], tail[-1]
+        province_keys = component_keys(province_part, "province")
+        district_keys = component_keys(district_part, "district")
+        ward_keys = component_keys(ward_part, "ward")
+        for province in data.get("old", {}).get("provinces", []):
+            if not (row_key_variants(province) & province_keys):
+                continue
+            for district in idx["old_districts_by_province"].get(province.get("key"), []):
+                if not (row_key_variants(district) & district_keys):
+                    continue
+                for ward in idx["old_wards_by_province_district"].get((province.get("key"), district.get("key")), []):
+                    if row_key_variants(ward) & ward_keys:
+                        old_matches.append((920 + len(ward_keys), ward))
+    old_best = best_unique_ward(old_matches)
+    if old_best:
+        return _ward_result(old_best[1], "old", old_best[0], "relaxed_tail_old")
+
+    new_matches = []
+    for start in range(max(0, len(parts) - 5), max(0, len(parts) - 1)):
+        tail = parts[start:]
+        if len(tail) < 2:
+            continue
+        ward_part, province_part = tail[-2], tail[-1]
+        if starts_with_admin_prefix(province_part, ("HUYEN", "QUAN", "DISTRICT", "H", "Q", "THI XA", "TX")):
+            continue
+        province_keys = component_keys(province_part, "province")
+        ward_keys = component_keys(ward_part, "ward")
+        for province in data.get("new", {}).get("provinces", []):
+            if not (row_key_variants(province) & province_keys):
+                continue
+            for ward in idx["new_wards_by_province"].get(province.get("key"), []):
+                if row_key_variants(ward) & ward_keys:
+                    new_matches.append((910 + len(ward_keys), ward))
+    new_best = best_unique_ward(new_matches)
+    if new_best:
+        return _ward_result(new_best[1], "new", new_best[0], "relaxed_tail_new")
+    return None
+
+
 def strict_text_match(address: str) -> dict | None:
     data = address_codes()
     idx = indexes()
@@ -306,6 +422,72 @@ def strict_text_match(address: str) -> dict | None:
     new_best = best_unique(new_matches)
     if new_best:
         return _ward_result(new_best[1], "new", new_best[0], "text_new_strict")
+    return None
+
+
+def unique_component_text_match(address: str) -> dict | None:
+    data = address_codes()
+    idx = indexes()
+    address_key = compact(address)
+    address_words = words(address)
+    parts = meaningful_parts(address)
+    hinted_old_provinces = {
+        province.get("key")
+        for province in data.get("old", {}).get("provinces", [])
+        if province_hint(province, address_key, address_words)
+    }
+
+    old_matches = []
+    for province in data.get("old", {}).get("provinces", []):
+        if hinted_old_provinces and province.get("key") not in hinted_old_provinces:
+            continue
+        has_province = province.get("key") in hinted_old_provinces
+        for district in idx["old_districts_by_province"].get(province.get("key"), []):
+            d_pref = district_prefixed(district, address_key)
+            d_component = component_name_present(district, parts, "district")
+            d_loose = d_pref or d_component or (has_province and loose_name_present(district, address_key, address_words, min_len=4))
+            if not d_loose:
+                continue
+            for ward in idx["old_wards_by_province_district"].get((province.get("key"), district.get("key")), []):
+                w_pref = ward_prefixed(ward, address_key)
+                w_loose = w_pref or (has_province and loose_name_present(ward, address_key, address_words, min_len=4))
+                if not w_loose:
+                    continue
+                # This relaxed branch is allowed to infer a missing province,
+                # but it still needs an explicit ward marker. Otherwise shop,
+                # street, and industrial-zone names can look like wards.
+                if not w_pref:
+                    continue
+                if not has_province and not (d_loose and (d_pref or d_component)):
+                    continue
+                score = 0
+                score += 80 if has_province else 0
+                score += 45 if d_pref else 25
+                score += 45 if w_pref else 25
+                score += len(bare_key(province.get("name"))) + len(bare_key(district.get("name"))) + len(bare_key(ward.get("name")))
+                old_matches.append((score, {**ward, "_format": "old"}))
+    old_best = best_unique_ward(old_matches)
+    if old_best and old_best[0] >= 70:
+        return _ward_result(old_best[1], "old", old_best[0], "text_old_unique")
+
+    new_matches = []
+    hinted_new_provinces = {
+        province.get("key")
+        for province in data.get("new", {}).get("provinces", [])
+        if province_hint(province, address_key, address_words)
+    }
+    for province in data.get("new", {}).get("provinces", []):
+        if province.get("key") not in hinted_new_provinces:
+            continue
+        for ward in idx["new_wards_by_province"].get(province.get("key"), []):
+            w_pref = ward_prefixed(ward, address_key)
+            if not w_pref:
+                continue
+            score = 125 + len(bare_key(province.get("name"))) + len(bare_key(ward.get("name")))
+            new_matches.append((score, {**ward, "_format": "new"}))
+    new_best = best_unique_ward(new_matches)
+    if new_best and new_best[0] >= 100:
+        return _ward_result(new_best[1], "new", new_best[0], "text_new_unique")
     return None
 
 
@@ -348,7 +530,7 @@ def resolve_text_address(address: str) -> dict:
     text = str(address or "").strip()
     if not text:
         return {"ok": False, "reason": "no_address"}
-    match = exact_component_match(text) or strict_text_match(text)
+    match = exact_component_match(text) or relaxed_tail_match(text) or strict_text_match(text) or unique_component_text_match(text)
     if not match:
         return {"ok": False, "reason": "address_unresolved"}
     conflict = explicit_conflict(text, match)
