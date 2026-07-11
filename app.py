@@ -942,6 +942,27 @@ def load_daily_report(date_iso=None):
 @st.cache_data(ttl=600, show_spinner="Đang tổng hợp 30 ngày (1 tháng)…")
 def load_week_summary():
     data = L.get_week_summary(make_fetch_json(build_session()), days=30)
+    # SOẠN = tổng đơn các ĐỢT PHIẾU NHẶT đã in trong ngày (picklog so_don) — đúng số ở tab Phiếu nhặt.
+    # Ngày CHƯA lưu đợt nào → giữ ước lượng theo shipment_created_on (từ sapo_logic).
+    try:
+        if picklog.configured():
+            _pl = picklog._read_all() or {}
+            _psum = {}
+            for _r in _pl.get("logs", []):
+                _iso = _r.get("ngay")
+                if _iso:
+                    _psum[_iso] = _psum.get(_iso, 0) + int(_r.get("so_don") or 0)
+            for _d in data.get("days", []):
+                if _d.get("iso") in _psum:
+                    _d["soan"] = _psum[_d["iso"]]
+                    _d["soan_src"] = "pick"      # lấy từ phiếu nhặt (chính xác)
+            if isinstance(data.get("month"), dict) and _psum:
+                _mpref = (data.get("days") or [{}])[0].get("iso", "")[:7]
+                _mtot = sum(v for k, v in _psum.items() if str(k)[:7] == _mpref)
+                if _mtot:
+                    data["month"]["soan"] = _mtot
+    except Exception:
+        pass
     # SỐ VIDEO đóng/hoàn + TAG (Khách tráo / Đã sử dụng / Hư hỏng...) từ kho video Dohana, theo NGÀY.
     for day in data.get("days", []):
         for _k, _v in (("vid_dong", 0), ("vid_hoan", 0), ("tag_dong", ""), ("tag_hoan", "")):
@@ -4521,8 +4542,10 @@ def _render_daily():
                        'Cột **⚠️ Mất hàng (đóng)** (đỏ) = video đóng bị gắn tag *đóng thiếu/sai SP*: soạn & quay đủ '
                        'nhưng cuối bị thiếu → **mất hàng khi đóng**, cần truy. Vạch dọc đậm ngăn khối **Đóng hàng** (xanh) '
                        'với khối **Hoàn hàng** (cam). '
-                       'Cột **Soạn** = số đơn được **in phiếu giao/nhặt** (vào soạn) trong ngày — mốc trước lúc đóng gói, '
-                       'nên có thể lệch ngày với Đóng gói (đơn nhặt hôm nay có thể gói/hủy hôm sau).')
+                       'Cột **Soạn** = tổng đơn các **đợt phiếu nhặt đã in** trong ngày (số lưu ở tab Phiếu nhặt khi bấm '
+                       '*In + lưu đợt*). Ngày chưa lưu đợt nào → ước lượng theo mốc in phiếu giao (Sapo). '
+                       'Soạn có thể **lệch ngày** với Đóng gói: đơn nhặt hôm nay có thể gói/hủy hôm sau, '
+                       'nên Đóng gói đôi khi > Soạn (gói nốt đơn nhặt hôm trước).')
             st.caption('ℹ️ Cột **Vid đóng / Vid hoàn** tự đồng bộ ~28 ngày gần nhất từ Dohana mỗi khi mở bảng, '
                        'lưu bền vào kho. **Dohana chỉ giữ ~25 ngày** → ngày cũ hơn 25 ngày không đồng bộ lại được: '
                        'nếu kho lúc đó chưa lưu kịp thì badge hiện ⬜ **"kho cũ" (xám)** thay vì "thiếu" đỏ — '
