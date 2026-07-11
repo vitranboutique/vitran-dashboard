@@ -213,7 +213,7 @@ def _week_table_html(data):
             # ── ĐÓNG HÀNG (xanh) — luồng: soạn (SP · đơn) → đóng gói THẬT (video) → mất hàng → hủy → giao ──
             ("soan_sp", "Soạn (SP)"), ("soan", "Soạn (đơn)"),
             ("vid_dong", "Đóng gói (video)"), ("tag_dong", "⚠️ Mất hàng (đóng)"),
-            ("huy", "Hủy"), ("huy_sau", "Hủy sau soạn"),
+            ("huy_truoc", "Hủy trước soạn"), ("huy_sau", "Hủy sau soạn"),
             ("shipper_nhan", "Shipper nhận"), ("giao_khach", "Giao khách"),
             # ── HOÀN HÀNG (cam) ──
             ("hoan_don", "Hoàn (đơn)"), ("hoan_sp", "Hoàn SP"), ("vid_hoan", "Vid hoàn"),
@@ -225,10 +225,10 @@ def _week_table_html(data):
     _bd = "border:1px solid #aab2c2;"
     _tagcols = ("tag_dong", "tag_hoan")
     _txt = ("ngay", "thu", "tag_dong", "tag_hoan", "ghi_chu")
-    _dong = ("soan_sp", "soan", "vid_dong", "tag_dong", "huy", "huy_sau", "shipper_nhan", "giao_khach")  # ĐÓNG → XANH
+    _dong = ("soan_sp", "soan", "vid_dong", "tag_dong", "huy_truoc", "huy_sau", "shipper_nhan", "giao_khach")  # ĐÓNG → XANH
     _hoan = ("hoan_don", "hoan_sp", "vid_hoan", "thieu", "tag_hoan")                            # HOÀN → CAM
-    _redkeys = ("huy_sau", "thieu")   # sau soạn (cần lấy lại) > 0 → tô đỏ. "Hủy" tổng để thường.
-    _numkeys = ("soan_sp", "soan", "vid_dong", "huy", "huy_sau", "shipper_nhan", "giao_khach",
+    _redkeys = ("huy_sau", "thieu")   # sau soạn (cần lấy lại) > 0 → tô đỏ. Trước soạn = khách hủy sớm, thường.
+    _numkeys = ("soan_sp", "soan", "vid_dong", "huy_truoc", "huy_sau", "shipper_nhan", "giao_khach",
                 "hoan_don", "hoan_sp", "vid_hoan", "thieu")
 
     def _bg(k, kind):                       # kind: head | cell | tot
@@ -329,8 +329,8 @@ def _week_table_html(data):
             al = "left" if k in _txt else "right"
             if k == "ghi_chu" or k in _tagcols:
                 v = str(r.get(k, "") or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            elif k == "huy_sau" and not r.get("huy_split_known"):
-                v = "—"      # ngày phiếu nhặt CHƯA lưu mã đơn → chưa xác định được sau/trước soạn
+            elif k in ("huy_sau", "huy_truoc") and not r.get("huy_split_known"):
+                v = "—"      # hôm nay số còn chạy → chưa suy được sau/trước soạn
             else:
                 v = r.get(k, "")
             mw = "min-width:110px;" if (k == "ghi_chu" or k in _tagcols) else ""
@@ -363,7 +363,7 @@ def _week_table_html(data):
                           f'{_tc}">{tv}</td>')
                 continue
             v = src.get(k, 0)
-            if k == "huy_sau" and not src.get("huy_split_known"):
+            if k in ("huy_sau", "huy_truoc") and not src.get("huy_split_known"):
                 v = "—"
             cells += (f'<td style="text-align:right;padding:6px 8px;{_bd}{_lsep(k)}background:{_bg(k, "tot")};'
                       f'{_red(k, v)}">{v}{_tbadge.get(k, "")}</td>')
@@ -989,12 +989,21 @@ def load_week_summary():
                     _d["soan"] = _psum[_iso]
                     _d["soan_sp"] = _psp.get(_iso, 0)
                     _d["soan_src"] = "pick"      # lấy từ phiếu nhặt (chính xác)
-                # HỦY SAU SOẠN = mã đơn hủy ∈ mã phiếu nhặt ngày đó (đã cầm hàng ra kho).
-                # Chỉ xác định được khi ngày đó phiếu nhặt CÓ lưu mã (_pc). Không → "chưa xác định".
-                _pc = _pcode.get(_iso) or set()
-                _hc = _d.get("huy_codes") or []
-                _d["huy_split_known"] = bool(_pc)
-                _d["huy_sau"] = sum(1 for c in _hc if str(c).strip() in _pc) if _pc else 0
+                # HỦY SAU SOẠN (suy ra từ đối chiếu, cho NGÀY ĐÃ QUA — đã chốt số):
+                #   Đơn đã SOẠN mà KHÔNG tới shipper (và hết tồn) = đã hủy SAU soạn.
+                #   → Hủy sau soạn = Soạn − Shipper nhận, kẹp trong [0, tổng Hủy].
+                #   (Nếu Soạn − Shipper > tổng Hủy thì phần dư là CÒN TỒN, không tính vào hủy.)
+                # Hôm nay số còn chạy (chưa giao hết) → chưa suy được → "—".
+                _huy = int(_d.get("huy") or 0)
+                if _d.get("is_today"):
+                    _d["huy_split_known"] = False
+                    _d["huy_sau"] = _d["huy_truoc"] = 0
+                else:
+                    _gap = int(_d.get("soan") or 0) - int(_d.get("shipper_nhan") or 0)
+                    _hsau = max(0, min(_huy, _gap))
+                    _d["huy_sau"] = _hsau
+                    _d["huy_truoc"] = _huy - _hsau
+                    _d["huy_split_known"] = True
             if isinstance(data.get("month"), dict) and _psum:
                 _mpref = (data.get("days") or [{}])[0].get("iso", "")[:7]
                 _mtot = sum(v for k, v in _psum.items() if str(k)[:7] == _mpref)
@@ -1003,18 +1012,20 @@ def load_week_summary():
                     data["month"]["soan"] = _mtot
                     data["month"]["soan_sp"] = _msp
             if isinstance(data.get("month"), dict):
-                data["month"]["huy_sau"] = sum(d.get("huy_sau", 0) for d in data.get("days", []))
-                data["month"]["huy_split_known"] = any(d.get("huy_split_known") for d in data.get("days", []))
+                _msau = sum(d.get("huy_sau", 0) for d in data.get("days", []) if d.get("huy_split_known"))
+                data["month"]["huy_sau"] = _msau
+                data["month"]["huy_truoc"] = max(0, int(data["month"].get("huy") or 0) - _msau)
+                data["month"]["huy_split_known"] = True
     except Exception:
         pass
     # SỐ VIDEO đóng/hoàn + TAG (Khách tráo / Đã sử dụng / Hư hỏng...) từ kho video Dohana, theo NGÀY.
     for day in data.get("days", []):
         for _k, _v in (("vid_dong", 0), ("vid_hoan", 0), ("tag_dong", ""), ("tag_hoan", ""),
-                       ("soan_sp", 0), ("huy_sau", 0)):
+                       ("soan_sp", 0), ("huy_sau", 0), ("huy_truoc", 0)):
             day.setdefault(_k, _v)
     if isinstance(data.get("month"), dict):
         for _k, _v in (("vid_dong", 0), ("vid_hoan", 0), ("tag_dong", ""), ("tag_hoan", ""),
-                       ("soan_sp", 0), ("huy_sau", 0)):
+                       ("soan_sp", 0), ("huy_sau", 0), ("huy_truoc", 0)):
             data["month"].setdefault(_k, _v)
     try:
         if picklog.configured():
@@ -5139,10 +5150,10 @@ def _render_daily():
                        'bị nhập kho). '
                        'Đối chiếu đóng: **Soạn** vs **Đóng gói (video)** · **Shipper nhận** nên = **Soạn (đơn) − Hủy sau soạn** '
                        '(lệch → cảnh báo) · Đối chiếu hoàn: **Vid hoàn** vs Hoàn đơn. '
-                       'Cột **Hủy** = tổng đơn hủy trong ngày (khớp báo cáo). Cột **Hủy sau soạn** (đỏ) = mã đơn hủy '
-                       'CÓ trên phiếu nhặt (đã cầm hàng ra kho → cần lấy lại); phần còn lại (Hủy − Hủy sau soạn) là hủy '
-                       'trước soạn. **Chỉ xác định được khi phiếu nhặt ngày đó có lưu mã đơn** (từ bản này trở đi) — '
-                       'ngày chưa có mã hiện **"—"** (chưa xác định, KHÔNG phải 0). '
+                       '2 cột hủy (tổng = báo cáo): **Hủy sau soạn** (đỏ) = **Soạn − Shipper nhận** (đơn đã cầm hàng ra '
+                       'mà không tới shipper → đã hủy sau soạn, cần lấy lại), kẹp trong [0, tổng Hủy]; **Hủy trước soạn** = '
+                       'Hủy − Hủy sau soạn (khách hủy sớm). Suy ra từ đối chiếu nên **chỉ áp dụng cho ngày ĐÃ QUA** '
+                       '(đã chốt số); **hôm nay** số còn chạy → hiện **"—"**. '
                        'Nếu Đóng gói(video) *thiếu* đúng bằng Vid hoàn *dư* (hoặc ngược lại) → gần chắc là quay lộn 2 bên. '
                        'Cột **⚠️ Mất hàng (đóng)** (đỏ) = video đóng bị gắn tag *đóng thiếu/sai SP*: soạn & quay đủ '
                        'nhưng cuối bị thiếu → **mất hàng khi đóng**, cần truy. Vạch dọc đậm ngăn khối **Đóng hàng** (xanh) '
