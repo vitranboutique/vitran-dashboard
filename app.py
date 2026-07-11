@@ -3540,6 +3540,149 @@ if _page == PAGE_TTKH:
     def _ttkh_result_by_code():
         return {str(r.get("Mã đơn")): r for r in (st.session_state.get("ttkh_write_results") or [])}
 
+    def _ttkh_repair_customer_from_sapo(codes, limit=60, source_rows_by_code=None):
+        """Kiểm/sửa phần khách hàng cho các mã đơn lỗi và ghi lại lý do vào nhật ký."""
+        seen, clean_codes = set(), []
+        for raw in (codes or []):
+            code = re.sub(r"\s+", "", str(raw or ""))
+            if code and code not in seen:
+                seen.add(code)
+                clean_codes.append(code)
+        clean_codes = clean_codes[:max(1, int(limit or 60))]
+        if not clean_codes:
+            return []
+
+        source_rows_by_code = source_rows_by_code or {}
+        out, log_records = [], []
+        try:
+            sess = build_session()
+            fetch_json = make_fetch_json(sess)
+        except Exception as e:
+            return [{
+                "Mã đơn": c,
+                "phone": "",
+                "ket_qua": f"❌ Không mở được phiên Sapo: {type(e).__name__}: {e}",
+                "luc": "",
+                "nhom": "auth",
+                "dia_chi": "",
+                "raw": {},
+                "attempts": [],
+            } for c in clean_codes]
+
+        def _log(code, phone, ket_qua, ly_do, link_khach=""):
+            now = datetime.now(timezone.utc) + timedelta(hours=7)
+            log_records.append({
+                "ngay": now.strftime("%Y-%m-%d"),
+                "gio": now.strftime("%H:%M"),
+                "ts": now.isoformat(timespec="seconds"),
+                "ma_don": code,
+                "sdt": phone or "",
+                "ket_qua": ket_qua,
+                "trang_thai": "Sửa lỗi TTKH",
+                "ly_do": ly_do,
+                "link_khach": link_khach or "",
+                "chi_tiet": ly_do[:1800],
+            })
+
+        for code in clean_codes:
+            info, raw_shipping, attempts = {}, {}, []
+            row = source_rows_by_code.get(code) or source_rows_by_code.get(str(code))
+            if row and not _ttkh_can_write(row):
+                reason = row.get("status") or _ttkh_address_code_status(row.get("info") or {})
+                why = f"❌ TTKH vừa dán chưa đủ điều kiện ghi: {reason}. Cần sửa text TTKH/mã vùng trước."
+                phone = (row.get("info") or {}).get("phone") or ""
+                out.append({"Mã đơn": code, "phone": phone, "ket_qua": why, "luc": "", "nhom": "ttkh_chua_hop_le",
+                            "dia_chi": _ttkh_address_preview(row.get("info") or {}, row.get("status") or ""),
+                            "raw": {"nguon": "TTKH vừa dán", "order_id": row.get("order_id")}, "attempts": []})
+                _log(code, phone, "that_bai", why)
+                continue
+            if row and (row.get("info") or {}):
+                info = row.get("info") or {}
+                raw_shipping = {"nguon": "TTKH vừa dán", "order_id": row.get("order_id")}
+            else:
+                try:
+                    od = L.find_order_by_code(fetch_json, code, days=45)
+                except Exception as e:
+                    why = f"❌ Không tra được đơn trên Sapo: {type(e).__name__}: {e}"
+                    out.append({"Mã đơn": code, "phone": "", "ket_qua": why, "luc": "", "nhom": "khong_tra_duoc",
+                                "dia_chi": "", "raw": {}, "attempts": []})
+                    _log(code, "", "that_bai", why)
+                    continue
+                if not od:
+                    why = "❌ Không thấy đơn trong Sapo trong 45 ngày gần nhất."
+                    out.append({"Mã đơn": code, "phone": "", "ket_qua": why, "luc": "", "nhom": "khong_thay_don",
+                                "dia_chi": "", "raw": {}, "attempts": []})
+                    _log(code, "", "that_bai", why)
+                    continue
+                info = od.get("info") or {}
+                raw_shipping = od.get("raw_shipping") or {}
+
+            phone = info.get("phone") or ""
+            if not phone or not info.get("name"):
+                why = f"❌ Đơn thiếu SĐT/tên nên chưa tạo khách được. phone={phone or '-'}, name={info.get('name') or '-'}"
+                out.append({"Mã đơn": code, "phone": phone, "ket_qua": why, "luc": "", "nhom": "thieu_sdt_ten",
+                            "dia_chi": "", "raw": raw_shipping, "attempts": []})
+                _log(code, phone, "that_bai", why)
+                continue
+            missing = _ttkh_address_code_missing(info)
+            if missing:
+                why = "❌ Chưa đủ mã SAPO: thiếu " + ", ".join(missing) + ". Cần sửa/chuẩn hóa text địa chỉ trước khi ghi."
+                addr = ", ".join(str(x) for x in (info.get("ward"), info.get("district"), info.get("province")) if x)
+                out.append({"Mã đơn": code, "phone": phone, "ket_qua": why, "luc": "", "nhom": "thieu_ma_vung",
+                            "dia_chi": f"{addr}  [{info.get('address_format')}]  mã P/X {info.get('ward_code') or '-'}",
+                            "raw": raw_shipping, "attempts": []})
+                _log(code, phone, "that_bai", why)
+                continue
+
+            cid, attempts = upsert_customer_from_info(sess, info, note=f"Fix/cập nhật đơn {code}")
+            attempts = [str(a) for a in (attempts or [])]
+            blob = " ".join(attempts).lower()
+            write_blob = " ".join(a for a in attempts if any(w in a for w in ("POST", "PUT", "PATCH"))).lower()
+            link_khach = _sapo_customer_url(cid)
+            luc = ""
+            if cid:
+                now = datetime.now(timezone.utc) + timedelta(hours=7)
+                luc = now.strftime("%H:%M:%S %d/%m/%Y")
+                why = f"✅ ĐÃ TẠO/CẬP NHẬT khách (địa chỉ Tỉnh/Quận/Phường) — lúc {luc}"
+                _log(code, phone, "thanh_cong", why, link_khach)
+            elif "429" in write_blob:
+                why = "❌ 429 — Sapo đang chặn/rate limit. Nghỉ 5–10 phút rồi bấm sửa lại."
+                _log(code, phone, "that_bai", why)
+            elif "type_mismatch" in blob or "convert string value to integer" in blob:
+                why = "❌ Mã vùng địa chỉ sai kiểu (Sapo cần mã số). Cần kiểm lại map tỉnh/quận/phường."
+                _log(code, phone, "that_bai", why)
+            elif "401" in write_blob or "403" in write_blob:
+                why = "❌ Phiên/cookie Sapo hết hạn (401/403) — cần cập nhật SAPO_COOKIE."
+                _log(code, phone, "that_bai", why)
+            elif "422" in write_blob or "400" in write_blob:
+                why = "❌ Sapo từ chối dữ liệu tạo khách (400/422). Mở chi tiết bước ghi để xem payload/lỗi."
+                _log(code, phone, "that_bai", why)
+            else:
+                tail = "; ".join(attempts[-4:])
+                why = ("❌ Vẫn không tạo được khách." + (f" Chi tiết: {tail}" if tail else ""))[:1200]
+                _log(code, phone, "that_bai", why)
+
+            addr = ", ".join(str(x) for x in (info.get("ward"), info.get("district"), info.get("province")) if x)
+            out.append({
+                "Mã đơn": code,
+                "phone": phone,
+                "ket_qua": why,
+                "luc": luc,
+                "nhom": "da_sua" if cid else "sapo_tu_choi",
+                "dia_chi": f"{addr}  [{info.get('address_format')}]  mã P/X {info.get('ward_code') or '-'}",
+                "raw": raw_shipping,
+                "attempts": attempts,
+                "link_khach": link_khach,
+            })
+            time.sleep(0.6)
+
+        try:
+            if picklog.configured() and log_records:
+                picklog.log_ttkh_batch(log_records)
+        except Exception:
+            pass
+        return out
+
     def _show_ttkh_write_results():
         results = st.session_state.get("ttkh_write_results") or []
         if not results:
@@ -3558,7 +3701,7 @@ if _page == PAGE_TTKH:
         total = len(results)
         n429 = sum(1 for r in _problem_rows if "429" in str(r.get("Lý do")) or "rate limit" in str(r.get("Lý do")).lower())
         # Lưu mã đơn cần xử lý để xem lại hoặc dùng cho các thao tác chẩn đoán sau này.
-        st.session_state["ttkh_failed_codes"] = [str(r.get("Mã đơn")) for r in _problem_rows]
+        st.session_state["ttkh_failed_codes"] = [str(r.get("Mã đơn")) for r in _problem_rows if str(r.get("Mã đơn") or "").strip()]
 
         if failed or skipped:
             st.warning(f"Kết quả lưu TTKH: thành công {ok}/{total}, chưa hoàn tất {failed}, bỏ qua {skipped}. Xem bảng chi tiết bên dưới để xử lý tiếp.")
@@ -3602,6 +3745,49 @@ if _page == PAGE_TTKH:
                     "Link khách": st.column_config.LinkColumn(width="medium"),
                 },
             )
+            if _problem_rows:
+                failed_codes = [str(r.get("Mã đơn")) for r in _problem_rows if str(r.get("Mã đơn") or "").strip()]
+                last_rows = st.session_state.get("ttkh_last_write_rows_by_code") or {}
+                retry_rows = [last_rows[c] for c in failed_codes if c in last_rows and _ttkh_can_write(last_rows[c])]
+                a, b = st.columns([1, 1])
+                if a.button(f"💾 Ghi lại dòng lỗi đủ mã ({min(len(retry_rows), 60)})",
+                            key="ttkh_retry_failed_rows", disabled=not retry_rows,
+                            help="Dùng lại TTKH vừa dán, ghi lại tối đa 60 dòng đã đủ mã SAPO."):
+                    _write_ttkh_rows(retry_rows[:60])
+                    st.rerun()
+                if b.button(f"🔧 Kiểm/Sửa khách theo mã đơn ({min(len(failed_codes), 60)})",
+                            key="ttkh_repair_failed_customers", disabled=not failed_codes,
+                            help="Tra lại Sapo theo mã đơn rồi tạo/cập nhật khách hàng. Lỗi còn lại sẽ được lưu lý do vào lịch sử."):
+                    with st.spinner("Đang kiểm/sửa khách theo mã đơn lỗi…"):
+                        st.session_state["ttkh_inline_fix_result"] = _ttkh_repair_customer_from_sapo(
+                            failed_codes, limit=60, source_rows_by_code=last_rows)
+                    load_customer_phone_set.clear()
+                if skipped_rows and not retry_rows:
+                    st.caption("Các dòng bị bỏ qua thường là TTKH thiếu/không map được mã tỉnh-quận-phường; app sẽ không ghi bừa vào Sapo.")
+                if st.session_state.get("ttkh_inline_fix_result"):
+                    diag = st.session_state["ttkh_inline_fix_result"]
+                    ok_diag = [d for d in diag if d.get("luc")]
+                    bad_diag = [d for d in diag if not d.get("luc")]
+                    if ok_diag:
+                        st.success(f"Đã sửa được {len(ok_diag)} khách. Các dòng còn lỗi đã được ghi lý do vào lịch sử.")
+                    if bad_diag:
+                        st.warning(f"Còn {len(bad_diag)} dòng chưa sửa được; xem cột Kết quả để biết lý do.")
+                    st.dataframe(
+                        pd.DataFrame([{
+                            "Mã đơn": d.get("Mã đơn"),
+                            "SĐT": d.get("phone"),
+                            "Kết quả": d.get("ket_qua"),
+                            "Địa chỉ app gửi": d.get("dia_chi"),
+                            "Link khách": d.get("link_khach", ""),
+                        } for d in diag]),
+                        hide_index=True,
+                        width="stretch",
+                        column_config={
+                            "Kết quả": st.column_config.TextColumn(width="large"),
+                            "Địa chỉ app gửi": st.column_config.TextColumn(width="large"),
+                            "Link khách": st.column_config.LinkColumn(width="medium"),
+                        },
+                    )
 
     def _write_ttkh_rows(rows_to_write):
         session = build_session()
@@ -3609,6 +3795,10 @@ if _page == PAGE_TTKH:
         results = []
         ok_count = 0
         written_ids = []
+        st.session_state["ttkh_last_write_rows_by_code"] = {
+            str(r.get("code")): r for r in (rows_to_write or []) if str(r.get("code") or "").strip()
+        }
+        st.session_state.pop("ttkh_inline_fix_result", None)
 
         def _note_phone_key(value):
             raw = str(value or "").strip()
@@ -3996,73 +4186,17 @@ if _page == PAGE_TTKH:
 
                 _still_bad = [c for c in _fail_log if not _latest_ok(c)]
                 st.markdown("**🔧 Tạo / sửa địa chỉ khách (Tỉnh/Quận/Phường) cho đơn:**")
-                _diag_code = st.text_input("Nhập mã đơn bất kỳ để tạo/sửa (bỏ trống = xử lý các đơn còn lỗi)",
+                _diag_code = st.text_input("Nhập mã đơn bất kỳ để tạo/sửa (bỏ trống = xử lý tối đa 60 đơn còn lỗi)",
                                            key="ttkh_diag_code", placeholder="Vd 584725942718924544")
-                _run_diag = st.button("🔧 Chạy tạo/sửa địa chỉ khách & xem chi tiết", key="ttkh_diag_fail")
+                _run_diag = st.button("🔧 Kiểm/Sửa các đơn còn lỗi & lưu lý do", key="ttkh_diag_fail")
                 if _run_diag:
-                    _codes_to_fix = [_diag_code.strip()] if _diag_code.strip() else _still_bad[:10]
+                    _codes_to_fix = [_diag_code.strip()] if _diag_code.strip() else _still_bad[:60]
                     if not _codes_to_fix:
                         st.info("Không có đơn nào để xử lý (nhập mã đơn vào ô trên).")
-                    _diag = []
-                    _diag_ok_log = []   # ghi nhận lại vào nhật ký các đơn fix xong
-                    _sess = build_session()
-                    _fj2 = make_fetch_json(build_session())
-                    for _c in _codes_to_fix:
-                        with st.spinner(f"Đang xử lý đơn {_c}…"):
-                            try:
-                                _od = L.find_order_by_code(_fj2, _c, days=45)
-                            except Exception as _e:
-                                _diag.append({"Mã đơn": _c, "Kết quả": "Không tra được đơn", "Chi tiết": str(_e)[:200]})
-                                continue
-                            if not _od:
-                                _diag.append({"Mã đơn": _c, "Kết quả": "❌ Không thấy đơn (quá 45 ngày?)", "Chi tiết": ""})
-                                continue
-                            _info2 = _od.get("info") or {}
-                            if not _info2.get("phone") or not _info2.get("name"):
-                                _diag.append({"Mã đơn": _c, "Kết quả": "❌ Đơn thiếu SĐT/tên", "Chi tiết": f"phone={_info2.get('phone')}, name={_info2.get('name')}"})
-                                continue
-                            # Tạo HOẶC cập nhật địa chỉ (không skip_search → tìm khách cũ để GHI ĐÈ
-                            # địa chỉ có cấu trúc Tỉnh/Quận/Phường, sửa cả khách đã lỡ tạo bằng text)
-                            _cid, _att = upsert_customer_from_info(_sess, _info2, note=f"Fix/cập nhật đơn {_c}")
-                            _atts = [str(a) for a in (_att or [])]
-                            _blob = " ".join(_atts).lower()
-                            _write_blob = " ".join(a for a in [str(x) for x in (_att or [])]
-                                                   if any(w in a for w in ("POST", "PUT", "PATCH"))).lower()
-                            _luc = ""
-                            if _cid:
-                                _now2 = datetime.now(timezone.utc) + timedelta(hours=7)
-                                _luc = _now2.strftime("%H:%M:%S %d/%m/%Y")
-                                _why = f"✅ ĐÃ TẠO/CẬP NHẬT khách (địa chỉ Tỉnh/Quận/Phường) — lúc {_luc}"
-                                _diag_ok_log.append({"ngay": _now2.strftime("%Y-%m-%d"), "gio": _now2.strftime("%H:%M"),
-                                                     "ts": _now2.isoformat(timespec="seconds"), "ma_don": _c,
-                                                     "sdt": _info2["phone"], "ket_qua": "thanh_cong",
-                                                     "chi_tiet": f"Fix/cập nhật địa chỉ khách lúc {_luc}"})
-                            elif "429" in _write_blob:
-                                _why = "❌ 429 — Sapo đang chặn (rate limit). Nghỉ 5–10 phút rồi thử lại."
-                            elif "type_mismatch" in _blob or "convert string value to integer" in _blob:
-                                _why = "❌ Mã vùng địa chỉ sai kiểu (Sapo cần SỐ nhưng đơn có chữ) — địa chỉ đơn thiếu/hỏng mã phường-quận-tỉnh."
-                            elif "401" in _write_blob or "403" in _write_blob:
-                                _why = "❌ Phiên/cookie Sapo hết hạn (401/403) — cần cập nhật SAPO_COOKIE."
-                            elif "422" in _write_blob or "400" in _write_blob:
-                                _why = "❌ Sapo từ chối dữ liệu tạo khách (400/422) — xem bước GHI bên dưới."
-                            else:
-                                _why = "❌ Vẫn không tạo được (xem các bước bên dưới)."
-                            _addr_str = ", ".join(str(x) for x in (
-                                _info2.get("ward"), _info2.get("district"), _info2.get("province")) if x)
-                            _diag.append({"Mã đơn": _c, "phone": _info2["phone"], "ket_qua": _why, "luc": _luc,
-                                          "dia_chi": f"{_addr_str}  [{_info2.get('address_format')}]"
-                                                     f"  mã P/X {_info2.get('ward_code') or '-'}",
-                                          "raw": _od.get("raw_shipping") or {},
-                                          "attempts": _atts})
-                        time.sleep(0.6)
-                    # Ghi nhận lại vào nhật ký → bảng đơn lỗi chuyển sang 'Đã ghi lại OK'
-                    try:
-                        if picklog.configured() and _diag_ok_log:
-                            picklog.log_ttkh_batch(_diag_ok_log)
-                    except Exception:
-                        pass
-                    st.session_state["ttkh_diag_result"] = _diag
-                    load_customer_phone_set.clear()
+                    else:
+                        with st.spinner(f"Đang kiểm/sửa {len(_codes_to_fix)} đơn lỗi…"):
+                            st.session_state["ttkh_diag_result"] = _ttkh_repair_customer_from_sapo(_codes_to_fix, limit=60)
+                        load_customer_phone_set.clear()
                 if st.session_state.get("ttkh_diag_result"):
                     _ok_list = [d for d in st.session_state["ttkh_diag_result"] if d.get("luc")]
                     if _ok_list:
