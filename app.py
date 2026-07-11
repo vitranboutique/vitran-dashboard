@@ -966,6 +966,15 @@ def load_week_summary():
                     data["month"]["so_cu"] = _mcu
     except Exception:
         pass
+    # CŨ (TỒN) HÔM NAY = "Đơn xót hôm trước" (xot_truoc) LIVE từ báo cáo cuối ngày → khớp đúng ô đó.
+    # (Ngày cũ dùng số đã lưu ở picklog; hôm nay tính live vì đơn tồn còn thay đổi.)
+    try:
+        _fn = (load_daily_report() or {}).get("funnel") or {}
+        _xt = _fn.get("xot_truoc")
+        if _xt is not None and data.get("days"):
+            data["days"][0]["so_cu"] = int(_xt)
+    except Exception:
+        pass
     # SỐ VIDEO đóng/hoàn + TAG (Khách tráo / Đã sử dụng / Hư hỏng...) từ kho video Dohana, theo NGÀY.
     for day in data.get("days", []):
         for _k, _v in (("vid_dong", 0), ("vid_hoan", 0), ("tag_dong", ""), ("tag_hoan", ""), ("so_cu", 0)):
