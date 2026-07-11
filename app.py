@@ -3561,13 +3561,35 @@ if _page == PAGE_TTKH:
     def _ttkh_result_by_code():
         return {str(r.get("Mã đơn")): r for r in (st.session_state.get("ttkh_write_results") or [])}
 
+    def _ttkh_order_code_plausible(code):
+        code = re.sub(r"\s+", "", str(code or ""))
+        return bool(code and len(code) <= 30 and re.fullmatch(r"[A-Za-z0-9_-]+", code))
+
+    def _ttkh_error_group_label(reason):
+        text = str(reason or "").lower()
+        if "429" in text or "rate limit" in text:
+            return "Sapo bận / rate limit"
+        if "không thấy đơn" in text or "khong thay don" in text:
+            return "Không thấy đơn trong 45 ngày"
+        if "thiếu sđt" in text or "thiếu sdt" in text or "thiếu sdt/tên" in text or "thiếu sđt/tên" in text:
+            return "Đơn thiếu SĐT / tên"
+        if "chưa đủ mã sapo" in text or "thiếu mã" in text or "mã vùng" in text:
+            return "Thiếu / sai mã tỉnh-quận-phường"
+        if "chưa hoàn tất" in text or "đã tạo/cập nhật khách" in text:
+            return "Khách đã tạo, cần xác nhận lại địa chỉ"
+        if "400" in text or "422" in text or "sapo từ chối" in text:
+            return "Sapo từ chối dữ liệu"
+        if "401" in text or "403" in text or "cookie" in text:
+            return "Phiên Sapo hết hạn"
+        return "Lỗi khác"
+
     def _ttkh_repair_customer_from_sapo(codes, limit=60, source_rows_by_code=None):
         """Kiểm/sửa phần khách hàng cho các mã đơn lỗi và ghi lại lý do vào nhật ký."""
         seen, clean_codes = set(), []
         raw_items = [codes] if isinstance(codes, str) else (codes or [])
         for raw in raw_items:
             for code in parse_codes(str(raw or "")):
-                if code and code not in seen:
+                if code and _ttkh_order_code_plausible(code) and code not in seen:
                     seen.add(code)
                     clean_codes.append(code)
         clean_codes = clean_codes[:max(1, int(limit or 60))]
@@ -4127,9 +4149,11 @@ if _page == PAGE_TTKH:
                 _logs_30d.append(_lg)
             for _lg in sorted(_logs_30d, key=lambda x: str(x.get("ts") or f"{x.get('ngay') or ''} {x.get('gio') or ''}")):
                 _d = str(_lg.get("ngay") or "")
-                _agg = _rows_by_day.setdefault(_d, {"Ngày": _d, "Thành công": 0, "Thất bại": 0, "Bỏ qua": 0})
                 _kq = _lg.get("ket_qua")
                 _code = str(_lg.get("ma_don") or "")
+                if _code and not _ttkh_order_code_plausible(_code):
+                    continue
+                _agg = _rows_by_day.setdefault(_d, {"Ngày": _d, "Thành công": 0, "Thất bại": 0, "Bỏ qua": 0})
                 if _code:
                     _latest_log[_code] = _lg
                 if _kq == "thanh_cong":
@@ -4207,14 +4231,37 @@ if _page == PAGE_TTKH:
                 st.caption("‘Mở khách’ = tìm khách theo SĐT. ‘Mở đơn’ = mở danh sách đơn Sapo đã lọc theo mã đơn.")
 
                 _still_bad = [c for c in _fail_log if not _latest_ok(c)]
+                _bad_by_group = {}
+                for _row in _fl_rows:
+                    _code = str(_row.get("Mã đơn") or "").strip()
+                    if not _code or _code not in _still_bad:
+                        continue
+                    _group = _ttkh_error_group_label(_row.get("Lý do"))
+                    _bad_by_group.setdefault(_group, []).append(_code)
+                if _bad_by_group:
+                    st.markdown("**⚡ Sửa nhanh theo nhóm lỗi:**")
+                    for _i, (_group, _codes) in enumerate(sorted(_bad_by_group.items(), key=lambda x: (-len(x[1]), x[0]))):
+                        _cols_fix = st.columns([3, 1])
+                        _cols_fix[0].caption(f"{_group}: {len(_codes)} đơn")
+                        if _cols_fix[1].button(f"Sửa {min(len(_codes), 60)}", key=f"ttkh_fix_group_{_i}", use_container_width=True):
+                            with st.spinner(f"Đang sửa nhóm '{_group}' ({min(len(_codes), 60)} đơn)…"):
+                                st.session_state["ttkh_diag_result"] = _ttkh_repair_customer_from_sapo(_codes[:60], limit=60)
+                            load_customer_phone_set.clear()
                 st.markdown("**🔧 Tạo / sửa địa chỉ khách (Tỉnh/Quận/Phường) cho đơn:**")
-                _diag_code = st.text_input("Nhập mã đơn bất kỳ để tạo/sửa (bỏ trống = xử lý tối đa 60 đơn còn lỗi)",
-                                           key="ttkh_diag_code", placeholder="Vd 584725942718924544")
+                _allowed_bad = set(_still_bad)
+                st.session_state.pop("ttkh_diag_code", None)
+                _selected_bad = st.multiselect(
+                    "Chọn mã lỗi cần sửa (bỏ trống = xử lý tối đa 60 đơn còn lỗi)",
+                    options=_still_bad,
+                    default=[],
+                    key="ttkh_diag_codes_select",
+                    help="Chỉ chọn được mã đang nằm trong lịch sử lỗi phía trên; app không nhận mã gõ ngoài danh sách.",
+                )
                 _run_diag = st.button("🔧 Kiểm/Sửa các đơn còn lỗi & lưu lý do", key="ttkh_diag_fail")
                 if _run_diag:
-                    _codes_to_fix = parse_codes(_diag_code)[:60] if _diag_code.strip() else _still_bad[:60]
+                    _codes_to_fix = [c for c in _selected_bad if c in _allowed_bad and _ttkh_order_code_plausible(c)][:60] if _selected_bad else _still_bad[:60]
                     if not _codes_to_fix:
-                        st.info("Không có đơn nào để xử lý (nhập mã đơn vào ô trên).")
+                        st.info("Không có đơn lỗi nào để xử lý.")
                     else:
                         with st.spinner(f"Đang kiểm/sửa {len(_codes_to_fix)} đơn lỗi…"):
                             st.session_state["ttkh_diag_result"] = _ttkh_repair_customer_from_sapo(_codes_to_fix, limit=60)
