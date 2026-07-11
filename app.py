@@ -1945,6 +1945,64 @@ def _pick_variant_ui(variants, *, query_key, select_key, label, placeholder):
     return picked
 
 
+def _price_blank(value):
+    return not str(value or "").strip()
+
+
+def _price_num_missing(value):
+    try:
+        return float(value or 0) <= 0
+    except Exception:
+        return True
+
+
+def _price_req_label(label, missing):
+    return f":red[**{label} *]**" if missing else f"{label} *"
+
+
+def _price_req_note(text="Bắt buộc nhập"):
+    st.markdown(
+        f'<div style="color:#b91c1c;font-size:.82rem;font-weight:700;margin-top:-8px;margin-bottom:6px">'
+        f'⚠ {_esc(text)}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def _price_required_number(container, label, *, key, value, step, min_value=0.0):
+    state_value = st.session_state.get(key, value)
+    missing = _price_num_missing(state_value)
+    with container:
+        out = st.number_input(
+            _price_req_label(label, missing),
+            min_value=min_value,
+            value=float(value),
+            step=float(step),
+            key=key,
+        )
+        if _price_num_missing(out):
+            _price_req_note()
+        return out
+
+
+def _render_price_formula():
+    with st.container(border=True):
+        st.markdown("**Công thức tính giá bán**")
+        st.markdown(
+            """
+- `Giá/m vải = Giá 1kg vải / Chiều dài/kg`
+- `Diện tích chính = Dài chính x Ngang chính x Số lớp chính / 10.000`
+- `Diện tích lót = Dài lót x Ngang lót x Số lớp lót / 10.000`
+- `Tổng diện tích = (Diện tích chính + Diện tích lót) x (1 + Hao hụt / 100)`
+- `Mét vải/SP = Tổng diện tích / (Khổ vải / 100)`
+- `Tiền vải = Mét vải/SP x Giá/m vải`
+- `Chi phí SX = Cắt + May + Ủi gói + Vận hành + Phụ liệu`
+- `Giá vốn = Tiền vải + Chi phí SX`
+- `Giá bán sàn = Giá vốn x Hệ số giá bán`
+            """
+        )
+        st.caption("Nếu có nhiều size, dài/ngang từng size tự cộng/trừ theo phần chênh size, lấy size M làm gốc.")
+
+
 def _render_price_page():
     head = st.columns([0.78, 0.22], vertical_alignment="center")
     with head[0]:
@@ -1972,31 +2030,39 @@ def _render_price_page():
         st.markdown("**1. Chọn mã sản phẩm và mã vải**")
         sku_cols = st.columns(2)
         with sku_cols[0]:
+            product_state_missing = _price_blank(st.session_state.get("price_product_q")) and _price_blank(st.session_state.get("price_product_manual"))
             product = _pick_variant_ui(
                 variants,
                 query_key="price_product_q",
                 select_key="price_product_pick",
-                label="Sản phẩm",
+                label=_price_req_label("Sản phẩm", product_state_missing),
                 placeholder="Gõ tên hoặc mã, VD: áo phông, A18, CVBC",
             )
+            product_manual_missing = not product and _price_blank(st.session_state.get("price_product_manual"))
             product_sku = product.get("sku") if product else st.text_input(
-                "Nhập tay SKU sản phẩm",
+                _price_req_label("Nhập tay SKU sản phẩm", product_manual_missing),
                 key="price_product_manual",
                 placeholder="VD: AO-NA-M",
             )
+            if _price_blank(product_sku):
+                _price_req_note("Chọn SKU từ Sapo hoặc nhập tay SKU sản phẩm")
         with sku_cols[1]:
+            fabric_state_missing = _price_blank(st.session_state.get("price_fabric_q")) and _price_blank(st.session_state.get("price_fabric_manual"))
             fabric = _pick_variant_ui(
                 variants,
                 query_key="price_fabric_q",
                 select_key="price_fabric_pick",
-                label="Vải",
+                label=_price_req_label("Vải", fabric_state_missing),
                 placeholder="Gõ mã vải, tên vải hoặc barcode",
             )
+            fabric_manual_missing = not fabric and _price_blank(st.session_state.get("price_fabric_manual"))
             fabric_sku = fabric.get("sku") if fabric else st.text_input(
-                "Nhập tay SKU vải",
+                _price_req_label("Nhập tay SKU vải", fabric_manual_missing),
                 key="price_fabric_manual",
                 placeholder="VD: VAI...",
             )
+            if _price_blank(fabric_sku):
+                _price_req_note("Chọn SKU từ Sapo hoặc nhập tay SKU vải")
 
     specs = PT.extract_fabric_specs(
         *(x for x in (
@@ -2011,19 +2077,19 @@ def _render_price_page():
     with st.container(border=True):
         st.markdown("**2. Thông số bắt buộc**")
         f1 = st.columns(3)
-        fabric_width = f1[0].number_input("Khổ vải (cm)", min_value=0.0, value=float(specs.get("fabric_width_cm") or 160), step=1.0, key=f"price_width_{fabric_key}")
-        meters_per_kg = f1[1].number_input("Chiều dài/kg (m/kg)", min_value=0.0, value=float(specs.get("meters_per_kg") or 2.8), step=0.05, key=f"price_mkg_{fabric_key}")
-        price_per_kg = f1[2].number_input("Giá 1kg vải", min_value=0.0, value=float((fabric or {}).get("price") or 0), step=1000.0, key=f"price_pkg_{fabric_key}")
+        fabric_width = _price_required_number(f1[0], "Khổ vải (cm)", min_value=0.0, value=float(specs.get("fabric_width_cm") or 160), step=1.0, key=f"price_width_{fabric_key}")
+        meters_per_kg = _price_required_number(f1[1], "Chiều dài/kg (m/kg)", min_value=0.0, value=float(specs.get("meters_per_kg") or 2.8), step=0.05, key=f"price_mkg_{fabric_key}")
+        price_per_kg = _price_required_number(f1[2], "Giá 1kg vải", min_value=0.0, value=float((fabric or {}).get("price") or 0), step=1000.0, key=f"price_pkg_{fabric_key}")
 
         f2 = st.columns(3)
-        main_length = f2[0].number_input("Dài chính (cm)", min_value=0.0, value=60.0, step=1.0, key="price_main_l")
-        main_width = f2[1].number_input("Ngang chính (cm)", min_value=0.0, value=50.0, step=1.0, key="price_main_w")
-        main_layers = f2[2].number_input("Số lớp chính", min_value=0.0, value=1.0, step=1.0, key="price_main_layers")
+        main_length = _price_required_number(f2[0], "Dài chính (cm)", min_value=0.0, value=60.0, step=1.0, key="price_main_l")
+        main_width = _price_required_number(f2[1], "Ngang chính (cm)", min_value=0.0, value=50.0, step=1.0, key="price_main_w")
+        main_layers = _price_required_number(f2[2], "Số lớp chính", min_value=0.0, value=1.0, step=1.0, key="price_main_layers")
 
         f3 = st.columns(3)
-        size_count = f3[0].selectbox("Số size", [1, 2, 3, 4, 5, 6], index=4, key="price_size_count")
+        size_count = f3[0].selectbox("Số size *", [1, 2, 3, 4, 5, 6], index=4, key="price_size_count")
         waste = f3[1].number_input("Hao hụt (%)", min_value=0.0, value=5.0, step=0.5, key="price_waste")
-        markup = f3[2].number_input("Hệ số giá bán", min_value=0.0, value=4.0, step=0.1, key="price_markup")
+        markup = _price_required_number(f3[2], "Hệ số giá bán", min_value=0.0, value=4.0, step=0.1, key="price_markup")
 
     with st.container(border=True):
         st.markdown("**3. Chi phí chính**")
@@ -2057,6 +2123,8 @@ def _render_price_page():
         lace_cost = c3[2].number_input("Ren", min_value=0.0, value=0.0, step=1000.0, key="price_lace_cost")
         other_cost = c3[3].number_input("Khác", min_value=0.0, value=0.0, step=1000.0, key="price_other_cost")
 
+    _render_price_formula()
+
     required_missing = []
     if not str(product_sku or "").strip():
         required_missing.append("SKU sản phẩm")
@@ -2078,7 +2146,7 @@ def _render_price_page():
         required_missing.append("dài/ngang lớp lót")
 
     if required_missing:
-        st.warning("Nhập đủ các mục bắt buộc để tính: " + ", ".join(required_missing) + ".")
+        st.error("Còn thiếu mục bắt buộc: " + ", ".join(required_missing) + ". Các ô thiếu đã được tô đỏ phía trên.")
         return
 
     try:
