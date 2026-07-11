@@ -9,7 +9,7 @@ import json
 import re
 import time
 import unicodedata
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from html import escape as _esc
 from pathlib import Path
 from urllib.parse import quote_plus
@@ -237,14 +237,23 @@ def _week_table_html(data):
     def _red(k, v):
         return "color:#dc2626;font-weight:800;" if (k in _redkeys and isinstance(v, (int, float)) and v > 0) else ""
 
+    _DOHANA_RETENTION = 25   # Dohana chỉ giữ ~25 ngày video → ngày cũ hơn KHÔNG đồng bộ lại được
+    _today_vn = (datetime.now(timezone.utc) + timedelta(hours=7)).date()
+
     def _lech_badge(d):
         """Trả badge lệch cho từng cột cần đối chiếu (▼ thiếu · ▲ dư):
-        Vid đóng vs Đóng gói · Vid hoàn vs Hoàn đơn · Shipper nhận: Soạn = Hủy+Shipper (ngày đã qua)."""
+        Vid đóng vs Đóng gói · Vid hoàn vs Hoàn đơn · Shipper nhận: Soạn = Hủy+Shipper (ngày đã qua).
+        Ngày quá hạn Dohana (~25 ngày) → badge video xám 'kho cũ' vì số có thể thiếu do kho lưu chưa
+        đầy lúc đó, KHÔNG kết luận NV quên quay."""
         def _n(key):
             try:
                 return int(round(float(d.get(key) or 0)))
             except Exception:
                 return 0
+        try:
+            _stale = (_today_vn - date.fromisoformat(str(d.get("iso") or ""))).days > _DOHANA_RETENTION
+        except Exception:
+            _stale = False
         out = {}
         for k, lech, tip in (
             ("vid_dong", _n("dong_goi") - _n("vid_dong"), "Đóng gói − Vid đóng (thiếu video đóng)"),
@@ -252,14 +261,23 @@ def _week_table_html(data):
             ("shipper_nhan", (0 if d.get("is_today") else _n("soan") - _n("huy") - _n("shipper_nhan")),
              "Soạn − (Hủy + Shipper nhận) — chưa khớp"),
         ):
-            if lech:
-                if lech > 0:      # THIẾU (đỏ) — bên này thiếu video, cần quay bù / chuyển tới
-                    sym, fg, bgc, word = "▼", "#b91c1c", "#fee2e2", "thiếu"
-                else:             # DƯ (xanh) — bên này dư video, có thể quay lộn sang → chuyển đi
-                    sym, fg, bgc, word = "▲", "#1d4ed8", "#dbeafe", "dư"
-                out[k] = (f' <span title="{tip}" style="color:{fg};background:{bgc};font-size:9px;'
-                          f'font-weight:800;white-space:nowrap;padding:1px 4px;border-radius:4px;'
-                          f'margin-left:3px">{sym}{abs(lech)} {word}</span>')
+            if not lech:
+                continue
+            _is_vid = k in ("vid_dong", "vid_hoan")
+            if _is_vid and _stale and lech > 0:   # ngoài hạn Dohana → xám, không đổ lỗi NV
+                out[k] = (' <span title="Ngày đã quá hạn Dohana (~25 ngày) — không đồng bộ lại được. '
+                          'Số video có thể thiếu do kho lưu lúc đó chưa đầy, KHÔNG chắc NV quên quay" '
+                          'style="color:#64748b;background:#f1f5f9;font-size:9px;font-weight:700;'
+                          'white-space:nowrap;padding:1px 4px;border-radius:4px;margin-left:3px">'
+                          f'▽{abs(lech)} kho cũ</span>')
+                continue
+            if lech > 0:      # THIẾU (đỏ) — bên này thiếu video, cần quay bù / chuyển tới
+                sym, fg, bgc, word = "▼", "#b91c1c", "#fee2e2", "thiếu"
+            else:             # DƯ (xanh) — bên này dư video, có thể quay lộn sang → chuyển đi
+                sym, fg, bgc, word = "▲", "#1d4ed8", "#dbeafe", "dư"
+            out[k] = (f' <span title="{tip}" style="color:{fg};background:{bgc};font-size:9px;'
+                      f'font-weight:800;white-space:nowrap;padding:1px 4px;border-radius:4px;'
+                      f'margin-left:3px">{sym}{abs(lech)} {word}</span>')
         return out
 
     head = "".join(
@@ -4119,10 +4137,11 @@ def _render_daily():
                        'Đối chiếu: **Vid đóng** vs Đóng gói · **Vid hoàn** vs Hoàn đơn · '
                        '**Shipper nhận** = Soạn − (Hủy + Shipper nhận). '
                        'Nếu Vid đóng *thiếu* đúng bằng Vid hoàn *dư* (hoặc ngược lại) → gần chắc là quay lộn 2 bên.')
-            st.caption('ℹ️ Cột **Vid đóng / Vid hoàn** tự đồng bộ ~28 ngày gần nhất từ Dohana mỗi khi mở bảng '
-                       '(Dohana chỉ giữ ~25–30 ngày; ngày cũ hơn dựa vào kho đã lưu — bấm nút '
-                       '**🔄 Đồng bộ Dohana** ở trên nếu vẫn thiếu). Chỉ đếm video **có gắn mã đơn/mã vận đơn**; '
-                       'video quay mà không gắn mã sẽ không được tính (nên có thể ít hơn tổng video trên Dohana).')
+            st.caption('ℹ️ Cột **Vid đóng / Vid hoàn** tự đồng bộ ~28 ngày gần nhất từ Dohana mỗi khi mở bảng, '
+                       'lưu bền vào kho. **Dohana chỉ giữ ~25 ngày** → ngày cũ hơn 25 ngày không đồng bộ lại được: '
+                       'nếu kho lúc đó chưa lưu kịp thì badge hiện ⬜ **"kho cũ" (xám)** thay vì "thiếu" đỏ — '
+                       'KHÔNG phải NV quên quay. Chỉ đếm video **có gắn mã đơn/mã vận đơn** '
+                       '(video không gắn mã không được tính).')
             if picklog.configured():
                 st.caption("✏️ Gõ ghi chú theo ngày rồi bấm **Lưu** — sẽ hiện vào cột *Ghi chú* của bảng trên (lưu bền, lần sau mở vẫn còn).")
                 _ndf = pd.DataFrame([{"Ngày": d["ngay"], "Thứ": d["thu"], "iso": d["iso"],
