@@ -1922,8 +1922,19 @@ def _variant_summary(row):
     return f"`{sku}` · {title[:80]} · tồn {stock} · giá {_vnd(row.get('price'))}"
 
 
-def _pick_variant_ui(variants, *, query_key, select_key, label, placeholder):
-    q = st.text_input(label, placeholder=placeholder, key=query_key)
+def _price_field_label(label, *, required=False, missing=False):
+    color = "#b91c1c" if missing else "#374151"
+    star = ' <span style="color:#b91c1c">*</span>' if required else ""
+    st.markdown(
+        f'<div style="color:{color};font-size:.9rem;font-weight:700;margin:0 0 2px">'
+        f'{_esc(label)}{star}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def _pick_variant_ui(variants, *, query_key, select_key, label, placeholder, required_missing=False):
+    _price_field_label(label, required=True, missing=required_missing)
+    q = st.text_input(label, placeholder=placeholder, key=query_key, label_visibility="collapsed")
     if not q.strip():
         st.caption("Gõ tên, mã SKU hoặc barcode để hiện gợi ý từ Sapo.")
         return None
@@ -1956,10 +1967,6 @@ def _price_num_missing(value):
         return True
 
 
-def _price_req_label(label, missing):
-    return f":red[**{label} *]**" if missing else f"{label} *"
-
-
 def _price_req_note(text="Bắt buộc nhập"):
     st.markdown(
         f'<div style="color:#b91c1c;font-size:.82rem;font-weight:700;margin-top:-8px;margin-bottom:6px">'
@@ -1972,16 +1979,23 @@ def _price_required_number(container, label, *, key, value, step, min_value=0.0)
     state_value = st.session_state.get(key, value)
     missing = _price_num_missing(state_value)
     with container:
+        _price_field_label(label, required=True, missing=missing)
         out = st.number_input(
-            _price_req_label(label, missing),
+            label,
             min_value=min_value,
             value=float(value),
             step=float(step),
             key=key,
+            label_visibility="collapsed",
         )
         if _price_num_missing(out):
             _price_req_note()
         return out
+
+
+def _price_required_text_input(label, *, key, placeholder, missing=False):
+    _price_field_label(label, required=True, missing=missing)
+    return st.text_input(label, key=key, placeholder=placeholder, label_visibility="collapsed")
 
 
 def _render_price_formula():
@@ -2035,14 +2049,16 @@ def _render_price_page():
                 variants,
                 query_key="price_product_q",
                 select_key="price_product_pick",
-                label=_price_req_label("Sản phẩm", product_state_missing),
+                label="Sản phẩm",
                 placeholder="Gõ tên hoặc mã, VD: áo phông, A18, CVBC",
+                required_missing=product_state_missing,
             )
             product_manual_missing = not product and _price_blank(st.session_state.get("price_product_manual"))
-            product_sku = product.get("sku") if product else st.text_input(
-                _price_req_label("Nhập tay SKU sản phẩm", product_manual_missing),
+            product_sku = product.get("sku") if product else _price_required_text_input(
+                "Nhập tay SKU sản phẩm",
                 key="price_product_manual",
                 placeholder="VD: AO-NA-M",
+                missing=product_manual_missing,
             )
             if _price_blank(product_sku):
                 _price_req_note("Chọn SKU từ Sapo hoặc nhập tay SKU sản phẩm")
@@ -2052,14 +2068,16 @@ def _render_price_page():
                 variants,
                 query_key="price_fabric_q",
                 select_key="price_fabric_pick",
-                label=_price_req_label("Vải", fabric_state_missing),
+                label="Vải",
                 placeholder="Gõ mã vải, tên vải hoặc barcode",
+                required_missing=fabric_state_missing,
             )
             fabric_manual_missing = not fabric and _price_blank(st.session_state.get("price_fabric_manual"))
-            fabric_sku = fabric.get("sku") if fabric else st.text_input(
-                _price_req_label("Nhập tay SKU vải", fabric_manual_missing),
+            fabric_sku = fabric.get("sku") if fabric else _price_required_text_input(
+                "Nhập tay SKU vải",
                 key="price_fabric_manual",
                 placeholder="VD: VAI...",
+                missing=fabric_manual_missing,
             )
             if _price_blank(fabric_sku):
                 _price_req_note("Chọn SKU từ Sapo hoặc nhập tay SKU vải")
