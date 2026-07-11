@@ -2398,6 +2398,15 @@ def _render_pick():
         return
 
     exp, nor = pdata["express"], pdata["normal"]
+
+    def _pick_codes_skus(_e, _n):
+        """Gom MÃ ĐƠN + [(SKU, SL)] của cả hỏa tốc + thường → lưu vào picklog."""
+        _codes = [c for c in (list(_e.get("codes") or []) + list(_n.get("codes") or [])) if c]
+        _m = {}
+        for _s, _q in (list(_e.get("skus") or []) + list(_n.get("skus") or [])):
+            _m[_s] = _m.get(_s, 0) + int(_q or 0)
+        return _codes, sorted(_m.items(), key=lambda x: (-x[1], str(x[0])))
+
     k = st.columns(4)
     k[0].metric("🔴 Hỏa tốc (nhặt trước)", exp["total_orders"])
     k[1].metric("Thường", nor["total_orders"])
@@ -2429,6 +2438,7 @@ def _render_pick():
             if st.button(_lbl, type="primary", width="stretch"):
                 if _can_save:
                     _allsku = {s for s, _ in exp["skus"]} | {s for s, _ in nor["skus"]}
+                    _pcodes, _pskum = _pick_codes_skus(exp, nor)
                     _ok, _msg = picklog.log_batch({
                         "ngay": (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%Y-%m-%d"),
                         "gio": now_str[:5],
@@ -2436,6 +2446,8 @@ def _render_pick():
                         "so_sp": exp["total_qty"] + nor["total_qty"], "so_sku": len(_allsku),
                         "ht_don": exp["total_orders"], "th_don": nor["total_orders"],
                         "so_cu": exp["old"] + nor["old"],   # đơn CŨ (xác nhận hôm trước, nay mới nhặt)
+                        "codes": _pcodes,       # MÃ ĐƠN từng đơn → đối chiếu hủy trước/sau soạn
+                        "sku_list": _pskum,     # [(sku, SL)] đã nhặt trong đợt
                     })
                     if not _ok:
                         st.error(_msg)
@@ -2471,12 +2483,14 @@ def _render_pick():
             if st.button("💾 Lưu đợt thủ công (không in)", disabled=not picklog.configured()):
                 _now_vn = datetime.now(timezone.utc) + timedelta(hours=7)
                 _allsku = {s for s, _ in exp["skus"]} | {s for s, _ in nor["skus"]}
+                _pcodes, _pskum = _pick_codes_skus(exp, nor)
                 ok, msg = picklog.log_batch({
                     "ngay": _now_vn.strftime("%Y-%m-%d"), "gio": _now_vn.strftime("%H:%M"),
                     "so_don": exp["total_orders"] + nor["total_orders"],
                     "so_sp": exp["total_qty"] + nor["total_qty"], "so_sku": len(_allsku),
                     "ht_don": exp["total_orders"], "th_don": nor["total_orders"],
                     "so_cu": exp["old"] + nor["old"],
+                    "codes": _pcodes, "sku_list": _pskum,
                 })
                 (st.success(msg + " Bấm 🔄 Tải lại để thấy.") if ok else st.error(msg))
             if not picklog.configured():

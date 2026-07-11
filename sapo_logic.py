@@ -245,6 +245,10 @@ def _summarize_picking(orders):
         "channels": srt(channels), "stores": srt(stores), "carriers": srt(carriers),
         "services": srt(services),
         "skus": sorted(sku.items(), key=lambda x: (-x[1], str(x[0]))),
+        # MÃ ĐƠN từng đơn trong đợt (mã vận đơn ưu tiên, fallback tên đơn) → lưu vào picklog
+        # để đối chiếu đơn HỦY: mã hủy ∈ phiếu nhặt = hủy SAU soạn; không có = hủy TRƯỚC soạn.
+        "codes": [((o.get("fulfillments") or [{}])[0].get("tracking_number")
+                   or o.get("name") or "").strip() for o in orders],
     }
 
 
