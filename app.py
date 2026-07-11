@@ -212,8 +212,8 @@ def _week_table_html(data):
     else:                                   # dự phòng shape cũ (list)
         wk, month, mlabel = data, {}, ""
     cols = [("ngay", "Ngày"), ("thu", "Thứ"),
-            # ── ĐÓNG HÀNG (xanh) — luồng: soạn → gói → quay video → mất hàng → hủy → giao ──
-            ("soan", "Soạn"), ("dong_goi", "Đóng gói"), ("vid_dong", "Vid đóng"), ("tag_dong", "⚠️ Mất hàng (đóng)"),
+            # ── ĐÓNG HÀNG (xanh) — luồng: xác nhận → soạn → đóng gói THẬT (video) → mất hàng → hủy → giao ──
+            ("dong_goi", "Xác nhận"), ("soan", "Soạn"), ("vid_dong", "Đóng gói (video)"), ("tag_dong", "⚠️ Mất hàng (đóng)"),
             ("huy", "Hủy"), ("shipper_nhan", "Shipper nhận"), ("giao_khach", "Giao khách"),
             # ── HOÀN HÀNG (cam) ──
             ("hoan_don", "Hoàn (đơn)"), ("hoan_sp", "Hoàn SP"), ("vid_hoan", "Vid hoàn"),
@@ -269,7 +269,7 @@ def _week_table_html(data):
 
         out = {}
         for k, lech, tip in (
-            ("vid_dong", _n("dong_goi") - _n("vid_dong"), "Đóng gói − Vid đóng (thiếu video đóng)"),
+            ("vid_dong", _n("soan") - _n("vid_dong"), "Soạn − Đóng gói(video): đơn đã nhặt mà chưa gói/quay video"),
             ("vid_hoan", _n("hoan_don") - _n("vid_hoan"), "Hoàn đơn − Vid hoàn (lệch video hoàn)"),
         ):
             if not lech:
@@ -4658,16 +4658,16 @@ def _render_daily():
                        '🟢 **▲ ✓ tráo/đã dùng** (xanh lá): Vid hoàn dư vì hàng khách tráo / đã dùng / hư / '
                        'thiếu — NV **không nhập kho là ĐÚNG**, KHÔNG tính lỗi (chỉ sai nếu các đơn này lại '
                        'bị nhập kho). '
-                       'Đối chiếu: **Vid đóng** vs Đóng gói · **Vid hoàn** vs Hoàn đơn. '
-                       'Nếu Vid đóng *thiếu* đúng bằng Vid hoàn *dư* (hoặc ngược lại) → gần chắc là quay lộn 2 bên. '
+                       'Đối chiếu đóng: **Soạn** vs **Đóng gói (video)** · Đối chiếu hoàn: **Vid hoàn** vs Hoàn đơn. '
+                       'Nếu Đóng gói(video) *thiếu* đúng bằng Vid hoàn *dư* (hoặc ngược lại) → gần chắc là quay lộn 2 bên. '
                        'Cột **⚠️ Mất hàng (đóng)** (đỏ) = video đóng bị gắn tag *đóng thiếu/sai SP*: soạn & quay đủ '
                        'nhưng cuối bị thiếu → **mất hàng khi đóng**, cần truy. Vạch dọc đậm ngăn khối **Đóng hàng** (xanh) '
-                       'với khối **Hoàn hàng** (cam). '
-                       'Cột **Soạn** = tổng đơn các **đợt phiếu nhặt đã in** trong ngày (số lưu ở tab Phiếu nhặt khi bấm '
-                       '*In + lưu đợt*). Ngày chưa lưu đợt nào → ước lượng theo mốc in phiếu giao (Sapo). '
-                       'Soạn có thể **lệch ngày** với Đóng gói: đơn nhặt hôm nay có thể gói/hủy hôm sau, '
-                       'nên Đóng gói đôi khi > Soạn (gói nốt đơn nhặt hôm trước).')
-            st.caption('ℹ️ Cột **Vid đóng / Vid hoàn** tự đồng bộ ~28 ngày gần nhất từ Dohana mỗi khi mở bảng, '
+                       'với khối **Hoàn hàng** (cam).')
+            st.caption('🔑 **Luồng đóng hàng:** **Xác nhận** (đơn đã xác nhận, mốc Sapo `packed_on`) → '
+                       '**Soạn** (nhặt hàng theo phiếu nhặt — tổng đơn các đợt đã bấm *In + lưu đợt*; ngày chưa lưu → '
+                       'ước lượng từ Sapo) → **Đóng gói (video)** = số đơn ĐÓNG GÓI THẬT có video → Shipper nhận → Giao khách. '
+                       'Các bước **lệch ngày** nhau (nhặt hôm nay có thể gói/giao hôm sau) nên số giữa các cột không cần bằng nhau tuyệt đối.')
+            st.caption('ℹ️ Cột **Đóng gói (video) / Vid hoàn** tự đồng bộ ~28 ngày gần nhất từ Dohana mỗi khi mở bảng, '
                        'lưu bền vào kho. **Dohana chỉ giữ ~25 ngày** → ngày cũ hơn 25 ngày không đồng bộ lại được: '
                        'nếu kho lúc đó chưa lưu kịp thì badge hiện ⬜ **"kho cũ" (xám)** thay vì "thiếu" đỏ — '
                        'KHÔNG phải NV quên quay. Chỉ đếm video **có gắn mã đơn/mã vận đơn** '
