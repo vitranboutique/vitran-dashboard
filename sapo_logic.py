@@ -548,6 +548,8 @@ CUST_ERR_LABELS = {
     "thieu_ghi_chu": "🟠 Thiếu ghi chú mã đơn (username + mã đơn để đối chiếu) — sửa dần",
 }
 
+AUDIT_CUSTOMERS_VERSION = "2026-07-11-orders-missing-note-v2"
+
 
 def note_missing_order_code(note) -> bool:
     """True nếu khách ĐÃ lưu qua app (note có 'sdt:') NHƯNG note CHƯA có 'đơn: <mã>'.
@@ -556,7 +558,11 @@ def note_missing_order_code(note) -> bool:
     t = str(note or "")
     if re.search(r"đơn:\s*\S", t, flags=re.I):
         return False
-    return bool(re.search(r"sdt\s*:", t, flags=re.I))
+    return note_has_ttkh_phone_label(t)
+
+
+def note_has_ttkh_phone_label(note) -> bool:
+    return bool(re.search(r"(?:sdt|s\s*[đd]t)\s*:", str(note or ""), flags=re.I))
 
 
 def _order_contact_phone(order) -> str:
@@ -580,7 +586,7 @@ def order_missing_ttkh_note(order) -> bool:
     """True nếu đơn đã có SĐT ở dữ liệu đơn nhưng note đơn chưa có block TTKH (`sdt:`)."""
     if not _order_contact_phone(order):
         return False
-    return not _has_customer_phone((order or {}).get("note") or "")
+    return not note_has_ttkh_phone_label((order or {}).get("note") or "")
 
 
 def phone_is_bad(p) -> bool:
@@ -742,6 +748,7 @@ def audit_customers(fetch_json, max_pages: int = 220, throttle: float = 0.35,
         for x in samples[cat]:
             x.pop("_sk", None)
     return {"total": total, "counts": dict(counts), "samples": samples,
+            "schema_version": AUDIT_CUSTOMERS_VERSION,
             "order_note_missing": order_note_missing,
             "hit_cap": hit_cap, "ts": (_now_utc() + timedelta(hours=7)).strftime("%H:%M %d/%m")}
 

@@ -2445,6 +2445,11 @@ if _page == PAGE_TTKH:
             if _ca.get("error"):
                 st.error(f"Lỗi quét khách: {_ca['error']}")
             else:
+                _audit_version = str(_ca.get("schema_version") or "")
+                _current_audit_version = str(getattr(L, "AUDIT_CUSTOMERS_VERSION", "") or "")
+                if _current_audit_version and _audit_version != _current_audit_version:
+                    st.warning("Kết quả đang hiển thị là bản quét cũ, chưa có logic gom **đơn có SĐT nhưng thiếu ghi chú**. "
+                               "Bấm **🔄 Quét khách hàng (cập nhật)** để lấy lại số mới.")
                 _counts = _ca.get("counts") or {}
                 _tot_bad = sum(_counts.values())
                 _order_note_missing = int(_ca.get("order_note_missing") or 0)
