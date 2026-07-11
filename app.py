@@ -903,6 +903,19 @@ def load_week_summary():
     try:
         if picklog.configured():
             from collections import Counter as _Ct
+            # TỰ ĐỒNG BỘ ~28 ngày video từ Dohana rồi gộp vào kho TRƯỚC khi đọc — để bảng 30 ngày
+            # KHÔNG bị đứng số khi có video mới (Dohana giữ ~25-30 ngày; giữ nhịp _throttle chống 429).
+            # Lỗi/429 → bỏ qua, đọc kho cũ (không làm bảng trống).
+            try:
+                _fresh = []
+                for _fn in (dohana.today_package_videos, dohana.inbound_videos):
+                    _r = _fn(days_match=28, max_pages=80)
+                    if _r and _r.get("records"):
+                        _fresh += _r["records"]
+                if _fresh:
+                    picklog.merge_dohana_videos(_fresh)
+            except Exception:
+                pass
             recs = picklog.read_dohana_videos()
             vdong, vhoan, tdong, thoan = {}, {}, {}, {}   # tag TÁCH theo loại video: đóng vs khui
             for r in recs:
@@ -4101,6 +4114,10 @@ def _render_daily():
                        'Đối chiếu: **Vid đóng** vs Đóng gói · **Vid hoàn** vs Hoàn đơn · '
                        '**Shipper nhận** = Soạn − (Hủy + Shipper nhận). '
                        'Nếu Vid đóng *thiếu* đúng bằng Vid hoàn *dư* (hoặc ngược lại) → gần chắc là quay lộn 2 bên.')
+            st.caption('ℹ️ Cột **Vid đóng / Vid hoàn** tự đồng bộ ~28 ngày gần nhất từ Dohana mỗi khi mở bảng '
+                       '(Dohana chỉ giữ ~25–30 ngày; ngày cũ hơn dựa vào kho đã lưu — bấm nút '
+                       '**🔄 Đồng bộ Dohana** ở trên nếu vẫn thiếu). Chỉ đếm video **có gắn mã đơn/mã vận đơn**; '
+                       'video quay mà không gắn mã sẽ không được tính (nên có thể ít hơn tổng video trên Dohana).')
             if picklog.configured():
                 st.caption("✏️ Gõ ghi chú theo ngày rồi bấm **Lưu** — sẽ hiện vào cột *Ghi chú* của bảng trên (lưu bền, lần sau mở vẫn còn).")
                 _ndf = pd.DataFrame([{"Ngày": d["ngay"], "Thứ": d["thu"], "iso": d["iso"],
