@@ -2144,14 +2144,22 @@ def _render_price_page():
             (fabric or {}).get("tags"),
         ) if x)
     )
-    fabric_key = re.sub(r"[^A-Za-z0-9_]+", "_", str(fabric_sku or "manual"))
+    fabric_identity = str(fabric_sku or "").strip()
+    if fabric_identity and st.session_state.get("_price_selected_fabric") != fabric_identity:
+        if specs.get("fabric_width_cm"):
+            st.session_state["price_width"] = float(specs["fabric_width_cm"])
+        if specs.get("meters_per_kg"):
+            st.session_state["price_mkg"] = float(specs["meters_per_kg"])
+        if fabric and float((fabric or {}).get("price") or 0) > 0:
+            st.session_state["price_pkg"] = float((fabric or {}).get("price") or 0)
+        st.session_state["_price_selected_fabric"] = fabric_identity
 
     with st.container(border=True):
         st.markdown("**2. Thông số bắt buộc**")
         f1 = st.columns(3)
-        fabric_width = _price_required_number(f1[0], "Khổ vải (cm)", min_value=0.0, value=float(specs.get("fabric_width_cm") or 160), step=1.0, key=f"price_width_{fabric_key}")
-        meters_per_kg = _price_required_number(f1[1], "Chiều dài/kg (m/kg)", min_value=0.0, value=float(specs.get("meters_per_kg") or 2.8), step=0.05, key=f"price_mkg_{fabric_key}")
-        price_per_kg = _price_required_number(f1[2], "Giá 1kg vải", min_value=0.0, value=float((fabric or {}).get("price") or 0), step=1000.0, key=f"price_pkg_{fabric_key}")
+        fabric_width = _price_required_number(f1[0], "Khổ vải (cm)", min_value=0.0, value=float(specs.get("fabric_width_cm") or 160), step=1.0, key="price_width")
+        meters_per_kg = _price_required_number(f1[1], "Chiều dài/kg (m/kg)", min_value=0.0, value=float(specs.get("meters_per_kg") or 2.8), step=0.05, key="price_mkg")
+        price_per_kg = _price_required_number(f1[2], "Giá 1kg vải", min_value=0.0, value=float((fabric or {}).get("price") or 0), step=1000.0, key="price_pkg")
 
         f2 = st.columns(3)
         main_length = _price_required_number(f2[0], "Dài chính (cm)", min_value=0.0, value=60.0, step=1.0, key="price_main_l")
@@ -6641,6 +6649,84 @@ def _render_returns():
             _dtag_kn = [r for r in _dvids if r.get("tag_id") and r.get("type") == "inbound"]     # khui hàng có tag → CẦN KN
             _dtag_nokn = [r for r in _dvids if r.get("tag_id") and r.get("type") == "package"]   # đóng hàng có tag → KHÔNG cần KN
 
+            def _detail_note_outcome(d):
+                compact = _note_compact(d)
+                if "THANG" in compact:
+                    return "Thắng"
+                if "THUA" in compact:
+                    return "Thua"
+                if "HETHAN" in compact:
+                    return "Hết hạn"
+                if "KHONGCANKN" in compact or "KHONGCANKHIEUNAI" in compact:
+                    return "Không cần KN"
+                if "DANGKN" in compact or "DANGKHANGNGHI" in compact or "DANGXULY" in compact:
+                    return "Đang KN"
+                if d.get("need_kn"):
+                    return "Cần KN"
+                return _row_location(d)
+
+            def _detail_first_note(d):
+                note = str(d.get("note") or "").strip()
+                if not note:
+                    return ""
+                first = note.replace("\r", "\n").split("\n")[0]
+                return first[:120] + ("..." if len(first) > 120 else "")
+
+            def _dohana_detail_matches(code):
+                q = _search_norm(code)
+                if not q:
+                    return []
+                rows = []
+                for d in (_all_returns_detail or []):
+                    fields = (d.get("order_code"), d.get("return_code"), d.get("vd_di"), d.get("vd_tra"))
+                    norms = [_search_norm(x) for x in fields if x]
+                    exact = q in norms
+                    fuzzy = (not exact) and any(q in n or n in q for n in norms if n)
+                    if exact or fuzzy:
+                        item = dict(d)
+                        item["_match_exact"] = exact
+                        rows.append(item)
+                rank = {
+                    "Thắng": 0,
+                    "Thua": 0,
+                    "Hết hạn": 1,
+                    "Không cần KN": 2,
+                    "Cần KN": 3,
+                    "Đang KN": 4,
+                    "Đã nhận/đã nhập kho": 5,
+                    "Trả hàng hoàn tiền": 6,
+                    "Giao hàng thất bại": 7,
+                    "Không có hàng hoàn về / chỉ hoàn tiền": 8,
+                }
+                rows.sort(key=lambda d: (
+                    0 if d.get("_match_exact") else 1,
+                    rank.get(_detail_note_outcome(d), 99),
+                    str(d.get("created_on") or ""),
+                ))
+                return rows
+
+            def _dohana_detail_note(code):
+                matches = _dohana_detail_matches(code)
+                if not matches:
+                    return "Chưa thấy trong bảng chi tiết"
+                d = matches[0]
+                outcome = _detail_note_outcome(d)
+                rc = str(d.get("return_code") or "").strip()
+                note = _detail_first_note(d)
+                if outcome in ("Thắng", "Thua", "Hết hạn", "Không cần KN", "Đang KN"):
+                    msg = f"Đã có kết luận: {outcome}"
+                elif outcome == "Cần KN":
+                    msg = "Trùng DS Cần KN — chưa chốt thắng/thua"
+                else:
+                    msg = f"Có trong bảng chi tiết: {outcome}"
+                if rc:
+                    msg += f" · mã trả {rc}"
+                if note:
+                    msg += f" · ghi chú: {note}"
+                if len(matches) > 1:
+                    msg += f" · còn {len(matches) - 1} dòng khớp khác"
+                return msg
+
             def _dohana_tag_tbl(items):
                 if not items:
                     st.caption("— (Dohana) chưa ghi nhận đơn gắn tag —")
@@ -6648,6 +6734,7 @@ def _render_returns():
                 st.dataframe(pd.DataFrame([{
                     "Mã đơn": r.get("code"),
                     "Tag": dohana._tag_name(r.get("tag_id"), r.get("tag_name")),
+                    "Ghi chú đối chiếu": _dohana_detail_note(r.get("code")),
                     "Ngày quay": r.get("date") or "",
                     "Giờ": r.get("time") or "",
                     "Thời lượng(s)": r.get("dur"),
