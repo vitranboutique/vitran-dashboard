@@ -7153,6 +7153,8 @@ def _render_returns():
                 def _tag_reason_cell(video_row, detail_row):
                     tag = _dohana_tag_with_icon(_video_tag_label(video_row))
                     reason = str((detail_row or {}).get("reason") or "").strip()
+                    # BỎ phần "· Tag Dohana: ..." lặp ở cuối (tag đã hiện ở dòng đầu) → chỉ còn tag + lý do trả
+                    reason = re.sub(r"\s*·?\s*Tag Dohana:.*$", "", reason, flags=re.IGNORECASE).strip()
                     if tag and reason and _search_norm(tag) != _search_norm(reason):
                         return f"{_safe(tag)}<br><span class='sub'>{_safe(reason)}</span>"
                     return _safe(tag or reason)
