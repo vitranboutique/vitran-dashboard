@@ -1358,7 +1358,7 @@ def _lost_waybill(x):
     return m.group(1) if m else ""
 
 
-def get_returns_in_progress(fetch_json, max_pages: int = 120, canceled_max_pages: int = 500) -> dict:
+def get_returns_in_progress(fetch_json, max_pages: int = 120, canceled_max_pages: int = 120) -> dict:
     """ĐƠN TRẢ HÀNG ĐANG XỬ LÝ — CHƯA nhập kho (bổ sung cho mục 'đã nhận hàng trả').
     Tổng đơn trả lấy theo tab TẤT CẢ của phiếu trả trong NĂM NAY, loại phiếu hủy/gạch ngang.
     Phạm vi: phiếu trả chưa bị hủy & chưa nhập kho đầy đủ, gồm cả:

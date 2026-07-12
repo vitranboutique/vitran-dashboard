@@ -1328,8 +1328,14 @@ def load_returns_followup():
 
 @st.cache_data(ttl=600, show_spinner="Đang quét đơn trả đang xử lý…")
 def load_returns_inprogress():
-    _cache_ver = 12  # bump khi đổi cấu trúc trả về → buộc tính lại (tránh cache cũ gây lỗi)
-    return L.get_returns_in_progress(make_fetch_json(build_session()), canceled_max_pages=500)
+    _cache_ver = 13  # bump khi đổi cấu trúc trả về → buộc tính lại (tránh cache cũ gây lỗi)
+    return L.get_returns_in_progress(make_fetch_json(build_session()), canceled_max_pages=120)
+
+
+@st.cache_data(ttl=3600, show_spinner="Đang quét đơn trả bị đóng cả năm…")
+def load_closed_returns_full_year():
+    _cache_ver = 1
+    return L.get_returns_in_progress(make_fetch_json(build_session()), max_pages=0, canceled_max_pages=500)
 
 
 @st.cache_data(ttl=900, show_spinner="Đang lấy danh mục sản phẩm + tồn kho từ Sapo…")
@@ -6327,20 +6333,30 @@ def _render_returns():
 
             _all_returns_detail = _rip.get("all_detail") or _rip.get("detail") or []
             _canceled_returns_detail = _rip.get("canceled_detail") or []
-            _closed_return_refund_with_waybill_detail = [
+            _closed_returns_loaded_full_year = bool(st.session_state.get("closed_returns_full_year_loaded"))
+            _closed_returns_capped = bool(_rip.get("canceled_capped"))
+            if _closed_returns_loaded_full_year:
+                try:
+                    _closed_rip = load_closed_returns_full_year()
+                    _canceled_returns_detail = _closed_rip.get("canceled_detail") or []
+                    _closed_returns_capped = bool(_closed_rip.get("canceled_capped"))
+                except Exception as _e:
+                    st.warning(f"Chưa quét được đơn trả bị đóng cả năm: `{_e}`")
+                    st.session_state["closed_returns_full_year_loaded"] = False
+            _closed_returns_with_waybill_detail = [
                 d for d in _canceled_returns_detail
-                if d.get("loai_tra_code") == "return_and_refund" and str(d.get("vd_tra") or "").strip()
+                if str(d.get("vd_tra") or "").strip()
             ]
-            _closed_return_refund_need_kn_detail = []
-            for _d in _closed_return_refund_with_waybill_detail:
+            _closed_returns_need_kn_detail = []
+            for _d in _closed_returns_with_waybill_detail:
                 if not _is_closed_kn_result(_d):
                     _d["need_kn"] = True
-                    _d["_location"] = "Đơn trả hàng hoàn tiền bị đóng"
+                    _d["_location"] = "Đơn trả hàng bị đóng có VĐ trả về"
                     _reason = str(_d.get("reason") or "").strip()
                     _extra = "chưa có ghi chú chốt"
                     _d["reason"] = (_reason if _extra in _reason.lower()
-                                    else (f"{_reason} — {_extra}" if _reason else f"Đơn trả hàng hoàn tiền bị đóng — {_extra}"))
-                    _closed_return_refund_need_kn_detail.append(_d)
+                                    else (f"{_reason} — {_extra}" if _reason else f"Đơn trả hàng bị đóng có VĐ trả về — {_extra}"))
+                    _closed_returns_need_kn_detail.append(_d)
             _return_match_detail = _all_returns_detail + _canceled_returns_detail
             _stock_order = ["Đã nhập kho", "Chưa nhập kho", "Nhập kho 1 phần", "Không nhập kho"]
             _stock_colors = {
@@ -6613,18 +6629,18 @@ def _render_returns():
                      "&created_on_min=2024-01-01&created_on_max=2027-12-31&paid=" + paid)
                 return f"<a href='{_esc(u)}' target='_blank' title='Mở đối soát — tab {tab} thanh toán'>🔍 {tab}</a>"
 
-            def _sub_table(items, h, show_type=False, show_reason=False, merge_delivery_vd=False, show_location=False, pg_key=None):
+            def _sub_table(items, h, show_type=False, show_reason=False, merge_delivery_vd=False, show_location=False, pg_key=None, per_page=14):
                 if not items:
                     st.caption("— Không có —")
                     return
-                _PER = 14                                   # tối đa 14 đơn/trang, còn lại qua trang sau
+                _PER = int(per_page or 14)                  # tối đa N đơn/trang, còn lại qua trang sau
                 _start = 0
                 if pg_key and len(items) > _PER:
                     _total = len(items)
                     _npages = (_total + _PER - 1) // _PER
                     _pc = st.columns([2, 3])
                     _pg = int(_pc[0].number_input(
-                        f"Trang (14 đơn/trang · tổng {_total} đơn · {_npages} trang)",
+                        f"Trang ({_PER} đơn/trang · tổng {_total} đơn · {_npages} trang)",
                         min_value=1, max_value=_npages, value=1, step=1, key=f"rpg_{pg_key}"))
                     _start = (_pg - 1) * _PER
                     items = items[_start:_start + _PER]
@@ -7257,16 +7273,16 @@ def _render_returns():
             _dtag_kn_only = _dohana_items_not_in_detail(_dtag_kn)
             _dtag_nokn_only = _dohana_items_not_in_detail(_dtag_nokn)
             _dohana_yellow_ckn = _dohana_yellow_need_kn_rows(_dtag_kn + _dtag_nokn)
-            _ckn_with_closed_returns = _merge_need_kn_rows(_ckn_list, _closed_return_refund_need_kn_detail)
+            _ckn_with_closed_returns = _merge_need_kn_rows(_ckn_list, _closed_returns_need_kn_detail)
             _ckn_render_list = _merge_need_kn_rows(_ckn_with_closed_returns, _dohana_yellow_ckn)
             st.subheader("🚨 Đơn cần KN — lấy làm khiếu nại", anchor="don-can-kn")
             st.caption("Gồm các đơn chưa chốt THẮNG / THUA / KHÔNG CẦN KN. "
                        "Note CẦN KN vẫn nằm ở bảng này để nhân viên tiếp tục xử lý. "
                        "Áp dụng cho đơn đã giao người bán chưa nhập kho, đang hoàn hơn 5 ngày, hoặc chỉ hoàn tiền/không có hàng hoàn về. "
                        "Đây chính là các dòng tô vàng — NV lấy làm khiếu nại.")
-            if _closed_return_refund_need_kn_detail:
+            if _closed_returns_need_kn_detail:
                 _added_closed = max(0, len(_ckn_with_closed_returns) - len(_ckn_list))
-                st.caption(f"Đơn trả hàng hoàn tiền bị đóng có {len(_closed_return_refund_need_kn_detail)} dòng chưa chốt "
+                st.caption(f"Có {len(_closed_returns_need_kn_detail)} đơn trả hàng bị đóng có VĐ trả về chưa chốt "
                            f"(thêm mới {_added_closed} dòng, dòng trùng thì ghép vào Cần KN sẵn có).")
             if _dohana_yellow_ckn:
                 _added = max(0, len(_ckn_render_list) - len(_ckn_with_closed_returns))
@@ -7295,18 +7311,25 @@ def _render_returns():
             if _other:
                 st.markdown(f"### Khác — {len(_other)} đơn")
                 _sub_table(_other, 200, show_reason=True, pg_key="other")
-            if _closed_return_refund_with_waybill_detail:
-                st.markdown(f"### 🧭 Đơn trả hàng hoàn tiền bị đóng — {len(_closed_return_refund_with_waybill_detail)} đơn")
-                st.caption("Chỉ lấy đơn trả hàng hoàn tiền đã bị Sapo đóng/hủy nhưng vẫn có mã vận đơn hoàn về. Dòng chưa chốt THẮNG / THUA / KHÔNG CẦN KN sẽ tô vàng và được đưa lên bảng Cần KN.")
-                if _rip.get("canceled_capped"):
+            if _closed_returns_with_waybill_detail:
+                st.markdown(f"### 🧭 Đơn trả hàng bị đóng có VĐ trả về — {len(_closed_returns_with_waybill_detail)} đơn")
+                if _closed_returns_loaded_full_year:
+                    st.caption("Đang hiển thị dữ liệu đã quét đủ năm nay. Dòng chưa chốt THẮNG / THUA / KHÔNG CẦN KN sẽ tô vàng và được đưa lên bảng Cần KN.")
+                else:
+                    st.caption("Đang hiển thị nhanh từ dữ liệu đã quét sẵn. Bấm nút dưới để quét đủ năm nay; app sẽ cache lại sau khi quét xong.")
+                    if st.button("🔄 Quét đủ năm nay", key="load_closed_returns_full_year_btn"):
+                        st.session_state["closed_returns_full_year_loaded"] = True
+                        st.rerun()
+                if _closed_returns_capped:
                     st.warning("Đã chạm giới hạn quét 500 trang phiếu bị đóng; có thể còn phiếu cũ hơn trong năm nay.")
                 _sub_table(
-                    _closed_return_refund_with_waybill_detail,
+                    _closed_returns_with_waybill_detail,
                     300,
                     show_type=True,
                     show_reason=True,
                     show_location=True,
                     pg_key="closed_return_refund_with_waybill",
+                    per_page=50,
                 )
             if _canceled_returns_detail:
                 with st.expander(f"🗂️ Tất cả phiếu Sapo đã hủy — {len(_canceled_returns_detail)} dòng", expanded=False):
