@@ -6302,6 +6302,11 @@ def _render_returns():
                 pre = _ascii_code(str(d.get("note") or "").split("|")[0])
                 return "".join(ch for ch in pre if ch.isalnum())
 
+            def _is_closed_kn_result(d):
+                compact = _note_compact(d)
+                return ("THANG" in compact or "THUA" in compact
+                        or "KHONGCANKN" in compact or "KHONGCANKHIEUNAI" in compact)
+
             def _return_outcome(d):
                 if _stock_group(d) == "Đã nhập kho":
                     return "Đã nhập kho"
@@ -6322,10 +6327,20 @@ def _render_returns():
 
             _all_returns_detail = _rip.get("all_detail") or _rip.get("detail") or []
             _canceled_returns_detail = _rip.get("canceled_detail") or []
-            _canceled_with_return_waybill_detail = [
+            _closed_return_refund_with_waybill_detail = [
                 d for d in _canceled_returns_detail
-                if str(d.get("vd_tra") or "").strip()
+                if d.get("loai_tra_code") == "return_and_refund" and str(d.get("vd_tra") or "").strip()
             ]
+            _closed_return_refund_need_kn_detail = []
+            for _d in _closed_return_refund_with_waybill_detail:
+                if not _is_closed_kn_result(_d):
+                    _d["need_kn"] = True
+                    _d["_location"] = "Đơn trả hàng hoàn tiền bị đóng"
+                    _reason = str(_d.get("reason") or "").strip()
+                    _extra = "chưa có ghi chú chốt"
+                    _d["reason"] = (_reason if _extra in _reason.lower()
+                                    else (f"{_reason} — {_extra}" if _reason else f"Đơn trả hàng hoàn tiền bị đóng — {_extra}"))
+                    _closed_return_refund_need_kn_detail.append(_d)
             _return_match_detail = _all_returns_detail + _canceled_returns_detail
             _stock_order = ["Đã nhập kho", "Chưa nhập kho", "Nhập kho 1 phần", "Không nhập kho"]
             _stock_colors = {
@@ -7242,14 +7257,19 @@ def _render_returns():
             _dtag_kn_only = _dohana_items_not_in_detail(_dtag_kn)
             _dtag_nokn_only = _dohana_items_not_in_detail(_dtag_nokn)
             _dohana_yellow_ckn = _dohana_yellow_need_kn_rows(_dtag_kn + _dtag_nokn)
-            _ckn_render_list = _merge_need_kn_rows(_ckn_list, _dohana_yellow_ckn)
+            _ckn_with_closed_returns = _merge_need_kn_rows(_ckn_list, _closed_return_refund_need_kn_detail)
+            _ckn_render_list = _merge_need_kn_rows(_ckn_with_closed_returns, _dohana_yellow_ckn)
             st.subheader("🚨 Đơn cần KN — lấy làm khiếu nại", anchor="don-can-kn")
             st.caption("Gồm các đơn chưa chốt THẮNG / THUA / KHÔNG CẦN KN. "
                        "Note CẦN KN vẫn nằm ở bảng này để nhân viên tiếp tục xử lý. "
                        "Áp dụng cho đơn đã giao người bán chưa nhập kho, đang hoàn hơn 5 ngày, hoặc chỉ hoàn tiền/không có hàng hoàn về. "
                        "Đây chính là các dòng tô vàng — NV lấy làm khiếu nại.")
+            if _closed_return_refund_need_kn_detail:
+                _added_closed = max(0, len(_ckn_with_closed_returns) - len(_ckn_list))
+                st.caption(f"Đơn trả hàng hoàn tiền bị đóng có {len(_closed_return_refund_need_kn_detail)} dòng chưa chốt "
+                           f"(thêm mới {_added_closed} dòng, dòng trùng thì ghép vào Cần KN sẵn có).")
             if _dohana_yellow_ckn:
-                _added = max(0, len(_ckn_render_list) - len(_ckn_list))
+                _added = max(0, len(_ckn_render_list) - len(_ckn_with_closed_returns))
                 st.caption(f"Dohana có {len(_dohana_yellow_ckn)} dòng đang tô vàng vì chưa có ghi chú chuẩn "
                            f"(thêm mới {_added} dòng, dòng trùng thì ghép vào Cần KN sẵn có).")
             _sub_table(_ckn_render_list, 360, show_reason=True, pg_key="ckn")
@@ -7264,21 +7284,6 @@ def _render_returns():
                         f"<span style='color:#6b7280'>(trong đó {len(_dtag_nokn_only)} chưa khớp bảng chi tiết)</span>",
                         unsafe_allow_html=True)
             _dohana_tag_tbl(_dtag_nokn)
-            if _canceled_with_return_waybill_detail:
-                st.subheader("🧭 Phiếu Sapo đã hủy có VĐ trả về — đối chiếu sàn", anchor="don-sapo-da-huy-co-vd-tra")
-                st.caption("Chỉ lấy phiếu Sapo đã hủy nhưng vẫn có mã vận đơn hoàn về. Dùng bảng này để soi các case sàn vẫn còn hồ sơ trả/KN dù Sapo đánh dấu hủy.")
-                _sub_table(
-                    _canceled_with_return_waybill_detail,
-                    260,
-                    show_type=True,
-                    show_reason=True,
-                    show_location=True,
-                    pg_key="sapo_cancelled_with_return_waybill",
-                )
-            if _canceled_returns_detail:
-                with st.expander(f"🗂️ Tất cả phiếu Sapo đã hủy — {len(_canceled_returns_detail)} dòng", expanded=False):
-                    st.caption("Nhóm này không tính vào KPI đang xử lý, nhưng vẫn hiện khi tìm mã đơn/mã trả để kiểm tra trên sàn.")
-                    _sub_table(_canceled_returns_detail, 260, show_type=True, show_reason=True, show_location=True, pg_key="sapo_cancelled")
             st.divider()
             st.markdown("### 📋 Chi tiết còn hàng hoàn về theo loại")
             _type_block("💸 Trả hàng hoàn tiền", "return_and_refund")
@@ -7290,6 +7295,21 @@ def _render_returns():
             if _other:
                 st.markdown(f"### Khác — {len(_other)} đơn")
                 _sub_table(_other, 200, show_reason=True, pg_key="other")
+            if _closed_return_refund_with_waybill_detail:
+                st.markdown(f"### 🧭 Đơn trả hàng hoàn tiền bị đóng — {len(_closed_return_refund_with_waybill_detail)} đơn")
+                st.caption("Chỉ lấy đơn trả hàng hoàn tiền đã bị Sapo đóng/hủy nhưng vẫn có mã vận đơn hoàn về. Dòng chưa chốt THẮNG / THUA / KHÔNG CẦN KN sẽ tô vàng và được đưa lên bảng Cần KN.")
+                _sub_table(
+                    _closed_return_refund_with_waybill_detail,
+                    300,
+                    show_type=True,
+                    show_reason=True,
+                    show_location=True,
+                    pg_key="closed_return_refund_with_waybill",
+                )
+            if _canceled_returns_detail:
+                with st.expander(f"🗂️ Tất cả phiếu Sapo đã hủy — {len(_canceled_returns_detail)} dòng", expanded=False):
+                    st.caption("Nhóm này không tính vào KPI đang xử lý, nhưng vẫn hiện khi tìm mã đơn/mã trả để kiểm tra trên sàn.")
+                    _sub_table(_canceled_returns_detail, 260, show_type=True, show_reason=True, show_location=True, pg_key="sapo_cancelled")
 
         with _tabs[2]:
             # ── 🎥 KHO VIDEO DOHANA (lưu CẢ NĂM, vượt hạn 30 ngày của Dohana) — tra cứu metadata ──
