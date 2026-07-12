@@ -163,20 +163,32 @@ def _fetch_tag_names():
 def _records_from(vids, typ):
     """Metadata MỌI video (khử trùng theo mã, giữ bản MỚI NHẤT) để tích luỹ lưu cả năm —
     {code, type, status, date(VN yyyy-mm-dd), time(VN HH:MM:SS), dur(giây), tag_id}."""
-    seen, out = set(), []
+    seen, out, idx = set(), [], {}
     for v in sorted(vids, key=lambda x: str(x.get("createdAt") or ""), reverse=True):
         oc = v.get("orderCode")
-        if not oc or oc in seen:
+        if not oc:
+            continue
+        tag_id = v.get("tagId")
+        tag_name = _raw_tag_name(v)
+        if oc in seen:
+            rec = idx.get(oc) or {}
+            # Nếu mã này có clip/tag cũ hơn, vẫn giữ tag để kho không bỏ sót tranh chấp.
+            if tag_id and not rec.get("tag_id"):
+                rec["tag_id"] = tag_id
+            if tag_name and not rec.get("tag_name"):
+                rec["tag_name"] = tag_name
             continue
         seen.add(oc)
         dur = v.get("duration")
-        out.append({"code": oc, "type": typ, "status": v.get("status"),
-                    "date": str(_vnd(v.get("createdAt")) or ""),
-                    "time": _vn_time(v.get("createdAt")),
-                    "dur": int(dur) if isinstance(dur, (int, float)) else None,
-                    "tag_id": v.get("tagId"),
-                    "tag_name": _raw_tag_name(v),
-                    "staff": ((v.get("user") or {}).get("firstName") or "").strip()})
+        rec = {"code": oc, "type": typ, "status": v.get("status"),
+               "date": str(_vnd(v.get("createdAt")) or ""),
+               "time": _vn_time(v.get("createdAt")),
+               "dur": int(dur) if isinstance(dur, (int, float)) else None,
+               "tag_id": tag_id,
+               "tag_name": tag_name,
+               "staff": ((v.get("user") or {}).get("firstName") or "").strip()}
+        out.append(rec)
+        idx[oc] = rec
     return out
 
 

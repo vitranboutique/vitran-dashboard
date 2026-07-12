@@ -357,9 +357,31 @@ def read_dohana_videos() -> list:
     return (d or {}).get("videos", []) if d else []
 
 
+def _lock_dohana_tag(rec: dict, tag_id, tag_name, today: str) -> bool:
+    """Khóa tag đã từng thấy. Sau này Dohana gỡ/sửa tag cũng không làm mất dấu tag cũ."""
+    if not tag_id:
+        return False
+    changed = False
+    if not rec.get("locked_tag_id"):
+        rec["locked_tag_id"] = tag_id
+        rec["locked_tag_name"] = tag_name or rec.get("tag_name") or ""
+        rec["tag_locked_at"] = rec.get("tag_locked_at") or today
+        changed = True
+    elif tag_name and not rec.get("locked_tag_name"):
+        rec["locked_tag_name"] = tag_name
+        changed = True
+    if not rec.get("tag_id"):
+        rec["tag_id"] = rec.get("locked_tag_id") or tag_id
+        changed = True
+    if (tag_name or rec.get("locked_tag_name")) and not rec.get("tag_name"):
+        rec["tag_name"] = tag_name or rec.get("locked_tag_name")
+        changed = True
+    return changed
+
+
 def merge_dohana_videos(new_list) -> list:
-    """Gộp metadata video mới (từ fetch) vào kho, khử trùng (code,type); cập nhật tag nếu gắn muộn.
-    Trả TOÀN BỘ danh sách tích luỹ (lưu cả năm, không lo Dohana xoá sau 30 ngày)."""
+    """Gộp metadata video mới (từ fetch) vào kho, khử trùng (code,type).
+    Tag đã từng thấy sẽ được khóa vĩnh viễn trong record để không mất khi DHN gỡ tag/xóa video."""
     gid = _resolve_gid()
     cur = read_dohana_videos()
     if not gid:
@@ -367,24 +389,30 @@ def merge_dohana_videos(new_list) -> list:
     idx = {(r.get("code"), r.get("type")): r for r in cur}
     today = _today_vn()
     changed = False
+    for old in cur:
+        if _lock_dohana_tag(old, old.get("locked_tag_id") or old.get("tag_id"),
+                            old.get("locked_tag_name") or old.get("tag_name"), today):
+            changed = True
     for r in (new_list or []):
         c, ty = r.get("code"), r.get("type")
         if not c:
             continue
+        tag_id = r.get("locked_tag_id") or r.get("tag_id")
+        tag_name = r.get("locked_tag_name") or r.get("tag_name")
         old = idx.get((c, ty))
         if old is None:
             rec = {"code": c, "type": ty, "status": r.get("status"), "date": r.get("date"),
-                   "time": r.get("time"), "dur": r.get("dur"), "tag_id": r.get("tag_id"),
-                   "tag_name": r.get("tag_name"), "staff": r.get("staff"), "first_seen": today}
+                   "time": r.get("time"), "dur": r.get("dur"), "tag_id": tag_id,
+                   "tag_name": tag_name, "staff": r.get("staff"), "first_seen": today}
+            _lock_dohana_tag(rec, tag_id, tag_name, today)
             cur.append(rec)
             idx[(c, ty)] = rec
             changed = True
         else:
-            if r.get("tag_id") and not old.get("tag_id"):   # tag gắn MUỘN (sau khi đã lưu) → cập nhật
-                old["tag_id"] = r.get("tag_id")
+            if _lock_dohana_tag(old, tag_id, tag_name, today):
                 changed = True
-            if r.get("tag_name") and not old.get("tag_name"):
-                old["tag_name"] = r.get("tag_name")
+            if tag_name and not old.get("tag_name"):
+                old["tag_name"] = tag_name
                 changed = True
     if changed:
         try:
