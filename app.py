@@ -6732,6 +6732,17 @@ def _render_returns():
                     st.caption("— (Dohana) chưa ghi nhận đơn gắn tag —")
                     return
 
+                def _return_type_label(d):
+                    label = str((d or {}).get("loai_tra") or "").strip()
+                    if label:
+                        return label
+                    code = str((d or {}).get("loai_tra_code") or "").strip()
+                    return {
+                        "return_and_refund": "Trả hàng hoàn tiền",
+                        "delivery_failed": "Giao hàng thất bại",
+                        "refund": "Chỉ hoàn tiền / không có hàng hoàn về",
+                    }.get(code, code)
+
                 def _row(r):
                     code = r.get("code")
                     matches = _dohana_detail_matches(code)
@@ -6739,6 +6750,7 @@ def _render_returns():
                     return {
                         "Mã đơn": d.get("order_code") or code or "",
                         "Mã trả hàng": d.get("return_code") or "",
+                        "Loại trả": _return_type_label(d),
                         "VĐ đi": d.get("vd_di") or "",
                         "VĐ trả về": d.get("vd_tra") or "",
                         "Shipper hoàn": d.get("return_shipper") or ("Chưa có" if matches else ""),
@@ -6757,6 +6769,7 @@ def _render_returns():
                     column_config={
                         "Mã đơn": st.column_config.TextColumn("Mã đơn", width="small"),
                         "Mã trả hàng": st.column_config.TextColumn("Mã trả hàng", width="medium"),
+                        "Loại trả": st.column_config.TextColumn("Loại trả", width="medium"),
                         "VĐ đi": st.column_config.TextColumn("VĐ đi", width="small"),
                         "VĐ trả về": st.column_config.TextColumn("VĐ trả về", width="small"),
                         "Shipper hoàn": st.column_config.TextColumn("Shipper hoàn", width="large"),
