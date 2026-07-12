@@ -958,6 +958,7 @@ def _return_row_from_sapo_api(row: dict, detail: dict | None = None) -> dict:
         "vd_tra": si.get("tracking_number") or "",
         "return_shipper": return_shipper,
         "note": note,
+        "order_source": source_name,
         "gian_hang": gian_hang,
         "sku": sku,
         "qty": int(round(float(qty or 0))),
@@ -6572,6 +6573,23 @@ def _render_returns():
                     return "Giao hàng thất bại"
                 return "Khác"
 
+            def _doisoat(d):   # 1 LINK đối soát TikTok/Shopee, tự chọn tab: note CÓ kết quả KN
+                oc = d.get("order_code") or ""              # (🟢✅🔴❌⛔⚪⚫) → "Đã thanh toán"; còn lại → "Chưa thanh toán"
+                src = " ".join(str(d.get(k) or "") for k in ("order_source", "gian_hang", "order_link")).lower()
+                if oc and "tiktok" in src:                  # channel_type/connection_ids account-specific
+                    app, conn, ch = "tiktok-channel", "11589%2C12966%2C19313", "6"
+                elif oc and "shopee" in src:
+                    app, conn, ch = "shopee-channel", "11588%2C12082%2C12405", "1"
+                else:
+                    return "<span style='color:#cbd5e1'>—</span>"
+                _done = any(m in (d.get("note") or "") for m in ("🟢", "✅", "🔴", "❌", "⛔", "⚪", "⚫"))
+                paid, tab = ("true", "Đã") if _done else ("false", "Chờ")
+                u = (f"https://vitranboutiquehcm.mysapo.net/admin/apps/{app}/home/"
+                     "automation-delivery-collations?query=" + oc +
+                     "&connection_ids=" + conn + "&channel_type=" + ch +
+                     "&created_on_min=2024-01-01&created_on_max=2027-12-31&paid=" + paid)
+                return f"<a href='{_esc(u)}' target='_blank' title='Mở đối soát — tab {tab} thanh toán'>🔍 {tab}</a>"
+
             def _sub_table(items, h, show_type=False, show_reason=False, merge_delivery_vd=False, show_location=False, pg_key=None):
                 if not items:
                     st.caption("— Không có —")
@@ -6591,22 +6609,6 @@ def _render_returns():
                     _pc[1].caption(f"Đang xem đơn {_start + 1}–{_start + len(items)} / {_total}")
                 def _safe(v, default=""):
                     return _esc(str(v if v not in (None, "") else default))
-                def _doisoat(d):   # 1 LINK đối soát TikTok/Shopee, tự chọn tab: note CÓ kết quả KN
-                    oc = d.get("order_code") or ""              # (🟢✅🔴❌⛔⚪⚫) → "Đã thanh toán"; còn lại → "Chưa thanh toán"
-                    _lk = (d.get("order_link") or "").lower()
-                    if oc and "tiktok" in _lk:                  # channel_type/connection_ids account-specific
-                        app, conn, ch = "tiktok-channel", "11589%2C12966%2C19313", "6"
-                    elif oc and "shopee" in _lk:
-                        app, conn, ch = "shopee-channel", "11588%2C12082%2C12405", "1"
-                    else:
-                        return "<span style='color:#cbd5e1'>—</span>"
-                    _done = any(m in (d.get("note") or "") for m in ("🟢", "✅", "🔴", "❌", "⛔", "⚪", "⚫"))
-                    paid, tab = ("true", "Đã") if _done else ("false", "Chờ")
-                    u = (f"https://vitranboutiquehcm.mysapo.net/admin/apps/{app}/home/"
-                         "automation-delivery-collations?query=" + oc +
-                         "&connection_ids=" + conn + "&channel_type=" + ch +
-                         "&created_on_min=2024-01-01&created_on_max=2027-12-31&paid=" + paid)
-                    return f"<a href='{_esc(u)}' target='_blank' title='Mở đối soát — tab {tab} thanh toán'>🔍 {tab}</a>"
                 cols = ["STT"]
                 if show_location:
                     cols += ["Vị trí"]
@@ -6879,7 +6881,7 @@ def _render_returns():
                 for key in (
                     "order_code", "order_link", "return_code", "return_link", "created", "created_on",
                     "vd_di", "vd_tra", "return_shipper", "gian_hang", "sku", "qty", "money",
-                    "loai_tra", "loai_tra_code", "ship_code", "stock_status", "stock_code",
+                    "loai_tra", "loai_tra_code", "ship_code", "stock_status", "stock_code", "order_source",
                 ):
                     cur = merged.get(key)
                     new = (extra or {}).get(key)
@@ -6891,6 +6893,18 @@ def _render_returns():
                 if not str(merged.get("reason") or "").strip() and str((extra or {}).get("reason") or "").strip():
                     merged["reason"] = extra.get("reason")
                 return merged
+
+            def _dohana_is_standard_note(note):
+                lines = [line.strip() for line in str(note or "").splitlines() if line.strip()]
+                if len(lines) < 2:
+                    return False
+                first = lines[0]
+                if not first.startswith(("⛔", "⚪", "✅", "🟢", "❌", "🔴", "⚫", "🚨")):
+                    return False
+                compact = "".join(ch for ch in _ascii_code(first) if ch.isalnum())
+                return any(t in compact for t in (
+                    "THANG", "THUA", "HETHAN", "CANKN", "KHONGCANKN", "KHONGCANKHIEUNAI",
+                ))
 
             _dohana_extra_detail_by_code = {}
             try:
@@ -6943,6 +6957,71 @@ def _render_returns():
                 ))
                 return rows
 
+            def _dohana_row_key(d):
+                for key in ("return_code", "order_code"):
+                    val = _search_norm((d or {}).get(key))
+                    if val:
+                        return f"{key}:{val}"
+                vals = [_search_norm((d or {}).get(k)) for k in ("vd_tra", "vd_di", "_dohana_code")]
+                vals = [v for v in vals if v]
+                return "vd:" + "|".join(vals) if vals else ""
+
+            def _dohana_yellow_need_kn_rows(items):
+                rows = []
+                for r in items or []:
+                    code = str(r.get("code") or "").strip()
+                    matches = _dohana_detail_matches(code)
+                    d = dict(matches[0]) if matches else {}
+                    note = str(d.get("note") or "").strip() if matches else "Chưa thấy trong chi tiết"
+                    if matches and _dohana_is_standard_note(note):
+                        continue
+                    tag = str(_video_tag_label(r) or "").strip()
+                    reason = f"Dohana tag {tag} — chưa có ghi chú chuẩn" if tag else "Dohana có tag — chưa có ghi chú chuẩn"
+                    if not d.get("vd_tra") and code:
+                        d["vd_tra"] = code
+                    for key in (
+                        "order_code", "order_link", "return_code", "return_link", "created", "created_on",
+                        "vd_di", "return_shipper", "gian_hang", "sku", "qty", "money",
+                        "loai_tra", "loai_tra_code", "ship_code", "stock_status", "stock_code", "order_source",
+                    ):
+                        d.setdefault(key, "")
+                    d.update({
+                        "need_kn": True,
+                        "reason": reason,
+                        "_location": "Dohana tag chưa có ghi chú chuẩn",
+                        "_dohana_code": code,
+                        "_dohana_tag_label": tag,
+                    })
+                    if not str(d.get("note") or "").strip():
+                        d["note"] = note
+                    rows.append(d)
+                return rows
+
+            def _merge_need_kn_rows(base_rows, dohana_rows):
+                merged = [dict(d) for d in (base_rows or [])]
+                by_key = {_dohana_row_key(d): idx for idx, d in enumerate(merged) if _dohana_row_key(d)}
+                for extra in dohana_rows or []:
+                    key = _dohana_row_key(extra)
+                    if key and key in by_key:
+                        idx = by_key[key]
+                        old = dict(merged[idx])
+                        new = _dohana_merge_detail_row(old, extra)
+                        new["need_kn"] = True
+                        new["_location"] = old.get("_location") or extra.get("_location")
+                        if str(extra.get("reason") or "").strip():
+                            old_reason = str(old.get("reason") or "").strip()
+                            extra_reason = str(extra.get("reason") or "").strip()
+                            new["reason"] = old_reason if old_reason and extra_reason in old_reason else (
+                                f"{old_reason} · {extra_reason}" if old_reason else extra_reason
+                            )
+                        merged[idx] = new
+                    else:
+                        merged.append(dict(extra))
+                        if key:
+                            by_key[key] = len(merged) - 1
+                merged.sort(key=lambda d: str(d.get("created_on") or d.get("created") or ""), reverse=True)
+                return merged
+
             def _dohana_detail_note(code):
                 matches = _dohana_detail_matches(code)
                 if not matches:
@@ -6990,18 +7069,6 @@ def _render_returns():
                         "refund": "Chỉ hoàn tiền / không có hàng hoàn về",
                     }.get(code, code)
 
-                def _is_standard_note(note):
-                    lines = [line.strip() for line in str(note or "").splitlines() if line.strip()]
-                    if len(lines) < 2:
-                        return False
-                    first = lines[0]
-                    if not first.startswith(("⛔", "⚪", "✅", "🟢", "❌", "🔴", "⚫", "🚨")):
-                        return False
-                    compact = "".join(ch for ch in _ascii_code(first) if ch.isalnum())
-                    return any(t in compact for t in (
-                        "THANG", "THUA", "HETHAN", "CANKN", "KHONGCANKN", "KHONGCANKHIEUNAI",
-                    ))
-
                 def _vd_ve_dohana_cell(vd_tra, dohana_code):
                     vd = str(vd_tra or "").strip()
                     dh = str(dohana_code or "").strip()
@@ -7017,9 +7084,9 @@ def _render_returns():
                     return _safe(tag or reason)
 
                 cols = [
-                    "Mã đơn", "Mã trả", "VĐ đi", "VĐ về / Dohana",
+                    "Mã đơn", "Mã trả", "Ngày tạo", "VĐ đi", "VĐ về / Dohana",
                     "Tag / lý do vào KN", "Ngày giờ quay", "Thời lượng", "Loại trả", "Shipper hoàn",
-                    "Gian hàng", "SKU", "SL", "Tổng tiền", "Nhập kho", "Ghi chú",
+                    "Gian hàng", "SKU", "SL", "Tổng tiền", "Nhập kho", "Đối soát", "Ghi chú",
                 ]
                 thead = "".join(f"<th>{_esc(c)}</th>" for c in cols)
                 body = ""
@@ -7033,10 +7100,11 @@ def _render_returns():
                     filmed_at = " ".join(x for x in (str(r.get("date") or "").strip(), str(r.get("time") or "").strip()) if x)
                     duration = str(r.get("dur") if r.get("dur") not in (None, "") else "").strip()
                     shipper = d.get("return_shipper") or ("Chưa có" if matches else "")
-                    bg = "" if (matches and _is_standard_note(note)) else "background:#fff3cd"
+                    bg = "" if (matches and _dohana_is_standard_note(note)) else "background:#fff3cd"
                     tds = [
                         f"<td>{_code_cell(d.get('order_code'), d.get('order_link'))}</td>",
-                        f"<td>{_code_cell(d.get('return_code'), d.get('return_link'))}</td>",
+                        f"<td>{_code_cell(d.get('return_code'))}</td>",
+                        f"<td>{_safe(d.get('created'))}</td>",
                         f"<td>{_code_cell(d.get('vd_di'))}</td>",
                         f"<td>{_vd_ve_dohana_cell(d.get('vd_tra'), code)}</td>",
                         f"<td>{_tag_reason_cell(r, d)}</td>",
@@ -7049,6 +7117,7 @@ def _render_returns():
                         f"<td class='r'>{_safe(d.get('qty'))}</td>",
                         f"<td class='r'>{_safe(_money_cell(d.get('money')))}</td>",
                         f"<td>{_safe(d.get('stock_status'))}</td>",
+                        f"<td>{_doisoat(d)}</td>",
                         f"<td class='note' title='{_safe(note)}'>{_safe(note_preview)}</td>",
                     ]
                     body += f"<tr style='{bg}'>" + "".join(tds) + "</tr>"
@@ -7056,7 +7125,7 @@ def _render_returns():
                 _sticky_n = cols.index("Mã trả") + 1
                 html = f"""<style>
  body{{margin:0;font-family:Tahoma,Arial,sans-serif;color:#1f2937}}
- table{{border-collapse:collapse;font-size:12.5px;width:100%;min-width:1640px}}
+ table{{border-collapse:collapse;font-size:12.5px;width:100%;min-width:1760px}}
  th,td{{border:1px solid #e2e6ec;padding:4px 8px;text-align:left;white-space:nowrap}}
  th{{background:#eef1f6;position:sticky;top:0;z-index:4;font-weight:700}}
  td{{vertical-align:top}}
@@ -7090,11 +7159,17 @@ def _render_returns():
                 components.html(html, height=min(92 + len(sorted_items) * 34, 520), scrolling=True)
 
             # ── DANH SÁCH ĐƠN CẦN KN (bấm ô "Cần KN" ở trên sẽ nhảy tới đây) ──
+            _dohana_yellow_ckn = _dohana_yellow_need_kn_rows(_dtag_kn + _dtag_nokn)
+            _ckn_render_list = _merge_need_kn_rows(_ckn_list, _dohana_yellow_ckn)
             st.subheader("🚨 Đơn cần KN — lấy làm khiếu nại", anchor="don-can-kn")
             st.caption("Gồm các đơn CHƯA có ghi chú kết quả chuẩn (THẮNG/THUA/KHÔNG CẦN KN/HẾT HẠN): "
                        "đã giao người bán chưa nhập kho, đang hoàn hơn 5 ngày, hoặc chỉ hoàn tiền/không có hàng hoàn về. "
                        "Đây chính là các dòng tô vàng — NV lấy làm khiếu nại.")
-            _sub_table(_ckn_list, 360, show_reason=True, pg_key="ckn")
+            if _dohana_yellow_ckn:
+                _added = max(0, len(_ckn_render_list) - len(_ckn_list))
+                st.caption(f"Dohana có {len(_dohana_yellow_ckn)} dòng đang tô vàng vì chưa có ghi chú chuẩn "
+                           f"(thêm mới {_added} dòng, dòng trùng thì ghép vào Cần KN sẵn có).")
+            _sub_table(_ckn_render_list, 360, show_reason=True, pg_key="ckn")
             st.markdown(f"**🏷️ + Đơn Dohana gắn tag KHUI HÀNG (tráo · đã dùng · trả thiếu · hư hỏng) — {len(_dtag_kn)} đơn**")
             _dohana_tag_tbl(_dtag_kn)
             st.subheader("⛔ Đơn không cần KN — đã có kết luận", anchor="don-khong-can-kn")
