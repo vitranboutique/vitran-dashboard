@@ -5509,73 +5509,83 @@ def _render_returns():
     def _note_is_bulk_write_result(note):
         pre = _ascii_code(str(note or "").split("|")[0])
         compact = "".join(ch for ch in pre if ch.isalnum())
-        return any(t in compact for t in ("THANG", "THUA", "HETHAN", "KHONGCANKN", "KHONGCANKHIEUNAI"))
+        return any(t in compact for t in ("THANG", "THUA", "HETHAN", "KHONGCANKN", "KHONGCANKHIEUNAI", "CANKN"))
 
     _RETURN_NOTE_TEMPLATES = [
         {
             "group": "KHÔNG CẦN KN",
             "label": "Đã nhận hàng hoàn ở Sapo cũ",
-            "template": "⚪ KHÔNG CẦN KN | Đã nhận hàng hoàn ở Sapo cũ",
+            "template": "Không cần KN | Đã nhận hàng hoàn ở Sapo cũ",
         },
         {
             "group": "KHÔNG CẦN KN",
             "label": "Có ảnh/kho xác nhận đã nhận hoàn",
-            "template": "⛔ KHÔNG CẦN KN | 0đ thất thoát | Có ảnh nhận hoàn",
+            "template": "Không cần KN | 0đ thất thoát | Có ảnh nhận hoàn",
         },
         {
             "group": "KHÔNG CẦN KN",
             "label": "Shop đóng thiếu thật",
-            "template": "⛔ KHÔNG CẦN KN | {amount} | Shop đóng thiếu {qty} SP",
+            "template": "Không cần KN | {amount} | Shop đóng thiếu {qty} SP",
         },
         {
             "group": "KHÔNG CẦN KN",
             "label": "Shipper/sàn đã bồi thường",
-            "template": "⛔ KHÔNG CẦN KN | Shipper đã bồi thường {comp_amount} | Lỗ chênh {loss_amount}",
+            "template": "Không cần KN | Shipper đã bồi thường {comp_amount} | Lỗ chênh {loss_amount}",
         },
         {
             "group": "KHÔNG CẦN KN",
             "label": "Yêu cầu hoàn bị hủy",
-            "template": "⚪ KHÔNG CẦN KN | 0đ | Yêu cầu {platform} bị hủy",
+            "template": "Không cần KN | 0đ | Yêu cầu {platform} bị hủy",
         },
         {
             "group": "THẮNG",
             "label": "KN sàn thành công",
-            "template": "✅ THẮNG | Thu hồi {amount} | {platform} KN thành công",
+            "template": "Thắng | Thu hồi {amount} | {platform} KN thành công",
         },
         {
             "group": "THẮNG",
             "label": "Sàn chấp nhận KN theo chat",
-            "template": "✅ THẮNG | Thu hồi đủ theo chat {platform} | {platform} KN được chấp nhận",
+            "template": "Thắng | Thu hồi đủ theo chat {platform} | {platform} KN được chấp nhận",
         },
         {
             "group": "THẮNG",
             "label": "Thu hồi theo lý do khác",
-            "template": "🟢 THẮNG | Thu hồi {amount} | {reason}",
+            "template": "Thắng | Thu hồi {amount} | {reason}",
         },
         {
             "group": "THUA",
             "label": "Đã KN nhưng sàn bác",
-            "template": "❌ THUA | Mất {amount} | Đã KN nhưng {platform} bác",
+            "template": "Thua | Mất {amount} | Đã KN nhưng {platform} bác",
         },
         {
             "group": "THUA",
             "label": "KN không thành công",
-            "template": "🔴 THUA | {platform} KN không thành công | Mất {amount}",
+            "template": "Thua | {platform} KN không thành công | Mất {amount}",
+        },
+        {
+            "group": "CẦN KN",
+            "label": "Cần KN gấp",
+            "template": "Cần KN gấp | {amount} | {reason}",
+        },
+        {
+            "group": "CẦN KN",
+            "label": "Tiếp tục KN/theo dõi",
+            "template": "Cần KN | {amount} | {reason}",
         },
         {
             "group": "HẾT HẠN",
             "label": "Hoàn tiền khách, không bồi thường",
-            "template": "⚫ HẾT HẠN | Mất {amount} | Hoàn tiền khách, không bồi thường",
+            "template": "Hết hạn | Mất {amount} | Hoàn tiền khách, không bồi thường",
         },
         {
             "group": "HẾT HẠN",
             "label": "Đã giao hoàn, không bồi thường",
-            "template": "⚫ HẾT HẠN | Mất {amount} | Đã giao hoàn, không bồi thường",
+            "template": "Hết hạn | Mất {amount} | Đã giao hoàn, không bồi thường",
         },
         {
             "group": "HẾT HẠN",
             "label": "Quá 30 ngày chưa có kết quả thu hồi",
-            "template": "⚫ HẾT HẠN | Mất {amount} | Quá 30 ngày chưa có kết quả thu hồi",
+            "template": "Hết hạn | Mất {amount} | Quá 30 ngày chưa có kết quả thu hồi",
         },
         {
             "group": "TỰ NHẬP",
@@ -5917,6 +5927,7 @@ def _render_returns():
                 "VĐ đi": row.get("VĐ đi") or "",
                 "VĐ trả về": row.get("VĐ trả về") or "",
                 "_return_id": row.get("_return_id") or "",
+                "Sapo ID": row.get("Sapo ID") or row.get("_return_id") or "",
                 "Mẫu ghi chú": default_template_label,
                 "Sàn": "TikTok",
                 "Số tiền": "",
@@ -5927,7 +5938,7 @@ def _render_returns():
                 "SL thiếu": 1,
                 "Lý do": "",
                 "Chi tiết": "",
-                "Tự nhập": "⚪ KHÔNG CẦN KN | Đã nhận hàng hoàn ở Sapo cũ",
+                "Tự nhập": "Không cần KN | Đã nhận hàng hoàn ở Sapo cũ",
                 "Ngày": default_date,
                 "Ghi chú hiện tại": row.get("Ghi chú hiện tại") or "",
                 "Link hồ sơ trả": row.get("Link hồ sơ trả") or "",
@@ -5950,6 +5961,7 @@ def _render_returns():
                 "VĐ đi": row.get("VĐ đi") or "",
                 "VĐ trả về": row.get("VĐ trả về") or "",
                 "Hồ sơ": row.get("Link hồ sơ trả") or "",
+                "Sapo ID": row.get("Sapo ID") or row.get("_return_id") or "",
                 "Ghi chú hiện tại": row.get("Ghi chú hiện tại") or "",
                 "Ghi chú mới": "",
                 "_return_id": row.get("_return_id") or "",
@@ -5966,7 +5978,7 @@ def _render_returns():
             if not found:
                 rows.append({
                     "Kết quả": "Không tìm thấy", "Ngày tạo": "", "Mã đơn": code, "Mã trả": "",
-                    "VĐ đi": "", "VĐ trả về": "", "_return_id": "", "Link hồ sơ trả": "",
+                    "VĐ đi": "", "VĐ trả về": "", "_return_id": "", "Sapo ID": "", "Link hồ sơ trả": "",
                     "Ghi chú hiện tại": "",
                 })
                 continue
@@ -5996,6 +6008,7 @@ def _render_returns():
                     "VĐ đi": ((si.get("fulfillment_tracking_numbers") or [None])[0]) or "",
                     "VĐ trả về": si.get("tracking_number") or "",
                     "_return_id": str(rid or ""),
+                    "Sapo ID": str(rid or ""),
                     "Link hồ sơ trả": f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{rid}" if rid else "",
                     "Ghi chú hiện tại": detail.get("note") or "",
                     "_requires_shipper": _row_requires_return_shipper(detail),
@@ -6109,7 +6122,7 @@ def _render_returns():
                         hide_index=True,
                         height=min(520, 50 * (len(_full_seed_rows) + 1) + 40),
                         key=f"return_note_full_editor_{int(_allow_final)}_{_ascii_code(_codes_key)[:50]}",
-                        disabled=["Ngày tạo", "Mã đơn", "Mã trả", "VĐ đi", "VĐ trả về", "Hồ sơ", "Ghi chú hiện tại", "_return_id", "_requires_shipper"],
+                        disabled=["Ngày tạo", "Mã đơn", "Mã trả", "VĐ đi", "VĐ trả về", "Hồ sơ", "Sapo ID", "Ghi chú hiện tại", "_return_id", "_requires_shipper"],
                         column_config={
                             "Ghi": st.column_config.CheckboxColumn("Ghi", width="small"),
                             "Ngày tạo": st.column_config.TextColumn("Ngày tạo", width="small"),
@@ -6118,6 +6131,7 @@ def _render_returns():
                             "VĐ đi": st.column_config.TextColumn("VĐ đi", width="small"),
                             "VĐ trả về": st.column_config.TextColumn("VĐ trả về", width="small"),
                             "Hồ sơ": st.column_config.LinkColumn("Mở", width="small", display_text="Mở"),
+                            "Sapo ID": st.column_config.TextColumn("Sapo ID", width="small"),
                             "Ghi chú hiện tại": st.column_config.TextColumn("Ghi chú hiện tại", width="large"),
                             "Ghi chú mới": st.column_config.TextColumn("Ghi chú mới", width="large"),
                             "_return_id": None,
@@ -6152,7 +6166,7 @@ def _render_returns():
                         st.caption(f"Đã sẵn sàng ghi {_ready_count} phiếu. App vẫn kiểm tra prefix chuẩn và tên shipper trước khi cho ghi.")
         if (not _full_note_mode) and _preview_ready:
             st.markdown("**Tự tạo ghi chú đúng mẫu**")
-            st.caption("Dùng phần này khi chị muốn tự soạn bằng mẫu có sẵn. Không dùng CẦN KN để ghi SAPO hàng loạt vì đó là trạng thái chưa chốt.")
+            st.caption("Dùng phần này khi chị muốn tự soạn bằng mẫu có sẵn. Chỉ ghi Cần KN/Cần KN gấp khi đã kiểm tra sàn và chị duyệt.")
         _groups = []
         for _tpl in _RETURN_NOTE_TEMPLATES:
             if _tpl["group"] not in _groups:
@@ -6178,7 +6192,7 @@ def _render_returns():
             "qty": 1,
             "platform": "TikTok",
             "reason": "Khách trả sai hàng",
-            "custom_note": "⚪ KHÔNG CẦN KN | Đã nhận hàng hoàn ở Sapo cũ",
+            "custom_note": "Không cần KN | Đã nhận hàng hoàn ở Sapo cũ",
         }
         _needs_amount = "{amount}" in _template
         _needs_comp = "{comp_amount}" in _template
@@ -6210,7 +6224,7 @@ def _render_returns():
             if _needs_custom:
                 _note_values["custom_note"] = st.text_area(
                     "Ghi chú tự nhập",
-                    value="⚪ KHÔNG CẦN KN | Đã nhận hàng hoàn ở Sapo cũ",
+                    value="Không cần KN | Đã nhận hàng hoàn ở Sapo cũ",
                     height=70,
                     key="return_note_custom",
                 )
@@ -6268,12 +6282,13 @@ def _render_returns():
                 hide_index=True,
                 height=min(420, 38 * (len(_seed_rows) + 1) + 40),
                 key=f"return_note_individual_editor_{_ascii_code(_codes_key)[:50]}",
-                disabled=["Ngày tạo", "Mã đơn", "Mã trả", "VĐ đi", "VĐ trả về", "_return_id", "Ghi chú hiện tại", "Link hồ sơ trả", "_requires_shipper"],
+                disabled=["Ngày tạo", "Mã đơn", "Mã trả", "VĐ đi", "VĐ trả về", "Sapo ID", "_return_id", "Ghi chú hiện tại", "Link hồ sơ trả", "_requires_shipper"],
                 column_config={
                     "Ghi": st.column_config.CheckboxColumn("Ghi"),
                     "Mẫu ghi chú": st.column_config.SelectboxColumn("Mẫu ghi chú", options=_RETURN_NOTE_TEMPLATE_LABELS),
                     "Sàn": st.column_config.SelectboxColumn("Sàn", options=["TikTok", "Shopee", "Sàn"]),
                     "SL thiếu": st.column_config.NumberColumn("SL thiếu", min_value=1, max_value=99, step=1),
+                    "Sapo ID": st.column_config.TextColumn("Sapo ID", width="small"),
                     "Ghi chú hiện tại": st.column_config.TextColumn("Ghi chú hiện tại", width="large"),
                     "Link hồ sơ trả": st.column_config.LinkColumn("Link hồ sơ trả"),
                     "_return_id": None,
@@ -6305,6 +6320,7 @@ def _render_returns():
                     "Ngày tạo": _row.get("Ngày tạo") or "",
                     "Mã đơn": _row.get("Mã đơn") or "",
                     "Mã trả": _row.get("Mã trả") or "",
+                    "Sapo ID": _row.get("Sapo ID") or _row.get("_return_id") or "",
                     "VĐ đi": _row.get("VĐ đi") or "",
                     "VĐ trả về": _row.get("VĐ trả về") or "",
                     "Đối chiếu": _status,
@@ -6321,7 +6337,7 @@ def _render_returns():
                 else:
                     st.caption("Chưa chọn dòng nào để ghi.")
         if not _note_valid:
-            st.error("Ghi chú chưa đúng chuẩn. Dòng đầu phải là THẮNG / THUA / HẾT HẠN / KHÔNG CẦN KN.")
+            st.error("Ghi chú chưa đúng chuẩn. Dòng đầu phải bắt đầu bằng Thắng / Thua / Hết hạn / Không cần KN / Cần KN.")
         if not _shipper_valid:
             st.error("Nếu có mã vận đơn hoàn về thì bắt buộc điền tên shipper hoàn. Nếu chưa có tên shipper, đơn vẫn phải để nhóm CẦN KN/theo dõi, chưa chốt kết quả.")
         if _individual_mode and not _individual_valid:
@@ -6364,6 +6380,7 @@ def _render_returns():
                             results.append({
                                 "Mã đơn": order_name or ", ".join(info["codes"]),
                                 "Mã trả": return_name,
+                                "Sapo ID": rid,
                                 "Link hồ sơ trả": f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{rid}",
                                 "Kết quả": "Bỏ qua: đã có kết quả cuối hoặc chưa nhập ghi chú mới",
                             })
@@ -6376,6 +6393,7 @@ def _render_returns():
                             results.append({
                                 "Mã đơn": order_name or ", ".join(info["codes"]),
                                 "Mã trả": return_name,
+                                "Sapo ID": rid,
                                 "Link hồ sơ trả": f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{rid}",
                                 "Kết quả": "Bỏ qua: chưa tick ghi dòng này",
                             })
@@ -6389,6 +6407,7 @@ def _render_returns():
                         results.append({
                             "Mã đơn": order_name or ", ".join(info["codes"]),
                             "Mã trả": return_name,
+                            "Sapo ID": rid,
                             "Link hồ sơ trả": f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{rid}",
                             "Kết quả": "Đã khớp, không cần cập nhật",
                         })
@@ -6397,6 +6416,7 @@ def _render_returns():
                         results.append({
                             "Mã đơn": order_name or ", ".join(info["codes"]),
                             "Mã trả": return_name,
+                            "Sapo ID": rid,
                             "Link hồ sơ trả": f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{rid}",
                             "Kết quả": "Bỏ qua: phiếu trả hàng hoàn tiền có VĐ trả về nhưng chưa nhập tên shipper hoàn",
                         })
@@ -6406,6 +6426,7 @@ def _render_returns():
                         results.append({
                             "Mã đơn": order_name or ", ".join(info["codes"]),
                             "Mã trả": return_name,
+                            "Sapo ID": rid,
                             "Link hồ sơ trả": f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{rid}",
                             "Kết quả": status,
                         })
@@ -6415,6 +6436,7 @@ def _render_returns():
                         results.append({
                             "Mã đơn": order_name or ", ".join(info["codes"]),
                             "Mã trả": return_name,
+                            "Sapo ID": rid,
                             "Link hồ sơ trả": f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{rid}",
                             "Kết quả": "Đã ghi và xác nhận",
                         })
@@ -6422,12 +6444,13 @@ def _render_returns():
                         results.append({
                             "Mã đơn": order_name or ", ".join(info["codes"]),
                             "Mã trả": return_name,
+                            "Sapo ID": rid,
                             "Link hồ sơ trả": f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{rid}",
                             "Kết quả": f"Lỗi ghi hồ sơ trả: {e}",
                         })
                 missing = [c for c in _codes if not matches.get(c)]
                 for code in missing:
-                    results.append({"Mã đơn": code, "Mã trả": "", "Link hồ sơ trả": "", "Kết quả": "Không tìm thấy"})
+                    results.append({"Mã đơn": code, "Mã trả": "", "Sapo ID": "", "Link hồ sơ trả": "", "Kết quả": "Không tìm thấy"})
                 st.session_state["return_note_write_rows"] = results
                 st.cache_data.clear()
                 st.toast(f"Đã xử lý {len(results)} dòng — xem bảng 📋 Kết quả ghi SAPO.", icon="✅")
@@ -6481,6 +6504,7 @@ def _render_returns():
                 "": _res_icon(x.get("Kết quả")),
                 "Mã đơn": x.get("Mã đơn", ""),
                 "Mã trả": x.get("Mã trả", ""),
+                "Sapo ID": x.get("Sapo ID", ""),
                 "Kết quả": x.get("Kết quả", ""),
                 "Hồ sơ": x.get("Link hồ sơ trả", "") or x.get("Hồ sơ", ""),
             } for x in _res])
@@ -6488,6 +6512,7 @@ def _render_returns():
                          use_container_width=True, hide_index=True,
                          column_config={
                              "": st.column_config.TextColumn("", width="small"),
+                             "Sapo ID": st.column_config.TextColumn("Sapo ID", width="small"),
                              "Kết quả": st.column_config.TextColumn("Kết quả", width="large"),
                              "Hồ sơ": st.column_config.LinkColumn("Mở", width="small", display_text="Mở"),
                          })

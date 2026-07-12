@@ -126,23 +126,90 @@ def _order_return_lookup_keys(row: dict) -> set[str]:
     return keys
 
 
+def _order_return_rows_from_payload(payload) -> list[dict]:
+    if isinstance(payload, list):
+        return [row for row in payload if isinstance(row, dict)]
+    if not isinstance(payload, dict):
+        return []
+    for key in ("order_returns", "returns", "data", "results", "items", "order_return", "return"):
+        rows = _order_return_rows_from_payload(payload.get(key))
+        if rows:
+            return rows
+    if payload.get("id") and any(k in payload for k in ("name", "order", "shipping_info", "note")):
+        return [payload]
+    return []
+
+
+def _expand_order_return_search_rows(session: requests.Session, code: str, rows: list[dict]) -> list[dict]:
+    expanded = []
+    wanted = {_code_key(code)}
+    for row in rows or []:
+        if _order_return_lookup_keys(row) & wanted:
+            expanded.append(row)
+            continue
+        rid = row.get("id") or row.get("order_return_id") or row.get("return_id")
+        if rid:
+            try:
+                detail = get_order_return(session, rid) or {}
+                expanded.append({**row, **detail})
+                continue
+            except Exception:
+                pass
+        expanded.append(row)
+    return expanded
+
+
+def _add_order_return_matches(found: dict[str, list[dict]], wanted: set[str], rows: list[dict]):
+    """Add Sapo return rows to every input code they match, deduping by return id/name."""
+    for row in rows or []:
+        keys = _order_return_lookup_keys(row)
+        matched = keys & wanted
+        if not matched:
+            continue
+        row_id = str(row.get("id") or row.get("name") or id(row))
+        for code in matched:
+            current = found.setdefault(code, [])
+            if not any(str(x.get("id") or x.get("name") or id(x)) == row_id for x in current):
+                current.append(row)
+
+
 def find_order_returns_by_codes(session: requests.Session, codes: list[str], max_pages: int = 80) -> dict[str, list[dict]]:
     """Dò phiếu trả hàng theo mã đơn/mã trả hàng/mã vận đơn. Trả về code -> list rows."""
     wanted = {_code_key(c) for c in codes if _code_key(c)}
     found = {c: [] for c in wanted}
     if not wanted:
         return found
+    # Exact/partial search first. This catches old/canceled returns immediately by
+    # return code, instead of relying on a page scan that can stop before old rows.
+    for code in sorted(wanted):
+        for path in ("/admin/order_returns/search.json", "/admin/order_returns.json"):
+            resp = session.get(
+                f"{BASE}{path}",
+                params={"query": code, "limit": 50, "page": 1},
+                headers={"X-Bizweb-Search-Type": "partial"},
+                timeout=30,
+            )
+            if resp.status_code >= 400:
+                continue
+            rows = _order_return_rows_from_payload(resp.json())
+            rows = _expand_order_return_search_rows(session, code, rows)
+            _add_order_return_matches(found, {code}, rows)
+            if found.get(code):
+                break
+
+    missing = {code for code in wanted if not found.get(code)}
+    if not missing:
+        return found
     for page in range(1, int(max_pages) + 1):
         r = session.get(f"{BASE}/admin/order_returns.json", params={"limit": 250, "page": page}, timeout=30)
         r.raise_for_status()
-        rows = r.json().get("order_returns", []) or []
+        rows = _order_return_rows_from_payload(r.json())
         if not rows:
             break
-        for row in rows:
-            keys = _order_return_lookup_keys(row)
-            matched = keys & wanted
-            for code in matched:
-                found[code].append(row)
+        _add_order_return_matches(found, missing, rows)
+        missing = {code for code in missing if not found.get(code)}
+        if not missing:
+            break
     return found
 
 
