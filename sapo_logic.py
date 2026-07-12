@@ -1454,6 +1454,9 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120) -> dict:
             "order_link": order_link,
             "return_code": x.get("name") or "",
             "return_link": return_link,
+            "return_status": str(x.get("status") or ""),
+            "is_canceled": _is_canceled_return(x),
+            "canceled_on": x.get("cancelled_on") or x.get("canceled_on") or "",
             "gian_hang": gian_hang,
             "created": created_disp, "created_on": _con,
             "vd_di": (si.get("fulfillment_tracking_numbers") or [None])[0],
@@ -1507,6 +1510,12 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120) -> dict:
     # CHỈ tính NĂM NAY (loại hết đơn năm trước)
     all_returns = [x for x in rows if _include_in_total_returns(x)]
     inprog = [x for x in rows if _include_in_detail(x)]
+    canceled_returns = [
+        x for x in rows
+        if _vn_date_of(x.get("created_on"))
+        and _vn_date_of(x.get("created_on")).year == today.year
+        and _is_canceled_return(x)
+    ]
 
     cnt, detail, n_complaint = {}, [], 0
     for x in inprog:
@@ -1547,6 +1556,17 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120) -> dict:
             row = detail_by_return[row.get("return_code")]
         all_detail.append(row)
     all_detail.sort(key=lambda d: d["created_on"] or "", reverse=True)
+    canceled_detail = []
+    for x in canceled_returns:
+        row = _return_detail_row(x)
+        if str(row.get("vd_tra") or "").strip():
+            row["reason"] = "Có VĐ trả về nhưng Sapo đánh dấu đã hủy — đối chiếu sàn trước khi kết luận"
+        else:
+            row["reason"] = "Sapo đánh dấu đã hủy — vẫn giữ để đối chiếu nếu sàn còn hồ sơ trả/KN"
+        row["_location"] = "Sapo đã hủy"
+        row["need_kn"] = False
+        canceled_detail.append(row)
+    canceled_detail.sort(key=lambda d: d["created_on"] or "", reverse=True)
 
     # THỐNG KÊ KẾT QUẢ KHIẾU NẠI theo PREFIX ghi chú trong đúng danh sách đang xử lý.
     # Giữ cùng phạm vi với bảng chi tiết và ô CẦN KN, tránh trộn cả phiếu đã nhập kho/đã đóng.
@@ -1719,6 +1739,7 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120) -> dict:
         "tot_no_return": sum(c.get("no_return", 0) for c in cnt.values()),
         "detail": detail,
         "all_detail": all_detail,
+        "canceled_detail": canceled_detail,
     }
 
 

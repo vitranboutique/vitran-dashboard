@@ -6321,6 +6321,12 @@ def _render_returns():
                 return "Chưa chốt"
 
             _all_returns_detail = _rip.get("all_detail") or _rip.get("detail") or []
+            _canceled_returns_detail = _rip.get("canceled_detail") or []
+            _canceled_with_return_waybill_detail = [
+                d for d in _canceled_returns_detail
+                if str(d.get("vd_tra") or "").strip()
+            ]
+            _return_match_detail = _all_returns_detail + _canceled_returns_detail
             _stock_order = ["Đã nhập kho", "Chưa nhập kho", "Nhập kho 1 phần", "Không nhập kho"]
             _stock_colors = {
                 "Đã nhập kho": "#1D9E75",
@@ -6559,6 +6565,8 @@ def _render_returns():
                 return any(q in _search_norm(x) for x in fields if x)
 
             def _row_location(d):
+                if d.get("is_canceled"):
+                    return "Sapo đã hủy (đối chiếu sàn)"
                 if str(d.get("stock_code") or "").lower() in ("stocked", "restocked"):
                     return "Đã nhận/đã nhập kho"
                 if d.get("need_kn"):
@@ -6721,7 +6729,7 @@ def _render_returns():
                 _active_search = str(st.session_state.get("return_detail_search_code") or "").strip()
                 if _active_search:
                     _search_matches = []
-                    for _d in (_rip.get("all_detail") or _rip["detail"]):
+                    for _d in _return_match_detail:
                         if _row_matches_code(_d, _active_search):
                             _r = dict(_d)
                             _r["_location"] = _row_location(_d)
@@ -6919,8 +6927,8 @@ def _render_returns():
                 _missing_codes = [
                     c for c in _tag_codes
                     if c and (
-                        not _dohana_detail_match_rows(c, _all_returns_detail)
-                        or any(_dohana_row_missing_info(d) for d in _dohana_detail_match_rows(c, _all_returns_detail))
+                        not _dohana_detail_match_rows(c, _return_match_detail)
+                        or any(_dohana_row_missing_info(d) for d in _dohana_detail_match_rows(c, _return_match_detail))
                     )
                 ]
                 _dohana_extra_detail_by_code = load_return_rows_by_codes(tuple(sorted(set(_missing_codes))))
@@ -6929,7 +6937,7 @@ def _render_returns():
 
             def _dohana_detail_matches(code):
                 q = _search_norm(code)
-                rows = _dohana_detail_match_rows(code, _all_returns_detail)
+                rows = _dohana_detail_match_rows(code, _return_match_detail)
                 if q and _dohana_extra_detail_by_code.get(q):
                     for d in _dohana_extra_detail_by_code.get(q) or []:
                         item = dict(d)
@@ -7024,7 +7032,7 @@ def _render_returns():
                                     target["_dohana_tag_label"] = tag
 
             def _dohana_in_detail(code):
-                return bool(_dohana_detail_match_rows(code, _rip.get("detail") or []))
+                return bool(_dohana_detail_match_rows(code, _return_match_detail))
 
             def _dohana_items_not_in_detail(items):
                 return [r for r in (items or []) if not _dohana_in_detail(str(r.get("code") or ""))]
@@ -7228,6 +7236,7 @@ def _render_returns():
             # ── DANH SÁCH ĐƠN CẦN KN (bấm ô "Cần KN" ở trên sẽ nhảy tới đây) ──
             _annotate_detail_rows_with_dohana_tags(_dtag_kn + _dtag_nokn, _rip.get("detail") or [])
             _annotate_detail_rows_with_dohana_tags(_dtag_kn + _dtag_nokn, _all_returns_detail)
+            _annotate_detail_rows_with_dohana_tags(_dtag_kn + _dtag_nokn, _canceled_returns_detail)
             _dtag_kn_only = _dohana_items_not_in_detail(_dtag_kn)
             _dtag_nokn_only = _dohana_items_not_in_detail(_dtag_nokn)
             _dohana_yellow_ckn = _dohana_yellow_need_kn_rows(_dtag_kn + _dtag_nokn)
@@ -7249,6 +7258,21 @@ def _render_returns():
             _sub_table(_khong_can_kn_list, 300, show_reason=True, pg_key="khong_can_kn")
             st.markdown(f"**🏷️ + Đơn Dohana gắn tag ĐÓNG HÀNG chưa có trong bảng chi tiết — {len(_dtag_nokn_only)} / {len(_dtag_nokn)} đơn**")
             _dohana_tag_tbl(_dtag_nokn_only)
+            if _canceled_with_return_waybill_detail:
+                st.subheader("🧭 Phiếu Sapo đã hủy có VĐ trả về — đối chiếu sàn", anchor="don-sapo-da-huy-co-vd-tra")
+                st.caption("Chỉ lấy phiếu Sapo đã hủy nhưng vẫn có mã vận đơn hoàn về. Dùng bảng này để soi các case sàn vẫn còn hồ sơ trả/KN dù Sapo đánh dấu hủy.")
+                _sub_table(
+                    _canceled_with_return_waybill_detail,
+                    260,
+                    show_type=True,
+                    show_reason=True,
+                    show_location=True,
+                    pg_key="sapo_cancelled_with_return_waybill",
+                )
+            if _canceled_returns_detail:
+                with st.expander(f"🗂️ Tất cả phiếu Sapo đã hủy — {len(_canceled_returns_detail)} dòng", expanded=False):
+                    st.caption("Nhóm này không tính vào KPI đang xử lý, nhưng vẫn hiện khi tìm mã đơn/mã trả để kiểm tra trên sàn.")
+                    _sub_table(_canceled_returns_detail, 260, show_type=True, show_reason=True, show_location=True, pg_key="sapo_cancelled")
             st.divider()
             st.markdown("### 📋 Chi tiết còn hàng hoàn về theo loại")
             _type_block("💸 Trả hàng hoàn tiền", "return_and_refund")
