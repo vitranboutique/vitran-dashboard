@@ -5946,13 +5946,45 @@ def _render_returns():
             })
         return out
 
-    def _build_full_note_editor_rows(rows, allow_final=False):
+    def _full_note_row_keys(row):
+        keys = []
+        for field in ("Mã trả", "Mã đơn", "VĐ đi", "VĐ trả về", "Sapo ID", "_return_id"):
+            value = str((row or {}).get(field) or "").strip()
+            if value:
+                keys.extend(parse_codes(value))
+        return [k for k in dict.fromkeys(keys) if k]
+
+    def _parse_full_note_blocks(text):
+        out = {}
+        for block in re.split(r"(?m)^\s*-{3,}\s*$", str(text or "")):
+            lines = [line.rstrip() for line in block.strip().splitlines()]
+            lines = [line for line in lines if line.strip()]
+            if len(lines) < 2:
+                continue
+            codes = parse_codes(lines[0])
+            if not codes:
+                continue
+            note = "\n".join(lines[1:]).strip()
+            if note:
+                out[codes[0]] = note
+        return out
+
+    def _pasted_full_note_for_row(row, note_map):
+        note_map = note_map or {}
+        for key in _full_note_row_keys(row):
+            note = note_map.get(key)
+            if note:
+                return note
+        return ""
+
+    def _build_full_note_editor_rows(rows, allow_final=False, note_map=None):
         out = []
         for row in rows:
             if row.get("Kết quả") != "Tìm thấy":
                 continue
             if not allow_final and _note_has_final_result(row.get("Ghi chú hiện tại")):
                 continue
+            pasted_note = _pasted_full_note_for_row(row, note_map)
             out.append({
                 "Ghi": True,
                 "Ngày tạo": row.get("Ngày tạo") or "",
@@ -5963,7 +5995,7 @@ def _render_returns():
                 "Hồ sơ": row.get("Link hồ sơ trả") or "",
                 "Sapo ID": row.get("Sapo ID") or row.get("_return_id") or "",
                 "Ghi chú hiện tại": row.get("Ghi chú hiện tại") or "",
-                "Ghi chú mới": "",
+                "Ghi chú mới": pasted_note,
                 "_return_id": row.get("_return_id") or "",
                 "_requires_shipper": row.get("_requires_shipper", False),
             })
@@ -6108,7 +6140,27 @@ def _render_returns():
             _notice.append("tắt checkbox này nếu muốn dùng phần tạo ghi chú theo mẫu bên dưới")
             st.caption(" · ".join(_notice))
             if _full_note_mode:
-                _full_seed_rows = _build_full_note_editor_rows(_lookup_rows, _allow_final)
+                _full_note_blocks = st.text_area(
+                    "Dán ghi chú nhanh theo mã",
+                    value="",
+                    placeholder=(
+                        "4041276438705046780\n"
+                        "Thắng | Thu hồi 169.092đ | TikTok đóng yêu cầu trả hàng\n"
+                        "Shipper hoàn: J&T Express - 854150388808; đã giao 10/07/2026 11:03.\n"
+                        "Cập nhật: 13/07/2026\n"
+                        "---\n"
+                        "4040980030353606200\n"
+                        "Thắng | Thu hồi 186.760đ | TikTok tranh chấp ủng hộ người bán"
+                    ),
+                    height=170,
+                    key=f"return_note_full_blocks_{_ascii_code(_codes_key)[:50]}",
+                    help="Mỗi block: dòng đầu là mã trả/mã đơn/vận đơn/Sapo ID; các dòng sau là ghi chú. Ngăn các block bằng dòng ---.",
+                )
+                _full_note_map = _parse_full_note_blocks(_full_note_blocks)
+                _full_note_blocks_key = _ascii_code(_full_note_blocks)[:32]
+                if _full_note_map:
+                    st.caption(f"Đã nhận {len(_full_note_map)} ghi chú dán nhanh; app tự map theo mã trả/mã đơn/vận đơn/Sapo ID.")
+                _full_seed_rows = _build_full_note_editor_rows(_lookup_rows, _allow_final, _full_note_map)
                 if not _full_seed_rows:
                     _msg = "Không còn phiếu nào cần nhập ghi chú mới: tất cả đã có kết quả cuối hoặc không tìm thấy."
                     if _hidden_final_count and not _allow_final:
@@ -6121,7 +6173,7 @@ def _render_returns():
                         use_container_width=True,
                         hide_index=True,
                         height=min(520, 50 * (len(_full_seed_rows) + 1) + 40),
-                        key=f"return_note_full_editor_{int(_allow_final)}_{_ascii_code(_codes_key)[:50]}",
+                        key=f"return_note_full_editor_{int(_allow_final)}_{_ascii_code(_codes_key)[:50]}_{_full_note_blocks_key}",
                         disabled=["Ngày tạo", "Mã đơn", "Mã trả", "VĐ đi", "VĐ trả về", "Hồ sơ", "Sapo ID", "Ghi chú hiện tại", "_return_id", "_requires_shipper"],
                         column_config={
                             "Ghi": st.column_config.CheckboxColumn("Ghi", width="small"),
