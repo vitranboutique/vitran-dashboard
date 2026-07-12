@@ -6732,6 +6732,9 @@ def _render_returns():
                     st.caption("— (Dohana) chưa ghi nhận đơn gắn tag —")
                     return
 
+                def _safe(v, default=""):
+                    return _esc(str(v if v not in (None, "") else default))
+
                 def _return_type_label(d):
                     label = str((d or {}).get("loai_tra") or "").strip()
                     if label:
@@ -6743,50 +6746,61 @@ def _render_returns():
                         "refund": "Chỉ hoàn tiền / không có hàng hoàn về",
                     }.get(code, code)
 
-                def _safe(v, default=""):
-                    return _esc(str(v if v not in (None, "") else default))
+                def _short_note(matches):
+                    if not matches:
+                        return "Chưa thấy trong chi tiết"
+                    d = matches[0]
+                    outcome = _detail_note_outcome(d)
+                    short = {
+                        "Cần KN": "Cần KN chưa chốt",
+                        "Đã nhận/đã nhập kho": "Đã nhập kho",
+                        "Không có hàng hoàn về / chỉ hoàn tiền": "Không có hàng hoàn",
+                        "Trả hàng hoàn tiền": "Hoàn tiền + hàng về",
+                    }.get(outcome, outcome or "Có trong chi tiết")
+                    if len(matches) > 1:
+                        short += f" · +{len(matches) - 1} trùng"
+                    return short
 
                 cols = [
-                    "STT", "Mã đơn", "Mã trả hàng", "Loại trả", "VĐ đi", "VĐ trả về",
-                    "Shipper hoàn", "Tag", "Ngày quay", "Giờ quay", "Thời lượng(s)",
-                    "Ghi chú đối chiếu", "Mã clip Dohana",
+                    "Mã đơn", "Mã trả", "Mã Dohana", "VĐ đi", "VĐ về",
+                    "Tag", "Ngày giờ quay", "Thời lượng", "Loại trả", "Shipper hoàn", "Ghi chú",
                 ]
                 thead = "".join(f"<th>{_esc(c)}</th>" for c in cols)
                 body = ""
                 sorted_items = sorted(items, key=lambda x: (x.get("date") or "", x.get("time") or ""), reverse=True)
-                for i, r in enumerate(sorted_items, 1):
+                for r in sorted_items:
                     code = r.get("code") or ""
                     matches = _dohana_detail_matches(code)
                     d = matches[0] if matches else {}
-                    note = _dohana_detail_note(code)
+                    note = _short_note(matches)
+                    filmed_at = " ".join(x for x in (str(r.get("date") or "").strip(), str(r.get("time") or "").strip()) if x)
+                    duration = str(r.get("dur") if r.get("dur") not in (None, "") else "").strip()
                     shipper = d.get("return_shipper") or ("Chưa có" if matches else "")
                     bg = "background:#fff3cd" if (default_need_kn or d.get("need_kn")) else ""
                     tds = [
-                        f"<td class='r'>{i}</td>",
                         f"<td>{_code_cell(d.get('order_code') or code, d.get('order_link'))}</td>",
                         f"<td>{_code_cell(d.get('return_code'))}</td>",
-                        f"<td>{_safe(_return_type_label(d))}</td>",
+                        f"<td>{_code_cell(code)}</td>",
                         f"<td>{_code_cell(d.get('vd_di'))}</td>",
                         f"<td>{_code_cell(d.get('vd_tra'))}</td>",
-                        f"<td class='wide' title='{_safe(shipper)}'>{_safe(shipper)}</td>",
                         f"<td>{_safe(dohana._tag_name(r.get('tag_id'), r.get('tag_name')))}</td>",
-                        f"<td>{_safe(r.get('date'))}</td>",
-                        f"<td>{_safe(r.get('time'))}</td>",
-                        f"<td class='r'>{_safe(r.get('dur'))}</td>",
+                        f"<td>{_safe(filmed_at)}</td>",
+                        f"<td class='r'>{_safe(duration + 's' if duration else '')}</td>",
+                        f"<td>{_safe(_return_type_label(d))}</td>",
+                        f"<td class='shipper' title='{_safe(shipper)}'>{_safe(shipper)}</td>",
                         f"<td class='note' title='{_safe(note)}'>{_safe(note)}</td>",
-                        f"<td>{_code_cell(code)}</td>",
                     ]
                     body += f"<tr style='{bg}'>" + "".join(tds) + "</tr>"
 
-                _sticky_n = cols.index("Mã trả hàng") + 1
+                _sticky_n = cols.index("Mã trả") + 1
                 html = f"""<style>
  body{{margin:0;font-family:Tahoma,Arial,sans-serif;color:#1f2937}}
- table{{border-collapse:collapse;font-size:12.5px;width:max-content;min-width:100%}}
+ table{{border-collapse:collapse;font-size:12.5px;width:100%;min-width:1380px}}
  th,td{{border:1px solid #e2e6ec;padding:4px 8px;text-align:left;white-space:nowrap}}
  th{{background:#eef1f6;position:sticky;top:0;z-index:4;font-weight:700}}
  td.r{{text-align:right}}
- td.wide{{max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
- td.note{{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:help}}
+ td.shipper{{max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+ td.note{{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:help}}
  a{{color:#1d4ed8;text-decoration:none}} a:hover{{text-decoration:underline}}
  .cp{{cursor:pointer;opacity:.55;font-size:11px;user-select:none}} .cp:hover{{opacity:1}}
 </style>
