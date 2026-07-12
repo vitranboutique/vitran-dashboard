@@ -85,6 +85,15 @@ def _code_key(value) -> str:
     return re.sub(r"\s+", "", str(value or "")).upper()
 
 
+def _code_keys(value) -> set[str]:
+    """Tách các mã khi Sapo gộp nhiều vận đơn trong cùng một ô."""
+    raw = str(value or "").strip()
+    if not raw:
+        return set()
+    parts = [raw] + re.split(r"[\s,;|/]+", raw)
+    return {_code_key(p) for p in parts if _code_key(p)}
+
+
 def parse_codes(text: str) -> list[str]:
     """Tách danh sách mã đơn/mã trả hàng/mã vận đơn từ textarea."""
     seen, out = set(), []
@@ -99,7 +108,7 @@ def parse_codes(text: str) -> list[str]:
 def _order_return_lookup_keys(row: dict) -> set[str]:
     order = row.get("order") or {}
     shipping = row.get("shipping_info") or {}
-    keys = {
+    raw_keys = {
         row.get("id"),
         row.get("name"),
         row.get("code"),
@@ -110,8 +119,11 @@ def _order_return_lookup_keys(row: dict) -> set[str]:
         order.get("source_identifier"),
         shipping.get("tracking_number"),
     }
-    keys.update(shipping.get("fulfillment_tracking_numbers") or [])
-    return {_code_key(k) for k in keys if _code_key(k)}
+    raw_keys.update(shipping.get("fulfillment_tracking_numbers") or [])
+    keys = set()
+    for key in raw_keys:
+        keys.update(_code_keys(key))
+    return keys
 
 
 def find_order_returns_by_codes(session: requests.Session, codes: list[str], max_pages: int = 80) -> dict[str, list[dict]]:

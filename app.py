@@ -885,14 +885,66 @@ def _return_row_from_sapo_api(row: dict, detail: dict | None = None) -> dict:
             if val:
                 return_shipper = val
                 break
-    line_items = detail.get("line_items") or row.get("line_items") or []
-    sku = "; ".join(
-        f"{(li.get('sku') or 'N/A')}×{int(round(float(li.get('quantity') or 0)))}"
-        for li in line_items
-    )
-    channel = (order.get("channel_definition") or {})
-    source_name = str(detail.get("order_source") or row.get("order_source") or order.get("source_name") or "").strip()
-    source_label = {"tiktokshop": "Tiktokshop", "shopee": "Shopee"}.get(source_name.lower(), source_name.title())
+    def _nested_line_items(*docs):
+        for doc in docs:
+            if not isinstance(doc, dict):
+                continue
+            for key in ("line_items", "return_line_items", "order_return_line_items", "refund_line_items", "items"):
+                items = doc.get(key) or []
+                if items:
+                    return items
+        return []
+
+    def _li_sku(li):
+        src = li.get("line_item") or li.get("product") or li.get("variant") or li
+        return (li.get("sku") or src.get("sku") or li.get("variant_sku")
+                or src.get("variant_sku") or li.get("barcode") or src.get("barcode") or "N/A")
+
+    def _li_qty(li):
+        for key in ("quantity", "return_quantity", "returned_quantity", "restock_quantity", "qty"):
+            try:
+                val = float(li.get(key) or 0)
+            except Exception:
+                val = 0
+            if val:
+                return val
+        return 0
+
+    def _li_money(li):
+        for key in ("total_price", "line_price", "subtotal", "amount"):
+            try:
+                val = float(li.get(key) or 0)
+            except Exception:
+                val = 0
+            if val:
+                return val
+        for key in ("price", "unit_price", "original_price"):
+            try:
+                val = float(li.get(key) or 0) * _li_qty(li)
+            except Exception:
+                val = 0
+            if val:
+                return val
+        return 0
+
+    line_items = _nested_line_items(detail, row) or _nested_line_items(order)
+    sku = "; ".join(f"{_li_sku(li)}×{int(round(_li_qty(li)))}" for li in line_items)
+    qty = detail.get("total_quantity") or row.get("total_quantity")
+    if qty in (None, "") and line_items:
+        qty = sum(_li_qty(li) for li in line_items)
+    money = detail.get("total_price") or row.get("total_price")
+    if money in (None, "") and line_items:
+        money = sum(_li_money(li) for li in line_items)
+    channel = (order.get("channel_definition") or detail.get("channel_definition")
+               or row.get("channel_definition") or {})
+    source_name = str(
+        detail.get("order_source") or row.get("order_source") or order.get("source_name")
+        or order.get("source") or channel.get("source_name") or channel.get("name") or ""
+    ).strip()
+    source_label = {
+        "tiktokshop": "Tiktokshop", "tiktok": "Tiktokshop",
+        "shopee": "Shopee", "shopee2": "Shopee",
+    }.get(source_name.lower(), source_name.title())
     branch = channel.get("branch_name") or channel.get("main_name") or "VITRAN BOUTIQUE"
     gian_hang = " - ".join(x for x in (branch, source_label) if x)
     return {
@@ -908,8 +960,8 @@ def _return_row_from_sapo_api(row: dict, detail: dict | None = None) -> dict:
         "note": note,
         "gian_hang": gian_hang,
         "sku": sku,
-        "qty": int(round(float(detail.get("total_quantity") or row.get("total_quantity") or 0))),
-        "money": int(round(float(detail.get("total_price") or row.get("total_price") or 0))),
+        "qty": int(round(float(qty or 0))),
+        "money": int(round(float(money or 0))),
         "loai_tra": {
             "return_and_refund": "Trả hàng hoàn tiền",
             "delivery_failed": "Giao hàng thất bại",
@@ -6797,12 +6849,58 @@ def _render_returns():
                         rows.append(item)
                 return rows
 
+            def _dohana_row_missing_info(d):
+                if not d:
+                    return True
+                required = ("gian_hang", "sku", "qty", "money", "stock_status")
+                for key in required:
+                    val = d.get(key)
+                    if val in (None, ""):
+                        return True
+                    if key in ("qty", "money"):
+                        try:
+                            if float(val or 0) <= 0:
+                                return True
+                        except Exception:
+                            return True
+                return False
+
+            def _dohana_same_sapo_row(a, b):
+                for key in ("return_code", "order_code"):
+                    av, bv = _search_norm((a or {}).get(key)), _search_norm((b or {}).get(key))
+                    if av and bv and av == bv:
+                        return True
+                a_codes = [_search_norm((a or {}).get(k)) for k in ("vd_di", "vd_tra")]
+                b_codes = [_search_norm((b or {}).get(k)) for k in ("vd_di", "vd_tra")]
+                return any(x and y and (x == y or x in y or y in x) for x in a_codes for y in b_codes)
+
+            def _dohana_merge_detail_row(base, extra):
+                merged = dict(base or {})
+                for key in (
+                    "order_code", "order_link", "return_code", "return_link", "created", "created_on",
+                    "vd_di", "vd_tra", "return_shipper", "gian_hang", "sku", "qty", "money",
+                    "loai_tra", "loai_tra_code", "ship_code", "stock_status", "stock_code",
+                ):
+                    cur = merged.get(key)
+                    new = (extra or {}).get(key)
+                    missing = cur in (None, "") or (key in ("qty", "money") and not cur)
+                    if missing and new not in (None, ""):
+                        merged[key] = new
+                if not str(merged.get("note") or "").strip() and str((extra or {}).get("note") or "").strip():
+                    merged["note"] = extra.get("note")
+                if not str(merged.get("reason") or "").strip() and str((extra or {}).get("reason") or "").strip():
+                    merged["reason"] = extra.get("reason")
+                return merged
+
             _dohana_extra_detail_by_code = {}
             try:
                 _tag_codes = [str(r.get("code") or "").strip() for r in (_dtag_kn + _dtag_nokn)]
                 _missing_codes = [
                     c for c in _tag_codes
-                    if c and not _dohana_detail_match_rows(c, _all_returns_detail)
+                    if c and (
+                        not _dohana_detail_match_rows(c, _all_returns_detail)
+                        or any(_dohana_row_missing_info(d) for d in _dohana_detail_match_rows(c, _all_returns_detail))
+                    )
                 ]
                 _dohana_extra_detail_by_code = load_return_rows_by_codes(tuple(sorted(set(_missing_codes))))
             except Exception:
@@ -6815,7 +6913,15 @@ def _render_returns():
                     for d in _dohana_extra_detail_by_code.get(q) or []:
                         item = dict(d)
                         item["_match_exact"] = True
-                        rows.append(item)
+                        merged = False
+                        for idx, old in enumerate(rows):
+                            if _dohana_same_sapo_row(old, item):
+                                rows[idx] = _dohana_merge_detail_row(old, item)
+                                rows[idx]["_match_exact"] = old.get("_match_exact") or item.get("_match_exact")
+                                merged = True
+                                break
+                        if not merged:
+                            rows.append(item)
                 rank = {
                     "Thắng": 0,
                     "Thua": 0,
@@ -6831,6 +6937,7 @@ def _render_returns():
                 rows.sort(key=lambda d: (
                     0 if d.get("_match_exact") else 1,
                     0 if d.get("order_code") else 1,
+                    0 if not _dohana_row_missing_info(d) else 1,
                     rank.get(_detail_note_outcome(d), 99),
                     str(d.get("created_on") or ""),
                 ))
