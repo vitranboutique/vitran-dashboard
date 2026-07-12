@@ -6762,7 +6762,7 @@ def _render_returns():
                     filmed_at = " ".join(x for x in (str(r.get("date") or "").strip(), str(r.get("time") or "").strip()) if x)
                     duration = str(r.get("dur") if r.get("dur") not in (None, "") else "").strip()
                     shipper = d.get("return_shipper") or ("Chưa có" if matches else "")
-                    bg = "background:#fff3cd" if (default_need_kn or d.get("need_kn")) else ""
+                    bg = "background:#fff3cd" if d.get("need_kn") else ""
                     tds = [
                         f"<td>{_code_cell(d.get('order_code') or code, d.get('order_link'))}</td>",
                         f"<td>{_code_cell(d.get('return_code'))}</td>",
