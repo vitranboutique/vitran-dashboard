@@ -5585,6 +5585,137 @@ def _render_returns():
     ]
     _RETURN_NOTE_TEMPLATE_LABELS = [x["label"] for x in _RETURN_NOTE_TEMPLATES]
     _RETURN_NOTE_TEMPLATE_BY_LABEL = {x["label"]: x for x in _RETURN_NOTE_TEMPLATES}
+    _CLOSED_RETURN_NOTE_FILE = "vitran_closed_return_notes.json"
+
+    def _closed_return_note_key(d):
+        for field in ("return_code", "order_code", "vd_tra", "vd_di"):
+            value = str((d or {}).get(field) or "").strip()
+            if value:
+                return f"{field}:{value}"
+        return ""
+
+    def _closed_return_app_note_text(rec):
+        if isinstance(rec, dict):
+            return str(rec.get("note") or "").strip()
+        return str(rec or "").strip()
+
+    def _load_closed_return_app_notes():
+        if not picklog.configured():
+            return {}
+        raw = picklog._read_gist_file(_CLOSED_RETURN_NOTE_FILE) or {}
+        notes = raw.get("notes") if isinstance(raw, dict) else {}
+        if notes is None and isinstance(raw, dict):
+            notes = raw
+        if not isinstance(notes, dict):
+            return {}
+        out = {}
+        for key, rec in notes.items():
+            note = _closed_return_app_note_text(rec)
+            if not note:
+                continue
+            item = dict(rec) if isinstance(rec, dict) else {}
+            item["note"] = note
+            out[str(key)] = item
+        return out
+
+    def _save_closed_return_app_notes(notes):
+        if not picklog.configured():
+            return False
+        clean = {}
+        for key, rec in (notes or {}).items():
+            note = _closed_return_app_note_text(rec)
+            if not note:
+                continue
+            item = dict(rec) if isinstance(rec, dict) else {}
+            item["note"] = note
+            clean[str(key)] = item
+        payload = {
+            "updated_at": (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%Y-%m-%d %H:%M:%S"),
+            "notes": clean,
+        }
+        return picklog._write_gist_file(_CLOSED_RETURN_NOTE_FILE, payload)
+
+    def _apply_closed_return_app_notes(rows, notes):
+        for d in rows or []:
+            key = _closed_return_note_key(d)
+            if key:
+                d["_app_note_key"] = key
+            note = _closed_return_app_note_text((notes or {}).get(key))
+            if not note:
+                continue
+            d["sapo_note"] = str(d.get("note") or "").strip()
+            d["app_note"] = note
+            d["_note_source"] = "App"
+            d["note"] = note
+        return rows
+
+    def _render_closed_return_app_note_editor(rows, notes):
+        if not rows:
+            return
+        st.markdown("**✍️ Ghi chú app cho đơn Sapo đã đóng**")
+        st.caption("Phiếu đã đóng/hủy trên Sapo không ghi chú được nữa, nên ghi chú ở đây sẽ được app dùng để lọc Cần KN.")
+        if not picklog.configured():
+            st.warning("Chưa cấu hình kho lưu picklog/Gist nên chưa lưu được ghi chú app.")
+            return
+        row_map = {}
+        choices = []
+        for d in rows:
+            key = d.get("_app_note_key") or _closed_return_note_key(d)
+            if key and key not in row_map:
+                row_map[key] = d
+                choices.append(key)
+        if not choices:
+            return
+
+        def _fmt_choice(key):
+            d = row_map.get(key) or {}
+            parts = [d.get("created"), d.get("order_code"), d.get("return_code"), d.get("vd_tra")]
+            return " · ".join(str(x) for x in parts if str(x or "").strip())
+
+        selected = st.selectbox("Chọn đơn cần ghi/chỉnh", choices, format_func=_fmt_choice,
+                                key="closed_return_app_note_select")
+        row = row_map.get(selected) or {}
+        old_note = _closed_return_app_note_text((notes or {}).get(selected))
+        sapo_note = str(row.get("sapo_note") or ("" if old_note else row.get("note") or "")).strip()
+        with st.form("closed_return_app_note_form"):
+            if sapo_note:
+                st.caption(f"Ghi chú Sapo đang có: {sapo_note[:220]}" + ("..." if len(sapo_note) > 220 else ""))
+            note_text = st.text_area(
+                "Ghi chú app",
+                value=old_note,
+                height=140,
+                placeholder="VD: 🚨 CẦN KN | 200.760đ | Khách chưa hoàn đủ hàng\n🕘 Cập nhật: 13/07/2026",
+                key=f"closed_return_app_note_text_{_ascii_code(selected)[:48]}",
+            )
+            st.caption("Prefix hợp lệ: THẮNG, THUA, HẾT HẠN, KHÔNG CẦN KN, CẦN KN. "
+                       "THẮNG/THUA/KHÔNG CẦN KN/HẾT HẠN sẽ rớt khỏi Cần KN; CẦN KN vẫn nằm trong bảng Cần KN.")
+            c1, c2, _ = st.columns([1, 1, 4])
+            save_btn = c1.form_submit_button("💾 Lưu ghi chú")
+            clear_btn = c2.form_submit_button("🧹 Xóa ghi chú app")
+        if save_btn or clear_btn:
+            new_notes = dict(notes or {})
+            if clear_btn:
+                new_notes.pop(selected, None)
+            else:
+                note_text = str(note_text or "").strip()
+                if note_text and not _note_has_result(note_text):
+                    st.error("Ghi chú app chưa đúng prefix chuẩn, nên app chưa lưu. Dòng đầu phải có THẮNG / THUA / HẾT HẠN / KHÔNG CẦN KN / CẦN KN.")
+                    return
+                if note_text:
+                    new_notes[selected] = {
+                        "note": note_text,
+                        "order_code": row.get("order_code") or "",
+                        "return_code": row.get("return_code") or "",
+                        "vd_tra": row.get("vd_tra") or "",
+                        "updated_at": (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%Y-%m-%d %H:%M:%S"),
+                    }
+                else:
+                    new_notes.pop(selected, None)
+            if _save_closed_return_app_notes(new_notes):
+                st.success("Đã lưu ghi chú app. Bảng sẽ lọc lại theo ghi chú này.")
+                st.rerun()
+            else:
+                st.error("Lưu ghi chú app lỗi. Kiểm tra token picklog/Gist.")
 
     def _money_text(value, default="0đ"):
         value = str(value or "").strip()
@@ -6310,7 +6441,7 @@ def _render_returns():
 
             def _is_closed_kn_result(d):
                 compact = _note_compact(d)
-                return ("THANG" in compact or "THUA" in compact
+                return ("THANG" in compact or "THUA" in compact or "HETHAN" in compact
                         or "KHONGCANKN" in compact or "KHONGCANKHIEUNAI" in compact)
 
             def _return_outcome(d):
@@ -6343,6 +6474,8 @@ def _render_returns():
                 except Exception as _e:
                     st.warning(f"Chưa quét được đơn trả bị đóng cả năm: `{_e}`")
                     st.session_state["closed_returns_full_year_loaded"] = False
+            _closed_return_app_notes = _load_closed_return_app_notes()
+            _apply_closed_return_app_notes(_canceled_returns_detail, _closed_return_app_notes)
             _closed_returns_with_waybill_detail = [
                 d for d in _canceled_returns_detail
                 if str(d.get("vd_tra") or "").strip()
@@ -6667,6 +6800,7 @@ def _render_returns():
                 for i, d in enumerate(items, _start + 1):
                     bg = "background:#fff3cd" if d.get("need_kn") else ""
                     note = d.get("note") or ""
+                    note_display = f"📝 APP · {note}" if d.get("app_note") else note
                     tds = [f"<td class='r'>{i}</td>"]
                     if show_location:
                         tds.append(f"<td>{_safe(d.get('_location') or _row_location(d))}</td>")
@@ -6693,7 +6827,7 @@ def _render_returns():
                     if show_reason:
                         tds.append(f"<td>{_safe(d.get('reason'))}</td>")
                     tds.append(f"<td>{_doisoat(d)}</td>")
-                    tds.append(f"<td class='note' title='{_safe(note)}'>{_safe(note)}</td>")
+                    tds.append(f"<td class='note' title='{_safe(note_display)}'>{_safe(note_display)}</td>")
                     body += f"<tr style='{bg}'>" + "".join(tds) + "</tr>"
                 html = f"""<style>
  body{{margin:0;font-family:Tahoma,Arial,sans-serif;color:#1f2937}}
@@ -7331,6 +7465,7 @@ def _render_returns():
                         st.rerun()
                 if _closed_returns_capped:
                     st.warning("Đã chạm giới hạn quét 500 trang phiếu bị đóng; có thể còn phiếu cũ hơn trong năm nay.")
+                _render_closed_return_app_note_editor(_closed_returns_with_waybill_detail, _closed_return_app_notes)
                 _sub_table(
                     _closed_returns_with_waybill_detail,
                     300,
