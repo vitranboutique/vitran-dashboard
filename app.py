@@ -6746,21 +6746,6 @@ def _render_returns():
                         "refund": "Chỉ hoàn tiền / không có hàng hoàn về",
                     }.get(code, code)
 
-                def _short_note(matches):
-                    if not matches:
-                        return "Chưa thấy trong chi tiết"
-                    d = matches[0]
-                    outcome = _detail_note_outcome(d)
-                    short = {
-                        "Cần KN": "Cần KN chưa chốt",
-                        "Đã nhận/đã nhập kho": "Đã nhập kho",
-                        "Không có hàng hoàn về / chỉ hoàn tiền": "Không có hàng hoàn",
-                        "Trả hàng hoàn tiền": "Hoàn tiền + hàng về",
-                    }.get(outcome, outcome or "Có trong chi tiết")
-                    if len(matches) > 1:
-                        short += f" · +{len(matches) - 1} trùng"
-                    return short
-
                 cols = [
                     "Mã đơn", "Mã trả", "Mã Dohana", "VĐ đi", "VĐ về",
                     "Tag", "Ngày giờ quay", "Thời lượng", "Loại trả", "Shipper hoàn", "Ghi chú",
@@ -6772,7 +6757,7 @@ def _render_returns():
                     code = r.get("code") or ""
                     matches = _dohana_detail_matches(code)
                     d = matches[0] if matches else {}
-                    note = _short_note(matches)
+                    note = str(d.get("note") or "").strip() if matches else "Chưa thấy trong chi tiết"
                     filmed_at = " ".join(x for x in (str(r.get("date") or "").strip(), str(r.get("time") or "").strip()) if x)
                     duration = str(r.get("dur") if r.get("dur") not in (None, "") else "").strip()
                     shipper = d.get("return_shipper") or ("Chưa có" if matches else "")
@@ -6798,9 +6783,10 @@ def _render_returns():
  table{{border-collapse:collapse;font-size:12.5px;width:100%;min-width:1380px}}
  th,td{{border:1px solid #e2e6ec;padding:4px 8px;text-align:left;white-space:nowrap}}
  th{{background:#eef1f6;position:sticky;top:0;z-index:4;font-weight:700}}
+ td{{vertical-align:top}}
  td.r{{text-align:right}}
  td.shipper{{max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
- td.note{{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:help}}
+ td.note{{min-width:360px;max-width:520px;white-space:pre-line;line-height:1.35;cursor:help}}
  a{{color:#1d4ed8;text-decoration:none}} a:hover{{text-decoration:underline}}
  .cp{{cursor:pointer;opacity:.55;font-size:11px;user-select:none}} .cp:hover{{opacity:1}}
 </style>
