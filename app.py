@@ -6352,6 +6352,7 @@ def _render_returns():
                 if not _is_closed_kn_result(_d):
                     _d["need_kn"] = True
                     _d["_location"] = "Đơn trả hàng bị đóng có VĐ trả về"
+                    _d["_kn_priority"] = 0
                     _reason = str(_d.get("reason") or "").strip()
                     _extra = "chưa có ghi chú chốt"
                     _d["reason"] = (_reason if _extra in _reason.lower()
@@ -7096,6 +7097,7 @@ def _render_returns():
                             "need_kn": True,
                             "reason": reason,
                             "_location": "Dohana tag chưa có ghi chú chuẩn",
+                            "_kn_priority": 10,
                             "_dohana_code": code,
                             "_dohana_tag_label": tag_text or tag,
                         })
@@ -7105,6 +7107,11 @@ def _render_returns():
                 return rows
 
             def _merge_need_kn_rows(base_rows, dohana_rows):
+                def _priority(d):
+                    try:
+                        return int((d or {}).get("_kn_priority", 50))
+                    except Exception:
+                        return 50
                 merged = [dict(d) for d in (base_rows or [])]
                 by_key = {_dohana_row_key(d): idx for idx, d in enumerate(merged) if _dohana_row_key(d)}
                 for extra in dohana_rows or []:
@@ -7115,6 +7122,7 @@ def _render_returns():
                         new = _dohana_merge_detail_row(old, extra)
                         new["need_kn"] = True
                         new["_location"] = old.get("_location") or extra.get("_location")
+                        new["_kn_priority"] = min(_priority(old), _priority(extra))
                         if str(extra.get("reason") or "").strip():
                             old_reason = str(old.get("reason") or "").strip()
                             extra_reason = str(extra.get("reason") or "").strip()
@@ -7125,6 +7133,7 @@ def _render_returns():
                         if key:
                             by_key[key] = len(merged) - 1
                 merged.sort(key=lambda d: str(d.get("created_on") or d.get("created") or ""), reverse=True)
+                merged.sort(key=_priority)
                 return merged
 
             def _dohana_detail_note(code):
@@ -7283,12 +7292,12 @@ def _render_returns():
             if _closed_returns_need_kn_detail:
                 _added_closed = max(0, len(_ckn_with_closed_returns) - len(_ckn_list))
                 st.caption(f"Có {len(_closed_returns_need_kn_detail)} đơn trả hàng bị đóng có VĐ trả về chưa chốt "
-                           f"(thêm mới {_added_closed} dòng, dòng trùng thì ghép vào Cần KN sẵn có).")
+                           f"(thêm mới {_added_closed} dòng, dòng trùng thì ghép vào Cần KN sẵn có). Nhóm này được ưu tiên hiển thị đầu bảng.")
             if _dohana_yellow_ckn:
                 _added = max(0, len(_ckn_render_list) - len(_ckn_with_closed_returns))
                 st.caption(f"Dohana có {len(_dohana_yellow_ckn)} dòng đang tô vàng vì chưa có ghi chú chuẩn "
                            f"(thêm mới {_added} dòng, dòng trùng thì ghép vào Cần KN sẵn có).")
-            _sub_table(_ckn_render_list, 360, show_reason=True, pg_key="ckn")
+            _sub_table(_ckn_render_list, 520, show_reason=True, show_location=True, pg_key="ckn", per_page=50)
             st.markdown(f"**🏷️ + Đơn Dohana gắn tag KHUI HÀNG (tráo · đã dùng · trả thiếu · hư hỏng) — {len(_dtag_kn)} đơn** "
                         f"<span style='color:#6b7280'>(trong đó {len(_dtag_kn_only)} chưa khớp bảng chi tiết)</span>",
                         unsafe_allow_html=True)
