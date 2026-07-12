@@ -885,6 +885,16 @@ def _return_row_from_sapo_api(row: dict, detail: dict | None = None) -> dict:
             if val:
                 return_shipper = val
                 break
+    line_items = detail.get("line_items") or row.get("line_items") or []
+    sku = "; ".join(
+        f"{(li.get('sku') or 'N/A')}×{int(round(float(li.get('quantity') or 0)))}"
+        for li in line_items
+    )
+    channel = (order.get("channel_definition") or {})
+    source_name = str(detail.get("order_source") or row.get("order_source") or order.get("source_name") or "").strip()
+    source_label = {"tiktokshop": "Tiktokshop", "shopee": "Shopee"}.get(source_name.lower(), source_name.title())
+    branch = channel.get("branch_name") or channel.get("main_name") or "VITRAN BOUTIQUE"
+    gian_hang = " - ".join(x for x in (branch, source_label) if x)
     return {
         "order_code": order.get("name") or "",
         "order_link": f"https://vitranboutiquehcm.mysapo.net/admin/orders/{order_id}" if order_id else "",
@@ -896,6 +906,10 @@ def _return_row_from_sapo_api(row: dict, detail: dict | None = None) -> dict:
         "vd_tra": si.get("tracking_number") or "",
         "return_shipper": return_shipper,
         "note": note,
+        "gian_hang": gian_hang,
+        "sku": sku,
+        "qty": int(round(float(detail.get("total_quantity") or row.get("total_quantity") or 0))),
+        "money": int(round(float(detail.get("total_price") or row.get("total_price") or 0))),
         "loai_tra": {
             "return_and_refund": "Trả hàng hoàn tiền",
             "delivery_failed": "Giao hàng thất bại",
@@ -6852,6 +6866,12 @@ def _render_returns():
                 def _safe(v, default=""):
                     return _esc(str(v if v not in (None, "") else default))
 
+                def _money_cell(v):
+                    try:
+                        return f"{int(v or 0):,}đ"
+                    except Exception:
+                        return ""
+
                 def _return_type_label(d):
                     label = str((d or {}).get("loai_tra") or "").strip()
                     if label:
@@ -6877,7 +6897,8 @@ def _render_returns():
 
                 cols = [
                     "Mã đơn", "Mã trả", "Mã Dohana", "VĐ đi", "VĐ về",
-                    "Tag", "Ngày giờ quay", "Thời lượng", "Loại trả", "Shipper hoàn", "Ghi chú",
+                    "Tag", "Ngày giờ quay", "Thời lượng", "Loại trả", "Shipper hoàn",
+                    "Gian hàng", "SKU", "SL", "Tổng tiền", "Nhập kho", "Ghi chú",
                 ]
                 thead = "".join(f"<th>{_esc(c)}</th>" for c in cols)
                 body = ""
@@ -6903,6 +6924,11 @@ def _render_returns():
                         f"<td class='r'>{_safe(duration + 's' if duration else '')}</td>",
                         f"<td>{_safe(_return_type_label(d))}</td>",
                         f"<td class='shipper' title='{_safe(shipper)}'>{_safe(shipper)}</td>",
+                        f"<td>{_safe(d.get('gian_hang'))}</td>",
+                        f"<td>{_safe(d.get('sku'))}</td>",
+                        f"<td class='r'>{_safe(d.get('qty'))}</td>",
+                        f"<td class='r'>{_safe(_money_cell(d.get('money')))}</td>",
+                        f"<td>{_safe(d.get('stock_status'))}</td>",
                         f"<td class='note' title='{_safe(note)}'>{_safe(note_preview)}</td>",
                     ]
                     body += f"<tr style='{bg}'>" + "".join(tds) + "</tr>"
@@ -6910,7 +6936,7 @@ def _render_returns():
                 _sticky_n = cols.index("Mã trả") + 1
                 html = f"""<style>
  body{{margin:0;font-family:Tahoma,Arial,sans-serif;color:#1f2937}}
- table{{border-collapse:collapse;font-size:12.5px;width:100%;min-width:1380px}}
+ table{{border-collapse:collapse;font-size:12.5px;width:100%;min-width:1720px}}
  th,td{{border:1px solid #e2e6ec;padding:4px 8px;text-align:left;white-space:nowrap}}
  th{{background:#eef1f6;position:sticky;top:0;z-index:4;font-weight:700}}
  td{{vertical-align:top}}
