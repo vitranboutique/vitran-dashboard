@@ -6895,9 +6895,23 @@ def _render_returns():
                         "THANG", "THUA", "HETHAN", "CANKN", "KHONGCANKN", "KHONGCANKHIEUNAI",
                     ))
 
+                def _vd_ve_dohana_cell(vd_tra, dohana_code):
+                    vd = str(vd_tra or "").strip()
+                    dh = str(dohana_code or "").strip()
+                    if vd and dh and _search_norm(vd) != _search_norm(dh):
+                        return f"{_code_cell(vd)}<br><span class='sub'>Dohana: {_code_cell(dh)}</span>"
+                    return _code_cell(vd or dh)
+
+                def _tag_reason_cell(video_row, detail_row):
+                    tag = str(_video_tag_label(video_row) or "").strip()
+                    reason = str((detail_row or {}).get("reason") or "").strip()
+                    if tag and reason and _search_norm(tag) != _search_norm(reason):
+                        return f"{_safe(tag)}<br><span class='sub'>{_safe(reason)}</span>"
+                    return _safe(tag or reason)
+
                 cols = [
-                    "Mã đơn", "Mã trả", "Mã Dohana", "VĐ đi", "VĐ về",
-                    "Tag", "Ngày giờ quay", "Thời lượng", "Loại trả", "Shipper hoàn",
+                    "Mã đơn", "Mã trả", "VĐ đi", "VĐ về / Dohana",
+                    "Tag / lý do vào KN", "Ngày giờ quay", "Thời lượng", "Loại trả", "Shipper hoàn",
                     "Gian hàng", "SKU", "SL", "Tổng tiền", "Nhập kho", "Ghi chú",
                 ]
                 thead = "".join(f"<th>{_esc(c)}</th>" for c in cols)
@@ -6916,10 +6930,9 @@ def _render_returns():
                     tds = [
                         f"<td>{_code_cell(d.get('order_code'), d.get('order_link'))}</td>",
                         f"<td>{_code_cell(d.get('return_code'), d.get('return_link'))}</td>",
-                        f"<td>{_code_cell(code)}</td>",
                         f"<td>{_code_cell(d.get('vd_di'))}</td>",
-                        f"<td>{_code_cell(d.get('vd_tra'))}</td>",
-                        f"<td>{_safe(_video_tag_label(r))}</td>",
+                        f"<td>{_vd_ve_dohana_cell(d.get('vd_tra'), code)}</td>",
+                        f"<td>{_tag_reason_cell(r, d)}</td>",
                         f"<td>{_safe(filmed_at)}</td>",
                         f"<td class='r'>{_safe(duration + 's' if duration else '')}</td>",
                         f"<td>{_safe(_return_type_label(d))}</td>",
@@ -6936,11 +6949,12 @@ def _render_returns():
                 _sticky_n = cols.index("Mã trả") + 1
                 html = f"""<style>
  body{{margin:0;font-family:Tahoma,Arial,sans-serif;color:#1f2937}}
- table{{border-collapse:collapse;font-size:12.5px;width:100%;min-width:1720px}}
+ table{{border-collapse:collapse;font-size:12.5px;width:100%;min-width:1640px}}
  th,td{{border:1px solid #e2e6ec;padding:4px 8px;text-align:left;white-space:nowrap}}
  th{{background:#eef1f6;position:sticky;top:0;z-index:4;font-weight:700}}
  td{{vertical-align:top}}
  td.r{{text-align:right}}
+ .sub{{color:#64748b;font-size:11px}}
  td.shipper{{max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
  td.note{{max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:help}}
  a{{color:#1d4ed8;text-decoration:none}} a:hover{{text-decoration:underline}}
