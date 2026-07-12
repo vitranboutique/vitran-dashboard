@@ -6727,7 +6727,7 @@ def _render_returns():
                     msg += f" · còn {len(matches) - 1} dòng khớp khác"
                 return msg
 
-            def _dohana_tag_tbl(items, default_need_kn=False):
+            def _dohana_tag_tbl(items):
                 if not items:
                     st.caption("— (Dohana) chưa ghi nhận đơn gắn tag —")
                     return
@@ -6746,6 +6746,18 @@ def _render_returns():
                         "refund": "Chỉ hoàn tiền / không có hàng hoàn về",
                     }.get(code, code)
 
+                def _is_standard_note(note):
+                    lines = [line.strip() for line in str(note or "").splitlines() if line.strip()]
+                    if len(lines) < 2:
+                        return False
+                    first = lines[0]
+                    if not first.startswith(("⛔", "⚪", "✅", "🟢", "❌", "🔴", "⚫", "🚨")):
+                        return False
+                    compact = "".join(ch for ch in _ascii_code(first) if ch.isalnum())
+                    return any(t in compact for t in (
+                        "THANG", "THUA", "HETHAN", "CANKN", "KHONGCANKN", "KHONGCANKHIEUNAI",
+                    ))
+
                 cols = [
                     "Mã đơn", "Mã trả", "Mã Dohana", "VĐ đi", "VĐ về",
                     "Tag", "Ngày giờ quay", "Thời lượng", "Loại trả", "Shipper hoàn", "Ghi chú",
@@ -6762,7 +6774,7 @@ def _render_returns():
                     filmed_at = " ".join(x for x in (str(r.get("date") or "").strip(), str(r.get("time") or "").strip()) if x)
                     duration = str(r.get("dur") if r.get("dur") not in (None, "") else "").strip()
                     shipper = d.get("return_shipper") or ("Chưa có" if matches else "")
-                    bg = "background:#fff3cd" if d.get("need_kn") else ""
+                    bg = "" if (matches and _is_standard_note(note)) else "background:#fff3cd"
                     tds = [
                         f"<td>{_code_cell(d.get('order_code') or code, d.get('order_link'))}</td>",
                         f"<td>{_code_cell(d.get('return_code'))}</td>",
@@ -6820,7 +6832,7 @@ def _render_returns():
                        "Đây chính là các dòng tô vàng — NV lấy làm khiếu nại.")
             _sub_table(_ckn_list, 360, show_reason=True, pg_key="ckn")
             st.markdown(f"**🏷️ + Đơn Dohana gắn tag KHUI HÀNG (tráo · đã dùng · trả thiếu · hư hỏng) — {len(_dtag_kn)} đơn**")
-            _dohana_tag_tbl(_dtag_kn, default_need_kn=True)
+            _dohana_tag_tbl(_dtag_kn)
             st.subheader("⛔ Đơn không cần KN — đã có kết luận", anchor="don-khong-can-kn")
             st.caption("Các đơn trong bảng detail đã có ghi chú KHÔNG CẦN KN: đã nhận hàng, đã nhận/được đền tiền, hoặc shop đóng thiếu thật. Nhóm này không trộn vào danh sách CẦN KN.")
             _sub_table(_khong_can_kn_list, 300, pg_key="khong_can_kn")
