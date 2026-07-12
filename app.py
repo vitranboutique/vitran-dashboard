@@ -6758,6 +6758,7 @@ def _render_returns():
                     matches = _dohana_detail_matches(code)
                     d = matches[0] if matches else {}
                     note = str(d.get("note") or "").strip() if matches else "Chưa thấy trong chi tiết"
+                    note_preview = next((line.strip() for line in note.splitlines() if line.strip()), note)
                     filmed_at = " ".join(x for x in (str(r.get("date") or "").strip(), str(r.get("time") or "").strip()) if x)
                     duration = str(r.get("dur") if r.get("dur") not in (None, "") else "").strip()
                     shipper = d.get("return_shipper") or ("Chưa có" if matches else "")
@@ -6773,7 +6774,7 @@ def _render_returns():
                         f"<td class='r'>{_safe(duration + 's' if duration else '')}</td>",
                         f"<td>{_safe(_return_type_label(d))}</td>",
                         f"<td class='shipper' title='{_safe(shipper)}'>{_safe(shipper)}</td>",
-                        f"<td class='note' title='{_safe(note)}'>{_safe(note)}</td>",
+                        f"<td class='note' title='{_safe(note)}'>{_safe(note_preview)}</td>",
                     ]
                     body += f"<tr style='{bg}'>" + "".join(tds) + "</tr>"
 
@@ -6786,7 +6787,7 @@ def _render_returns():
  td{{vertical-align:top}}
  td.r{{text-align:right}}
  td.shipper{{max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
- td.note{{min-width:360px;max-width:520px;white-space:pre-line;line-height:1.35;cursor:help}}
+ td.note{{max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:help}}
  a{{color:#1d4ed8;text-decoration:none}} a:hover{{text-decoration:underline}}
  .cp{{cursor:pointer;opacity:.55;font-size:11px;user-select:none}} .cp:hover{{opacity:1}}
 </style>
