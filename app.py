@@ -7251,13 +7251,17 @@ def _render_returns():
                 st.caption(f"Dohana có {len(_dohana_yellow_ckn)} dòng đang tô vàng vì chưa có ghi chú chuẩn "
                            f"(thêm mới {_added} dòng, dòng trùng thì ghép vào Cần KN sẵn có).")
             _sub_table(_ckn_render_list, 360, show_reason=True, pg_key="ckn")
-            st.markdown(f"**🏷️ + Đơn Dohana gắn tag KHUI HÀNG chưa có trong bảng chi tiết — {len(_dtag_kn_only)} / {len(_dtag_kn)} đơn**")
-            _dohana_tag_tbl(_dtag_kn_only)
+            st.markdown(f"**🏷️ + Đơn Dohana gắn tag KHUI HÀNG (tráo · đã dùng · trả thiếu · hư hỏng) — {len(_dtag_kn)} đơn** "
+                        f"<span style='color:#6b7280'>(trong đó {len(_dtag_kn_only)} chưa khớp bảng chi tiết)</span>",
+                        unsafe_allow_html=True)
+            _dohana_tag_tbl(_dtag_kn)
             st.subheader("⛔ Đơn không cần KN — đã có kết luận", anchor="don-khong-can-kn")
             st.caption("Các đơn trong bảng detail đã có ghi chú KHÔNG CẦN KN: đã nhận hàng, đã nhận/được đền tiền, hoặc shop đóng thiếu thật. Nhóm này không trộn vào danh sách CẦN KN.")
             _sub_table(_khong_can_kn_list, 300, show_reason=True, pg_key="khong_can_kn")
-            st.markdown(f"**🏷️ + Đơn Dohana gắn tag ĐÓNG HÀNG chưa có trong bảng chi tiết — {len(_dtag_nokn_only)} / {len(_dtag_nokn)} đơn**")
-            _dohana_tag_tbl(_dtag_nokn_only)
+            st.markdown(f"**🏷️ + Đơn Dohana gắn tag ĐÓNG HÀNG (đóng thiếu SP) — {len(_dtag_nokn)} đơn** "
+                        f"<span style='color:#6b7280'>(trong đó {len(_dtag_nokn_only)} chưa khớp bảng chi tiết)</span>",
+                        unsafe_allow_html=True)
+            _dohana_tag_tbl(_dtag_nokn)
             if _canceled_with_return_waybill_detail:
                 st.subheader("🧭 Phiếu Sapo đã hủy có VĐ trả về — đối chiếu sàn", anchor="don-sapo-da-huy-co-vd-tra")
                 st.caption("Chỉ lấy phiếu Sapo đã hủy nhưng vẫn có mã vận đơn hoàn về. Dùng bảng này để soi các case sàn vẫn còn hồ sơ trả/KN dù Sapo đánh dấu hủy.")
