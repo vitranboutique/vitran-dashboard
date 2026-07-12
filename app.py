@@ -30,7 +30,7 @@ import cham_cong_ui
 from sapo_address import resolve_address
 from sapo_client import (
     SapoAuthError, build_session, credential_present, make_fetch_json,
-    find_order_returns_by_codes, get_customer, get_order_return, parse_codes,
+    find_order_returns_by_codes, get_customer, get_order, get_order_return, parse_codes,
     update_order_customer_info, update_order_note, update_order_return_note,
     customer_exists_by_phone, update_customer_address_from_info, upsert_customer_from_info,
     find_orders_by_phone, update_customer_note_lines,
@@ -848,6 +848,88 @@ def load_customer_phone_set():
     """Tập SĐT khách hàng (canon) — cache 10 phút. Shop ~28k khách (~115 trang),
     max_pages=220 (~55k) chừa dư cho tăng trưởng để không bỏ sót khách."""
     return L.get_customer_phone_set(make_fetch_json(build_session()), max_pages=220)
+
+
+def _sapo_lookup_key(value) -> str:
+    return re.sub(r"\s+", "", str(value or "")).upper()
+
+
+def _return_row_from_sapo_api(row: dict, detail: dict | None = None) -> dict:
+    detail = detail or row or {}
+    row = row or {}
+    order = detail.get("order") or row.get("order") or {}
+    order_id = order.get("id") or detail.get("order_id") or row.get("order_id")
+    if not order and order_id:
+        try:
+            order = get_order(build_session(), order_id) or {}
+        except Exception:
+            order = {}
+    si = detail.get("shipping_info") or row.get("shipping_info") or {}
+    created_raw = detail.get("created_on") or row.get("created_on") or ""
+    try:
+        created_disp = (datetime.fromisoformat(str(created_raw).replace("Z", "").split(".")[0])
+                        + timedelta(hours=7)).strftime("%d/%m %H:%M")
+    except Exception:
+        created_disp = ""
+    return_id = detail.get("id") or row.get("id") or ""
+    return_type = detail.get("return_type") or row.get("return_type") or "refund"
+    ship_status = str(detail.get("shipment_status") or row.get("shipment_status") or "").lower()
+    stock_code = str(detail.get("stock_status") or detail.get("restock_status")
+                     or row.get("stock_status") or row.get("restock_status") or "").lower()
+    note = (detail.get("note") or row.get("note") or "").strip()
+    m = re.search(r"shipper\s*ho[aà]n\s*:\s*([^|\n\r]+)", note, flags=re.I)
+    return_shipper = (m.group(1).strip() if m else "")
+    if not return_shipper:
+        for key in ("return_shipper_name", "shipper_name", "delivery_staff_name", "driver_name"):
+            val = str(si.get(key) or "").strip()
+            if val:
+                return_shipper = val
+                break
+    return {
+        "order_code": order.get("name") or "",
+        "order_link": f"https://vitranboutiquehcm.mysapo.net/admin/orders/{order_id}" if order_id else "",
+        "return_code": detail.get("name") or row.get("name") or "",
+        "return_link": f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{return_id}" if return_id else "",
+        "created": created_disp,
+        "created_on": created_raw,
+        "vd_di": ((si.get("fulfillment_tracking_numbers") or [None])[0]) or "",
+        "vd_tra": si.get("tracking_number") or "",
+        "return_shipper": return_shipper,
+        "note": note,
+        "loai_tra": {
+            "return_and_refund": "Trả hàng hoàn tiền",
+            "delivery_failed": "Giao hàng thất bại",
+            "refund": "Chỉ hoàn tiền",
+        }.get(return_type, return_type),
+        "loai_tra_code": return_type,
+        "ship_code": ship_status or "",
+        "stock_status": stock_code or "Chưa rõ",
+        "stock_code": stock_code,
+        "need_kn": False,
+        "_from_sapo_lookup": True,
+    }
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def load_return_rows_by_codes(codes_tuple, max_pages=180):
+    """Dò Sapo Trả hàng theo mã Dohana/mã vận đơn để lấy lại mã đơn thật, kể cả phiếu bị Sapo gạch/hủy."""
+    codes = sorted({_sapo_lookup_key(c) for c in (codes_tuple or []) if _sapo_lookup_key(c)})
+    if not codes:
+        return {}
+    session = build_session()
+    matches = find_order_returns_by_codes(session, codes, max_pages=int(max_pages))
+    out = {c: [] for c in codes}
+    for code in codes:
+        for row in matches.get(code) or []:
+            detail = row
+            rid = row.get("id")
+            if rid:
+                try:
+                    detail = {**row, **(get_order_return(session, rid) or {})}
+                except Exception:
+                    detail = row
+            out[code].append(_return_row_from_sapo_api(row, detail))
+    return out
 
 
 # Dohana: fetch TRỰC TIẾP thành công → MERGE vào kho Gist (lưu cả năm) rồi trả về. Nếu API tạm
@@ -6685,12 +6767,12 @@ def _render_returns():
                 first = note.replace("\r", "\n").split("\n")[0]
                 return first[:120] + ("..." if len(first) > 120 else "")
 
-            def _dohana_detail_matches(code):
+            def _dohana_detail_match_rows(code, source_rows):
                 q = _search_norm(code)
                 if not q:
                     return []
                 rows = []
-                for d in (_all_returns_detail or []):
+                for d in (source_rows or []):
                     fields = (d.get("order_code"), d.get("return_code"), d.get("vd_di"), d.get("vd_tra"))
                     norms = [_search_norm(x) for x in fields if x]
                     exact = q in norms
@@ -6698,6 +6780,27 @@ def _render_returns():
                     if exact or fuzzy:
                         item = dict(d)
                         item["_match_exact"] = exact
+                        rows.append(item)
+                return rows
+
+            _dohana_extra_detail_by_code = {}
+            try:
+                _tag_codes = [str(r.get("code") or "").strip() for r in (_dtag_kn + _dtag_nokn)]
+                _missing_codes = [
+                    c for c in _tag_codes
+                    if c and not _dohana_detail_match_rows(c, _all_returns_detail)
+                ]
+                _dohana_extra_detail_by_code = load_return_rows_by_codes(tuple(sorted(set(_missing_codes))))
+            except Exception:
+                _dohana_extra_detail_by_code = {}
+
+            def _dohana_detail_matches(code):
+                q = _search_norm(code)
+                rows = _dohana_detail_match_rows(code, _all_returns_detail)
+                if q and _dohana_extra_detail_by_code.get(q):
+                    for d in _dohana_extra_detail_by_code.get(q) or []:
+                        item = dict(d)
+                        item["_match_exact"] = True
                         rows.append(item)
                 rank = {
                     "Thắng": 0,
@@ -6713,6 +6816,7 @@ def _render_returns():
                 }
                 rows.sort(key=lambda d: (
                     0 if d.get("_match_exact") else 1,
+                    0 if d.get("order_code") else 1,
                     rank.get(_detail_note_outcome(d), 99),
                     str(d.get("created_on") or ""),
                 ))
@@ -6789,8 +6893,8 @@ def _render_returns():
                     shipper = d.get("return_shipper") or ("Chưa có" if matches else "")
                     bg = "" if (matches and _is_standard_note(note)) else "background:#fff3cd"
                     tds = [
-                        f"<td>{_code_cell(d.get('order_code') or code, d.get('order_link'))}</td>",
-                        f"<td>{_code_cell(d.get('return_code'))}</td>",
+                        f"<td>{_code_cell(d.get('order_code'), d.get('order_link'))}</td>",
+                        f"<td>{_code_cell(d.get('return_code'), d.get('return_link'))}</td>",
                         f"<td>{_code_cell(code)}</td>",
                         f"<td>{_code_cell(d.get('vd_di'))}</td>",
                         f"<td>{_code_cell(d.get('vd_tra'))}</td>",
