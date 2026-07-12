@@ -6894,7 +6894,7 @@ def _render_returns():
                     merged["reason"] = extra.get("reason")
                 return merged
 
-            def _dohana_is_standard_note(note):
+            def _dohana_is_closed_note(note):
                 lines = [line.strip() for line in str(note or "").splitlines() if line.strip()]
                 if len(lines) < 2:
                     return False
@@ -6903,8 +6903,13 @@ def _render_returns():
                     return False
                 compact = "".join(ch for ch in _ascii_code(first) if ch.isalnum())
                 return any(t in compact for t in (
-                    "THANG", "THUA", "HETHAN", "CANKN", "KHONGCANKN", "KHONGCANKHIEUNAI",
+                    "THANG", "THUA", "KHONGCANKN", "KHONGCANKHIEUNAI",
                 ))
+
+            def _dohana_is_can_kn_note(note):
+                first = str(note or "").replace("\r", "\n").split("\n")[0]
+                compact = "".join(ch for ch in _ascii_code(first) if ch.isalnum())
+                return "CANKN" in compact or "CANKHIEUNAI" in compact
 
             _dohana_extra_detail_by_code = {}
             try:
@@ -7029,11 +7034,14 @@ def _render_returns():
                     matches = _dohana_detail_matches(code)
                     d = dict(matches[0]) if matches else {}
                     note = str(d.get("note") or "").strip() if matches else "Chưa thấy trong chi tiết"
-                    if matches and _dohana_is_standard_note(note):
+                    if matches and _dohana_is_closed_note(note):
                         continue
                     tag = str(_video_tag_label(r) or "").strip()
                     tag_text = _dohana_tag_with_icon(tag)
-                    reason = f"Dohana tag {tag_text} — chưa có ghi chú chuẩn" if tag_text else "🏷️ Dohana có tag — chưa có ghi chú chuẩn"
+                    if matches and _dohana_is_can_kn_note(note):
+                        reason = f"Dohana tag {tag_text} — Sapo ghi CẦN KN" if tag_text else "🏷️ Sapo ghi CẦN KN"
+                    else:
+                        reason = f"Dohana tag {tag_text} — chưa có ghi chú chuẩn" if tag_text else "🏷️ Dohana có tag — chưa có ghi chú chuẩn"
                     if not d.get("vd_tra") and code:
                         d["vd_tra"] = code
                     for key in (
@@ -7155,7 +7163,7 @@ def _render_returns():
                     filmed_at = " ".join(x for x in (str(r.get("date") or "").strip(), str(r.get("time") or "").strip()) if x)
                     duration = str(r.get("dur") if r.get("dur") not in (None, "") else "").strip()
                     shipper = d.get("return_shipper") or ("Chưa có" if matches else "")
-                    bg = "" if (matches and _dohana_is_standard_note(note)) else "background:#fff3cd"
+                    bg = "" if (matches and _dohana_is_closed_note(note)) else "background:#fff3cd"
                     tds = [
                         f"<td class='r'>{i}</td>",
                         f"<td>{_safe(d.get('created'))}</td>",
@@ -7222,8 +7230,9 @@ def _render_returns():
             _dohana_yellow_ckn = _dohana_yellow_need_kn_rows(_dtag_kn + _dtag_nokn)
             _ckn_render_list = _merge_need_kn_rows(_ckn_list, _dohana_yellow_ckn)
             st.subheader("🚨 Đơn cần KN — lấy làm khiếu nại", anchor="don-can-kn")
-            st.caption("Gồm các đơn CHƯA có ghi chú kết quả chuẩn (THẮNG/THUA/KHÔNG CẦN KN/HẾT HẠN): "
-                       "đã giao người bán chưa nhập kho, đang hoàn hơn 5 ngày, hoặc chỉ hoàn tiền/không có hàng hoàn về. "
+            st.caption("Gồm các đơn chưa chốt THẮNG / THUA / KHÔNG CẦN KN. "
+                       "Note CẦN KN vẫn nằm ở bảng này để nhân viên tiếp tục xử lý. "
+                       "Áp dụng cho đơn đã giao người bán chưa nhập kho, đang hoàn hơn 5 ngày, hoặc chỉ hoàn tiền/không có hàng hoàn về. "
                        "Đây chính là các dòng tô vàng — NV lấy làm khiếu nại.")
             if _dohana_yellow_ckn:
                 _added = max(0, len(_ckn_render_list) - len(_ckn_list))

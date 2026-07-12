@@ -1570,9 +1570,8 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120) -> dict:
         compact = "".join(ch for ch in str(pre or "") if ch.isalnum())
         return "KHONGCANKN" in compact or "KHONGCANKHIEUNAI" in compact
 
-    def _resolved(pre):   # đã có ghi chú KẾT QUẢ chuẩn → coi như xử lý xong
-        return ("THANG" in pre or "THUA" in pre or "HET HAN" in pre
-                or _is_khong_can_kn(pre))
+    def _resolved(pre):   # chỉ kết luận đã chốt mới ra khỏi bảng CẦN KN
+        return "THANG" in pre or "THUA" in pre or _is_khong_can_kn(pre)
     oc = {k: {"n": 0, "money": 0} for k in ("thang", "thua", "khong_kn", "can_kn", "het_han")}
     all_oc = {k: {"n": 0, "money": 0} for k in ("thang", "thua", "khong_kn", "het_han")}
     for x in all_returns:
@@ -1614,8 +1613,15 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120) -> dict:
     #  • KHÔNG CÓ HÀNG HOÀN VỀ / CHỈ HOÀN TIỀN (no_return) → cần KN nếu chưa có kết luận chuẩn.
     #  • ĐANG HOÀN HÀNG (returning) → cần KN nếu QUÁ 7 ngày; chỉ chưa cần khi refund 1 VĐ và chưa quá 7 ngày.
     for d in detail:
-        if _resolved(_asc((d.get("note") or "").split("|")[0])):
+        pre = _asc((d.get("note") or "").split("|")[0])
+        compact = "".join(ch for ch in pre if ch.isalnum())
+        has_can_kn_note = "CANKN" in compact or "CANKHIEUNAI" in compact
+        if _resolved(pre):
             d["need_kn"] = False
+        elif has_can_kn_note:
+            d["need_kn"] = True
+            if not str(d.get("reason") or "").strip():
+                d["reason"] = "Ghi chú Sapo: CẦN KN"
         elif d.get("ship_code") == "returned":
             d["need_kn"] = True
         elif d.get("ship_code") == "no_return":
