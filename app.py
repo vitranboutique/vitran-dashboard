@@ -6731,16 +6731,43 @@ def _render_returns():
                 if not items:
                     st.caption("— (Dohana) chưa ghi nhận đơn gắn tag —")
                     return
-                st.dataframe(pd.DataFrame([{
-                    "Mã đơn": r.get("code"),
-                    "Tag": dohana._tag_name(r.get("tag_id"), r.get("tag_name")),
-                    "Ghi chú đối chiếu": _dohana_detail_note(r.get("code")),
-                    "Ngày quay": r.get("date") or "",
-                    "Giờ": r.get("time") or "",
-                    "Thời lượng(s)": r.get("dur"),
-                    "Ghi nhận": r.get("first_seen") or "",
-                } for r in sorted(items, key=lambda x: (x.get("date") or "", x.get("time") or ""), reverse=True)]),
-                    width="stretch", hide_index=True)
+
+                def _row(r):
+                    code = r.get("code")
+                    matches = _dohana_detail_matches(code)
+                    d = matches[0] if matches else {}
+                    return {
+                        "Mã đơn": d.get("order_code") or code or "",
+                        "Mã trả hàng": d.get("return_code") or "",
+                        "VĐ đi": d.get("vd_di") or "",
+                        "VĐ trả về": d.get("vd_tra") or "",
+                        "Shipper hoàn": d.get("return_shipper") or ("Chưa có" if matches else ""),
+                        "Tag": dohana._tag_name(r.get("tag_id"), r.get("tag_name")),
+                        "Ngày quay": r.get("date") or "",
+                        "Giờ quay": r.get("time") or "",
+                        "Thời lượng(s)": r.get("dur"),
+                        "Ghi chú đối chiếu": _dohana_detail_note(code),
+                        "Mã clip Dohana": code or "",
+                    }
+
+                st.dataframe(
+                    pd.DataFrame([_row(r) for r in sorted(items, key=lambda x: (x.get("date") or "", x.get("time") or ""), reverse=True)]),
+                    width="stretch",
+                    hide_index=True,
+                    column_config={
+                        "Mã đơn": st.column_config.TextColumn("Mã đơn", width="small"),
+                        "Mã trả hàng": st.column_config.TextColumn("Mã trả hàng", width="medium"),
+                        "VĐ đi": st.column_config.TextColumn("VĐ đi", width="small"),
+                        "VĐ trả về": st.column_config.TextColumn("VĐ trả về", width="small"),
+                        "Shipper hoàn": st.column_config.TextColumn("Shipper hoàn", width="large"),
+                        "Tag": st.column_config.TextColumn("Tag", width="medium"),
+                        "Ngày quay": st.column_config.TextColumn("Ngày quay", width="small"),
+                        "Giờ quay": st.column_config.TextColumn("Giờ quay", width="small"),
+                        "Thời lượng(s)": st.column_config.NumberColumn("Thời lượng(s)", width="small"),
+                        "Ghi chú đối chiếu": st.column_config.TextColumn("Ghi chú đối chiếu", width="large"),
+                        "Mã clip Dohana": st.column_config.TextColumn("Mã clip Dohana", width="medium"),
+                    },
+                )
 
             # ── DANH SÁCH ĐƠN CẦN KN (bấm ô "Cần KN" ở trên sẽ nhảy tới đây) ──
             st.subheader("🚨 Đơn cần KN — lấy làm khiếu nại", anchor="don-can-kn")
