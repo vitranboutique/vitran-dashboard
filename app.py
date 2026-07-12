@@ -6868,12 +6868,14 @@ def _render_returns():
                 return False
 
             def _dohana_same_sapo_row(a, b):
-                for key in ("return_code", "order_code"):
-                    av, bv = _search_norm((a or {}).get(key)), _search_norm((b or {}).get(key))
-                    if av and bv and av == bv:
-                        return True
                 a_codes = [_search_norm((a or {}).get(k)) for k in ("vd_di", "vd_tra")]
                 b_codes = [_search_norm((b or {}).get(k)) for k in ("vd_di", "vd_tra")]
+                arc, brc = _search_norm((a or {}).get("return_code")), _search_norm((b or {}).get("return_code"))
+                if arc and brc:
+                    return arc == brc
+                aoc, boc = _search_norm((a or {}).get("order_code")), _search_norm((b or {}).get("order_code"))
+                if aoc and boc and aoc == boc:
+                    return any(x and y and (x == y or x in y or y in x) for x in a_codes for y in b_codes)
                 return any(x and y and (x == y or x in y or y in x) for x in a_codes for y in b_codes)
 
             def _dohana_merge_detail_row(base, extra):
@@ -7032,34 +7034,35 @@ def _render_returns():
                 for r in items or []:
                     code = str(r.get("code") or "").strip()
                     matches = _dohana_detail_matches(code)
-                    d = dict(matches[0]) if matches else {}
-                    note = str(d.get("note") or "").strip() if matches else "Chưa thấy trong chi tiết"
-                    if matches and _dohana_is_closed_note(note):
-                        continue
                     tag = str(_video_tag_label(r) or "").strip()
                     tag_text = _dohana_tag_with_icon(tag)
-                    if matches and _dohana_is_can_kn_note(note):
-                        reason = f"Dohana tag {tag_text} — Sapo ghi CẦN KN" if tag_text else "🏷️ Sapo ghi CẦN KN"
-                    else:
-                        reason = f"Dohana tag {tag_text} — chưa có ghi chú chuẩn" if tag_text else "🏷️ Dohana có tag — chưa có ghi chú chuẩn"
-                    if not d.get("vd_tra") and code:
-                        d["vd_tra"] = code
-                    for key in (
-                        "order_code", "order_link", "return_code", "return_link", "created", "created_on",
-                        "vd_di", "return_shipper", "gian_hang", "sku", "qty", "money",
-                        "loai_tra", "loai_tra_code", "ship_code", "stock_status", "stock_code", "order_source",
-                    ):
-                        d.setdefault(key, "")
-                    d.update({
-                        "need_kn": True,
-                        "reason": reason,
-                        "_location": "Dohana tag chưa có ghi chú chuẩn",
-                        "_dohana_code": code,
-                        "_dohana_tag_label": tag_text or tag,
-                    })
-                    if not str(d.get("note") or "").strip():
-                        d["note"] = note
-                    rows.append(d)
+                    match_rows = [dict(d) for d in matches] if matches else [{}]
+                    for d in match_rows:
+                        note = str(d.get("note") or "").strip() if matches else "Chưa thấy trong chi tiết"
+                        if matches and _dohana_is_closed_note(note):
+                            continue
+                        if matches and _dohana_is_can_kn_note(note):
+                            reason = f"Dohana tag {tag_text} — Sapo ghi CẦN KN" if tag_text else "🏷️ Sapo ghi CẦN KN"
+                        else:
+                            reason = f"Dohana tag {tag_text} — chưa có ghi chú chuẩn" if tag_text else "🏷️ Dohana có tag — chưa có ghi chú chuẩn"
+                        if not d.get("vd_tra") and code:
+                            d["vd_tra"] = code
+                        for key in (
+                            "order_code", "order_link", "return_code", "return_link", "created", "created_on",
+                            "vd_di", "return_shipper", "gian_hang", "sku", "qty", "money",
+                            "loai_tra", "loai_tra_code", "ship_code", "stock_status", "stock_code", "order_source",
+                        ):
+                            d.setdefault(key, "")
+                        d.update({
+                            "need_kn": True,
+                            "reason": reason,
+                            "_location": "Dohana tag chưa có ghi chú chuẩn",
+                            "_dohana_code": code,
+                            "_dohana_tag_label": tag_text or tag,
+                        })
+                        if not str(d.get("note") or "").strip():
+                            d["note"] = note
+                        rows.append(d)
                 return rows
 
             def _merge_need_kn_rows(base_rows, dohana_rows):
