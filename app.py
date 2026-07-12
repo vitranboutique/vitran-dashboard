@@ -6727,7 +6727,7 @@ def _render_returns():
                     msg += f" · còn {len(matches) - 1} dòng khớp khác"
                 return msg
 
-            def _dohana_tag_tbl(items):
+            def _dohana_tag_tbl(items, default_need_kn=False):
                 if not items:
                     st.caption("— (Dohana) chưa ghi nhận đơn gắn tag —")
                     return
@@ -6743,44 +6743,74 @@ def _render_returns():
                         "refund": "Chỉ hoàn tiền / không có hàng hoàn về",
                     }.get(code, code)
 
-                def _row(r):
-                    code = r.get("code")
+                def _safe(v, default=""):
+                    return _esc(str(v if v not in (None, "") else default))
+
+                cols = [
+                    "STT", "Mã đơn", "Mã trả hàng", "Loại trả", "VĐ đi", "VĐ trả về",
+                    "Shipper hoàn", "Tag", "Ngày quay", "Giờ quay", "Thời lượng(s)",
+                    "Ghi chú đối chiếu", "Mã clip Dohana",
+                ]
+                thead = "".join(f"<th>{_esc(c)}</th>" for c in cols)
+                body = ""
+                sorted_items = sorted(items, key=lambda x: (x.get("date") or "", x.get("time") or ""), reverse=True)
+                for i, r in enumerate(sorted_items, 1):
+                    code = r.get("code") or ""
                     matches = _dohana_detail_matches(code)
                     d = matches[0] if matches else {}
-                    return {
-                        "Mã đơn": d.get("order_code") or code or "",
-                        "Mã trả hàng": d.get("return_code") or "",
-                        "Loại trả": _return_type_label(d),
-                        "VĐ đi": d.get("vd_di") or "",
-                        "VĐ trả về": d.get("vd_tra") or "",
-                        "Shipper hoàn": d.get("return_shipper") or ("Chưa có" if matches else ""),
-                        "Tag": dohana._tag_name(r.get("tag_id"), r.get("tag_name")),
-                        "Ngày quay": r.get("date") or "",
-                        "Giờ quay": r.get("time") or "",
-                        "Thời lượng(s)": r.get("dur"),
-                        "Ghi chú đối chiếu": _dohana_detail_note(code),
-                        "Mã clip Dohana": code or "",
-                    }
+                    note = _dohana_detail_note(code)
+                    shipper = d.get("return_shipper") or ("Chưa có" if matches else "")
+                    bg = "background:#fff3cd" if (default_need_kn or d.get("need_kn")) else ""
+                    tds = [
+                        f"<td class='r'>{i}</td>",
+                        f"<td>{_code_cell(d.get('order_code') or code, d.get('order_link'))}</td>",
+                        f"<td>{_code_cell(d.get('return_code'))}</td>",
+                        f"<td>{_safe(_return_type_label(d))}</td>",
+                        f"<td>{_code_cell(d.get('vd_di'))}</td>",
+                        f"<td>{_code_cell(d.get('vd_tra'))}</td>",
+                        f"<td class='wide' title='{_safe(shipper)}'>{_safe(shipper)}</td>",
+                        f"<td>{_safe(dohana._tag_name(r.get('tag_id'), r.get('tag_name')))}</td>",
+                        f"<td>{_safe(r.get('date'))}</td>",
+                        f"<td>{_safe(r.get('time'))}</td>",
+                        f"<td class='r'>{_safe(r.get('dur'))}</td>",
+                        f"<td class='note' title='{_safe(note)}'>{_safe(note)}</td>",
+                        f"<td>{_code_cell(code)}</td>",
+                    ]
+                    body += f"<tr style='{bg}'>" + "".join(tds) + "</tr>"
 
-                st.dataframe(
-                    pd.DataFrame([_row(r) for r in sorted(items, key=lambda x: (x.get("date") or "", x.get("time") or ""), reverse=True)]),
-                    width="stretch",
-                    hide_index=True,
-                    column_config={
-                        "Mã đơn": st.column_config.TextColumn("Mã đơn", width="small"),
-                        "Mã trả hàng": st.column_config.TextColumn("Mã trả hàng", width="medium"),
-                        "Loại trả": st.column_config.TextColumn("Loại trả", width="medium"),
-                        "VĐ đi": st.column_config.TextColumn("VĐ đi", width="small"),
-                        "VĐ trả về": st.column_config.TextColumn("VĐ trả về", width="small"),
-                        "Shipper hoàn": st.column_config.TextColumn("Shipper hoàn", width="large"),
-                        "Tag": st.column_config.TextColumn("Tag", width="medium"),
-                        "Ngày quay": st.column_config.TextColumn("Ngày quay", width="small"),
-                        "Giờ quay": st.column_config.TextColumn("Giờ quay", width="small"),
-                        "Thời lượng(s)": st.column_config.NumberColumn("Thời lượng(s)", width="small"),
-                        "Ghi chú đối chiếu": st.column_config.TextColumn("Ghi chú đối chiếu", width="large"),
-                        "Mã clip Dohana": st.column_config.TextColumn("Mã clip Dohana", width="medium"),
-                    },
-                )
+                _sticky_n = cols.index("Mã trả hàng") + 1
+                html = f"""<style>
+ body{{margin:0;font-family:Tahoma,Arial,sans-serif;color:#1f2937}}
+ table{{border-collapse:collapse;font-size:12.5px;width:max-content;min-width:100%}}
+ th,td{{border:1px solid #e2e6ec;padding:4px 8px;text-align:left;white-space:nowrap}}
+ th{{background:#eef1f6;position:sticky;top:0;z-index:4;font-weight:700}}
+ td.r{{text-align:right}}
+ td.wide{{max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+ td.note{{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:help}}
+ a{{color:#1d4ed8;text-decoration:none}} a:hover{{text-decoration:underline}}
+ .cp{{cursor:pointer;opacity:.55;font-size:11px;user-select:none}} .cp:hover{{opacity:1}}
+</style>
+<table><thead><tr>{thead}</tr></thead><tbody>{body}</tbody></table>
+<script>
+ function cp(t,el){{const a=document.createElement('textarea');a.value=t;a.style.position='fixed';a.style.opacity=0;
+  document.body.appendChild(a);a.focus();a.select();try{{document.execCommand('copy');}}catch(e){{}}a.remove();
+  if(el){{const o=el.textContent;el.textContent='✅';setTimeout(()=>{{el.textContent=o;}},900);}}}}
+ (function(){{
+  var N={_sticky_n}, tbl=document.querySelector('table'); if(!tbl) return;
+  var head=tbl.querySelector('thead tr'); if(!head) return;
+  var offs=[]; for(var i=0;i<N;i++){{offs.push(head.children[i].offsetLeft);}}
+  tbl.querySelectorAll('tr').forEach(function(tr){{
+   var isHead=tr.parentElement.tagName==='THEAD';
+   for(var i=0;i<N && i<tr.children.length;i++){{
+    var c=tr.children[i];
+    c.style.position='sticky'; c.style.left=offs[i]+'px'; c.style.zIndex=isHead?6:3;
+    if(!isHead){{c.style.background=tr.style.backgroundColor||'#ffffff';}}
+    if(i===N-1){{c.style.boxShadow='2px 0 4px -1px rgba(0,0,0,.2)';}}
+   }}
+  }});
+ }})();
+</script>"""
+                components.html(html, height=min(92 + len(sorted_items) * 34, 520), scrolling=True)
 
             # ── DANH SÁCH ĐƠN CẦN KN (bấm ô "Cần KN" ở trên sẽ nhảy tới đây) ──
             st.subheader("🚨 Đơn cần KN — lấy làm khiếu nại", anchor="don-can-kn")
@@ -6789,7 +6819,7 @@ def _render_returns():
                        "Đây chính là các dòng tô vàng — NV lấy làm khiếu nại.")
             _sub_table(_ckn_list, 360, show_reason=True, pg_key="ckn")
             st.markdown(f"**🏷️ + Đơn Dohana gắn tag KHUI HÀNG (tráo · đã dùng · trả thiếu · hư hỏng) — {len(_dtag_kn)} đơn**")
-            _dohana_tag_tbl(_dtag_kn)
+            _dohana_tag_tbl(_dtag_kn, default_need_kn=True)
             st.subheader("⛔ Đơn không cần KN — đã có kết luận", anchor="don-khong-can-kn")
             st.caption("Các đơn trong bảng detail đã có ghi chú KHÔNG CẦN KN: đã nhận hàng, đã nhận/được đền tiền, hoặc shop đóng thiếu thật. Nhóm này không trộn vào danh sách CẦN KN.")
             _sub_table(_khong_can_kn_list, 300, pg_key="khong_can_kn")
