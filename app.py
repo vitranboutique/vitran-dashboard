@@ -7195,14 +7195,12 @@ def _render_returns():
 
             def _dohana_is_closed_note(note):
                 lines = [line.strip() for line in str(note or "").splitlines() if line.strip()]
-                if len(lines) < 2:
+                if not lines:
                     return False
                 first = lines[0]
-                if not first.startswith(("⛔", "⚪", "✅", "🟢", "❌", "🔴", "⚫", "🚨")):
-                    return False
                 compact = "".join(ch for ch in _ascii_code(first) if ch.isalnum())
                 return any(t in compact for t in (
-                    "THANG", "THUA", "KHONGCANKN", "KHONGCANKHIEUNAI",
+                    "THANG", "THUA", "HETHAN", "KHONGCANKN", "KHONGCANKHIEUNAI",
                 ))
 
             def _dohana_is_can_kn_note(note):
@@ -7540,7 +7538,8 @@ def _render_returns():
             _dtag_nokn_only = _dohana_items_not_in_detail(_dtag_nokn)
             _dohana_yellow_ckn = _dohana_yellow_need_kn_rows(_dtag_kn + _dtag_nokn)
             _ckn_with_closed_returns = _merge_need_kn_rows(_ckn_list, _closed_returns_need_kn_detail)
-            _ckn_render_list = _merge_need_kn_rows(_ckn_with_closed_returns, _dohana_yellow_ckn)
+            _ckn_render_raw_list = _merge_need_kn_rows(_ckn_with_closed_returns, _dohana_yellow_ckn)
+            _ckn_render_list = [d for d in _ckn_render_raw_list if not _is_closed_kn_result(d)]
             st.subheader("🚨 Đơn cần KN — lấy làm khiếu nại", anchor="don-can-kn")
             st.caption("Gồm các đơn chưa chốt THẮNG / THUA / KHÔNG CẦN KN. "
                        "Note CẦN KN vẫn nằm ở bảng này để nhân viên tiếp tục xử lý. "
