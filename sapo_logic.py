@@ -1358,7 +1358,7 @@ def _lost_waybill(x):
     return m.group(1) if m else ""
 
 
-def get_returns_in_progress(fetch_json, max_pages: int = 120) -> dict:
+def get_returns_in_progress(fetch_json, max_pages: int = 120, canceled_max_pages: int = 500) -> dict:
     """ĐƠN TRẢ HÀNG ĐANG XỬ LÝ — CHƯA nhập kho (bổ sung cho mục 'đã nhận hàng trả').
     Tổng đơn trả lấy theo tab TẤT CẢ của phiếu trả trong NĂM NAY, loại phiếu hủy/gạch ngang.
     Phạm vi: phiếu trả chưa bị hủy & chưa nhập kho đầy đủ, gồm cả:
@@ -1475,16 +1475,36 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120) -> dict:
         }
 
     rows, capped = [], False
+    fetched_pages = 0
+    reached_prev_year = False
     for p in range(1, max_pages + 1):
         chunk = fetch_json("/admin/order_returns.json", limit=250, page=p).get("order_returns", [])
         if not chunk:
             break
         rows += chunk
+        fetched_pages = p
         _last = _vn_date_of(chunk[-1].get("created_on"))
         if _last and _last.year < today.year:   # đã lùi sang NĂM TRƯỚC (sort created giảm dần) → dừng
+            reached_prev_year = True
             break
         if p == max_pages and len(chunk) == 250:
             capped = True
+
+    # Nhóm phiếu bị đóng/hủy cần soi cả năm nay. Không dùng chung giới hạn của bảng
+    # "đang xử lý", vì shop nhiều phiếu trả có thể max_pages chỉ mới lùi tới giữa năm.
+    canceled_scan_rows = list(rows)
+    canceled_capped = False
+    if not reached_prev_year:
+        for p in range(fetched_pages + 1, int(canceled_max_pages) + 1):
+            chunk = fetch_json("/admin/order_returns.json", limit=250, page=p).get("order_returns", [])
+            if not chunk:
+                break
+            canceled_scan_rows += chunk
+            _last = _vn_date_of(chunk[-1].get("created_on"))
+            if _last and _last.year < today.year:
+                break
+            if p == int(canceled_max_pages) and len(chunk) == 250:
+                canceled_capped = True
 
     def _include_in_total_returns(x):
         cdate = _vn_date_of(x.get("created_on"))
@@ -1511,7 +1531,7 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120) -> dict:
     all_returns = [x for x in rows if _include_in_total_returns(x)]
     inprog = [x for x in rows if _include_in_detail(x)]
     canceled_returns = [
-        x for x in rows
+        x for x in canceled_scan_rows
         if _vn_date_of(x.get("created_on"))
         and _vn_date_of(x.get("created_on")).year == today.year
         and _is_canceled_return(x)
@@ -1727,7 +1747,8 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120) -> dict:
                   "orders": _lorders}
 
     return {
-        "total": len(inprog), "total_returns": len(all_returns), "capped": capped, "n_complaint": n_complaint,
+        "total": len(inprog), "total_returns": len(all_returns), "capped": capped,
+        "canceled_capped": canceled_capped, "n_complaint": n_complaint,
         "lost_stats": lost_stats,
         "outcomes": oc,
         "all_outcomes": all_oc,

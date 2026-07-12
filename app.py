@@ -1328,8 +1328,8 @@ def load_returns_followup():
 
 @st.cache_data(ttl=600, show_spinner="Đang quét đơn trả đang xử lý…")
 def load_returns_inprogress():
-    _cache_ver = 11  # bump khi đổi cấu trúc trả về → buộc tính lại (tránh cache cũ gây lỗi)
-    return L.get_returns_in_progress(make_fetch_json(build_session()))
+    _cache_ver = 12  # bump khi đổi cấu trúc trả về → buộc tính lại (tránh cache cũ gây lỗi)
+    return L.get_returns_in_progress(make_fetch_json(build_session()), canceled_max_pages=500)
 
 
 @st.cache_data(ttl=900, show_spinner="Đang lấy danh mục sản phẩm + tồn kho từ Sapo…")
@@ -7298,6 +7298,8 @@ def _render_returns():
             if _closed_return_refund_with_waybill_detail:
                 st.markdown(f"### 🧭 Đơn trả hàng hoàn tiền bị đóng — {len(_closed_return_refund_with_waybill_detail)} đơn")
                 st.caption("Chỉ lấy đơn trả hàng hoàn tiền đã bị Sapo đóng/hủy nhưng vẫn có mã vận đơn hoàn về. Dòng chưa chốt THẮNG / THUA / KHÔNG CẦN KN sẽ tô vàng và được đưa lên bảng Cần KN.")
+                if _rip.get("canceled_capped"):
+                    st.warning("Đã chạm giới hạn quét 500 trang phiếu bị đóng; có thể còn phiếu cũ hơn trong năm nay.")
                 _sub_table(
                     _closed_return_refund_with_waybill_detail,
                     300,
