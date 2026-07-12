@@ -6697,13 +6697,13 @@ def _render_returns():
                 st.markdown(f"### {title} — {len(items)} đơn")
                 if hoan:
                     st.markdown(f"**🚚 Đang hoàn hàng — {len(hoan)} đơn**")
-                    _sub_table(hoan, 260, merge_delivery_vd=(code == "delivery_failed"), pg_key=f"{code}_hoan")
+                    _sub_table(hoan, 260, show_reason=True, merge_delivery_vd=(code == "delivery_failed"), pg_key=f"{code}_hoan")
                 if giao:
                     st.markdown(f"**📥 Đã giao người bán — {len(giao)} đơn**")
-                    _sub_table(giao, 260, merge_delivery_vd=(code == "delivery_failed"), pg_key=f"{code}_giao")
+                    _sub_table(giao, 260, show_reason=True, merge_delivery_vd=(code == "delivery_failed"), pg_key=f"{code}_giao")
                 if khong_hoan:
                     st.markdown(f"**🚫 Không có hàng hoàn về — {len(khong_hoan)} đơn**")
-                    _sub_table(khong_hoan, 260, pg_key=f"{code}_khong")
+                    _sub_table(khong_hoan, 260, show_reason=True, pg_key=f"{code}_khong")
 
             with _return_top_search_slot:
                 st.markdown("##### 🔎 Tìm nhanh mã đơn / mã trả / vận đơn")
@@ -6966,6 +6966,62 @@ def _render_returns():
                 vals = [v for v in vals if v]
                 return "vd:" + "|".join(vals) if vals else ""
 
+            def _append_reason_text(old, extra):
+                old = str(old or "").strip()
+                extra = str(extra or "").strip()
+                if not extra:
+                    return old
+                if old and _search_norm(extra) in _search_norm(old):
+                    return old
+                return f"{old} · {extra}" if old else extra
+
+            def _dohana_tag_icon(tag):
+                compact = _search_norm(tag)
+                if "HUHONG" in compact or "HANGHONG" in compact:
+                    return "💥"
+                if "THIEU" in compact or "TRATHIEU" in compact or "DONGTHIEU" in compact:
+                    return "➖"
+                if "TRAO" in compact or "SAIHANG" in compact or "SAISP" in compact:
+                    return "🔁"
+                if "DASUDUNG" in compact or "DADUNG" in compact or "SUDUNG" in compact:
+                    return "♻️"
+                if "DONG" in compact or "DONGHANG" in compact:
+                    return "📦"
+                return "🏷️"
+
+            def _dohana_tag_with_icon(tag):
+                tag = str(tag or "").strip()
+                if not tag:
+                    return ""
+                if tag.startswith(("🏷️", "💥", "➖", "🔁", "♻️", "📦", "⚠️")):
+                    return tag
+                return f"{_dohana_tag_icon(tag)} {tag}"
+
+            def _dohana_tag_reason(video_row):
+                tag = str(_video_tag_label(video_row) or "").strip()
+                return f"Tag Dohana: {_dohana_tag_with_icon(tag)}" if tag else "🏷️ Tag Dohana"
+
+            def _annotate_detail_rows_with_dohana_tags(video_rows, detail_rows):
+                for r in video_rows or []:
+                    code = str(r.get("code") or "").strip()
+                    if not code:
+                        continue
+                    tag = str(_video_tag_label(r) or "").strip()
+                    reason = _dohana_tag_reason(r)
+                    for d in _dohana_detail_match_rows(code, detail_rows):
+                        key = _dohana_row_key(d)
+                        for target in detail_rows or []:
+                            if key and _dohana_row_key(target) == key:
+                                target["reason"] = _append_reason_text(target.get("reason"), reason)
+                                if tag:
+                                    target["_dohana_tag_label"] = tag
+
+            def _dohana_in_detail(code):
+                return bool(_dohana_detail_match_rows(code, _rip.get("detail") or []))
+
+            def _dohana_items_not_in_detail(items):
+                return [r for r in (items or []) if not _dohana_in_detail(str(r.get("code") or ""))]
+
             def _dohana_yellow_need_kn_rows(items):
                 rows = []
                 for r in items or []:
@@ -6976,7 +7032,8 @@ def _render_returns():
                     if matches and _dohana_is_standard_note(note):
                         continue
                     tag = str(_video_tag_label(r) or "").strip()
-                    reason = f"Dohana tag {tag} — chưa có ghi chú chuẩn" if tag else "Dohana có tag — chưa có ghi chú chuẩn"
+                    tag_text = _dohana_tag_with_icon(tag)
+                    reason = f"Dohana tag {tag_text} — chưa có ghi chú chuẩn" if tag_text else "🏷️ Dohana có tag — chưa có ghi chú chuẩn"
                     if not d.get("vd_tra") and code:
                         d["vd_tra"] = code
                     for key in (
@@ -6990,7 +7047,7 @@ def _render_returns():
                         "reason": reason,
                         "_location": "Dohana tag chưa có ghi chú chuẩn",
                         "_dohana_code": code,
-                        "_dohana_tag_label": tag,
+                        "_dohana_tag_label": tag_text or tag,
                     })
                     if not str(d.get("note") or "").strip():
                         d["note"] = note
@@ -7011,9 +7068,7 @@ def _render_returns():
                         if str(extra.get("reason") or "").strip():
                             old_reason = str(old.get("reason") or "").strip()
                             extra_reason = str(extra.get("reason") or "").strip()
-                            new["reason"] = old_reason if old_reason and extra_reason in old_reason else (
-                                f"{old_reason} · {extra_reason}" if old_reason else extra_reason
-                            )
+                            new["reason"] = _append_reason_text(old_reason, extra_reason)
                         merged[idx] = new
                     else:
                         merged.append(dict(extra))
@@ -7077,21 +7132,21 @@ def _render_returns():
                     return _code_cell(vd or dh)
 
                 def _tag_reason_cell(video_row, detail_row):
-                    tag = str(_video_tag_label(video_row) or "").strip()
+                    tag = _dohana_tag_with_icon(_video_tag_label(video_row))
                     reason = str((detail_row or {}).get("reason") or "").strip()
                     if tag and reason and _search_norm(tag) != _search_norm(reason):
                         return f"{_safe(tag)}<br><span class='sub'>{_safe(reason)}</span>"
                     return _safe(tag or reason)
 
                 cols = [
-                    "Mã đơn", "Mã trả", "Ngày tạo", "VĐ đi", "VĐ về / Dohana",
+                    "STT", "Ngày tạo", "Mã đơn", "Mã trả", "VĐ đi", "VĐ về / Dohana",
                     "Tag / lý do vào KN", "Ngày giờ quay", "Thời lượng", "Loại trả", "Shipper hoàn",
                     "Gian hàng", "SKU", "SL", "Tổng tiền", "Nhập kho", "Đối soát", "Ghi chú",
                 ]
                 thead = "".join(f"<th>{_esc(c)}</th>" for c in cols)
                 body = ""
                 sorted_items = sorted(items, key=lambda x: (x.get("date") or "", x.get("time") or ""), reverse=True)
-                for r in sorted_items:
+                for i, r in enumerate(sorted_items, 1):
                     code = r.get("code") or ""
                     matches = _dohana_detail_matches(code)
                     d = matches[0] if matches else {}
@@ -7102,9 +7157,10 @@ def _render_returns():
                     shipper = d.get("return_shipper") or ("Chưa có" if matches else "")
                     bg = "" if (matches and _dohana_is_standard_note(note)) else "background:#fff3cd"
                     tds = [
+                        f"<td class='r'>{i}</td>",
+                        f"<td>{_safe(d.get('created'))}</td>",
                         f"<td>{_code_cell(d.get('order_code'), d.get('order_link'))}</td>",
                         f"<td>{_code_cell(d.get('return_code'))}</td>",
-                        f"<td>{_safe(d.get('created'))}</td>",
                         f"<td>{_code_cell(d.get('vd_di'))}</td>",
                         f"<td>{_vd_ve_dohana_cell(d.get('vd_tra'), code)}</td>",
                         f"<td>{_tag_reason_cell(r, d)}</td>",
@@ -7125,7 +7181,7 @@ def _render_returns():
                 _sticky_n = cols.index("Mã trả") + 1
                 html = f"""<style>
  body{{margin:0;font-family:Tahoma,Arial,sans-serif;color:#1f2937}}
- table{{border-collapse:collapse;font-size:12.5px;width:100%;min-width:1760px}}
+ table{{border-collapse:collapse;font-size:12.5px;width:100%;min-width:1820px}}
  th,td{{border:1px solid #e2e6ec;padding:4px 8px;text-align:left;white-space:nowrap}}
  th{{background:#eef1f6;position:sticky;top:0;z-index:4;font-weight:700}}
  td{{vertical-align:top}}
@@ -7159,6 +7215,10 @@ def _render_returns():
                 components.html(html, height=min(92 + len(sorted_items) * 34, 520), scrolling=True)
 
             # ── DANH SÁCH ĐƠN CẦN KN (bấm ô "Cần KN" ở trên sẽ nhảy tới đây) ──
+            _annotate_detail_rows_with_dohana_tags(_dtag_kn + _dtag_nokn, _rip.get("detail") or [])
+            _annotate_detail_rows_with_dohana_tags(_dtag_kn + _dtag_nokn, _all_returns_detail)
+            _dtag_kn_only = _dohana_items_not_in_detail(_dtag_kn)
+            _dtag_nokn_only = _dohana_items_not_in_detail(_dtag_nokn)
             _dohana_yellow_ckn = _dohana_yellow_need_kn_rows(_dtag_kn + _dtag_nokn)
             _ckn_render_list = _merge_need_kn_rows(_ckn_list, _dohana_yellow_ckn)
             st.subheader("🚨 Đơn cần KN — lấy làm khiếu nại", anchor="don-can-kn")
@@ -7170,13 +7230,13 @@ def _render_returns():
                 st.caption(f"Dohana có {len(_dohana_yellow_ckn)} dòng đang tô vàng vì chưa có ghi chú chuẩn "
                            f"(thêm mới {_added} dòng, dòng trùng thì ghép vào Cần KN sẵn có).")
             _sub_table(_ckn_render_list, 360, show_reason=True, pg_key="ckn")
-            st.markdown(f"**🏷️ + Đơn Dohana gắn tag KHUI HÀNG (tráo · đã dùng · trả thiếu · hư hỏng) — {len(_dtag_kn)} đơn**")
-            _dohana_tag_tbl(_dtag_kn)
+            st.markdown(f"**🏷️ + Đơn Dohana gắn tag KHUI HÀNG chưa có trong bảng chi tiết — {len(_dtag_kn_only)} / {len(_dtag_kn)} đơn**")
+            _dohana_tag_tbl(_dtag_kn_only)
             st.subheader("⛔ Đơn không cần KN — đã có kết luận", anchor="don-khong-can-kn")
             st.caption("Các đơn trong bảng detail đã có ghi chú KHÔNG CẦN KN: đã nhận hàng, đã nhận/được đền tiền, hoặc shop đóng thiếu thật. Nhóm này không trộn vào danh sách CẦN KN.")
-            _sub_table(_khong_can_kn_list, 300, pg_key="khong_can_kn")
-            st.markdown(f"**🏷️ + Đơn Dohana gắn tag ĐÓNG HÀNG (đóng thiếu SP) — {len(_dtag_nokn)} đơn**")
-            _dohana_tag_tbl(_dtag_nokn)
+            _sub_table(_khong_can_kn_list, 300, show_reason=True, pg_key="khong_can_kn")
+            st.markdown(f"**🏷️ + Đơn Dohana gắn tag ĐÓNG HÀNG chưa có trong bảng chi tiết — {len(_dtag_nokn_only)} / {len(_dtag_nokn)} đơn**")
+            _dohana_tag_tbl(_dtag_nokn_only)
             st.divider()
             st.markdown("### 📋 Chi tiết còn hàng hoàn về theo loại")
             _type_block("💸 Trả hàng hoàn tiền", "return_and_refund")
@@ -7187,7 +7247,7 @@ def _render_returns():
                       and d["ship_code"] != "no_return"]
             if _other:
                 st.markdown(f"### Khác — {len(_other)} đơn")
-                _sub_table(_other, 200, pg_key="other")
+                _sub_table(_other, 200, show_reason=True, pg_key="other")
 
         with _tabs[2]:
             # ── 🎥 KHO VIDEO DOHANA (lưu CẢ NĂM, vượt hạn 30 ngày của Dohana) — tra cứu metadata ──
