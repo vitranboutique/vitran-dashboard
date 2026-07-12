@@ -5667,11 +5667,140 @@ def _render_returns():
         if not choices:
             return
 
+        def _note_meta(row, note_text):
+            return {
+                "note": str(note_text or "").strip(),
+                "order_code": row.get("order_code") or "",
+                "return_code": row.get("return_code") or "",
+                "vd_tra": row.get("vd_tra") or "",
+                "updated_at": (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%Y-%m-%d %H:%M:%S"),
+            }
+
+        def _match_closed_note_keys(text):
+            tokens = re.findall(r"[A-Za-z0-9][A-Za-z0-9_\-]{4,}", str(text or ""))
+            lookup = {}
+            for key, d in row_map.items():
+                for field in ("order_code", "return_code", "vd_tra", "vd_di"):
+                    val = str(d.get(field) or "").strip()
+                    if val:
+                        lookup.setdefault(_ascii_code(val), set()).add(key)
+            found, missing = [], []
+            seen = set()
+            for token in tokens:
+                keys = lookup.get(_ascii_code(token)) or set()
+                if not keys:
+                    missing.append(token)
+                    continue
+                for key in keys:
+                    if key not in seen:
+                        found.append(key)
+                        seen.add(key)
+            return found, missing
+
         def _fmt_choice(key):
             d = row_map.get(key) or {}
             parts = [d.get("created"), d.get("order_code"), d.get("return_code"), d.get("vd_tra")]
             return " · ".join(str(x) for x in parts if str(x or "").strip())
 
+        with st.expander("🧾 Ghi chú hàng loạt", expanded=True):
+            st.caption("Dùng khi nhiều đơn cùng một kết luận. Dán mã đơn / mã trả / vận đơn, mỗi dòng một hoặc nhiều mã đều được.")
+            with st.form("closed_return_bulk_same_note_form"):
+                bulk_codes = st.text_area(
+                    "Danh sách mã cần ghi",
+                    height=110,
+                    placeholder="VD:\n584904315938637052\n4041276438705046780\nVTPVN9036194182",
+                    key="closed_return_bulk_note_codes",
+                )
+                bulk_note = st.text_area(
+                    "Ghi chú áp dụng cho các mã trên",
+                    height=120,
+                    placeholder="VD: 🚨 CẦN KN | 200.760đ | Khách chưa hoàn đủ hàng\n🕘 Cập nhật: 13/07/2026",
+                    key="closed_return_bulk_note_text",
+                )
+                bulk_save = st.form_submit_button("💾 Lưu hàng loạt theo danh sách mã")
+            if bulk_save:
+                bulk_note = str(bulk_note or "").strip()
+                if not bulk_note or not _note_has_result(bulk_note):
+                    st.error("Ghi chú hàng loạt chưa đúng prefix chuẩn.")
+                else:
+                    keys, missing = _match_closed_note_keys(bulk_codes)
+                    if not keys:
+                        st.error("Chưa khớp được mã nào trong bảng.")
+                    else:
+                        new_notes = dict(notes or {})
+                        for key in keys:
+                            new_notes[key] = _note_meta(row_map.get(key) or {}, bulk_note)
+                        if _save_closed_return_app_notes(new_notes):
+                            msg = f"Đã lưu ghi chú app cho {len(keys)} đơn."
+                            if missing:
+                                msg += f" Có {len(missing)} mã không khớp bảng."
+                            st.success(msg)
+                            st.rerun()
+                        else:
+                            st.error("Lưu ghi chú app lỗi. Kiểm tra token picklog/Gist.")
+
+            st.caption("Hoặc sửa nhiều dòng trực tiếp trong bảng dưới rồi bấm lưu một lần.")
+            edit_rows = []
+            for key in choices:
+                d = row_map.get(key) or {}
+                app_note = _closed_return_app_note_text((notes or {}).get(key))
+                sapo_note = str(d.get("sapo_note") or ("" if app_note else d.get("note") or "")).strip()
+                edit_rows.append({
+                    "_key": key,
+                    "Ngày tạo": d.get("created") or "",
+                    "Mã đơn": d.get("order_code") or "",
+                    "Mã trả": d.get("return_code") or "",
+                    "VĐ trả về": d.get("vd_tra") or "",
+                    "Ghi chú app": app_note,
+                    "Ghi chú Sapo": sapo_note,
+                })
+            edited_df = st.data_editor(
+                pd.DataFrame(edit_rows),
+                hide_index=True,
+                use_container_width=True,
+                key="closed_return_bulk_note_editor",
+                disabled=["Ngày tạo", "Mã đơn", "Mã trả", "VĐ trả về", "Ghi chú Sapo", "_key"],
+                column_config={
+                    "_key": None,
+                    "Ngày tạo": st.column_config.TextColumn("Ngày tạo", width="small"),
+                    "Mã đơn": st.column_config.TextColumn("Mã đơn", width="medium"),
+                    "Mã trả": st.column_config.TextColumn("Mã trả", width="medium"),
+                    "VĐ trả về": st.column_config.TextColumn("VĐ trả về", width="medium"),
+                    "Ghi chú app": st.column_config.TextColumn("Ghi chú app", width="large"),
+                    "Ghi chú Sapo": st.column_config.TextColumn("Ghi chú Sapo", width="large"),
+                },
+            )
+            if st.button("💾 Lưu tất cả dòng đã sửa", key="closed_return_bulk_table_save"):
+                new_notes = dict(notes or {})
+                invalid = []
+                changed = 0
+                for rec in edited_df.to_dict("records"):
+                    key = str(rec.get("_key") or "")
+                    if not key:
+                        continue
+                    new_note = str(rec.get("Ghi chú app") or "").strip()
+                    old_note = _closed_return_app_note_text((notes or {}).get(key))
+                    if new_note == old_note:
+                        continue
+                    if new_note and not _note_has_result(new_note):
+                        invalid.append(_fmt_choice(key))
+                        continue
+                    if new_note:
+                        new_notes[key] = _note_meta(row_map.get(key) or {}, new_note)
+                    else:
+                        new_notes.pop(key, None)
+                    changed += 1
+                if invalid:
+                    st.error("Có dòng chưa đúng prefix chuẩn, chưa lưu: " + "; ".join(invalid[:6]))
+                elif changed == 0:
+                    st.info("Không có dòng nào thay đổi.")
+                elif _save_closed_return_app_notes(new_notes):
+                    st.success(f"Đã lưu {changed} dòng ghi chú app.")
+                    st.rerun()
+                else:
+                    st.error("Lưu ghi chú app lỗi. Kiểm tra token picklog/Gist.")
+
+        st.markdown("**Ghi/chỉnh từng đơn**")
         selected = st.selectbox("Chọn đơn cần ghi/chỉnh", choices, format_func=_fmt_choice,
                                 key="closed_return_app_note_select")
         row = row_map.get(selected) or {}
@@ -5702,13 +5831,7 @@ def _render_returns():
                     st.error("Ghi chú app chưa đúng prefix chuẩn, nên app chưa lưu. Dòng đầu phải có THẮNG / THUA / HẾT HẠN / KHÔNG CẦN KN / CẦN KN.")
                     return
                 if note_text:
-                    new_notes[selected] = {
-                        "note": note_text,
-                        "order_code": row.get("order_code") or "",
-                        "return_code": row.get("return_code") or "",
-                        "vd_tra": row.get("vd_tra") or "",
-                        "updated_at": (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%Y-%m-%d %H:%M:%S"),
-                    }
+                    new_notes[selected] = _note_meta(row, note_text)
                 else:
                     new_notes.pop(selected, None)
             if _save_closed_return_app_notes(new_notes):
