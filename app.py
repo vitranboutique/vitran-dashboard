@@ -5452,12 +5452,12 @@ def _render_returns():
     def _note_has_result(note):
         pre = _ascii_code(str(note or "").split("|")[0])
         compact = "".join(ch for ch in pre if ch.isalnum())
-        return any(t in compact for t in ("THANG", "THUA", "HETHAN", "CANKN", "KHONGCANKN", "KHONGCANKHIEUNAI"))
+        return any(t in compact for t in ("THANG", "THUA", "HUY", "HETHAN", "CANKN", "KHONGCANKN", "KHONGCANKHIEUNAI"))
 
     def _note_has_final_result(note):
         pre = _ascii_code(str(note or "").split("|")[0])
         compact = "".join(ch for ch in pre if ch.isalnum())
-        return any(t in compact for t in ("THANG", "THUA", "HETHAN", "KHONGCANKN", "KHONGCANKHIEUNAI"))
+        return any(t in compact for t in ("THANG", "THUA", "HUY", "HETHAN", "KHONGCANKN", "KHONGCANKHIEUNAI"))
 
     def _note_first_line(note):
         lines = [line.strip() for line in str(note or "").splitlines() if line.strip()]
@@ -5509,7 +5509,7 @@ def _render_returns():
     def _note_is_bulk_write_result(note):
         pre = _ascii_code(str(note or "").split("|")[0])
         compact = "".join(ch for ch in pre if ch.isalnum())
-        return any(t in compact for t in ("THANG", "THUA", "HETHAN", "KHONGCANKN", "KHONGCANKHIEUNAI", "CANKN"))
+        return any(t in compact for t in ("THANG", "THUA", "HUY", "HETHAN", "KHONGCANKN", "KHONGCANKHIEUNAI", "CANKN"))
 
     _RETURN_NOTE_TEMPLATES = [
         {
@@ -5858,8 +5858,8 @@ def _render_returns():
                 placeholder="VD: 🚨 CẦN KN | 200.760đ | Khách chưa hoàn đủ hàng\n🕘 Cập nhật: 13/07/2026",
                 key=f"closed_return_app_note_text_{_ascii_code(selected)[:48]}",
             )
-            st.caption("Prefix hợp lệ: THẮNG, THUA, HẾT HẠN, KHÔNG CẦN KN, CẦN KN. "
-                       "THẮNG/THUA/KHÔNG CẦN KN/HẾT HẠN sẽ rớt khỏi Cần KN; CẦN KN vẫn nằm trong bảng Cần KN.")
+            st.caption("Prefix hợp lệ: THẮNG, THUA, HỦY, HẾT HẠN, KHÔNG CẦN KN, CẦN KN. "
+                       "THẮNG/THUA/HỦY/KHÔNG CẦN KN/HẾT HẠN sẽ rớt khỏi Cần KN; CẦN KN vẫn nằm trong bảng Cần KN.")
             c1, c2, _ = st.columns([1, 1, 4])
             save_btn = c1.form_submit_button("💾 Lưu ghi chú")
             clear_btn = c2.form_submit_button("🧹 Xóa ghi chú app")
@@ -6688,7 +6688,7 @@ def _render_returns():
 
             def _is_closed_kn_result(d):
                 compact = _note_compact(d)
-                return ("THANG" in compact or "THUA" in compact or "HETHAN" in compact
+                return ("THANG" in compact or "THUA" in compact or "HUY" in compact or "HETHAN" in compact
                         or "KHONGCANKN" in compact or "KHONGCANKHIEUNAI" in compact)
 
             def _return_outcome(d):
@@ -6699,6 +6699,8 @@ def _render_returns():
                     return "Thắng"
                 if "THUA" in compact:
                     return "Thua"
+                if "HUY" in compact:
+                    return "Hủy"
                 if "HETHAN" in compact:
                     return "Hết hạn"
                 if "KHONGCANKN" in compact or "KHONGCANKHIEUNAI" in compact:
@@ -7180,7 +7182,7 @@ def _render_returns():
                         )
                         _drill_outcome = _drill_cols[2].selectbox(
                             "Kết quả",
-                            ["Tất cả", "Thắng", "Thua", "Hết hạn", "Không cần KN", "Cần KN", "Đang KN", "Chưa chốt", "Đã nhập kho"],
+                            ["Tất cả", "Thắng", "Thua", "Hủy", "Hết hạn", "Không cần KN", "Cần KN", "Đang KN", "Chưa chốt", "Đã nhập kho"],
                             key="return_month_drill_outcome",
                         )
                         _drill_rows = []
@@ -7239,6 +7241,8 @@ def _render_returns():
                     return "Thắng"
                 if "THUA" in compact:
                     return "Thua"
+                if "HUY" in compact:
+                    return "Hủy"
                 if "HETHAN" in compact:
                     return "Hết hạn"
                 if "KHONGCANKN" in compact or "KHONGCANKHIEUNAI" in compact:
@@ -7324,7 +7328,7 @@ def _render_returns():
                 first = lines[0]
                 compact = "".join(ch for ch in _ascii_code(first) if ch.isalnum())
                 return any(t in compact for t in (
-                    "THANG", "THUA", "HETHAN", "KHONGCANKN", "KHONGCANKHIEUNAI",
+                    "THANG", "THUA", "HUY", "HETHAN", "KHONGCANKN", "KHONGCANKHIEUNAI",
                 ))
 
             def _dohana_is_can_kn_note(note):
