@@ -7074,7 +7074,13 @@ def _render_returns():
                 if link and "banhang.shopee.vn/portal/sale/order" in link and "search=" not in link:
                     link = _shopee_order_url(val)
                 v = _esc(str(val or ""))
-                disp = f"<a href='{_esc(link)}' target='_blank'>{v}</a>" if link else v
+                if link and "banhang.shopee.vn/portal/sale/order" in link:
+                    disp = (
+                        f"<a href='{_esc(link)}' target='_blank' onclick=\"cp('{_jss(val)}',this)\" "
+                        f"title='Shopee khong tu loc tu URL; bam link se copy ma don'>{v}</a>"
+                    )
+                else:
+                    disp = f"<a href='{_esc(link)}' target='_blank'>{v}</a>" if link else v
                 return f"{disp} {_cp(val)}" if val else ""
 
             def _order_link_for_row(d):
