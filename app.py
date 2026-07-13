@@ -5605,9 +5605,23 @@ def _render_returns():
         return ""
 
     def _closed_return_app_note_text(rec):
-        if isinstance(rec, dict):
-            return str(rec.get("note") or "").strip()
-        return str(rec or "").strip()
+        note = str(rec.get("note") if isinstance(rec, dict) else rec or "").strip()
+        if not note:
+            return ""
+        lines = note.splitlines()
+        first = lines[0].strip() if lines else ""
+        compact_first = _ascii_code(first)
+        compact_all = _ascii_code(note)
+        is_old_canceled_note = (
+            "KHONGCANKN" in compact_first
+            and "SHOPEE" in compact_all
+            and any(t in compact_all for t in ("YEUCAUDAHUY", "YEUCAUBIHUY", "DAHUYYEUCAU"))
+        )
+        if is_old_canceled_note:
+            suffix = first.split("|", 1)[1].strip() if "|" in first else "Shopee yêu cầu trả hàng đã hủy"
+            lines[0] = f"🚫 HỦY | {suffix}"
+            return "\n".join(lines).strip()
+        return note
 
     def _load_closed_return_app_notes():
         if not picklog.configured():
