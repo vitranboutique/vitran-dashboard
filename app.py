@@ -10,7 +10,7 @@ import time
 import unicodedata
 from datetime import date, datetime, timedelta, timezone
 from html import escape as _esc
-from urllib.parse import quote_plus
+from urllib.parse import parse_qsl, quote_plus, urlencode, urlsplit, urlunsplit
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -61,8 +61,76 @@ ACCENT_RED = "#E24B4A"      # phần Đơn hủy
 ACCENT_BLUE = "#378ADD"     # phần Đơn trả
 SHOPEE_ORDER_LIST_URL = "https://banhang.shopee.vn/portal/sale/order"
 SHOPEE_ORDER_SEARCH_URL = SHOPEE_ORDER_LIST_URL + "?search={}"
+SHOPEE_SHOP_CONTEXT_IDS = {
+    "smoss": "58785946",
+    "mun-ai": "736667756",
+    "mun ai": "736667756",
+    "vitran boutique": "179402721",
+    "vitranboutique": "179402721",
+}
 TIKTOK_ORDER_LIST_URL = "https://seller-vn.tiktok.com/order?selected_sort=6&tab=all"
 TIKTOK_ORDER_SEARCH_URL = TIKTOK_ORDER_LIST_URL + "&main_order_id={}"
+
+
+def _plain_text_key(value):
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    return re.sub(r"\s+", " ", text).strip().lower()
+
+
+def _url_query_value(url, *names):
+    wanted = {str(n).lower() for n in names}
+    try:
+        pairs = parse_qsl(urlsplit(str(url or "")).query, keep_blank_values=True)
+    except Exception:
+        return ""
+    for key, value in pairs:
+        if key.lower() in wanted:
+            return value
+    return ""
+
+
+def _with_url_query(url, **params):
+    url = str(url or "").strip()
+    if not url:
+        return ""
+    try:
+        parts = urlsplit(url)
+    except Exception:
+        return url
+    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+    for key, value in params.items():
+        if value not in (None, ""):
+            query[key] = str(value)
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+
+
+def _shopee_shop_context_id(row_or_text):
+    if isinstance(row_or_text, dict):
+        raw = " ".join(str(row_or_text.get(k) or "") for k in (
+            "gian_hang", "Gian hàng", "Gian hÃ ng", "order_source", "store", "branch",
+            "order_link", "return_link",
+        ))
+    else:
+        raw = str(row_or_text or "")
+    text = _plain_text_key(raw)
+    if "smoss" in text:
+        return SHOPEE_SHOP_CONTEXT_IDS["smoss"]
+    if "mun" in text and "ai" in text:
+        return SHOPEE_SHOP_CONTEXT_IDS["mun-ai"]
+    if "vitran boutique" in text or "vitranboutique" in text:
+        return SHOPEE_SHOP_CONTEXT_IDS["vitran boutique"]
+    return ""
+
+
+def _with_shopee_shop_context(url, row_or_text=None):
+    url = str(url or "").strip()
+    if "banhang.shopee.vn/portal/sale/" not in url:
+        return url
+    shop_id = _shopee_shop_context_id(row_or_text)
+    if not shop_id:
+        return url
+    return _with_url_query(url, cnscShopId=shop_id)
 
 
 def _shopee_order_url(order_code=""):
@@ -78,9 +146,11 @@ def _normalize_shopee_order_link(url):
         return url
     if re.search(r"/portal/sale/order/\d+", url):
         return url
-    match = re.search(r"[?&](?:search|keyword)=([^&#/]+)", url)
-    if match:
-        return _shopee_order_url(match.group(1))
+    code = _url_query_value(url, "search", "keyword")
+    if code:
+        normalized = _shopee_order_url(code)
+        shop_id = _url_query_value(url, "cnscShopId")
+        return _with_url_query(normalized, cnscShopId=shop_id) if shop_id else normalized
     return url
 
 
@@ -7123,7 +7193,8 @@ def _render_returns():
 
             def _return_code_cell(d):
                 code = _display_return_code(d)
-                return _code_cell(code, (d or {}).get("return_link")) if code else ""
+                link = _with_shopee_shop_context((d or {}).get("return_link"), d)
+                return _code_cell(code, link) if code else ""
 
             def _order_link_for_row(d):
                 link = str((d or {}).get("order_link") or "").strip()
@@ -7140,14 +7211,14 @@ def _render_returns():
                     return _tiktok_order_url(code)
                 if "shopee" in src:
                     if re.search(r"/portal/sale/order/\d+", link):
-                        return _normalize_shopee_order_link(link)
+                        return _with_shopee_shop_context(_normalize_shopee_order_link(link), d)
                     code = (
                         (d or {}).get("order_code")
                         or (d or {}).get("MÃ£ Ä‘Æ¡n")
                         or (d or {}).get("ma_don")
                         or (d or {}).get("order_no")
                     )
-                    return _shopee_order_url(code)
+                    return _with_shopee_shop_context(_shopee_order_url(code), d)
                 return link
 
             def _search_norm(s):
