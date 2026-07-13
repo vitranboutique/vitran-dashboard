@@ -6107,6 +6107,7 @@ def _render_returns():
         _full_note_plan, _full_note_valid = {}, True
         _full_note_mode = False
         _allow_final = False
+        _full_note_quick_count = 0
         if _preview_ready and st.session_state.get("return_note_preview_rows"):
             _lookup_rows = st.session_state["return_note_preview_rows"]
             _hidden_final_count = sum(
@@ -6159,6 +6160,7 @@ def _render_returns():
                 _full_note_map = _parse_full_note_blocks(_full_note_blocks)
                 _full_note_blocks_key = _ascii_code(_full_note_blocks)[:32]
                 if _full_note_map:
+                    _full_note_quick_count = len(_full_note_map)
                     st.caption(f"Đã nhận {len(_full_note_map)} ghi chú dán nhanh; app tự map theo mã trả/mã đơn/vận đơn/Sapo ID.")
                 _full_seed_rows = _build_full_note_editor_rows(_lookup_rows, _allow_final, _full_note_map)
                 if not _full_seed_rows:
@@ -6400,8 +6402,11 @@ def _render_returns():
         st.caption("Tool này chỉ ghi vào ghi chú hồ sơ trả hàng, là nơi bảng KN đang đọc kết quả.")
         _confirm_write = st.checkbox("Tôi xác nhận ghi chú các phiếu tìm thấy vào SAPO", value=False,
                                      key="return_note_confirm_write")
+        _confirm_ready = _confirm_write or bool(_full_note_mode and _full_note_quick_count)
+        if _full_note_mode and _full_note_quick_count:
+            st.caption("Đã dán ghi chú nhanh theo mã nên có thể bấm ghi trực tiếp; không cần tick ô xác nhận.")
         if st.button("✍️ Ghi chú vào SAPO",
-                     disabled=(not _codes or not _preview_ready or not _confirm_write or not _can_write_sapo
+                     disabled=(not _codes or not _preview_ready or not _confirm_ready or not _can_write_sapo
                                or (_full_note_mode and (not _full_note_plan or not _full_note_valid))
                                or ((not _full_note_mode) and (not _individual_mode) and (not _note_valid or not _shipper_valid))
                                or ((not _full_note_mode) and _individual_mode and (not _individual_plan or not _individual_valid))),
