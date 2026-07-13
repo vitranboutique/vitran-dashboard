@@ -105,6 +105,27 @@ def _normalize_tiktok_order_link(url):
     return url
 
 # ───────────────────────── CSS nhẹ (viền trái màu, tiêu đề mục) ─────────────────────────
+def _norm_marketplace_code(value):
+    return re.sub(r"[^A-Z0-9]+", "", str(value or "").upper())
+
+
+def _same_marketplace_code(a, b):
+    left = _norm_marketplace_code(a)
+    right = _norm_marketplace_code(b)
+    return bool(left and right and left == right)
+
+
+def _display_return_code(row, order_code=None, return_code=None):
+    row = row or {}
+    order = order_code if order_code is not None else (
+        row.get("order_code") or row.get("Mã đơn") or row.get("MÃ£ Ä‘Æ¡n") or row.get("ma_don")
+    )
+    ret = return_code if return_code is not None else (
+        row.get("return_code") or row.get("Mã trả") or row.get("MÃ£ tráº£") or row.get("ma_tra")
+    )
+    return "" if _same_marketplace_code(order, ret) else str(ret or "").strip()
+
+
 st.markdown(
     """
     <style>
@@ -5907,7 +5928,7 @@ def _render_returns():
                     "_key": key,
                     "Ngày tạo": d.get("created") or "",
                     "Mã đơn": d.get("order_code") or "",
-                    "Mã trả": d.get("return_code") or "",
+                    "Mã trả": _display_return_code(d),
                     "VĐ trả về": d.get("vd_tra") or "",
                     "Ghi chú app": app_note,
                     "Ghi chú Sapo": sapo_note,
@@ -6071,7 +6092,7 @@ def _render_returns():
                 "Ghi": True,
                 "Ngày tạo": row.get("Ngày tạo") or "",
                 "Mã đơn": row.get("Mã đơn") or "",
-                "Mã trả": row.get("Mã trả") or "",
+                "Mã trả": _display_return_code(row, order_code=row.get("Mã đơn"), return_code=row.get("Mã trả")),
                 "VĐ đi": row.get("VĐ đi") or "",
                 "VĐ trả về": row.get("VĐ trả về") or "",
                 "_return_id": row.get("_return_id") or "",
@@ -6137,7 +6158,7 @@ def _render_returns():
                 "Ghi": True,
                 "Ngày tạo": row.get("Ngày tạo") or "",
                 "Mã đơn": row.get("Mã đơn") or "",
-                "Mã trả": row.get("Mã trả") or "",
+                "Mã trả": _display_return_code(row, order_code=row.get("Mã đơn"), return_code=row.get("Mã trả")),
                 "VĐ đi": row.get("VĐ đi") or "",
                 "VĐ trả về": row.get("VĐ trả về") or "",
                 "Hồ sơ": row.get("Link hồ sơ trả") or "",
@@ -6589,12 +6610,13 @@ def _render_returns():
                     order = r.get("order") or {}
                     order_name = order.get("name") or ""
                     return_name = r.get("name") or ""
+                    display_return_name = _display_return_code({}, order_name, return_name)
                     if _full_note_mode:
                         _plan = _full_note_plan.get(str(rid))
                         if not _plan:
                             results.append({
                                 "Mã đơn": order_name or ", ".join(info["codes"]),
-                                "Mã trả": return_name,
+                                "Mã trả": display_return_name,
                                 "Sapo ID": rid,
                                 "Link hồ sơ trả": f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{rid}",
                                 "Kết quả": "Bỏ qua: đã có kết quả cuối hoặc chưa nhập ghi chú mới",
@@ -6607,7 +6629,7 @@ def _render_returns():
                         if not _plan:
                             results.append({
                                 "Mã đơn": order_name or ", ".join(info["codes"]),
-                                "Mã trả": return_name,
+                                "Mã trả": display_return_name,
                                 "Sapo ID": rid,
                                 "Link hồ sơ trả": f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{rid}",
                                 "Kết quả": "Bỏ qua: chưa tick ghi dòng này",
@@ -6621,7 +6643,7 @@ def _render_returns():
                     if _note_matches_existing(r.get("note"), _note_to_write):
                         results.append({
                             "Mã đơn": order_name or ", ".join(info["codes"]),
-                            "Mã trả": return_name,
+                            "Mã trả": display_return_name,
                             "Sapo ID": rid,
                             "Link hồ sơ trả": f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{rid}",
                             "Kết quả": "Đã khớp, không cần cập nhật",
@@ -6630,7 +6652,7 @@ def _render_returns():
                     if _row_requires_return_shipper(r) and not str(_shipper_for_row or "").strip():
                         results.append({
                             "Mã đơn": order_name or ", ".join(info["codes"]),
-                            "Mã trả": return_name,
+                            "Mã trả": display_return_name,
                             "Sapo ID": rid,
                             "Link hồ sơ trả": f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{rid}",
                             "Kết quả": "Bỏ qua: phiếu trả hàng hoàn tiền có VĐ trả về nhưng chưa nhập tên shipper hoàn",
@@ -6640,7 +6662,7 @@ def _render_returns():
                     if not new_note:
                         results.append({
                             "Mã đơn": order_name or ", ".join(info["codes"]),
-                            "Mã trả": return_name,
+                            "Mã trả": display_return_name,
                             "Sapo ID": rid,
                             "Link hồ sơ trả": f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{rid}",
                             "Kết quả": status,
@@ -6650,7 +6672,7 @@ def _render_returns():
                         update_order_return_note(session, rid, new_note)
                         results.append({
                             "Mã đơn": order_name or ", ".join(info["codes"]),
-                            "Mã trả": return_name,
+                            "Mã trả": display_return_name,
                             "Sapo ID": rid,
                             "Link hồ sơ trả": f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{rid}",
                             "Kết quả": "Đã ghi và xác nhận",
@@ -6658,7 +6680,7 @@ def _render_returns():
                     except Exception as e:
                         results.append({
                             "Mã đơn": order_name or ", ".join(info["codes"]),
-                            "Mã trả": return_name,
+                            "Mã trả": display_return_name,
                             "Sapo ID": rid,
                             "Link hồ sơ trả": f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{rid}",
                             "Kết quả": f"Lỗi ghi hồ sơ trả: {e}",
@@ -6676,6 +6698,11 @@ def _render_returns():
                 st.session_state["return_note_preview_rows"], _note_text, _replace_result, _shipper_return
             )
             _preview_df = pd.DataFrame(_preview_rows)
+            if not _preview_df.empty and {"Mã đơn", "Mã trả"}.issubset(_preview_df.columns):
+                _preview_df["Mã trả"] = _preview_df.apply(
+                    lambda r: _display_return_code({}, r.get("Mã đơn"), r.get("Mã trả")),
+                    axis=1,
+                )
             _preview_df = _preview_df.drop(columns=[c for c in ["_requires_shipper", "_return_id", "Link hồ sơ trả"] if c in _preview_df.columns])
             with st.expander("Đối chiếu theo mẫu ghi chú đang chọn", expanded=False):
                 st.dataframe(_preview_df,
@@ -7022,7 +7049,7 @@ def _render_returns():
                         _clr = _dvc.get(o["dvvc"], "#94A3B8")
                         _bg = _dvbg.get(o["dvvc"], "#F8FAFC")
                         _sep = "border-top:2px solid #334155;" if (_grp and _prev is not None) else ""
-                        _rc = o.get("return_code") or ""
+                        _rc = _display_return_code(o, order_code=o.get("order_code") or o.get("code"), return_code=o.get("return_code"))
                         _wb = o.get("waybill") or ""
                         _rccell = (f"{_rc} <span class='cp' onclick=\"cpx('{_rc}',this)\">📋</span>") if _rc else "—"
                         _wbcell = (f"{_wb} <span class='cp' onclick=\"cpx('{_wb}',this)\">📋</span>") if _wb else "—"
@@ -7093,6 +7120,10 @@ def _render_returns():
                 else:
                     disp = f"<a href='{_esc(link)}' target='_blank'>{v}</a>" if link else v
                 return f"{disp} {_cp(val)}" if val else ""
+
+            def _return_code_cell(d):
+                code = _display_return_code(d)
+                return _code_cell(code, (d or {}).get("return_link")) if code else ""
 
             def _order_link_for_row(d):
                 link = str((d or {}).get("order_link") or "").strip()
@@ -7210,7 +7241,7 @@ def _render_returns():
                     tds += [
                         f"<td>{_safe(d.get('created'))}</td>",
                         f"<td>{_code_cell(d['order_code'], _order_link_for_row(d))}</td>",
-                        f"<td>{_code_cell(d.get('return_code'), d.get('return_link'))}</td>",
+                        f"<td>{_return_code_cell(d)}</td>",
                     ]
                     if merge_delivery_vd:
                         tds.append(f"<td>{_code_cell(d.get('vd_di') or d.get('vd_tra'))}</td>")
@@ -7357,7 +7388,7 @@ def _render_returns():
                             _drill_rows.append({
                                 "Ngày tạo": _d.get("created") or "",
                                 "Mã đơn": _d.get("order_code") or "",
-                                "Mã trả": _d.get("return_code") or "",
+                                "Mã trả": _display_return_code(_d),
                                 "Loại trả": _d.get("loai_tra") or "",
                                 "VĐ đi": _d.get("vd_di") or "",
                                 "VĐ trả về": _d.get("vd_tra") or "",
@@ -7757,7 +7788,7 @@ def _render_returns():
                         f"<td class='r'>{i}</td>",
                         f"<td>{_safe(d.get('created'))}</td>",
                         f"<td>{_code_cell(d.get('order_code'), _order_link_for_row(d))}</td>",
-                        f"<td>{_code_cell(d.get('return_code'), d.get('return_link'))}</td>",
+                        f"<td>{_return_code_cell(d)}</td>",
                         f"<td>{_code_cell(d.get('vd_di'))}</td>",
                         f"<td>{_vd_ve_dohana_cell(d.get('vd_tra'), code)}</td>",
                         f"<td>{_tag_reason_cell(r, d)}</td>",
