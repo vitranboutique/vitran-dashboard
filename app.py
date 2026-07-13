@@ -5714,6 +5714,38 @@ def _render_returns():
 
         with st.expander("🧾 Ghi chú hàng loạt", expanded=True):
             st.caption("Dùng khi nhiều đơn cùng một kết luận. Dán mã đơn / mã trả / vận đơn, mỗi dòng một hoặc nhiều mã đều được.")
+            quick_codes = st.text_area(
+                "Ghi nhanh app - danh sách mã",
+                height=80,
+                placeholder="VD:\n2607100AM010FE4\nSPXVN069948080037",
+                key="closed_return_quick_note_codes",
+            )
+            quick_note = st.text_area(
+                "Ghi nhanh app - ghi chú",
+                height=120,
+                placeholder="VD: Không cần KN | 0đ | Shopee yêu cầu trả hàng bị hủy\nCập nhật: 13/07/2026",
+                key="closed_return_quick_note_text",
+            )
+            if st.button("🚀 Ghi nhanh app note theo mã", key="closed_return_quick_note_btn", use_container_width=True):
+                quick_note = str(quick_note or "").strip()
+                if not quick_note or not _note_has_result(quick_note):
+                    st.error("Ghi chú nhanh chưa đúng prefix chuẩn.")
+                else:
+                    keys, missing = _match_closed_note_keys(quick_codes)
+                    if not keys:
+                        st.error("Chưa khớp được mã nào trong bảng.")
+                    else:
+                        new_notes = dict(notes or {})
+                        for key in keys:
+                            new_notes[key] = _note_meta(row_map.get(key) or {}, quick_note)
+                        if _save_closed_return_app_notes(new_notes):
+                            msg = f"Đã lưu ghi chú app cho {len(keys)} đơn."
+                            if missing:
+                                msg += f" Có {len(missing)} mã không khớp bảng."
+                            st.success(msg)
+                            st.rerun()
+                        else:
+                            st.error("Lưu ghi chú app lỗi. Kiểm tra token picklog/Gist.")
             with st.form("closed_return_bulk_same_note_form"):
                 bulk_codes = st.text_area(
                     "Danh sách mã cần ghi",
