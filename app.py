@@ -5540,17 +5540,17 @@ def _render_returns():
         {
             "group": "THẮNG",
             "label": "KN sàn thành công",
-            "template": "Thắng | Thu hồi {amount} | {platform} KN thành công",
+            "template": "✅ THẮNG | Thu hồi {amount} | {platform} KN thành công",
         },
         {
             "group": "THẮNG",
             "label": "Sàn chấp nhận KN theo chat",
-            "template": "Thắng | Thu hồi đủ theo chat {platform} | {platform} KN được chấp nhận",
+            "template": "✅ THẮNG | Thu hồi đủ theo chat {platform} | {platform} KN được chấp nhận",
         },
         {
             "group": "THẮNG",
             "label": "Thu hồi theo lý do khác",
-            "template": "Thắng | Thu hồi {amount} | {reason}",
+            "template": "✅ THẮNG | Thu hồi {amount} | {reason}",
         },
         {
             "group": "THUA",
@@ -6179,12 +6179,12 @@ def _render_returns():
                     value="",
                     placeholder=(
                         "4041276438705046780\n"
-                        "Thắng | Thu hồi 169.092đ | TikTok đóng yêu cầu trả hàng\n"
+                        "✅ THẮNG | Thu hồi 169.092đ | TikTok đóng yêu cầu trả hàng\n"
                         "Shipper hoàn: J&T Express - 854150388808; đã giao 10/07/2026 11:03.\n"
                         "Cập nhật: 13/07/2026\n"
                         "---\n"
                         "4040980030353606200\n"
-                        "Thắng | Thu hồi 186.760đ | TikTok tranh chấp ủng hộ người bán"
+                        "✅ THẮNG | Thu hồi 186.760đ | TikTok tranh chấp ủng hộ người bán"
                     ),
                     height=170,
                     key=f"return_note_full_blocks_{_ascii_code(_codes_key)[:50]}",
@@ -6430,7 +6430,7 @@ def _render_returns():
                 else:
                     st.caption("Chưa chọn dòng nào để ghi.")
         if not _note_valid:
-            st.error("Ghi chú chưa đúng chuẩn. Dòng đầu phải bắt đầu bằng Thắng / Thua / Hết hạn / Không cần KN / Cần KN.")
+            st.error("Ghi chú chưa đúng chuẩn. Dòng đầu phải bắt đầu bằng ✅ THẮNG / Thua / Hết hạn / Không cần KN / Cần KN.")
         if not _shipper_valid:
             st.error("Nếu có mã vận đơn hoàn về thì bắt buộc điền tên shipper hoàn. Nếu chưa có tên shipper, đơn vẫn phải để nhóm CẦN KN/theo dõi, chưa chốt kết quả.")
         if _individual_mode and not _individual_valid:
