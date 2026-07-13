@@ -5637,12 +5637,19 @@ def _render_returns():
     _RETURN_NOTE_TEMPLATE_BY_LABEL = {x["label"]: x for x in _RETURN_NOTE_TEMPLATES}
     _CLOSED_RETURN_NOTE_FILE = "vitran_closed_return_notes.json"
 
-    def _closed_return_note_key(d):
+    def _closed_return_note_keys(d):
+        keys = []
         for field in ("return_code", "order_code", "vd_tra", "vd_di"):
             value = str((d or {}).get(field) or "").strip()
             if value:
-                return f"{field}:{value}"
-        return ""
+                key = f"{field}:{value}"
+                if key not in keys:
+                    keys.append(key)
+        return keys
+
+    def _closed_return_note_key(d):
+        keys = _closed_return_note_keys(d)
+        return keys[0] if keys else ""
 
     def _closed_return_app_note_text(rec):
         note = _standard_result_note_text(rec.get("note") if isinstance(rec, dict) else rec or "")
@@ -5701,10 +5708,15 @@ def _render_returns():
 
     def _apply_closed_return_app_notes(rows, notes):
         for d in rows or []:
-            key = _closed_return_note_key(d)
+            keys = _closed_return_note_keys(d)
+            key = keys[0] if keys else ""
             if key:
                 d["_app_note_key"] = key
-            note = _closed_return_app_note_text((notes or {}).get(key))
+            note = ""
+            for lookup_key in keys:
+                note = _closed_return_app_note_text((notes or {}).get(lookup_key))
+                if note:
+                    break
             if not note:
                 continue
             d["sapo_note"] = str(d.get("note") or "").strip()
