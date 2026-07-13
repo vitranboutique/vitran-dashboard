@@ -63,6 +63,7 @@ SHOPEE_RETURN_LIST_URL = "https://banhang.shopee.vn/portal/sale/returnrefundcanc
 SHOPEE_RETURN_SEARCH_URL = SHOPEE_RETURN_LIST_URL + "?keyword={}"
 SHOPEE_ORDER_LIST_URL = "https://banhang.shopee.vn/portal/sale/order"
 SHOPEE_ORDER_SEARCH_URL = SHOPEE_ORDER_LIST_URL + "?search={}"
+SHOPEE_LOCAL_LAUNCHER_URL = os.environ.get("VITRAN_SHOPEE_LAUNCHER_URL", "http://127.0.0.1:17654/open").strip()
 SHOPEE_SHOP_CONTEXT_IDS = {
     "smoss": "58785946",
     "mun-ai": "736667756",
@@ -133,6 +134,20 @@ def _with_shopee_shop_context(url, row_or_text=None):
     if not shop_id:
         return url
     return _with_url_query(url, cnsc_shop_id=shop_id)
+
+
+def _shopee_chrome_launcher_url(url, row_or_text=None):
+    url = _with_shopee_shop_context(url, row_or_text)
+    if not SHOPEE_LOCAL_LAUNCHER_URL or "banhang.shopee.vn/portal/sale/" not in url:
+        return url
+    shop_id = _shopee_shop_context_id(row_or_text) or _url_query_value(url, "cnsc_shop_id", "cnscShopId")
+    if not shop_id:
+        return url
+    return _with_url_query(SHOPEE_LOCAL_LAUNCHER_URL, shop_id=shop_id, target=url)
+
+
+def _is_shopee_chrome_launcher_url(url):
+    return bool(SHOPEE_LOCAL_LAUNCHER_URL and str(url or "").startswith(SHOPEE_LOCAL_LAUNCHER_URL))
 
 
 def _shopee_return_url(return_code=""):
@@ -7203,7 +7218,12 @@ def _render_returns():
                 if link and "banhang.shopee.vn/portal/sale/order" in link and not shopee_detail and "search=" not in link:
                     link = _shopee_order_url(val)
                 v = _esc(str(val or ""))
-                if link and "banhang.shopee.vn/portal/sale/order" in link and not shopee_detail:
+                if _is_shopee_chrome_launcher_url(link):
+                    disp = (
+                        f"<a href='{_esc(link)}' target='_blank' onclick=\"cp('{_jss(val)}',this)\" "
+                        f"title='Mo Chrome rieng dung shop Shopee; dong thoi copy ma'>{v}</a>"
+                    )
+                elif link and "banhang.shopee.vn/portal/sale/order" in link and not shopee_detail:
                     disp = (
                         f"<a href='{_esc(link)}' target='_blank' onclick=\"cp('{_jss(val)}',this)\" "
                         f"title='Shopee khong tu loc tu URL; bam link se copy ma don'>{v}</a>"
@@ -7216,7 +7236,7 @@ def _render_returns():
                 code = _display_return_code(d)
                 link = _normalize_shopee_return_link((d or {}).get("return_link"), code)
                 if link and "banhang.shopee.vn/portal/sale/return" in link:
-                    link = _with_shopee_shop_context(link, d)
+                    link = _shopee_chrome_launcher_url(link, d)
                 return _code_cell(code, link) if code else ""
 
             def _order_link_for_row(d):
@@ -7239,7 +7259,7 @@ def _render_returns():
                         or (d or {}).get("ma_don")
                         or (d or {}).get("order_no")
                     )
-                    return _with_shopee_shop_context(_shopee_order_url(code), d)
+                    return _shopee_chrome_launcher_url(_shopee_order_url(code), d)
                 return link
 
             def _search_norm(s):
