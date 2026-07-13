@@ -33,8 +33,59 @@ except Exception:   # phòng khi thiếu file dữ liệu địa chỉ
 # Mẫu mã vận đơn để bóc từ note (SPXVN.../VTPVN... hoặc mã số 11–14 chữ số như J&T 861...)
 _TRACK_RE = re.compile(r'[A-Z]{2,}VN\d+|\b\d{11,14}\b')
 _PHONE_RE = re.compile(r'(?:s\s*[đd]t|phone|tel|dien\s*thoai|điện\s*thoại)\s*[:\-]?\s*(?:\+?84|0)?\d[\d\s.\-]{7,12}|\b(?:\+?84|0)\d[\d\s.\-]{8,12}\b', re.I)
+SHOPEE_RETURN_LIST_URL = "https://banhang.shopee.vn/portal/sale/returnrefundcancel"
+SHOPEE_RETURN_DETAIL_URL = "https://banhang.shopee.vn/portal/sale/return/{}"
 
 SNAPSHOT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "snapshot.json")
+
+
+def shopee_return_detail_url(*docs) -> str:
+    """Build Shopee Seller return detail link when Sapo exposes the Shopee return id."""
+    blocked = (
+        "tracking", "shipment", "shipping", "fulfillment", "phone", "total", "price",
+        "amount", "quantity", "line_item", "item", "product", "variant", "sku", "barcode",
+    )
+    candidates = []
+
+    def walk(obj, path=()):
+        if isinstance(obj, dict):
+            for key, value in obj.items():
+                walk(value, path + (str(key),))
+            return
+        if isinstance(obj, list):
+            for idx, value in enumerate(obj):
+                walk(value, path + (str(idx),))
+            return
+        value = str(obj or "").strip()
+        if not re.fullmatch(r"\d{12,18}", value):
+            return
+        path_l = ".".join(path).lower()
+        if any(token in path_l for token in blocked):
+            return
+        has_return_context = any(token in path_l for token in ("return", "refund", "request", "reverse", "rma"))
+        if "order" in path_l and not has_return_context:
+            return
+        score = 0
+        if "shopee" in path_l:
+            score += 30
+        if has_return_context:
+            score += 20
+        if any(token in path_l for token in ("source", "external", "reference", "origin", "marketplace", "platform")):
+            score += 10
+        if path and path[-1].lower() in ("id", "return_id", "request_id", "refund_id"):
+            score += 5
+        if path == ("id",):
+            score += 3
+        if score:
+            candidates.append((score, len(path), value))
+
+    for doc in docs:
+        if isinstance(doc, dict):
+            walk(doc)
+    if not candidates:
+        return SHOPEE_RETURN_LIST_URL
+    candidates.sort(key=lambda item: (item[0], -item[1]), reverse=True)
+    return SHOPEE_RETURN_DETAIL_URL.format(candidates[0][2])
 
 
 # ───────────────────────── Helpers thời gian ─────────────────────────
@@ -1439,7 +1490,7 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120, canceled_max_pages
             return_link = "https://seller-vn.tiktok.com/order/return?order_sort_comp=OrderSort_UPADTE_TIME_DESC&tab=100"
         elif "shopee" in _osrc:
             order_link = f"https://banhang.shopee.vn/portal/sale?search={_ocode}"
-            return_link = "https://banhang.shopee.vn/portal/sale/returnrefundcancel"
+            return_link = shopee_return_detail_url(x)
         else:
             order_link = ""
             return_link = ""

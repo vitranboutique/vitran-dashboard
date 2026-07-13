@@ -971,11 +971,15 @@ def _return_row_from_sapo_api(row: dict, detail: dict | None = None) -> dict:
     }.get(source_name.lower(), source_name.title())
     branch = channel.get("branch_name") or channel.get("main_name") or "VITRAN BOUTIQUE"
     gian_hang = " - ".join(x for x in (branch, source_label) if x)
+    if "shopee" in source_name.lower():
+        return_link = L.shopee_return_detail_url(detail, row)
+    else:
+        return_link = f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{return_id}" if return_id else ""
     return {
         "order_code": order.get("name") or "",
         "order_link": f"https://vitranboutiquehcm.mysapo.net/admin/orders/{order_id}" if order_id else "",
         "return_code": detail.get("name") or row.get("name") or "",
-        "return_link": f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{return_id}" if return_id else "",
+        "return_link": return_link,
         "created": created_disp,
         "created_on": created_raw,
         "vd_di": ((si.get("fulfillment_tracking_numbers") or [None])[0]) or "",
@@ -7094,8 +7098,8 @@ def _render_returns():
                     tds += [
                         f"<td>{_safe(d.get('created'))}</td>",
                         f"<td>{_code_cell(d['order_code'], d.get('order_link'))}</td>",
-                        f"<td>{_code_cell(d.get('return_code'))}</td>",
-                    ]   # KHÔNG link, chỉ copy
+                        f"<td>{_code_cell(d.get('return_code'), d.get('return_link'))}</td>",
+                    ]
                     if merge_delivery_vd:
                         tds.append(f"<td>{_code_cell(d.get('vd_di') or d.get('vd_tra'))}</td>")
                     else:
@@ -7641,7 +7645,7 @@ def _render_returns():
                         f"<td class='r'>{i}</td>",
                         f"<td>{_safe(d.get('created'))}</td>",
                         f"<td>{_code_cell(d.get('order_code'), d.get('order_link'))}</td>",
-                        f"<td>{_code_cell(d.get('return_code'))}</td>",
+                        f"<td>{_code_cell(d.get('return_code'), d.get('return_link'))}</td>",
                         f"<td>{_code_cell(d.get('vd_di'))}</td>",
                         f"<td>{_vd_ve_dohana_cell(d.get('vd_tra'), code)}</td>",
                         f"<td>{_tag_reason_cell(r, d)}</td>",
