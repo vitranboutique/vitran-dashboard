@@ -1635,15 +1635,19 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120, canceled_max_pages
         gian_hang = (_ch.get("branch_name") or _ch.get("main_name")
                      or (x.get("order_source") or "").title() or "—")
         _ocode = (x.get("order") or {}).get("name") or x.get("name") or ""
+        _rcode = x.get("name") or ""
         _osrc = (x.get("order_source") or "").lower()
         if "tiktok" in _osrc:
             order_link = tiktok_order_detail_url(_ocode)
-            return_link = tiktok_return_search_url(x, x.get("name"), _ocode, si.get("tracking_number"))
+            if _norm_key(_rcode) and _norm_key(_rcode) == _norm_key(_ocode):
+                return_link = order_link
+            else:
+                return_link = tiktok_return_search_url(x, _rcode, si.get("tracking_number"))
         elif "shopee" in _osrc:
             order_link = shopee_order_detail_url(x, x.get("order") or {}, keyword=_ocode)
             return_link = shopee_return_detail_url(
                 x,
-                keyword=x.get("name") or si.get("tracking_number") or _ocode,
+                keyword=_rcode or si.get("tracking_number") or _ocode,
             )
         else:
             order_link = ""

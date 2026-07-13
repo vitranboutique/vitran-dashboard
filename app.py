@@ -95,6 +95,8 @@ def _normalize_tiktok_order_link(url):
     url = str(url or "").strip()
     if "seller-vn.tiktok.com/order" not in url:
         return url
+    if "seller-vn.tiktok.com/order/return" in url:
+        return url
     match = re.search(r"(?:[?&](?:main_order_id|order_no|search_numbers)=|/order/detail/)([^&#/]+)", url)
     if match:
         return _tiktok_order_url(match.group(1))
@@ -1025,7 +1027,12 @@ def _return_row_from_sapo_api(row: dict, detail: dict | None = None) -> dict:
         )
     elif "tiktok" in source_l:
         order_link = L.tiktok_order_detail_url(order_code)
-        return_link = L.tiktok_return_search_url(detail, row, return_code, order_code, si.get("tracking_number"))
+        _ret_key = re.sub(r"[^A-Z0-9]+", "", str(return_code or "").upper())
+        _ord_key = re.sub(r"[^A-Z0-9]+", "", str(order_code or "").upper())
+        if _ret_key and _ret_key == _ord_key:
+            return_link = order_link
+        else:
+            return_link = L.tiktok_return_search_url(detail, row, return_code, si.get("tracking_number"))
     else:
         order_link = f"https://vitranboutiquehcm.mysapo.net/admin/orders/{order_id}" if order_id else ""
         return_link = f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{return_id}" if return_id else ""
@@ -7071,7 +7078,8 @@ def _render_returns():
 
             def _code_cell(val, link=None):    # mã + nút copy (kèm link nếu có)
                 link = _normalize_shopee_order_link(_normalize_tiktok_order_link(link))
-                if link and "seller-vn.tiktok.com/order" in link and "main_order_id=" not in link:
+                tiktok_return = bool(link and "seller-vn.tiktok.com/order/return" in link)
+                if link and "seller-vn.tiktok.com/order" in link and not tiktok_return and "main_order_id=" not in link:
                     link = _tiktok_order_url(val)
                 shopee_detail = bool(link and re.search(r"/portal/sale/order/\d+", link))
                 if link and "banhang.shopee.vn/portal/sale/order" in link and not shopee_detail and "search=" not in link:
