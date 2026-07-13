@@ -59,8 +59,27 @@ PALETTE = ["#534AB7", "#1D9E75", "#BA7517", "#E24B4A", "#378ADD",
 ACCENT_ORANGE = "#BA7517"   # phần Chờ xác nhận
 ACCENT_RED = "#E24B4A"      # phần Đơn hủy
 ACCENT_BLUE = "#378ADD"     # phần Đơn trả
+SHOPEE_ORDER_LIST_URL = "https://banhang.shopee.vn/portal/sale/order"
+SHOPEE_ORDER_SEARCH_URL = SHOPEE_ORDER_LIST_URL + "?search={}"
 TIKTOK_ORDER_LIST_URL = "https://seller-vn.tiktok.com/order?selected_sort=6&tab=all"
 TIKTOK_ORDER_SEARCH_URL = TIKTOK_ORDER_LIST_URL + "&main_order_id={}"
+
+
+def _shopee_order_url(order_code=""):
+    code = str(order_code or "").strip()
+    if not code:
+        return SHOPEE_ORDER_LIST_URL
+    return SHOPEE_ORDER_SEARCH_URL.format(quote_plus(code))
+
+
+def _normalize_shopee_order_link(url):
+    url = str(url or "").strip()
+    if "banhang.shopee.vn/portal/sale/order" not in url:
+        return url
+    match = re.search(r"(?:[?&](?:search|keyword)=|/portal/sale/order/)([^&#/]+)", url)
+    if match:
+        return _shopee_order_url(match.group(1))
+    return url
 
 
 def _tiktok_order_url(order_code=""):
@@ -4802,7 +4821,7 @@ if _page == PAGE_TTKH:
                 customer_query = _info.get("phone") or customer_query or _info.get("name") or code
             customer_query = customer_query or code
             def _lnk(txt, href):   # mở tab mới (Shift+Click để mở CỬA SỔ Chrome riêng)
-                href = _normalize_tiktok_order_link(href)
+                href = _normalize_shopee_order_link(_normalize_tiktok_order_link(href))
                 return f"<a href='{href}' target='_blank' rel='noopener'>{txt}</a>"
             code_link = _lnk(_esc(str(code)), url) if url else _esc(str(code))
             sapo_link = f" · {_lnk('Sapo', sapo_url)}" if sapo_url else ""
@@ -7049,9 +7068,11 @@ def _render_returns():
                         if val else "")
 
             def _code_cell(val, link=None):    # mã + nút copy (kèm link nếu có)
-                link = _normalize_tiktok_order_link(link)
+                link = _normalize_shopee_order_link(_normalize_tiktok_order_link(link))
                 if link and "seller-vn.tiktok.com/order" in link and "main_order_id=" not in link:
                     link = _tiktok_order_url(val)
+                if link and "banhang.shopee.vn/portal/sale/order" in link and "search=" not in link:
+                    link = _shopee_order_url(val)
                 v = _esc(str(val or ""))
                 disp = f"<a href='{_esc(link)}' target='_blank'>{v}</a>" if link else v
                 return f"{disp} {_cp(val)}" if val else ""
@@ -7070,7 +7091,13 @@ def _render_returns():
                     )
                     return _tiktok_order_url(code)
                 if "shopee" in src:
-                    return link if re.fullmatch(r"https://banhang\.shopee\.vn/portal/sale/order/\d+", link) else ""
+                    code = (
+                        (d or {}).get("order_code")
+                        or (d or {}).get("MÃ£ Ä‘Æ¡n")
+                        or (d or {}).get("ma_don")
+                        or (d or {}).get("order_no")
+                    )
+                    return _shopee_order_url(code)
                 return link
 
             def _search_norm(s):

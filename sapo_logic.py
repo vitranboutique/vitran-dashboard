@@ -39,6 +39,7 @@ SHOPEE_RETURN_DETAIL_URL = "https://banhang.shopee.vn/portal/sale/return/{}"
 SHOPEE_RETURN_SEARCH_URL = "https://banhang.shopee.vn/portal/sale/return?keyword={}"
 SHOPEE_ORDER_LIST_URL = "https://banhang.shopee.vn/portal/sale/order"
 SHOPEE_ORDER_DETAIL_URL = "https://banhang.shopee.vn/portal/sale/order/{}"
+SHOPEE_ORDER_SEARCH_URL = SHOPEE_ORDER_LIST_URL + "?search={}"
 TIKTOK_RETURN_LIST_URL = "https://seller-vn.tiktok.com/order/return?order_sort_comp=OrderSort_UPADTE_TIME_DESC&tab=100"
 TIKTOK_RETURN_SEARCH_URL = "https://seller-vn.tiktok.com/order/return?search_numbers={}&order_sort_comp=OrderSort_UPADTE_TIME_DESC&tab=100"
 TIKTOK_ORDER_LIST_URL = "https://seller-vn.tiktok.com/order?selected_sort=6&tab=all"
@@ -129,11 +130,21 @@ def shopee_return_detail_url(*docs, keyword: str = "") -> str:
     return SHOPEE_RETURN_DETAIL_URL.format(candidates[0][2])
 
 
+def shopee_order_search_url(order_code: str = "") -> str:
+    code = str(order_code or "").strip()
+    if not code:
+        return SHOPEE_ORDER_LIST_URL
+    return SHOPEE_ORDER_SEARCH_URL.format(quote_plus(code))
+
+
 def shopee_order_detail_url(*docs, keyword: str = "") -> str:
-    """Build Shopee Seller order detail link when Sapo exposes Shopee's numeric order id."""
+    """Build Shopee Seller order-list search link for the order code."""
+    kw = str(keyword or "").strip()
+    if kw:
+        return shopee_order_search_url(kw)
     direct = _first_matching_text(_SHOPEE_ORDER_URL_RE, *docs)
     if direct:
-        return direct
+        return SHOPEE_ORDER_LIST_URL
     blocked = (
         "tracking", "shipment", "shipping", "fulfillment", "phone", "total", "price",
         "amount", "quantity", "line_item", "item", "product", "variant", "sku", "barcode",
@@ -180,7 +191,7 @@ def shopee_order_detail_url(*docs, keyword: str = "") -> str:
                 candidates.append((score, len(path), value))
     if candidates:
         candidates.sort(key=lambda item: (item[0], -item[1]), reverse=True)
-        return SHOPEE_ORDER_DETAIL_URL.format(candidates[0][2])
+        return shopee_order_search_url(candidates[0][2])
     return ""
 
 
