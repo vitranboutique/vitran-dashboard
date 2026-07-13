@@ -143,6 +143,17 @@ def shopee_order_detail_url(*docs, keyword: str = "") -> str:
     direct = _first_matching_text(_SHOPEE_ORDER_URL_RE, *docs)
     if direct:
         return direct.strip()
+    any_doc_mentions_shopee = False
+    for doc in docs:
+        if not isinstance(doc, (dict, list)):
+            continue
+        try:
+            doc_text = json.dumps(doc, ensure_ascii=False).lower() if isinstance(doc, dict) else ""
+        except TypeError:
+            doc_text = str(doc).lower()
+        if "shopee" in doc_text:
+            any_doc_mentions_shopee = True
+            break
     blocked = (
         "tracking", "shipment", "shipping", "fulfillment", "phone", "total", "price",
         "amount", "quantity", "line_item", "item", "product", "variant", "sku", "barcode",
@@ -174,7 +185,7 @@ def shopee_order_detail_url(*docs, keyword: str = "") -> str:
             has_order_context = any(token in path_l for token in ("order", "trade"))
             has_external_context = any(token in path_l for token in external_tokens)
             is_explicit_external_leaf = leaf in order_leafs or leaf.endswith("_order_id")
-            if not ((has_order_context and has_external_context) or (doc_mentions_shopee and is_explicit_external_leaf)):
+            if not ((has_order_context and has_external_context) or ((doc_mentions_shopee or any_doc_mentions_shopee) and is_explicit_external_leaf)):
                 continue
             score = 0
             if "shopee" in path_l:
