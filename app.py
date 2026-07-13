@@ -59,6 +59,14 @@ PALETTE = ["#534AB7", "#1D9E75", "#BA7517", "#E24B4A", "#378ADD",
 ACCENT_ORANGE = "#BA7517"   # phần Chờ xác nhận
 ACCENT_RED = "#E24B4A"      # phần Đơn hủy
 ACCENT_BLUE = "#378ADD"     # phần Đơn trả
+TIKTOK_ORDER_LIST_URL = "https://seller-vn.tiktok.com/order?selected_sort=6&tab=all"
+
+
+def _normalize_tiktok_order_link(url):
+    url = str(url or "").strip()
+    if "seller-vn.tiktok.com/order/detail" in url:
+        return TIKTOK_ORDER_LIST_URL
+    return url
 
 # ───────────────────────── CSS nhẹ (viền trái màu, tiêu đề mục) ─────────────────────────
 st.markdown(
@@ -4142,7 +4150,7 @@ if _page == PAGE_TTKH:
             return ""
         if "shopee" in str(store or "").lower():
             return ""
-        return "https://seller-vn.tiktok.com/order?selected_sort=6&tab=all"
+        return TIKTOK_ORDER_LIST_URL
 
     def _sapo_order_url(order_id):
         oid = str(order_id or "").strip()
@@ -4781,6 +4789,7 @@ if _page == PAGE_TTKH:
                 customer_query = _info.get("phone") or customer_query or _info.get("name") or code
             customer_query = customer_query or code
             def _lnk(txt, href):   # mở tab mới (Shift+Click để mở CỬA SỔ Chrome riêng)
+                href = _normalize_tiktok_order_link(href)
                 return f"<a href='{href}' target='_blank' rel='noopener'>{txt}</a>"
             code_link = _lnk(_esc(str(code)), url) if url else _esc(str(code))
             sapo_link = f" · {_lnk('Sapo', sapo_url)}" if sapo_url else ""
@@ -7027,6 +7036,7 @@ def _render_returns():
                         if val else "")
 
             def _code_cell(val, link=None):    # mã + nút copy (kèm link nếu có)
+                link = _normalize_tiktok_order_link(link)
                 v = _esc(str(val or ""))
                 disp = f"<a href='{_esc(link)}' target='_blank'>{v}</a>" if link else v
                 return f"{disp} {_cp(val)}" if val else ""
@@ -7037,7 +7047,7 @@ def _render_returns():
                     "order_source", "gian_hang", "order_link", "return_link"
                 )).lower()
                 if "tiktok" in src:
-                    return "https://seller-vn.tiktok.com/order?selected_sort=6&tab=all"
+                    return TIKTOK_ORDER_LIST_URL
                 if "shopee" in src:
                     return link if re.fullmatch(r"https://banhang\.shopee\.vn/portal/sale/order/\d+", link) else ""
                 return link
