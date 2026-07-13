@@ -37,12 +37,46 @@ _PHONE_RE = re.compile(r'(?:s\s*[đd]t|phone|tel|dien\s*thoai|điện\s*thoại)
 SHOPEE_RETURN_LIST_URL = "https://banhang.shopee.vn/portal/sale/returnrefundcancel"
 SHOPEE_RETURN_DETAIL_URL = "https://banhang.shopee.vn/portal/sale/return/{}"
 SHOPEE_RETURN_SEARCH_URL = "https://banhang.shopee.vn/portal/sale/return?keyword={}"
+SHOPEE_ORDER_LIST_URL = "https://banhang.shopee.vn/portal/sale/order"
+SHOPEE_ORDER_DETAIL_URL = "https://banhang.shopee.vn/portal/sale/order/{}"
+SHOPEE_ORDER_SEARCH_URL = "https://banhang.shopee.vn/portal/sale/order?keyword={}&category=1"
+TIKTOK_RETURN_LIST_URL = "https://seller-vn.tiktok.com/order/return?order_sort_comp=OrderSort_UPADTE_TIME_DESC&tab=100"
+TIKTOK_RETURN_SEARCH_URL = TIKTOK_RETURN_LIST_URL + "&search_numbers={}"
+TIKTOK_ORDER_DETAIL_URL = "https://seller-vn.tiktok.com/order/detail?order_no={}&shop_region=VN"
+_SHOPEE_RETURN_URL_RE = re.compile(r"https?://banhang\.shopee\.vn/portal/sale/return/\d+")
+_SHOPEE_ORDER_URL_RE = re.compile(r"https?://banhang\.shopee\.vn/portal/sale/order/\d+")
 
 SNAPSHOT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "snapshot.json")
 
 
+def _walk_doc_values(obj, path=()):
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            yield from _walk_doc_values(value, path + (str(key),))
+        return
+    if isinstance(obj, list):
+        for idx, value in enumerate(obj):
+            yield from _walk_doc_values(value, path + (str(idx),))
+        return
+    yield path, obj
+
+
+def _first_matching_text(pattern, *docs) -> str:
+    for doc in docs:
+        if not isinstance(doc, (dict, list)):
+            continue
+        for _path, raw in _walk_doc_values(doc):
+            match = pattern.search(str(raw or ""))
+            if match:
+                return match.group(0)
+    return ""
+
+
 def shopee_return_detail_url(*docs, keyword: str = "") -> str:
     """Build Shopee Seller return detail link when Sapo exposes the Shopee return id."""
+    direct = _first_matching_text(_SHOPEE_RETURN_URL_RE, *docs)
+    if direct:
+        return direct
     blocked = (
         "tracking", "shipment", "shipping", "fulfillment", "phone", "total", "price",
         "amount", "quantity", "line_item", "item", "product", "variant", "sku", "barcode",
@@ -93,6 +127,64 @@ def shopee_return_detail_url(*docs, keyword: str = "") -> str:
         return SHOPEE_RETURN_SEARCH_URL.format(quote_plus(kw)) if kw else SHOPEE_RETURN_LIST_URL
     candidates.sort(key=lambda item: (item[0], -item[1]), reverse=True)
     return SHOPEE_RETURN_DETAIL_URL.format(candidates[0][2])
+
+
+def shopee_order_detail_url(*docs, keyword: str = "") -> str:
+    """Build Shopee Seller order detail link when Sapo exposes Shopee's numeric order id."""
+    direct = _first_matching_text(_SHOPEE_ORDER_URL_RE, *docs)
+    if direct:
+        return direct
+    blocked = (
+        "tracking", "shipment", "shipping", "fulfillment", "phone", "total", "price",
+        "amount", "quantity", "line_item", "item", "product", "variant", "sku", "barcode",
+        "return", "refund", "reverse", "rma", "request",
+    )
+    candidates = []
+    external_tokens = ("shopee", "source", "external", "reference", "origin", "marketplace", "platform", "channel")
+    order_leafs = (
+        "shopee_order_id", "seller_order_id", "source_order_id", "external_order_id",
+        "platform_order_id", "marketplace_order_id", "order_source_id", "order_reference_id",
+        "source_id", "external_id", "reference_id",
+    )
+    for doc in docs:
+        if not isinstance(doc, (dict, list)):
+            continue
+        for path, raw in _walk_doc_values(doc):
+            value = str(raw or "").strip()
+            if not re.fullmatch(r"\d{12,18}", value):
+                continue
+            path_l = ".".join(path).lower()
+            if any(token in path_l for token in blocked):
+                continue
+            leaf = path[-1].lower() if path else ""
+            has_order_context = any(token in path_l for token in ("order", "trade"))
+            has_external_context = any(token in path_l for token in external_tokens)
+            if not (has_order_context and has_external_context):
+                continue
+            score = 0
+            if "shopee" in path_l:
+                score += 30
+            if any(token in path_l for token in ("source", "external", "reference", "origin", "marketplace", "platform")):
+                score += 20
+            if leaf in order_leafs or leaf.endswith("_order_id"):
+                score += 10
+            if score:
+                candidates.append((score, len(path), value))
+    if candidates:
+        candidates.sort(key=lambda item: (item[0], -item[1]), reverse=True)
+        return SHOPEE_ORDER_DETAIL_URL.format(candidates[0][2])
+    kw = str(keyword or "").strip()
+    return SHOPEE_ORDER_SEARCH_URL.format(quote_plus(kw)) if kw else SHOPEE_ORDER_LIST_URL
+
+
+def tiktok_order_detail_url(order_code: str = "") -> str:
+    code = str(order_code or "").strip()
+    return TIKTOK_ORDER_DETAIL_URL.format(quote_plus(code)) if code else ""
+
+
+def tiktok_return_search_url(*codes) -> str:
+    code = next((str(c or "").strip() for c in codes if str(c or "").strip()), "")
+    return TIKTOK_RETURN_SEARCH_URL.format(quote_plus(code)) if code else TIKTOK_RETURN_LIST_URL
 
 
 # ───────────────────────── Helpers thời gian ─────────────────────────
@@ -1493,10 +1585,10 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120, canceled_max_pages
         _ocode = (x.get("order") or {}).get("name") or x.get("name") or ""
         _osrc = (x.get("order_source") or "").lower()
         if "tiktok" in _osrc:
-            order_link = f"https://seller-vn.tiktok.com/order?main_order_id[]={_ocode}&selected_sort=6&tab=all"
-            return_link = "https://seller-vn.tiktok.com/order/return?order_sort_comp=OrderSort_UPADTE_TIME_DESC&tab=100"
+            order_link = tiktok_order_detail_url(_ocode)
+            return_link = tiktok_return_search_url(x.get("name"), _ocode, si.get("tracking_number"))
         elif "shopee" in _osrc:
-            order_link = f"https://banhang.shopee.vn/portal/sale?search={_ocode}"
+            order_link = shopee_order_detail_url(x, x.get("order") or {}, keyword=_ocode)
             return_link = shopee_return_detail_url(
                 x,
                 keyword=x.get("name") or si.get("tracking_number") or _ocode,
@@ -1776,10 +1868,10 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120, canceled_max_pages
         _wb = _lost_waybill(x)
         _oc = (x.get("order") or {}).get("name") or x.get("name") or ""
         _src = (x.get("order_source") or "").lower()
-        if "tiktok" in _src:   # mở THẲNG đơn (order/detail); trang trả hàng ko nhận search qua URL
-            _lk = f"https://seller-vn.tiktok.com/order/detail?order_no={_oc}&shop_region=VN"
+        if "tiktok" in _src:
+            _lk = tiktok_order_detail_url(_oc)
         elif "shopee" in _src:
-            _lk = f"https://banhang.shopee.vn/portal/sale?search={_oc}"
+            _lk = shopee_order_detail_url(x, x.get("order") or {}, keyword=_oc)
         else:
             _lk = ""
         _lorders.append({"shipper": _name or _dv, "phone": _ph, "dvvc": _dv, "waybill": _wb,

@@ -971,18 +971,25 @@ def _return_row_from_sapo_api(row: dict, detail: dict | None = None) -> dict:
     }.get(source_name.lower(), source_name.title())
     branch = channel.get("branch_name") or channel.get("main_name") or "VITRAN BOUTIQUE"
     gian_hang = " - ".join(x for x in (branch, source_label) if x)
+    order_code = order.get("name") or ""
     return_code = detail.get("name") or row.get("name") or ""
-    if "shopee" in source_name.lower():
+    source_l = source_name.lower()
+    if "shopee" in source_l:
+        order_link = L.shopee_order_detail_url(detail, row, order, keyword=order_code)
         return_link = L.shopee_return_detail_url(
             detail,
             row,
             keyword=return_code or si.get("tracking_number") or order.get("name") or "",
         )
+    elif "tiktok" in source_l:
+        order_link = L.tiktok_order_detail_url(order_code)
+        return_link = L.tiktok_return_search_url(return_code, order_code, si.get("tracking_number"))
     else:
+        order_link = f"https://vitranboutiquehcm.mysapo.net/admin/orders/{order_id}" if order_id else ""
         return_link = f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{return_id}" if return_id else ""
     return {
-        "order_code": order.get("name") or "",
-        "order_link": f"https://vitranboutiquehcm.mysapo.net/admin/orders/{order_id}" if order_id else "",
+        "order_code": order_code,
+        "order_link": order_link,
         "return_code": return_code,
         "return_link": return_link,
         "created": created_disp,
