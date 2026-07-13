@@ -39,9 +39,8 @@ SHOPEE_RETURN_DETAIL_URL = "https://banhang.shopee.vn/portal/sale/return/{}"
 SHOPEE_RETURN_SEARCH_URL = "https://banhang.shopee.vn/portal/sale/return?keyword={}"
 SHOPEE_ORDER_LIST_URL = "https://banhang.shopee.vn/portal/sale/order"
 SHOPEE_ORDER_DETAIL_URL = "https://banhang.shopee.vn/portal/sale/order/{}"
-SHOPEE_ORDER_SEARCH_URL = "https://banhang.shopee.vn/portal/sale/order?keyword={}&category=1"
 TIKTOK_RETURN_LIST_URL = "https://seller-vn.tiktok.com/order/return?order_sort_comp=OrderSort_UPADTE_TIME_DESC&tab=100"
-TIKTOK_RETURN_SEARCH_URL = TIKTOK_RETURN_LIST_URL + "&search_numbers={}"
+TIKTOK_RETURN_SEARCH_URL = "https://seller-vn.tiktok.com/order/return?search_numbers={}&order_sort_comp=OrderSort_UPADTE_TIME_DESC&tab=100"
 TIKTOK_ORDER_DETAIL_URL = "https://seller-vn.tiktok.com/order/detail?order_no={}&shop_region=VN"
 _SHOPEE_RETURN_URL_RE = re.compile(r"https?://banhang\.shopee\.vn/portal/sale/return/\d+")
 _SHOPEE_ORDER_URL_RE = re.compile(r"https?://banhang\.shopee\.vn/portal/sale/order/\d+")
@@ -149,6 +148,11 @@ def shopee_order_detail_url(*docs, keyword: str = "") -> str:
     for doc in docs:
         if not isinstance(doc, (dict, list)):
             continue
+        try:
+            doc_text = json.dumps(doc, ensure_ascii=False).lower() if isinstance(doc, dict) else ""
+        except TypeError:
+            doc_text = str(doc).lower()
+        doc_mentions_shopee = "shopee" in doc_text
         for path, raw in _walk_doc_values(doc):
             value = str(raw or "").strip()
             if not re.fullmatch(r"\d{12,18}", value):
@@ -159,7 +163,8 @@ def shopee_order_detail_url(*docs, keyword: str = "") -> str:
             leaf = path[-1].lower() if path else ""
             has_order_context = any(token in path_l for token in ("order", "trade"))
             has_external_context = any(token in path_l for token in external_tokens)
-            if not (has_order_context and has_external_context):
+            is_explicit_external_leaf = leaf in order_leafs or leaf.endswith("_order_id")
+            if not ((has_order_context and has_external_context) or (doc_mentions_shopee and is_explicit_external_leaf)):
                 continue
             score = 0
             if "shopee" in path_l:
@@ -168,13 +173,14 @@ def shopee_order_detail_url(*docs, keyword: str = "") -> str:
                 score += 20
             if leaf in order_leafs or leaf.endswith("_order_id"):
                 score += 10
+            if doc_mentions_shopee:
+                score += 5
             if score:
                 candidates.append((score, len(path), value))
     if candidates:
         candidates.sort(key=lambda item: (item[0], -item[1]), reverse=True)
         return SHOPEE_ORDER_DETAIL_URL.format(candidates[0][2])
-    kw = str(keyword or "").strip()
-    return SHOPEE_ORDER_SEARCH_URL.format(quote_plus(kw)) if kw else SHOPEE_ORDER_LIST_URL
+    return ""
 
 
 def tiktok_order_detail_url(order_code: str = "") -> str:
@@ -183,7 +189,30 @@ def tiktok_order_detail_url(order_code: str = "") -> str:
 
 
 def tiktok_return_search_url(*codes) -> str:
-    code = next((str(c or "").strip() for c in codes if str(c or "").strip()), "")
+    clean = []
+    return_leafs = {
+        "reverse_main_order_id", "reverse_order_id", "return_order_id",
+        "return_id", "refund_id", "return_request_id", "refund_request_id", "request_id",
+    }
+
+    def add_code(raw, path=()):
+        value = str(raw or "").strip()
+        if not value:
+            return
+        if not path:
+            clean.append(value)
+            return
+        leaf = path[-1].lower()
+        if leaf in return_leafs or re.fullmatch(r"40\d{10,}", value):
+            clean.append(value)
+
+    for item in codes:
+        if isinstance(item, (dict, list)):
+            for path, raw in _walk_doc_values(item):
+                add_code(raw, path)
+        else:
+            add_code(item)
+    code = next((c for c in clean if re.fullmatch(r"40\d{10,}", c)), clean[0] if clean else "")
     return TIKTOK_RETURN_SEARCH_URL.format(quote_plus(code)) if code else TIKTOK_RETURN_LIST_URL
 
 
@@ -1586,7 +1615,7 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120, canceled_max_pages
         _osrc = (x.get("order_source") or "").lower()
         if "tiktok" in _osrc:
             order_link = tiktok_order_detail_url(_ocode)
-            return_link = tiktok_return_search_url(x.get("name"), _ocode, si.get("tracking_number"))
+            return_link = tiktok_return_search_url(x, x.get("name"), _ocode, si.get("tracking_number"))
         elif "shopee" in _osrc:
             order_link = shopee_order_detail_url(x, x.get("order") or {}, keyword=_ocode)
             return_link = shopee_return_detail_url(

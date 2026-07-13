@@ -983,7 +983,7 @@ def _return_row_from_sapo_api(row: dict, detail: dict | None = None) -> dict:
         )
     elif "tiktok" in source_l:
         order_link = L.tiktok_order_detail_url(order_code)
-        return_link = L.tiktok_return_search_url(return_code, order_code, si.get("tracking_number"))
+        return_link = L.tiktok_return_search_url(detail, row, return_code, order_code, si.get("tracking_number"))
     else:
         order_link = f"https://vitranboutiquehcm.mysapo.net/admin/orders/{order_id}" if order_id else ""
         return_link = f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{return_id}" if return_id else ""
