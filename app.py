@@ -6108,6 +6108,7 @@ def _render_returns():
         _full_note_mode = False
         _allow_final = False
         _full_note_quick_count = 0
+        _quick_write_now = False
         if _preview_ready and st.session_state.get("return_note_preview_rows"):
             _lookup_rows = st.session_state["return_note_preview_rows"]
             _hidden_final_count = sum(
@@ -6218,6 +6219,12 @@ def _render_returns():
                     _ready_count = sum(1 for _p in _full_note_plan.values() if _p.get("new_note"))
                     if _ready_count:
                         st.caption(f"Đã sẵn sàng ghi {_ready_count} phiếu. App vẫn kiểm tra prefix chuẩn và tên shipper trước khi cho ghi.")
+                    _quick_write_now = st.button(
+                        f"🚀 Ghi nhanh {_ready_count} block vào SAPO",
+                        disabled=(not _ready_count or not _full_note_valid or not _can_write_sapo),
+                        key=f"return_note_quick_write_{_ascii_code(_codes_key)[:50]}_{_full_note_blocks_key}",
+                        use_container_width=True,
+                    )
         if (not _full_note_mode) and _preview_ready:
             st.markdown("**Tự tạo ghi chú đúng mẫu**")
             st.caption("Dùng phần này khi chị muốn tự soạn bằng mẫu có sẵn. Chỉ ghi Cần KN/Cần KN gấp khi đã kiểm tra sàn và chị duyệt.")
@@ -6405,12 +6412,15 @@ def _render_returns():
         _confirm_ready = _confirm_write or bool(_full_note_mode and _full_note_quick_count)
         if _full_note_mode and _full_note_quick_count:
             st.caption("Đã dán ghi chú nhanh theo mã nên có thể bấm ghi trực tiếp; không cần tick ô xác nhận.")
-        if st.button("✍️ Ghi chú vào SAPO",
-                     disabled=(not _codes or not _preview_ready or not _confirm_ready or not _can_write_sapo
-                               or (_full_note_mode and (not _full_note_plan or not _full_note_valid))
-                               or ((not _full_note_mode) and (not _individual_mode) and (not _note_valid or not _shipper_valid))
-                               or ((not _full_note_mode) and _individual_mode and (not _individual_plan or not _individual_valid))),
-                     key="return_note_write_btn"):
+        _write_clicked = st.button(
+            "✍️ Ghi chú vào SAPO",
+            disabled=(not _codes or not _preview_ready or not _confirm_ready or not _can_write_sapo
+                      or (_full_note_mode and (not _full_note_plan or not _full_note_valid))
+                      or ((not _full_note_mode) and (not _individual_mode) and (not _note_valid or not _shipper_valid))
+                      or ((not _full_note_mode) and _individual_mode and (not _individual_plan or not _individual_valid))),
+            key="return_note_write_btn",
+        )
+        if _quick_write_now or _write_clicked:
             results = []
             try:
                 rows, matches = _return_note_rows(_codes, int(_max_pages))
