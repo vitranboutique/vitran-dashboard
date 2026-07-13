@@ -76,7 +76,9 @@ def _normalize_shopee_order_link(url):
     url = str(url or "").strip()
     if "banhang.shopee.vn/portal/sale/order" not in url:
         return url
-    match = re.search(r"(?:[?&](?:search|keyword)=|/portal/sale/order/)([^&#/]+)", url)
+    if re.search(r"/portal/sale/order/\d+", url):
+        return url
+    match = re.search(r"[?&](?:search|keyword)=([^&#/]+)", url)
     if match:
         return _shopee_order_url(match.group(1))
     return url
@@ -7071,10 +7073,11 @@ def _render_returns():
                 link = _normalize_shopee_order_link(_normalize_tiktok_order_link(link))
                 if link and "seller-vn.tiktok.com/order" in link and "main_order_id=" not in link:
                     link = _tiktok_order_url(val)
-                if link and "banhang.shopee.vn/portal/sale/order" in link and "search=" not in link:
+                shopee_detail = bool(link and re.search(r"/portal/sale/order/\d+", link))
+                if link and "banhang.shopee.vn/portal/sale/order" in link and not shopee_detail and "search=" not in link:
                     link = _shopee_order_url(val)
                 v = _esc(str(val or ""))
-                if link and "banhang.shopee.vn/portal/sale/order" in link:
+                if link and "banhang.shopee.vn/portal/sale/order" in link and not shopee_detail:
                     disp = (
                         f"<a href='{_esc(link)}' target='_blank' onclick=\"cp('{_jss(val)}',this)\" "
                         f"title='Shopee khong tu loc tu URL; bam link se copy ma don'>{v}</a>"
@@ -7097,6 +7100,8 @@ def _render_returns():
                     )
                     return _tiktok_order_url(code)
                 if "shopee" in src:
+                    if re.search(r"/portal/sale/order/\d+", link):
+                        return _normalize_shopee_order_link(link)
                     code = (
                         (d or {}).get("order_code")
                         or (d or {}).get("MÃ£ Ä‘Æ¡n")

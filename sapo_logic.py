@@ -138,13 +138,11 @@ def shopee_order_search_url(order_code: str = "") -> str:
 
 
 def shopee_order_detail_url(*docs, keyword: str = "") -> str:
-    """Build Shopee Seller order-list search link for the order code."""
+    """Build Shopee Seller order detail link when Sapo exposes Shopee's internal id."""
     kw = str(keyword or "").strip()
-    if kw:
-        return shopee_order_search_url(kw)
     direct = _first_matching_text(_SHOPEE_ORDER_URL_RE, *docs)
     if direct:
-        return SHOPEE_ORDER_LIST_URL
+        return direct.strip()
     blocked = (
         "tracking", "shipment", "shipping", "fulfillment", "phone", "total", "price",
         "amount", "quantity", "line_item", "item", "product", "variant", "sku", "barcode",
@@ -191,8 +189,8 @@ def shopee_order_detail_url(*docs, keyword: str = "") -> str:
                 candidates.append((score, len(path), value))
     if candidates:
         candidates.sort(key=lambda item: (item[0], -item[1]), reverse=True)
-        return shopee_order_search_url(candidates[0][2])
-    return ""
+        return SHOPEE_ORDER_DETAIL_URL.format(candidates[0][2])
+    return shopee_order_search_url(kw) if kw else ""
 
 
 def tiktok_order_detail_url(order_code: str = "") -> str:
