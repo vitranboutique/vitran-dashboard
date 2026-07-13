@@ -7050,6 +7050,8 @@ def _render_returns():
 
             def _code_cell(val, link=None):    # mã + nút copy (kèm link nếu có)
                 link = _normalize_tiktok_order_link(link)
+                if link and "seller-vn.tiktok.com/order" in link and "main_order_id=" not in link:
+                    link = _tiktok_order_url(val)
                 v = _esc(str(val or ""))
                 disp = f"<a href='{_esc(link)}' target='_blank'>{v}</a>" if link else v
                 return f"{disp} {_cp(val)}" if val else ""
