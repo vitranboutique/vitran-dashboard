@@ -116,11 +116,11 @@ def _shopee_shop_context_id(row_or_text):
     else:
         raw = str(row_or_text or "")
     text = _plain_text_key(raw)
-    if "smoss" in text:
+    if "58785946" in text or "smoss" in text:
         return SHOPEE_SHOP_CONTEXT_IDS["smoss"]
-    if "mun" in text and "ai" in text:
+    if "736667756" in text or ("mun" in text and ("ai" in text or "official" in text or "partnership" in text)):
         return SHOPEE_SHOP_CONTEXT_IDS["mun-ai"]
-    if "vitran boutique" in text or "vitranboutique" in text:
+    if "179402721" in text or "vitran boutique" in text or "vitranboutique" in text:
         return SHOPEE_SHOP_CONTEXT_IDS["vitran boutique"]
     return ""
 
@@ -129,10 +129,10 @@ def _with_shopee_shop_context(url, row_or_text=None):
     url = str(url or "").strip()
     if "banhang.shopee.vn/portal/sale/" not in url:
         return url
-    shop_id = _shopee_shop_context_id(row_or_text)
+    shop_id = _shopee_shop_context_id(row_or_text) or _url_query_value(url, "cnsc_shop_id", "cnscShopId")
     if not shop_id:
         return url
-    return _with_url_query(url, cnscShopId=shop_id)
+    return _with_url_query(url, cnsc_shop_id=shop_id)
 
 
 def _shopee_return_url(return_code=""):
@@ -149,7 +149,9 @@ def _normalize_shopee_return_link(url, fallback_code=""):
     if re.search(r"/portal/sale/return/\d+", url):
         return url
     code = _url_query_value(url, "keyword", "search", "query") or str(fallback_code or "").strip()
-    return _shopee_return_url(code)
+    normalized = _shopee_return_url(code)
+    shop_id = _url_query_value(url, "cnsc_shop_id", "cnscShopId")
+    return _with_url_query(normalized, cnsc_shop_id=shop_id) if shop_id else normalized
 
 
 def _shopee_order_url(order_code=""):
@@ -168,8 +170,8 @@ def _normalize_shopee_order_link(url):
     code = _url_query_value(url, "search", "keyword")
     if code:
         normalized = _shopee_order_url(code)
-        shop_id = _url_query_value(url, "cnscShopId")
-        return _with_url_query(normalized, cnscShopId=shop_id) if shop_id else normalized
+        shop_id = _url_query_value(url, "cnsc_shop_id", "cnscShopId")
+        return _with_url_query(normalized, cnsc_shop_id=shop_id) if shop_id else normalized
     return url
 
 
@@ -7213,6 +7215,8 @@ def _render_returns():
             def _return_code_cell(d):
                 code = _display_return_code(d)
                 link = _normalize_shopee_return_link((d or {}).get("return_link"), code)
+                if link and "banhang.shopee.vn/portal/sale/return" in link:
+                    link = _with_shopee_shop_context(link, d)
                 return _code_cell(code, link) if code else ""
 
             def _order_link_for_row(d):
@@ -7229,8 +7233,6 @@ def _render_returns():
                     )
                     return _tiktok_order_url(code)
                 if "shopee" in src:
-                    if re.search(r"/portal/sale/order/\d+", link):
-                        return _with_shopee_shop_context(_normalize_shopee_order_link(link), d)
                     code = (
                         (d or {}).get("order_code")
                         or (d or {}).get("MÃ£ Ä‘Æ¡n")
