@@ -42,7 +42,7 @@ SHOPEE_ORDER_DETAIL_URL = "https://banhang.shopee.vn/portal/sale/order/{}"
 SHOPEE_ORDER_SEARCH_URL = "https://banhang.shopee.vn/portal/sale/order?search={}"
 TIKTOK_RETURN_LIST_URL = "https://seller-vn.tiktok.com/order/return?order_sort_comp=OrderSort_UPADTE_TIME_DESC&tab=100"
 TIKTOK_RETURN_SEARCH_URL = "https://seller-vn.tiktok.com/order/return?search_numbers={}&order_sort_comp=OrderSort_UPADTE_TIME_DESC&tab=100"
-TIKTOK_ORDER_DETAIL_URL = "https://seller-vn.tiktok.com/order/detail?order_no={}&shop_region=VN"
+TIKTOK_ORDER_LIST_URL = "https://seller-vn.tiktok.com/order?selected_sort=6&tab=all"
 _SHOPEE_RETURN_URL_RE = re.compile(r"https?://banhang\.shopee\.vn/portal/sale/return/\d+")
 _SHOPEE_ORDER_URL_RE = re.compile(r"https?://banhang\.shopee\.vn/portal/sale/order/\d+")
 
@@ -186,8 +186,7 @@ def shopee_order_detail_url(*docs, keyword: str = "") -> str:
 
 
 def tiktok_order_detail_url(order_code: str = "") -> str:
-    code = str(order_code or "").strip()
-    return TIKTOK_ORDER_DETAIL_URL.format(quote_plus(code)) if code else ""
+    return TIKTOK_ORDER_LIST_URL
 
 
 def tiktok_return_search_url(*codes) -> str:
