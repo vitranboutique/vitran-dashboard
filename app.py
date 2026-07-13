@@ -854,6 +854,30 @@ def _sapo_lookup_key(value) -> str:
     return re.sub(r"\s+", "", str(value or "")).upper()
 
 
+def _standard_result_note_text(note: str) -> str:
+    note = str(note or "").strip()
+    if not note:
+        return ""
+    lines = note.splitlines()
+    first = lines[0].strip() if lines else ""
+    compact = "".join(ch for ch in _ascii_code(first) if ch.isalnum())
+    standards = [
+        ("KHONGCANKN", "⚪ KHÔNG CẦN KN"),
+        ("KHONGCANKHIEUNAI", "⚪ KHÔNG CẦN KN"),
+        ("HETHAN", "⏰ HẾT HẠN"),
+        ("THANG", "✅ THẮNG"),
+        ("THUA", "❌ THUA"),
+        ("HUY", "🚫 HỦY"),
+        ("CANKN", "🚨 CẦN KN"),
+    ]
+    for token, label in standards:
+        if token in compact and label not in first:
+            suffix = first.split("|", 1)[1].strip() if "|" in first else ""
+            lines[0] = f"{label} | {suffix}".rstrip(" |")
+            break
+    return "\n".join(lines).strip()
+
+
 def _return_row_from_sapo_api(row: dict, detail: dict | None = None) -> dict:
     detail = detail or row or {}
     row = row or {}
@@ -876,7 +900,7 @@ def _return_row_from_sapo_api(row: dict, detail: dict | None = None) -> dict:
     ship_status = str(detail.get("shipment_status") or row.get("shipment_status") or "").lower()
     stock_code = str(detail.get("stock_status") or detail.get("restock_status")
                      or row.get("stock_status") or row.get("restock_status") or "").lower()
-    note = (detail.get("note") or row.get("note") or "").strip()
+    note = _standard_result_note_text(detail.get("note") or row.get("note") or "")
     m = re.search(r"shipper\s*ho[aà]n\s*:\s*([^|\n\r]+)", note, flags=re.I)
     return_shipper = (m.group(1).strip() if m else "")
     if not return_shipper:
@@ -5605,7 +5629,7 @@ def _render_returns():
         return ""
 
     def _closed_return_app_note_text(rec):
-        note = str(rec.get("note") if isinstance(rec, dict) else rec or "").strip()
+        note = _standard_result_note_text(rec.get("note") if isinstance(rec, dict) else rec or "")
         if not note:
             return ""
         lines = note.splitlines()
