@@ -7530,7 +7530,6 @@ def _render_returns():
                         if key:
                             by_key[key] = len(merged) - 1
                 merged.sort(key=lambda d: str(d.get("created_on") or d.get("created") or ""), reverse=True)
-                merged.sort(key=_priority)
                 return merged
 
             def _dohana_detail_note(code):
@@ -7682,6 +7681,7 @@ def _render_returns():
             _ckn_with_closed_returns = _merge_need_kn_rows(_ckn_list, _closed_returns_need_kn_detail)
             _ckn_render_raw_list = _merge_need_kn_rows(_ckn_with_closed_returns, _dohana_yellow_ckn)
             _ckn_render_list = [d for d in _ckn_render_raw_list if not _is_closed_kn_result(d)]
+            _ckn_render_list.sort(key=lambda d: str(d.get("created_on") or d.get("created") or ""), reverse=True)
             st.subheader("🚨 Đơn cần KN — lấy làm khiếu nại", anchor="don-can-kn")
             st.caption("Gồm các đơn chưa chốt THẮNG / THUA / KHÔNG CẦN KN. "
                        "Note CẦN KN vẫn nằm ở bảng này để nhân viên tiếp tục xử lý. "
@@ -7690,7 +7690,7 @@ def _render_returns():
             if _closed_returns_need_kn_detail:
                 _added_closed = max(0, len(_ckn_with_closed_returns) - len(_ckn_list))
                 st.caption(f"Có {len(_closed_returns_need_kn_detail)} đơn trả hàng bị đóng có VĐ trả về chưa chốt "
-                           f"(thêm mới {_added_closed} dòng, dòng trùng thì ghép vào Cần KN sẵn có). Nhóm này được ưu tiên hiển thị đầu bảng.")
+                           f"(thêm mới {_added_closed} dòng, dòng trùng thì ghép vào Cần KN sẵn có). Bảng đang xếp theo ngày tạo mới nhất.")
             if _dohana_yellow_ckn:
                 _added = max(0, len(_ckn_render_list) - len(_ckn_with_closed_returns))
                 st.caption(f"Dohana có {len(_dohana_yellow_ckn)} dòng đang tô vàng vì chưa có ghi chú chuẩn "
