@@ -60,10 +60,23 @@ ACCENT_ORANGE = "#BA7517"   # phần Chờ xác nhận
 ACCENT_RED = "#E24B4A"      # phần Đơn hủy
 ACCENT_BLUE = "#378ADD"     # phần Đơn trả
 TIKTOK_ORDER_LIST_URL = "https://seller-vn.tiktok.com/order?selected_sort=6&tab=all"
+TIKTOK_ORDER_SEARCH_URL = TIKTOK_ORDER_LIST_URL + "&main_order_id={}"
+
+
+def _tiktok_order_url(order_code=""):
+    code = str(order_code or "").strip()
+    if not code:
+        return TIKTOK_ORDER_LIST_URL
+    return TIKTOK_ORDER_SEARCH_URL.format(quote_plus(code))
 
 
 def _normalize_tiktok_order_link(url):
     url = str(url or "").strip()
+    if "seller-vn.tiktok.com/order" not in url:
+        return url
+    match = re.search(r"(?:[?&](?:main_order_id|order_no|search_numbers)=|/order/detail/)([^&#/]+)", url)
+    if match:
+        return _tiktok_order_url(match.group(1))
     if "seller-vn.tiktok.com/order/detail" in url:
         return TIKTOK_ORDER_LIST_URL
     return url
@@ -4150,7 +4163,7 @@ if _page == PAGE_TTKH:
             return ""
         if "shopee" in str(store or "").lower():
             return ""
-        return TIKTOK_ORDER_LIST_URL
+        return _tiktok_order_url(code)
 
     def _sapo_order_url(order_id):
         oid = str(order_id or "").strip()
@@ -7047,7 +7060,13 @@ def _render_returns():
                     "order_source", "gian_hang", "order_link", "return_link"
                 )).lower()
                 if "tiktok" in src:
-                    return TIKTOK_ORDER_LIST_URL
+                    code = (
+                        (d or {}).get("order_code")
+                        or (d or {}).get("Mã đơn")
+                        or (d or {}).get("ma_don")
+                        or (d or {}).get("order_no")
+                    )
+                    return _tiktok_order_url(code)
                 if "shopee" in src:
                     return link if re.fullmatch(r"https://banhang\.shopee\.vn/portal/sale/order/\d+", link) else ""
                 return link
