@@ -20,6 +20,7 @@ import os
 import re
 import time
 from datetime import datetime, timedelta, timezone
+from urllib.parse import quote_plus
 
 try:
     from sapo_address import resolve_address as _resolve_address, norm_key as _norm_key
@@ -35,11 +36,12 @@ _TRACK_RE = re.compile(r'[A-Z]{2,}VN\d+|\b\d{11,14}\b')
 _PHONE_RE = re.compile(r'(?:s\s*[đd]t|phone|tel|dien\s*thoai|điện\s*thoại)\s*[:\-]?\s*(?:\+?84|0)?\d[\d\s.\-]{7,12}|\b(?:\+?84|0)\d[\d\s.\-]{8,12}\b', re.I)
 SHOPEE_RETURN_LIST_URL = "https://banhang.shopee.vn/portal/sale/returnrefundcancel"
 SHOPEE_RETURN_DETAIL_URL = "https://banhang.shopee.vn/portal/sale/return/{}"
+SHOPEE_RETURN_SEARCH_URL = "https://banhang.shopee.vn/portal/sale/return?keyword={}"
 
 SNAPSHOT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "snapshot.json")
 
 
-def shopee_return_detail_url(*docs) -> str:
+def shopee_return_detail_url(*docs, keyword: str = "") -> str:
     """Build Shopee Seller return detail link when Sapo exposes the Shopee return id."""
     blocked = (
         "tracking", "shipment", "shipping", "fulfillment", "phone", "total", "price",
@@ -72,9 +74,13 @@ def shopee_return_detail_url(*docs) -> str:
             score += 20
         if any(token in path_l for token in ("source", "external", "reference", "origin", "marketplace", "platform")):
             score += 10
-        if path and path[-1].lower() in ("id", "return_id", "request_id", "refund_id"):
+        leaf = path[-1].lower() if path else ""
+        if leaf in (
+            "id", "code", "source_id", "source_identifier", "external_id", "reference_id",
+            "return_id", "request_id", "refund_id", "return_request_id", "refund_request_id",
+        ):
             score += 5
-        if path == ("id",):
+        if len(path) == 1 and leaf in ("id", "code", "source_id", "source_identifier", "external_id"):
             score += 3
         if score:
             candidates.append((score, len(path), value))
@@ -83,7 +89,8 @@ def shopee_return_detail_url(*docs) -> str:
         if isinstance(doc, dict):
             walk(doc)
     if not candidates:
-        return SHOPEE_RETURN_LIST_URL
+        kw = str(keyword or "").strip()
+        return SHOPEE_RETURN_SEARCH_URL.format(quote_plus(kw)) if kw else SHOPEE_RETURN_LIST_URL
     candidates.sort(key=lambda item: (item[0], -item[1]), reverse=True)
     return SHOPEE_RETURN_DETAIL_URL.format(candidates[0][2])
 
@@ -1490,7 +1497,10 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120, canceled_max_pages
             return_link = "https://seller-vn.tiktok.com/order/return?order_sort_comp=OrderSort_UPADTE_TIME_DESC&tab=100"
         elif "shopee" in _osrc:
             order_link = f"https://banhang.shopee.vn/portal/sale?search={_ocode}"
-            return_link = shopee_return_detail_url(x)
+            return_link = shopee_return_detail_url(
+                x,
+                keyword=x.get("name") or si.get("tracking_number") or _ocode,
+            )
         else:
             order_link = ""
             return_link = ""
