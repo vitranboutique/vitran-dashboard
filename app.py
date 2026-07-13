@@ -59,6 +59,8 @@ PALETTE = ["#534AB7", "#1D9E75", "#BA7517", "#E24B4A", "#378ADD",
 ACCENT_ORANGE = "#BA7517"   # phần Chờ xác nhận
 ACCENT_RED = "#E24B4A"      # phần Đơn hủy
 ACCENT_BLUE = "#378ADD"     # phần Đơn trả
+SHOPEE_RETURN_LIST_URL = "https://banhang.shopee.vn/portal/sale/returnrefundcancel"
+SHOPEE_RETURN_SEARCH_URL = SHOPEE_RETURN_LIST_URL + "?keyword={}"
 SHOPEE_ORDER_LIST_URL = "https://banhang.shopee.vn/portal/sale/order"
 SHOPEE_ORDER_SEARCH_URL = SHOPEE_ORDER_LIST_URL + "?search={}"
 SHOPEE_SHOP_CONTEXT_IDS = {
@@ -131,6 +133,23 @@ def _with_shopee_shop_context(url, row_or_text=None):
     if not shop_id:
         return url
     return _with_url_query(url, cnscShopId=shop_id)
+
+
+def _shopee_return_url(return_code=""):
+    code = str(return_code or "").strip()
+    if not code:
+        return SHOPEE_RETURN_LIST_URL
+    return SHOPEE_RETURN_SEARCH_URL.format(quote_plus(code))
+
+
+def _normalize_shopee_return_link(url, fallback_code=""):
+    url = str(url or "").strip()
+    if "banhang.shopee.vn/portal/sale/return" not in url:
+        return url
+    if re.search(r"/portal/sale/return/\d+", url):
+        return url
+    code = _url_query_value(url, "keyword", "search", "query") or str(fallback_code or "").strip()
+    return _shopee_return_url(code)
 
 
 def _shopee_order_url(order_code=""):
@@ -7193,7 +7212,7 @@ def _render_returns():
 
             def _return_code_cell(d):
                 code = _display_return_code(d)
-                link = _with_shopee_shop_context((d or {}).get("return_link"), d)
+                link = _normalize_shopee_return_link((d or {}).get("return_link"), code)
                 return _code_cell(code, link) if code else ""
 
             def _order_link_for_row(d):
