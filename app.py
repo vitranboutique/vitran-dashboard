@@ -4141,8 +4141,8 @@ if _page == PAGE_TTKH:
         if not code:
             return ""
         if "shopee" in str(store or "").lower():
-            return f"https://banhang.shopee.vn/portal/sale?search={quote_plus(code)}"
-        return f"https://seller-vn.tiktok.com/order/detail?order_no={quote_plus(code)}&shop_region=VN"
+            return ""
+        return "https://seller-vn.tiktok.com/order?selected_sort=6&tab=all"
 
     def _sapo_order_url(order_id):
         oid = str(order_id or "").strip()
@@ -7031,6 +7031,17 @@ def _render_returns():
                 disp = f"<a href='{_esc(link)}' target='_blank'>{v}</a>" if link else v
                 return f"{disp} {_cp(val)}" if val else ""
 
+            def _order_link_for_row(d):
+                link = str((d or {}).get("order_link") or "").strip()
+                src = " ".join(str((d or {}).get(k) or "") for k in (
+                    "order_source", "gian_hang", "order_link", "return_link"
+                )).lower()
+                if "tiktok" in src:
+                    return "https://seller-vn.tiktok.com/order?selected_sort=6&tab=all"
+                if "shopee" in src:
+                    return link if re.fullmatch(r"https://banhang\.shopee\.vn/portal/sale/order/\d+", link) else ""
+                return link
+
             def _search_norm(s):
                 return "".join(ch for ch in _ascii_code(s) if ch.isalnum())
 
@@ -7121,7 +7132,7 @@ def _render_returns():
                         tds.append(f"<td>{_safe(d.get('_location') or _row_location(d))}</td>")
                     tds += [
                         f"<td>{_safe(d.get('created'))}</td>",
-                        f"<td>{_code_cell(d['order_code'], d.get('order_link'))}</td>",
+                        f"<td>{_code_cell(d['order_code'], _order_link_for_row(d))}</td>",
                         f"<td>{_code_cell(d.get('return_code'), d.get('return_link'))}</td>",
                     ]
                     if merge_delivery_vd:
@@ -7668,7 +7679,7 @@ def _render_returns():
                     tds = [
                         f"<td class='r'>{i}</td>",
                         f"<td>{_safe(d.get('created'))}</td>",
-                        f"<td>{_code_cell(d.get('order_code'), d.get('order_link'))}</td>",
+                        f"<td>{_code_cell(d.get('order_code'), _order_link_for_row(d))}</td>",
                         f"<td>{_code_cell(d.get('return_code'), d.get('return_link'))}</td>",
                         f"<td>{_code_cell(d.get('vd_di'))}</td>",
                         f"<td>{_vd_ve_dohana_cell(d.get('vd_tra'), code)}</td>",
