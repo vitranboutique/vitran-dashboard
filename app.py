@@ -5682,6 +5682,16 @@ def _render_returns():
     st.title("📦 Đơn trả hàng đang xử lý (chưa nhập kho)")
     st.caption("Đơn trả CHƯA nhập kho (năm nay) — chia theo loại trả + tình trạng vận chuyển. "
                "Bấm 📋 để copy mã · dòng tô vàng = cần khiếu nại.")
+
+    def _clip_duration_text(value):
+        if value in (None, ""):
+            return ""
+        try:
+            return f"{int(float(value))}s"
+        except Exception:
+            text = str(value or "").strip()
+            return text if text.endswith("s") else text
+
     if not credential_present():
         st.warning("⚠️ Cần kết nối Sapo (API LIVE).")
         return
@@ -6061,6 +6071,8 @@ def _render_returns():
                     "Mã đơn": d.get("order_code") or "",
                     "Mã trả": _display_return_code(d),
                     "VĐ trả về": d.get("vd_tra") or "",
+                    "Ngày giờ quay": d.get("clip_time") or "",
+                    "Thời lượng": _clip_duration_text(d.get("clip_dur")),
                     "Ghi chú app": app_note,
                     "Ghi chú Sapo": sapo_note,
                 })
@@ -6069,13 +6081,15 @@ def _render_returns():
                 hide_index=True,
                 use_container_width=True,
                 key="closed_return_bulk_note_editor",
-                disabled=["Ngày tạo", "Mã đơn", "Mã trả", "VĐ trả về", "Ghi chú Sapo", "_key"],
+                disabled=["Ngày tạo", "Mã đơn", "Mã trả", "VĐ trả về", "Ngày giờ quay", "Thời lượng", "Ghi chú Sapo", "_key"],
                 column_config={
                     "_key": None,
                     "Ngày tạo": st.column_config.TextColumn("Ngày tạo", width="small"),
                     "Mã đơn": st.column_config.TextColumn("Mã đơn", width="medium"),
                     "Mã trả": st.column_config.TextColumn("Mã trả", width="medium"),
                     "VĐ trả về": st.column_config.TextColumn("VĐ trả về", width="medium"),
+                    "Ngày giờ quay": st.column_config.TextColumn("Ngày giờ quay", width="medium"),
+                    "Thời lượng": st.column_config.TextColumn("Thời lượng", width="small"),
                     "Ghi chú app": st.column_config.TextColumn("Ghi chú app", width="large"),
                     "Ghi chú Sapo": st.column_config.TextColumn("Ghi chú Sapo", width="large"),
                 },
@@ -7318,6 +7332,69 @@ def _render_returns():
                 code = _dohana_inbound_code_for_row(d)
                 return _with_url_query(_dohana_inbound_url(), q=code, orderCode=code) if code else ""
 
+            # Lay so thuc tu Dohana (app dong hang) truoc khi render bat ky bang nao.
+            try:
+                _dvids = load_dohana_videos()
+            except Exception:
+                _dvids = []
+            _dohana_inbound_videos = [r for r in _dvids if r.get("type") == "inbound"]
+
+            def _dohana_video_recorded_text(video_row):
+                return " ".join(x for x in (
+                    str((video_row or {}).get("date") or "").strip(),
+                    str((video_row or {}).get("time") or "").strip(),
+                ) if x)
+
+            def _dohana_inbound_video_for_return_row(d):
+                field_order = ("vd_tra", "return_code", "order_code", "vd_di")
+                row_codes = [(idx, _search_norm((d or {}).get(key))) for idx, key in enumerate(field_order)]
+                row_codes = [(idx, code) for idx, code in row_codes if code]
+                if not row_codes:
+                    return None
+                candidates = []
+                for r in _dohana_inbound_videos:
+                    code = _search_norm((r or {}).get("code"))
+                    if not code:
+                        continue
+                    exact = [idx for idx, row_code in row_codes if code == row_code]
+                    if exact:
+                        score = min(exact)
+                    else:
+                        fuzzy = [
+                            idx for idx, row_code in row_codes
+                            if len(code) >= 8 and len(row_code) >= 8 and (code in row_code or row_code in code)
+                        ]
+                        if not fuzzy:
+                            continue
+                        score = 20 + min(fuzzy)
+                    candidates.append((score, _dohana_video_recorded_text(r), r))
+                if not candidates:
+                    return None
+                candidates.sort(key=lambda item: item[1], reverse=True)
+                candidates.sort(key=lambda item: item[0])
+                return candidates[0][2]
+
+            def _annotate_rows_with_dohana_inbound_video(rows):
+                for d in rows or []:
+                    video = _dohana_inbound_video_for_return_row(d)
+                    if not video:
+                        continue
+                    d["clip_code"] = str(video.get("code") or "").strip()
+                    d["clip_time"] = _dohana_video_recorded_text(video)
+                    d["clip_dur"] = video.get("dur")
+                    d["clip_link"] = str(video.get("link") or "").strip()
+                    d["clip_tag_id"] = _video_tag_id(video)
+                    d["clip_tag"] = _video_tag_label(video)
+
+            for _clip_rows in (
+                _all_returns_detail,
+                _canceled_returns_detail,
+                _closed_returns_with_waybill_detail,
+                _closed_returns_need_kn_detail,
+                _return_match_detail,
+            ):
+                _annotate_rows_with_dohana_inbound_video(_clip_rows)
+
             def _row_matches_code(d, needle):
                 q = _search_norm(needle)
                 if not q:
@@ -7366,6 +7443,7 @@ def _render_returns():
                 if not items:
                     st.caption("— Không có —")
                     return
+                show_clip = True
                 _PER = int(per_page or 14)                  # tối đa N đơn/trang, còn lại qua trang sau
                 _start = 0
                 if pg_key and len(items) > _PER:
@@ -7386,14 +7464,14 @@ def _render_returns():
                     cols += ["Vị trí"]
                 cols += ["Ngày tạo", "Mã đơn", "Mã trả hàng"]
                 cols += ["Vận đơn"] if merge_delivery_vd else ["VĐ đi", "VĐ trả về"]
+                if show_clip:
+                    cols += ["Ngày giờ quay", "Thời lượng"]
                 cols += ["Shipper hoàn", "Gian hàng"]
                 if show_type:
                     cols += ["Loại trả"]
                 cols += ["SKU", "SL", "Tổng tiền", "Nhập kho"]
                 if show_reason:
                     cols += ["Lý do vào KN"]
-                if show_clip:
-                    cols += ["Ngày giờ quay", "Thời lượng"]
                 cols += ["Đối soát", "Ghi chú"]
                 _sticky_n = cols.index("Mã trả hàng") + 1   # cố định các cột đầu → hết "Mã trả hàng"
                 thead = "".join(f"<th>{c}</th>" for c in cols)
@@ -7420,6 +7498,12 @@ def _render_returns():
                     else:
                         tds.append(f"<td>{_code_cell(d['vd_di'])}</td>")
                         tds.append(f"<td>{_return_waybill_cell(d)}</td>")
+                    if show_clip:
+                        _clip_title = _safe(d.get("clip_code") or d.get("_dohana_code") or "")
+                        _clip_time = str(d.get("clip_time") or d.get("clip_recorded") or "").strip()
+                        _clip_dur = _clip_duration_text(d.get("clip_dur"))
+                        tds.append(f"<td title='{_clip_title}'>{_safe(_clip_time)}</td>")
+                        tds.append(f"<td class='r' title='{_clip_title}'>{_safe(_clip_dur)}</td>")
                     tds += [
                         f"<td>{_safe(d.get('return_shipper'), 'Chưa có')}</td>",
                         f"<td>{_safe(d.get('gian_hang'))}</td>",
@@ -7432,28 +7516,6 @@ def _render_returns():
                             f"<td>{_safe(d.get('stock_status'), 'Chưa rõ')}</td>"]
                     if show_reason:
                         tds.append(f"<td>{_safe(d.get('reason'))}</td>")
-                    if show_clip:
-                        _clip_title = _safe(d.get("clip_code") or d.get("_dohana_code") or "")
-                        _clip_link = _dohana_inbound_link_for_row(d)
-                        _clip_copy = _dohana_inbound_code_for_row(d)
-                        _clip_time = str(d.get("clip_time") or d.get("clip_recorded") or "").strip()
-                        _clip_dur = d.get("clip_dur")
-                        try:
-                            _clip_dur = f"{int(float(_clip_dur))}s" if _clip_dur not in (None, "") else ""
-                        except Exception:
-                            _clip_dur = str(_clip_dur or "")
-                        def _clip_cell_text(txt):
-                            txt = str(txt or "").strip()
-                            if not txt:
-                                return ""
-                            body = _safe(txt)
-                            if _clip_link:
-                                return (f"<a href='{_esc(_clip_link)}' target='_blank' rel='noopener' "
-                                        f"onclick=\"cp('{_jss(_clip_copy)}',this)\" "
-                                        f"title='Mo Dohana nhap hang hoan; dong thoi copy ma'>{body}</a>")
-                            return body
-                        tds.append(f"<td title='{_clip_title}'>{_clip_cell_text(_clip_time)}</td>")
-                        tds.append(f"<td class='r' title='{_clip_title}'>{_clip_cell_text(_clip_dur)}</td>")
                     tds.append(f"<td>{_doisoat(d)}</td>")
                     tds.append(f"<td class='note' title='{_safe(note_display)}'>{_safe(note_display)}</td>")
                     body += f"<tr style='{bg}'>" + "".join(tds) + "</tr>"
@@ -7586,6 +7648,8 @@ def _render_returns():
                                 "Loại trả": _d.get("loai_tra") or "",
                                 "VĐ đi": _d.get("vd_di") or "",
                                 "VĐ trả về": _d.get("vd_tra") or "",
+                                "Ngày giờ quay": _d.get("clip_time") or "",
+                                "Thời lượng": _clip_duration_text(_d.get("clip_dur")),
                                 "Shipper hoàn": _d.get("return_shipper") or "Chưa có",
                                 "Kết quả": _outcome,
                                 "Nhập kho": _d.get("stock_status") or "",
@@ -7912,6 +7976,9 @@ def _render_returns():
                             "_kn_priority": 10,
                             "_dohana_code": code,
                             "_dohana_tag_label": tag_text or tag,
+                            "clip_code": code,
+                            "clip_time": _dohana_video_recorded_text(r),
+                            "clip_dur": r.get("dur"),
                         })
                         if not str(d.get("note") or "").strip():
                             d["note"] = note
@@ -8027,7 +8094,7 @@ def _render_returns():
 
                 cols = [
                     "STT", "Ngày tạo", "Mã đơn", "Mã trả", "VĐ đi", "VĐ về / Dohana",
-                    "Tag / lý do vào KN", "Ngày giờ quay", "Thời lượng", "Loại trả", "Shipper hoàn",
+                    "Ngày giờ quay", "Thời lượng", "Tag / lý do vào KN", "Loại trả", "Shipper hoàn",
                     "Gian hàng", "SKU", "SL", "Tổng tiền", "Nhập kho", "Đối soát", "Ghi chú",
                 ]
                 thead = "".join(f"<th>{_esc(c)}</th>" for c in cols)
@@ -8040,7 +8107,7 @@ def _render_returns():
                     note = str(d.get("note") or "").strip() if matches else "Chưa thấy trong chi tiết"
                     note_preview = next((line.strip() for line in note.splitlines() if line.strip()), note)
                     filmed_at = " ".join(x for x in (str(r.get("date") or "").strip(), str(r.get("time") or "").strip()) if x)
-                    duration = str(r.get("dur") if r.get("dur") not in (None, "") else "").strip()
+                    duration = _clip_duration_text(r.get("dur"))
                     shipper = d.get("return_shipper") or ("Chưa có" if matches else "")
                     bg = "" if (matches and _dohana_is_closed_note(note)) else "background:#fff3cd"
                     tds = [
@@ -8050,9 +8117,9 @@ def _render_returns():
                         f"<td>{_return_code_cell(d)}</td>",
                         f"<td>{_code_cell(d.get('vd_di'))}</td>",
                         f"<td>{_vd_ve_dohana_cell(d.get('vd_tra'), code)}</td>",
+                        f"<td>{_safe(filmed_at)}</td>",
+                        f"<td class='r'>{_safe(duration)}</td>",
                         f"<td>{_tag_reason_cell(r, d)}</td>",
-                        f"<td>{_video_link_cell(filmed_at, r)}</td>",
-                        f"<td class='r'>{_video_link_cell(duration + 's' if duration else '', r)}</td>",
                         f"<td>{_safe(_return_type_label(d))}</td>",
                         f"<td class='shipper' title='{_safe(shipper)}'>{_safe(shipper)}</td>",
                         f"<td>{_safe(d.get('gian_hang'))}</td>",
