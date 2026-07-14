@@ -8592,13 +8592,18 @@ if _page == PAGE_OPS:
     if _is_cskh:
         _render_daily()
     else:
-        _t_daily, _t_ret, _t_pick = st.tabs(
-            ["📄 Báo cáo cuối ngày", "📦 Đơn trả hàng", "🧾 Phiếu nhặt hàng"])
-        with _t_daily:
+        _ops_tab = st.radio(
+            "Tab vận hành",
+            ["📄 Báo cáo cuối ngày", "📦 Đơn trả hàng", "🧾 Phiếu nhặt hàng"],
+            horizontal=True,
+            label_visibility="collapsed",
+            key="ops_active_tab",
+        )
+        if _ops_tab.startswith("📄"):
             _render_daily()
-        with _t_ret:
+        elif _ops_tab.startswith("📦"):
             _render_returns()
-        with _t_pick:
+        else:
             _render_pick()
     st.stop()
 
