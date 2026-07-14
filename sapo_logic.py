@@ -1806,6 +1806,9 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120, canceled_max_pages
         return _ud.normalize("NFKD", str(s or "")).encode("ascii", "ignore").decode().upper()
     _amt_re = re.compile(r"(\d[\d.]*)\s*đ")   # bóc số tiền trong note (vd "186.760đ")
 
+    def _compact_pre(pre):
+        return "".join(ch for ch in str(pre or "") if ch.isalnum())
+
     def _amt(note):
         m = _amt_re.search(str(note or ""))
         if not m:
@@ -1816,11 +1819,18 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120, canceled_max_pages
             return None
 
     def _is_khong_can_kn(pre):
-        compact = "".join(ch for ch in str(pre or "") if ch.isalnum())
+        compact = _compact_pre(pre)
         return "KHONGCANKN" in compact or "KHONGCANKHIEUNAI" in compact
 
+    def _is_can_kn(pre):
+        compact = _compact_pre(pre)
+        if _is_khong_can_kn(pre):
+            return False
+        return "CANKN" in compact or "CANKHIEUNAI" in compact
+
     def _resolved(pre):   # chỉ kết luận đã chốt mới ra khỏi bảng CẦN KN
-        return "THANG" in pre or "THUA" in pre or _is_khong_can_kn(pre)
+        compact = _compact_pre(pre)
+        return any(t in compact for t in ("THANG", "THUA", "HUY", "HETHAN")) or _is_khong_can_kn(pre)
     oc = {k: {"n": 0, "money": 0} for k in ("thang", "thua", "khong_kn", "can_kn", "het_han")}
     all_oc = {k: {"n": 0, "money": 0} for k in ("thang", "thua", "khong_kn", "het_han")}
     for x in all_returns:
@@ -1830,8 +1840,9 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120, canceled_max_pages
         if amt is None:
             amt = int(round(x.get("total_price") or 0))
         is_khong_can_kn = _is_khong_can_kn(pre)
-        cat = ("thang" if "THANG" in pre else "thua" if "THUA" in pre
-               else "het_han" if "HET HAN" in pre else None)
+        compact = _compact_pre(pre)
+        cat = ("thang" if "THANG" in compact else "thua" if "THUA" in compact
+               else "het_han" if "HETHAN" in compact else None)
         if cat:
             all_oc[cat]["n"] += 1
             all_oc[cat]["money"] += amt
@@ -1849,8 +1860,9 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120, canceled_max_pages
         is_khong_can_kn = _is_khong_can_kn(pre)
         d["khong_can_kn_note"] = is_khong_can_kn
         d["khong_can_kn_money"] = amt if is_khong_can_kn else None
-        cat = ("thang" if "THANG" in pre else "thua" if "THUA" in pre
-               else "het_han" if "HET HAN" in pre else None)
+        compact = _compact_pre(pre)
+        cat = ("thang" if "THANG" in compact else "thua" if "THUA" in compact
+               else "het_han" if "HETHAN" in compact else None)
         if cat:
             oc[cat]["n"] += 1
             oc[cat]["money"] += amt
@@ -1863,8 +1875,7 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120, canceled_max_pages
     #  • ĐANG HOÀN HÀNG (returning) → cần KN nếu QUÁ 7 ngày; chỉ chưa cần khi refund 1 VĐ và chưa quá 7 ngày.
     for d in detail:
         pre = _asc((d.get("note") or "").split("|")[0])
-        compact = "".join(ch for ch in pre if ch.isalnum())
-        has_can_kn_note = "CANKN" in compact or "CANKHIEUNAI" in compact
+        has_can_kn_note = _is_can_kn(pre)
         if _resolved(pre):
             d["need_kn"] = False
         elif has_can_kn_note:
@@ -1895,7 +1906,8 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120, canceled_max_pages
     _lship = {}                                              # gộp theo shipper (tên hoặc ĐVVC)
     for x in inprog:
         _p = _asc((x.get("note") or "").split("|")[0])
-        _k = "thua" if "THUA" in _p else ("het" if "HET HAN" in _p else None)
+        _pc = _compact_pre(_p)
+        _k = "thua" if "THUA" in _pc else ("het" if "HETHAN" in _pc else None)
         if not _k:
             continue
         _mo = _amt(x.get("note"))

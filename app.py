@@ -558,6 +558,23 @@ def _ascii_code(s):
     return "".join(c for c in s.upper() if c.isalnum())
 
 
+def _note_prefix_compact(note):
+    first = str(note or "").replace("\r", "\n").split("\n")[0].split("|", 1)[0]
+    return "".join(ch for ch in _ascii_code(first) if ch.isalnum())
+
+
+def _compact_is_khong_can_kn(compact):
+    compact = str(compact or "")
+    return "KHONGCANKN" in compact or "KHONGCANKHIEUNAI" in compact
+
+
+def _compact_is_can_kn(compact):
+    compact = str(compact or "")
+    if _compact_is_khong_can_kn(compact):
+        return False
+    return "CANKN" in compact or "CANKHIEUNAI" in compact
+
+
 def _subseq(a, b):
     """a có phải SUBSEQUENCE của b không (b giữ thứ tự, được phép xen ký tự)."""
     it = iter(b)
@@ -5767,14 +5784,16 @@ def _render_returns():
     _return_top_drill_slot = st.container()
 
     def _note_has_result(note):
-        pre = _ascii_code(str(note or "").split("|")[0])
-        compact = "".join(ch for ch in pre if ch.isalnum())
-        return any(t in compact for t in ("THANG", "THUA", "HUY", "HETHAN", "CANKN", "KHONGCANKN", "KHONGCANKHIEUNAI"))
+        compact = _note_prefix_compact(note)
+        return (
+            any(t in compact for t in ("THANG", "THUA", "HUY", "HETHAN"))
+            or _compact_is_khong_can_kn(compact)
+            or _compact_is_can_kn(compact)
+        )
 
     def _note_has_final_result(note):
-        pre = _ascii_code(str(note or "").split("|")[0])
-        compact = "".join(ch for ch in pre if ch.isalnum())
-        return any(t in compact for t in ("THANG", "THUA", "HUY", "HETHAN", "KHONGCANKN", "KHONGCANKHIEUNAI"))
+        compact = _note_prefix_compact(note)
+        return any(t in compact for t in ("THANG", "THUA", "HUY", "HETHAN")) or _compact_is_khong_can_kn(compact)
 
     def _note_first_line(note):
         lines = [line.strip() for line in str(note or "").splitlines() if line.strip()]
@@ -5824,9 +5843,12 @@ def _render_returns():
         return combined[:500], "Sẽ ghi"
 
     def _note_is_bulk_write_result(note):
-        pre = _ascii_code(str(note or "").split("|")[0])
-        compact = "".join(ch for ch in pre if ch.isalnum())
-        return any(t in compact for t in ("THANG", "THUA", "HUY", "HETHAN", "KHONGCANKN", "KHONGCANKHIEUNAI", "CANKN"))
+        compact = _note_prefix_compact(note)
+        return (
+            any(t in compact for t in ("THANG", "THUA", "HUY", "HETHAN"))
+            or _compact_is_khong_can_kn(compact)
+            or _compact_is_can_kn(compact)
+        )
 
     _RETURN_NOTE_TEMPLATES = [
         {
@@ -5934,10 +5956,10 @@ def _render_returns():
             return ""
         lines = note.splitlines()
         first = lines[0].strip() if lines else ""
-        compact_first = _ascii_code(first)
+        compact_first = _note_prefix_compact(first)
         compact_all = _ascii_code(note)
         is_old_canceled_note = (
-            "KHONGCANKN" in compact_first
+            _compact_is_khong_can_kn(compact_first)
             and "SHOPEE" in compact_all
             and any(t in compact_all for t in ("YEUCAUDAHUY", "YEUCAUBIHUY", "DAHUYYEUCAU"))
         )
@@ -7002,8 +7024,8 @@ def _render_returns():
             col.caption(f"💰 {_vnd(o.get('money', 0))}")
 
         def _note_is_khong_can_kn(d):
-            pre = _ascii_code(str(d.get("note") or "").split("|")[0])
-            return bool(d.get("khong_can_kn_note")) or "KHONGCANKN" in pre or "KHONGCANKHIEUNAI" in pre
+            compact = _note_prefix_compact(d.get("note"))
+            return bool(d.get("khong_can_kn_note")) or _compact_is_khong_can_kn(compact)
 
         _khong_can_kn_list = [d for d in _rip["detail"] if _note_is_khong_can_kn(d)]
         _ckn_list = [d for d in _rip["detail"] if d.get("need_kn")]
@@ -7054,7 +7076,7 @@ def _render_returns():
             def _is_closed_kn_result(d):
                 compact = _note_compact(d)
                 return ("THANG" in compact or "THUA" in compact or "HUY" in compact or "HETHAN" in compact
-                        or "KHONGCANKN" in compact or "KHONGCANKHIEUNAI" in compact)
+                        or _compact_is_khong_can_kn(compact))
 
             def _return_outcome(d):
                 if _stock_group(d) == "Đã nhập kho":
@@ -7483,10 +7505,10 @@ def _render_returns():
                     return "Sapo đã hủy (đối chiếu sàn)"
                 if str(d.get("stock_code") or "").lower() in ("stocked", "restocked"):
                     return "Đã nhận/đã nhập kho"
-                if d.get("need_kn"):
-                    return "Cần KN"
                 if _note_is_khong_can_kn(d):
                     return "Không cần KN"
+                if d.get("need_kn"):
+                    return "Cần KN"
                 if d.get("ship_code") == "no_return":
                     return "Không có hàng hoàn về / chỉ hoàn tiền"
                 if d.get("loai_tra_code") == "return_and_refund":
@@ -7915,15 +7937,14 @@ def _render_returns():
                 if not lines:
                     return False
                 first = lines[0]
-                compact = "".join(ch for ch in _ascii_code(first) if ch.isalnum())
+                compact = _note_prefix_compact(first)
                 return any(t in compact for t in (
                     "THANG", "THUA", "HUY", "HETHAN", "KHONGCANKN", "KHONGCANKHIEUNAI",
                 ))
 
             def _dohana_is_can_kn_note(note):
-                first = str(note or "").replace("\r", "\n").split("\n")[0]
-                compact = "".join(ch for ch in _ascii_code(first) if ch.isalnum())
-                return "CANKN" in compact or "CANKHIEUNAI" in compact
+                compact = _note_prefix_compact(note)
+                return _compact_is_can_kn(compact)
 
             _dohana_extra_detail_by_code = {}
             try:
