@@ -551,6 +551,28 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
                      f'có <b>{_hdg} đơn đã hủy sau khi soạn</b> vẫn cần tính vì kho đã lấy hàng.</div>')
     else:
         sec2_note = ''
+    _miss_pick = rep.get("confirmed_not_in_picklog") or []
+    if _miss_pick:
+        _miss_rows = []
+        for _m in _miss_pick[:30]:
+            _name = _m.get("name") or ""
+            _tracking = _m.get("tracking") or ""
+            _code = _name or _tracking or next((str(c) for c in (_m.get("codes") or []) if c), "?")
+            _extra = []
+            if _tracking and _tracking != _code:
+                _extra.append(f"VD {_e(_tracking)}")
+            if _m.get("carrier"):
+                _extra.append(_e(_m.get("carrier")))
+            if _m.get("sku"):
+                _extra.append(_e(_m.get("sku")))
+            _miss_rows.append(f'<div class="wb">• <b>{_e(_code)}</b>'
+                              f'{(" · " + " · ".join(_extra)) if _extra else ""}</div>')
+        _more = len(_miss_pick) - len(_miss_rows)
+        _more_txt = f'<div class="wb">… còn {_more} đơn nữa</div>' if _more > 0 else ''
+        sec2_note += (
+            '<div class="warn" style="margin-top:.5em">'
+            f'<div class="wh">⚠️ Sapo xác nhận nhưng chưa thấy trong phiếu nhặt ({len(_miss_pick)} đơn)</div>'
+            + ''.join(_miss_rows) + _more_txt + '</div>')
     # (Đơn hủy đã chuyển lên block chi tiết ngay dưới phễu — gom theo ĐVVC + ô tick)
     nk = rep.get("nhap_kho") or {}
     nk_src = " · ".join(f"{_e(_SRC.get(k, str(k)))} {v}"

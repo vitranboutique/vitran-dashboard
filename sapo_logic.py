@@ -2248,6 +2248,24 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
             "old": bool(cr and cr < today),   # tạo trước hôm nay = đơn tồn (xót cũ)
         }
 
+    def _code_diag(o):
+        f = f0(o)
+        lis = o.get("line_items") or []
+        cr = _vn_date_of(o.get("created_on"))
+        return {
+            "name": str(o.get("name") or "").strip(),
+            "tracking": str(f.get("tracking_number") or "").strip(),
+            "codes": sorted(_order_codes(o)),
+            "carrier": carrier(o),
+            "sku": "; ".join(f"{li.get('sku') or 'N/A'}×{int(round(li.get('quantity') or 0))}"
+                             for li in lis),
+            "sp": sum(int(round(li.get("quantity") or 0)) for li in lis),
+            "created": cr.strftime("%d/%m %H:%M") if cr else "",
+            "status": o.get("status") or "",
+            "shipment_status": f.get("shipment_status") or "",
+            "packed": bool(f.get("packed_status") == "packed" or _vn_date_of(f.get("packed_on"))),
+        }
+
     dong_goi_codes, huy_goi_codes, dong_goi_order_codes = set(), set(), []
     issued_orders = []
     for o in open_orders:
@@ -2362,6 +2380,16 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
                          if _vn_date_of(f0(o).get("shipment_created_on")) == today)
     xac_nhan_today += sum(1 for o in huy_goi_orders
                           if _vn_date_of(f0(o).get("shipment_created_on")) == today)
+    confirmed_today_order_codes = []
+    _seen_confirmed_diag = set()
+    for _o in (open_orders + huy_goi_orders):
+        if _vn_date_of(f0(_o).get("shipment_created_on")) != today:
+            continue
+        _key = str(_o.get("id") or _o.get("name") or f0(_o).get("tracking_number") or "")
+        if not _key or _key in _seen_confirmed_diag:
+            continue
+        _seen_confirmed_diag.add(_key)
+        confirmed_today_order_codes.append(_code_diag(_o))
     xot_truoc = max(0, xac_nhan - xac_nhan_today)
     # + Đơn TỒN CŨ CÒN CHỜ giao: tạo vận đơn hôm TRƯỚC, còn pending, HÔM NAY chưa đụng tới
     #   (chưa gói/xuất). Trước đây bị bỏ sót nên ô "Đơn xót hôm trước" ra 0 dù còn tồn → nay
@@ -2404,6 +2432,7 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
         "dong_goi_codes": dong_goi_codes,
         "huy_goi_codes": huy_goi_codes,
         "dong_goi_order_codes": dong_goi_order_codes,
+        "confirmed_today_order_codes": confirmed_today_order_codes,
     }
 
 

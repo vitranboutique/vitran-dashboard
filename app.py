@@ -1459,6 +1459,32 @@ def _apply_picklog_soan_to_daily(rep, rows, dvr=None, dup_orders=0):
             "xuat": 0,
             "summary": {},
         })
+    if rep.get("confirmed_today_order_codes") is not None:
+        _pick_codes, _pick_norms = set(), set()
+        for _group in code_groups:
+            for _c in _group:
+                _s = str(_c or "").strip()
+                if not _s:
+                    continue
+                _pick_codes.add(_s)
+                _n = _ascii_code(_s)
+                if _n:
+                    _pick_norms.add(_n)
+        _miss_confirmed = []
+        for _item in rep.get("confirmed_today_order_codes") or []:
+            _codes = [str(c or "").strip() for c in (_item.get("codes") or []) if str(c or "").strip()]
+            _hit = False
+            for _c in _codes:
+                if _c in _pick_codes:
+                    _hit = True
+                    break
+                _n = _ascii_code(_c)
+                if _n and _n in _pick_norms:
+                    _hit = True
+                    break
+            if not _hit:
+                _miss_confirmed.append(_item)
+        rep["confirmed_not_in_picklog"] = _miss_confirmed
     rep["batches"] = batches
     rep["tong_don_soan"] = total_orders
     rep["tong_sp_soan"] = total_qty
