@@ -5996,12 +5996,13 @@ def _render_returns():
             "THIEU", "SAI", "LOI", "HONG", "VO", "RACH", "GIA", "MAT",
             "CHUANHAN", "CHUADU", "KHONGDU", "KHONGDUNG", "CANBOITHUONG",
         )
-        is_old_received_no_claim_note = (
-            _compact_is_can_kn(compact_first)
-            and "DANHANHANG" in compact_first_full
+        is_final_non_received = any(t in compact_first for t in ("THANG", "THUA", "HUY", "HETHAN"))
+        is_received_no_claim_note = (
+            "DANHANHANG" in compact_first_full
+            and not is_final_non_received
             and not any(t in compact_first_full for t in old_received_bad_markers)
         )
-        if is_old_received_no_claim_note:
+        if is_received_no_claim_note:
             suffix = first.split("|", 1)[1].strip() if "|" in first else "Đã nhận hàng"
             if _ascii_code(suffix) in ("DANHANHANG", "DANHANHANGHOAN"):
                 suffix = "Đã nhận hàng"
