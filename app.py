@@ -6035,9 +6035,9 @@ def _render_returns():
                 "vd_tra": vd_tra,
                 "updated_at": "2026-07-14 15:00:00",
             }
-            out.setdefault(f"return_code:{return_code}", item)
-            out.setdefault(f"vd_tra:{vd_tra}", item)
-            out.setdefault(f"order_code:{order_code}", item)
+            out[f"return_code:{return_code}"] = item
+            out[f"vd_tra:{vd_tra}"] = item
+            out[f"order_code:{order_code}"] = item
         return out
 
     def _save_closed_return_app_notes(notes):
