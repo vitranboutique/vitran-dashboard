@@ -7223,7 +7223,7 @@ def _render_returns():
                 return (f"<span class='cp' onclick=\"cp('{_jss(val)}',this)\" title='Copy mã'>📋</span>"
                         if val else "")
 
-            def _code_cell(val, link=None):    # mã + nút copy (kèm link nếu có)
+            def _code_cell(val, link=None, link_copy=None, link_title=None):    # mã + nút copy (kèm link nếu có)
                 link = _normalize_shopee_order_link(_normalize_tiktok_order_link(link))
                 tiktok_return = bool(link and "seller-vn.tiktok.com/order/return" in link)
                 if link and "seller-vn.tiktok.com/order" in link and not tiktok_return and "main_order_id=" not in link:
@@ -7242,6 +7242,13 @@ def _render_returns():
                         f"<a href='{_esc(link)}' target='_blank' onclick=\"cp('{_jss(val)}',this)\" "
                         f"title='Shopee khong tu loc tu URL; bam link se copy ma don'>{v}</a>"
                     )
+                elif link and "dhn.io.vn/order/inbound" in link:
+                    copy_val = str(link_copy if link_copy not in (None, "") else val)
+                    title = link_title or "Mo Dohana nhap hang hoan; dong thoi copy ma de dan vao o tim kiem"
+                    disp = (
+                        f"<a href='{_esc(link)}' target='_blank' onclick=\"cp('{_jss(copy_val)}',this)\" "
+                        f"title='{_esc(title)}'>{v}</a>"
+                    )
                 else:
                     disp = f"<a href='{_esc(link)}' target='_blank'>{v}</a>" if link else v
                 return f"{disp} {_cp(val)}" if val else ""
@@ -7252,6 +7259,13 @@ def _render_returns():
                 if link and "banhang.shopee.vn/portal/sale/return" in link:
                     link = _shopee_chrome_launcher_url(link, d)
                 return _code_cell(code, link) if code else ""
+
+            def _return_waybill_cell(d):
+                val = str((d or {}).get("vd_tra") or "").strip()
+                code = _dohana_inbound_code_for_row(d)
+                link = _dohana_inbound_link_for_row(d)
+                title = f"Mo Dohana nhap hang hoan; copy ma {code}" if code else None
+                return _code_cell(val or code, link, link_copy=code, link_title=title)
 
             def _order_link_for_row(d):
                 link = str((d or {}).get("order_link") or "").strip()
@@ -7278,6 +7292,19 @@ def _render_returns():
 
             def _search_norm(s):
                 return "".join(ch for ch in _ascii_code(s) if ch.isalnum())
+
+            def _dohana_inbound_url():
+                return "https://dhn.io.vn/order/inbound/"
+
+            def _dohana_inbound_code_for_row(d):
+                for key in ("clip_code", "_dohana_code", "vd_tra"):
+                    val = str((d or {}).get(key) or "").strip()
+                    if val:
+                        return val
+                return ""
+
+            def _dohana_inbound_link_for_row(d):
+                return _dohana_inbound_url() if _dohana_inbound_code_for_row(d) else ""
 
             def _row_matches_code(d, needle):
                 q = _search_norm(needle)
@@ -7372,10 +7399,15 @@ def _render_returns():
                         f"<td>{_return_code_cell(d)}</td>",
                     ]
                     if merge_delivery_vd:
-                        tds.append(f"<td>{_code_cell(d.get('vd_di') or d.get('vd_tra'))}</td>")
+                        _vd_val = d.get('vd_di') or d.get('vd_tra')
+                        if str(d.get("vd_tra") or "").strip():
+                            _vd_code = _dohana_inbound_code_for_row(d)
+                            tds.append(f"<td>{_code_cell(_vd_val, _dohana_inbound_link_for_row(d), link_copy=_vd_code)}</td>")
+                        else:
+                            tds.append(f"<td>{_code_cell(_vd_val)}</td>")
                     else:
                         tds.append(f"<td>{_code_cell(d['vd_di'])}</td>")
-                        tds.append(f"<td>{_code_cell(d['vd_tra'])}</td>")
+                        tds.append(f"<td>{_return_waybill_cell(d)}</td>")
                     tds += [
                         f"<td>{_safe(d.get('return_shipper'), 'Chưa có')}</td>",
                         f"<td>{_safe(d.get('gian_hang'))}</td>",
@@ -7390,7 +7422,8 @@ def _render_returns():
                         tds.append(f"<td>{_safe(d.get('reason'))}</td>")
                     if show_clip:
                         _clip_title = _safe(d.get("clip_code") or d.get("_dohana_code") or "")
-                        _clip_link = str(d.get("clip_link") or d.get("_dohana_link") or "").strip()
+                        _clip_link = _dohana_inbound_link_for_row(d)
+                        _clip_copy = _dohana_inbound_code_for_row(d)
                         _clip_time = str(d.get("clip_time") or d.get("clip_recorded") or "").strip()
                         _clip_dur = d.get("clip_dur")
                         try:
@@ -7404,7 +7437,8 @@ def _render_returns():
                             body = _safe(txt)
                             if _clip_link:
                                 return (f"<a href='{_esc(_clip_link)}' target='_blank' rel='noopener' "
-                                        f"title='Mở video Dohana'>{body}</a>")
+                                        f"onclick=\"cp('{_jss(_clip_copy)}',this)\" "
+                                        f"title='Mo Dohana nhap hang hoan; dong thoi copy ma'>{body}</a>")
                             return body
                         tds.append(f"<td title='{_clip_title}'>{_clip_cell_text(_clip_time)}</td>")
                         tds.append(f"<td class='r' title='{_clip_title}'>{_clip_cell_text(_clip_dur)}</td>")
@@ -7941,11 +7975,13 @@ def _render_returns():
                     text = str(text or "").strip()
                     if not text:
                         return ""
-                    link = str((video_row or {}).get("link") or "").strip()
+                    code = str((video_row or {}).get("code") or "").strip()
+                    link = _dohana_inbound_url() if code else ""
                     body = _safe(text)
                     if link:
                         return (f"<a href='{_esc(link)}' target='_blank' rel='noopener' "
-                                f"title='Mở video Dohana'>{body}</a>")
+                                f"onclick=\"cp('{_jss(code)}',this)\" "
+                                f"title='Mo Dohana nhap hang hoan; dong thoi copy ma'>{body}</a>")
                     return body
 
                 def _return_type_label(d):
@@ -7962,9 +7998,11 @@ def _render_returns():
                 def _vd_ve_dohana_cell(vd_tra, dohana_code):
                     vd = str(vd_tra or "").strip()
                     dh = str(dohana_code or "").strip()
+                    link = _dohana_inbound_url() if dh else ""
                     if vd and dh and _search_norm(vd) != _search_norm(dh):
-                        return f"{_code_cell(vd)}<br><span class='sub'>Dohana: {_code_cell(dh)}</span>"
-                    return _code_cell(vd or dh)
+                        return (f"{_code_cell(vd, link, link_copy=dh)}<br>"
+                                f"<span class='sub'>Dohana: {_code_cell(dh, link, link_copy=dh)}</span>")
+                    return _code_cell(vd or dh, link, link_copy=dh)
 
                 def _tag_reason_cell(video_row, detail_row):
                     tag = _dohana_tag_with_icon(_video_tag_label(video_row))
