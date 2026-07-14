@@ -1395,61 +1395,6 @@ def _inject_huy_soan(rep, date_iso):
         pass
 
 
-def _apply_picklog_soan_to_daily(rep, rows, dvr=None):
-    """Đồng bộ số soạn trong báo cáo A4 theo lịch sử phiếu nhặt đã lưu."""
-    if not (isinstance(rep, dict) and rows):
-        return
-    batches = []
-    total_orders = total_qty = 0
-    code_groups, code_labels = [], []
-    for idx, r in enumerate(rows, 1):
-        don = int(r.get("so_don") or 0)
-        sp = int(r.get("so_sp") or 0)
-        total_orders += don
-        total_qty += sp
-        codes = [str(c).strip() for c in (r.get("codes") or []) if str(c).strip()]
-        for code in codes:
-            code_groups.append([code])
-            code_labels.append(code)
-        batches.append({
-            "dot": idx,
-            "gio": str(r.get("gio") or "—"),
-            "don": don,
-            "sp": sp,
-            "sku_count": int(r.get("so_sku") or 0),
-            "hoatoc": int(r.get("ht_don") or 0),
-            "xuat": 0,
-            "summary": {},
-        })
-    rep["batches"] = batches
-    rep["tong_don_soan"] = total_orders
-    rep["tong_sp_soan"] = total_qty
-    rep["soan_source"] = "picklog"
-    if isinstance(rep.get("funnel"), dict):
-        rep["funnel"]["soan"] = total_orders or None
-        rep["funnel"]["soan_sp"] = total_qty or None
-        rep["funnel"]["base"] = total_orders or rep["funnel"].get("base")
-    if dvr is not None and code_groups:
-        vset = set((dvr.get("codes") or {}).keys())
-        matched, font_fixed = match_packing_videos(code_groups, vset)
-        missing = [code_labels[i] for i in range(len(code_groups)) if i not in matched]
-        unknown = max(0, total_orders - len(code_groups))
-        if unknown:
-            missing += [f"{unknown} đơn phiếu nhặt chưa lưu mã đối chiếu"]
-        rep["video_recon"] = {
-            "available": True,
-            "total": dvr.get("total", 0),
-            "dup": dvr.get("dup", {}),
-            "open_with_video": len(matched),
-            "missing_video": max(0, total_orders - len(matched)),
-            "missing_codes": missing,
-            "font_fixed": font_fixed,
-            "source": "picklog",
-        }
-        if isinstance(rep.get("funnel"), dict):
-            rep["funnel"]["video"] = len(matched)
-
-
 @st.cache_data(ttl=600, show_spinner="Đang tổng hợp 30 ngày (1 tháng)…")
 def load_week_summary():
     data = L.get_week_summary(make_fetch_json(build_session()), days=30)
@@ -5781,9 +5726,6 @@ def _render_daily():
         _dvr = load_dohana_date(_iso) if dohana.configured() else None
         _inb = load_dohana_inbound_date(_iso) if dohana.configured() else None
         _enrich_daily(_rep, _dvr, _inb)
-        if picklog.configured():
-            _pl = picklog.read_date(_iso)
-            _apply_picklog_soan_to_daily(_rep, _pl, _dvr)
         _inject_huy_soan(_rep, _iso)
         st.info(f"🗂️ Báo cáo ngày **{_disp}** — query lại từ Sapo, **video lấy từ kho đã lưu** "
                 "(Dohana chỉ giữ ~30 ngày; kho Gist lưu bền cả năm). Ngày trước khi bật lưu có thể trống video.")
@@ -5808,9 +5750,6 @@ def _render_daily():
         st.warning("⚠️ Dohana tạm không phản hồi — đang dùng **video đã lưu trong kho** (có thể thiếu clip "
                    "quay trong vài phút gần nhất). Bấm **🔄 Tải lại số liệu** để thử lấy trực tiếp lại.")
     _enrich_daily(_rep, _dvr, _inb)   # gắn clip khui hàng + đối chiếu video đóng gói
-    if picklog.configured():
-        _pl = picklog.read_today()
-        _apply_picklog_soan_to_daily(_rep, _pl, _dvr)
     _inject_huy_soan(_rep, _today_iso_vn())
     _now_vn = datetime.now(timezone.utc) + timedelta(hours=7)
     _nrep = _now_vn.strftime("%H:%M %d/%m/%Y")
