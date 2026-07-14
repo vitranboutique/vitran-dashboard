@@ -5943,6 +5943,22 @@ def _render_returns():
     _RETURN_NOTE_TEMPLATE_LABELS = [x["label"] for x in _RETURN_NOTE_TEMPLATES]
     _RETURN_NOTE_TEMPLATE_BY_LABEL = {x["label"]: x for x in _RETURN_NOTE_TEMPLATES}
     _CLOSED_RETURN_NOTE_FILE = "vitran_closed_return_notes.json"
+    _CLOSED_RETURN_CONFIRMED_RECEIVED_NOTE = (
+        "⚪ KHÔNG CẦN KN | Đã nhận hàng\n"
+        "Shipper hoàn: SPX Express; kho đã tìm thấy/đã nhận các kiện hoàn theo VĐ trả về.\n"
+        "KQ: Tạm chấp nhận không cần khiếu nại do đơn đã lâu.\n"
+        "Cập nhật: 14/07/2026"
+    )
+    _CLOSED_RETURN_CONFIRMED_RECEIVED = [
+        ("260401MFDGA4KF", "2604020QV8QWE3C", "SPXVN060411817964"),
+        ("260402QTCDNFKU", "2604040V5QWNXPQ", "SPXVN063847852774"),
+        ("260330G8HPXU6D", "2604040V72EKGE8", "SPXVN064399056714"),
+        ("260402Q95JW6KP", "26040706NVD20NN", "SPXVN065531264794"),
+        ("260402Q62GUA4S", "26040706XXYDXAD", "SPXVN066191637154"),
+        ("2604064A4D25RU", "26040707BHT665A", "SPXVN069956421424"),
+        ("260402PE53M9GJ", "2604030RWD5H8UC", "SPXVN060517091514"),
+        ("260403T7DMM822", "2604080975NJ4Y1", "SPXVN068228865454"),
+    ]
 
     def _closed_return_note_keys(d):
         keys = []
@@ -5995,21 +6011,33 @@ def _render_returns():
 
     def _load_closed_return_app_notes():
         if not picklog.configured():
-            return {}
-        raw = picklog._read_gist_file(_CLOSED_RETURN_NOTE_FILE) or {}
-        notes = raw.get("notes") if isinstance(raw, dict) else {}
-        if notes is None and isinstance(raw, dict):
-            notes = raw
-        if not isinstance(notes, dict):
-            return {}
-        out = {}
-        for key, rec in notes.items():
-            note = _closed_return_app_note_text(rec)
-            if not note:
-                continue
-            item = dict(rec) if isinstance(rec, dict) else {}
-            item["note"] = note
-            out[str(key)] = item
+            out = {}
+        else:
+            raw = picklog._read_gist_file(_CLOSED_RETURN_NOTE_FILE) or {}
+            notes = raw.get("notes") if isinstance(raw, dict) else {}
+            if notes is None and isinstance(raw, dict):
+                notes = raw
+            if not isinstance(notes, dict):
+                notes = {}
+            out = {}
+            for key, rec in notes.items():
+                note = _closed_return_app_note_text(rec)
+                if not note:
+                    continue
+                item = dict(rec) if isinstance(rec, dict) else {}
+                item["note"] = note
+                out[str(key)] = item
+        for order_code, return_code, vd_tra in _CLOSED_RETURN_CONFIRMED_RECEIVED:
+            item = {
+                "note": _CLOSED_RETURN_CONFIRMED_RECEIVED_NOTE,
+                "order_code": order_code,
+                "return_code": return_code,
+                "vd_tra": vd_tra,
+                "updated_at": "2026-07-14 15:00:00",
+            }
+            out.setdefault(f"return_code:{return_code}", item)
+            out.setdefault(f"vd_tra:{vd_tra}", item)
+            out.setdefault(f"order_code:{order_code}", item)
         return out
 
     def _save_closed_return_app_notes(notes):
