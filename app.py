@@ -1333,6 +1333,14 @@ def load_dohana_videos():
     return picklog.merge_dohana_videos(new)
 
 
+@st.cache_data(ttl=900, show_spinner=False)
+def load_dohana_video_store():
+    """Đọc nhanh kho video đã lưu, không gọi live Dohana khi mở trang trả hàng."""
+    if not picklog.configured():
+        return []
+    return picklog.read_dohana_videos()
+
+
 @st.cache_data(ttl=1800, show_spinner=False)  # video ngày cũ không đổi → cache dài, đỡ gọi Dohana
 def load_dohana_date(date_iso):
     from datetime import date as _date
@@ -7458,9 +7466,9 @@ def _render_returns():
                 code = _dohana_inbound_code_for_row(d)
                 return _with_url_query(_dohana_inbound_url(), q=code, orderCode=code) if code else ""
 
-            # Lay so thuc tu Dohana (app dong hang) truoc khi render bat ky bang nao.
+            # Đọc nhanh kho video đã lưu; không gọi live Dohana khi mở trang trả hàng.
             try:
-                _dvids = load_dohana_videos()
+                _dvids = load_dohana_video_store()
             except Exception:
                 _dvids = []
             _dohana_inbound_videos = [r for r in _dvids if r.get("type") == "inbound"]
@@ -7823,7 +7831,7 @@ def _render_returns():
 
             # ── VIDEO DOHANA (metadata tích luỹ ở Gist → LƯU CẢ NĂM; khui hàng có tag=cần KN, đóng hàng có tag=không) ──
             try:
-                _dvids = load_dohana_videos()
+                _dvids = load_dohana_video_store()
             except Exception:
                 _dvids = []
             _dohana_inbound_videos = [r for r in _dvids if r.get("type") == "inbound"]
@@ -7986,7 +7994,8 @@ def _render_returns():
                         or any(_dohana_row_missing_info(d) for d in _dohana_detail_match_rows(c, _return_match_detail))
                     )
                 ]
-                _dohana_extra_detail_by_code = load_return_rows_by_codes(tuple(sorted(set(_missing_codes))))
+                if st.session_state.get("returns_dohana_deep_lookup"):
+                    _dohana_extra_detail_by_code = load_return_rows_by_codes(tuple(sorted(set(_missing_codes))))
             except Exception:
                 _dohana_extra_detail_by_code = {}
 
@@ -8362,6 +8371,11 @@ def _render_returns():
                 _need_kn_info += (f"\nDohana có {len(_dohana_yellow_ckn)} dòng đang tô vàng vì chưa có ghi chú chuẩn "
                                   f"(thêm mới {_added} dòng, dòng trùng thì ghép vào Cần KN sẵn có).")
             _return_info(_need_kn_info)
+            if '_missing_codes' in locals() and _missing_codes and not st.session_state.get("returns_dohana_deep_lookup"):
+                st.caption(f"Dohana còn {len(set(_missing_codes))} mã thiếu thông tin Sapo. Mặc định không quét sâu để trang mở nhanh.")
+                if st.button("🔎 Đối chiếu sâu Dohana/Sapo cho các mã thiếu", key="returns_dohana_deep_lookup_btn"):
+                    st.session_state["returns_dohana_deep_lookup"] = True
+                    st.rerun()
             _sub_table(_ckn_render_list, 520, show_reason=True, show_location=True, pg_key="ckn", per_page=50)
             st.markdown(f"**🏷️ + Đơn Dohana gắn tag KHUI HÀNG (tráo · đã dùng · trả thiếu · hư hỏng) — {len(_dtag_kn)} đơn** "
                         f"<span style='color:#6b7280'>(trong đó {len(_dtag_kn_only)} chưa khớp bảng chi tiết)</span>",
@@ -8416,6 +8430,15 @@ def _render_returns():
             # ── 🎥 KHO VIDEO DOHANA (lưu CẢ NĂM, vượt hạn 30 ngày của Dohana) — tra cứu metadata ──
             st.divider()
             st.subheader("🎥 Kho video Dohana (lưu cả năm)")
+            if st.button("🔄 Cập nhật Dohana từ DHN ngay", key="returns_refresh_dohana_live_btn"):
+                try:
+                    load_dohana_videos.clear()
+                    _fresh_dvids = load_dohana_videos()
+                    load_dohana_video_store.clear()
+                    st.success(f"Đã cập nhật kho Dohana: {len(_fresh_dvids)} video.")
+                    st.rerun()
+                except Exception as _e:
+                    st.warning(f"Chưa cập nhật được Dohana live: `{_e}`")
             _return_info(f"Đã lưu {len(_dvids)} video (đóng hàng + khui hàng): trạng thái, ngày quay, giờ, "
                          "thời lượng, tag. Tag đã từng thấy sẽ được khóa trong kho, DHN gỡ tag sau này cũng không mất. "
                          "Dohana chỉ giữ 30 ngày; kho này gom dần (13/16/19h) nên đọc được đến cuối năm.")
