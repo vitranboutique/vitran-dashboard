@@ -20,7 +20,7 @@ import os
 import re
 import time
 from datetime import datetime, timedelta, timezone
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlencode
 
 try:
     from sapo_address import resolve_address as _resolve_address, norm_key as _norm_key
@@ -134,7 +134,7 @@ def shopee_order_search_url(order_code: str = "") -> str:
     code = str(order_code or "").strip()
     if not code:
         return SHOPEE_ORDER_LIST_URL
-    return SHOPEE_ORDER_SEARCH_URL.format(quote_plus(code))
+    return SHOPEE_ORDER_LIST_URL + "?" + urlencode({"search": code, "keyword": code})
 
 
 def shopee_order_detail_url(*docs, keyword: str = "") -> str:

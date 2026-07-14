@@ -173,7 +173,7 @@ def _shopee_order_url(order_code=""):
     code = str(order_code or "").strip()
     if not code:
         return SHOPEE_ORDER_LIST_URL
-    return SHOPEE_ORDER_SEARCH_URL.format(quote_plus(code))
+    return _with_url_query(SHOPEE_ORDER_LIST_URL, search=code, keyword=code)
 
 
 def _normalize_shopee_order_link(url):
@@ -853,16 +853,27 @@ def require_login():
         st.sidebar.caption("🔓 Chưa cấu hình tài khoản — đang mở tự do (xem README).")
         return ("Khách", "guest", "admin")
 
-    users = st.secrets["auth"]["users"]
+    users = st.secrets["auth"].get("users", {})
     ck = st.secrets["auth"].get("cookie", {})
     credentials = {"usernames": {}}
     for uname, info in users.items():
+        password = (
+            info.get("password")
+            or info.get("password_hash")
+            or info.get("hashed_password")
+            or info.get("pass")
+        )
+        if not password:
+            continue
         credentials["usernames"][uname] = {
             "name": info.get("name", uname),
-            "password": info["password"],          # plaintext -> auto_hash bên dưới
+            "password": password,
             "email": info.get("email", f"{uname}@vitran.local"),
             "roles": [info.get("role", "viewer")],
         }
+    if not credentials["usernames"]:
+        st.error("Auth secrets co [auth.users] nhung chua co user nao co password hop le.")
+        st.stop()
 
     authenticator = stauth.Authenticate(
         credentials,
@@ -7304,7 +7315,8 @@ def _render_returns():
                 return ""
 
             def _dohana_inbound_link_for_row(d):
-                return _dohana_inbound_url() if _dohana_inbound_code_for_row(d) else ""
+                code = _dohana_inbound_code_for_row(d)
+                return _with_url_query(_dohana_inbound_url(), q=code, orderCode=code) if code else ""
 
             def _row_matches_code(d, needle):
                 q = _search_norm(needle)
@@ -7976,7 +7988,7 @@ def _render_returns():
                     if not text:
                         return ""
                     code = str((video_row or {}).get("code") or "").strip()
-                    link = _dohana_inbound_url() if code else ""
+                    link = _with_url_query(_dohana_inbound_url(), q=code, orderCode=code) if code else ""
                     body = _safe(text)
                     if link:
                         return (f"<a href='{_esc(link)}' target='_blank' rel='noopener' "
@@ -7998,7 +8010,7 @@ def _render_returns():
                 def _vd_ve_dohana_cell(vd_tra, dohana_code):
                     vd = str(vd_tra or "").strip()
                     dh = str(dohana_code or "").strip()
-                    link = _dohana_inbound_url() if dh else ""
+                    link = _with_url_query(_dohana_inbound_url(), q=dh, orderCode=dh) if dh else ""
                     if vd and dh and _search_norm(vd) != _search_norm(dh):
                         return (f"{_code_cell(vd, link, link_copy=dh)}<br>"
                                 f"<span class='sub'>Dohana: {_code_cell(dh, link, link_copy=dh)}</span>")
