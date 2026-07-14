@@ -7623,8 +7623,8 @@ def _render_returns():
                 def _safe(v, default=""):
                     return _esc(str(v if v not in (None, "") else default))
                 cols = ["STT"]
-                if show_location:
-                    cols += ["Vị trí"]
+                if show_reason:
+                    cols += ["Lý do KN"]
                 cols += ["Ngày tạo", "Mã đơn", "Mã trả hàng"]
                 cols += ["Vận đơn"] if merge_delivery_vd else ["VĐ đi", "VĐ trả về"]
                 if show_clip:
@@ -7633,8 +7633,6 @@ def _render_returns():
                 if show_type:
                     cols += ["Loại trả"]
                 cols += ["SKU", "SL", "Tổng tiền", "Nhập kho"]
-                if show_reason:
-                    cols += ["Lý do vào KN"]
                 cols += ["Đối soát", "Ghi chú"]
                 _sticky_n = cols.index("Mã trả hàng") + 1   # cố định các cột đầu → hết "Mã trả hàng"
                 thead = "".join(f"<th>{c}</th>" for c in cols)
@@ -7648,14 +7646,46 @@ def _render_returns():
                         f"<details class='note-detail'><summary>{_safe(summary)}</summary>"
                         f"<div>{_safe(note_text)}</div></details>"
                     )
+                def _reason_brief_cell(d):
+                    raw_reason = str((d or {}).get("reason") or "").strip()
+                    raw_location = str((d or {}).get("_location") or _row_location(d) or "").strip()
+                    full = " · ".join(x for x in (raw_reason, raw_location) if x) or "Cần kiểm tra"
+                    compact = _search_norm(full + " " + str((d or {}).get("_dohana_tag_label") or ""))
+                    if "DONGTHIEU" in compact:
+                        label = "📦 Đóng thiếu"
+                    elif "HUHONG" in compact or "HANGHONG" in compact or "HONG" in compact:
+                        label = "💥 Hư hỏng"
+                    elif "TRATHIEU" in compact or "THIEU" in compact:
+                        label = "➖ Trả thiếu"
+                    elif "TRAO" in compact or "SAIHANG" in compact or "SAISP" in compact or "KHACVOMOTA" in compact:
+                        label = "🔁 Tráo/sai hàng"
+                    elif "DASUDUNG" in compact or "DADUNG" in compact or "SUDUNG" in compact:
+                        label = "♻️ Đã sử dụng"
+                    elif "SAPOGHICANKN" in compact or "CANKN" in compact:
+                        label = "🚨 Sapo Cần KN"
+                    elif "BITDONG" in compact or "DONGCOVD" in compact or "SAPODAHUY" in compact:
+                        label = "🧭 Đơn bị đóng"
+                    elif "CHUANHAPKHO" in compact or "CHUANHAN" in compact:
+                        label = "📥 Chưa nhập kho"
+                    elif "SHIPPER" in compact and ("CHUACO" in compact or "THIEU" in compact):
+                        label = "🚚 Thiếu shipper"
+                    elif "QUA5NGAY" in compact or "QUA7NGAY" in compact or "DANGHOAN" in compact:
+                        label = "⏳ Hoàn quá ngày"
+                    elif "DOHANATAG" in compact or "CHUACOGHICHUCHUAN" in compact:
+                        label = "🏷 Tag chưa chốt"
+                    else:
+                        label = "⚠️ Cần xử lý"
+                    if len(label) > 20:
+                        label = label[:19].rstrip() + "…"
+                    return f"<span class='reason-badge' title='{_safe(full)}'>{_safe(label)}</span>"
                 body = ""
                 for i, d in enumerate(items, _start + 1):
                     bg = "background:#fff3cd" if d.get("need_kn") and _has_return_waybill(d) else ""
                     note = d.get("note") or ""
                     note_display = f"📝 APP · {note}" if d.get("app_note") else note
                     tds = [f"<td class='r'>{i}</td>"]
-                    if show_location:
-                        tds.append(f"<td>{_safe(d.get('_location') or _row_location(d))}</td>")
+                    if show_reason:
+                        tds.append(f"<td>{_reason_brief_cell(d)}</td>")
                     tds += [
                         f"<td>{_safe(d.get('created'))}</td>",
                         f"<td>{_code_cell(d['order_code'], _order_link_for_row(d))}</td>",
@@ -7691,8 +7721,6 @@ def _render_returns():
                             f"<td class='r'>{int(d.get('qty') or 0)}</td>",
                             f"<td class='r'>{int(d.get('money') or 0):,}đ</td>",
                             f"<td>{_safe(d.get('stock_status'), 'Chưa rõ')}</td>"]
-                    if show_reason:
-                        tds.append(f"<td>{_safe(d.get('reason'))}</td>")
                     tds.append(f"<td>{_doisoat(d)}</td>")
                     tds.append(f"<td class='note'>{_note_details_cell(note_display)}</td>")
                     body += f"<tr style='{bg}'>" + "".join(tds) + "</tr>"
@@ -7704,6 +7732,7 @@ def _render_returns():
  td.r{{text-align:right}}
  .muted{{color:#cbd5e1}}
  .no-video{{color:#dc2626;font-weight:700}}
+ .reason-badge{{display:inline-block;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700;color:#7c2d12}}
  td.note{{max-width:240px;white-space:normal}}
  .note-detail summary{{cursor:pointer;color:#1d4ed8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}}
  .note-detail div{{margin-top:4px;white-space:pre-wrap;min-width:260px;max-width:520px;line-height:1.35;color:#111827}}
