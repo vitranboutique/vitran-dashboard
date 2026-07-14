@@ -1395,6 +1395,36 @@ def _inject_huy_soan(rep, date_iso):
         pass
 
 
+def _apply_picklog_soan_to_daily(rep, rows):
+    """Đồng bộ số soạn trong báo cáo A4 theo lịch sử phiếu nhặt đã lưu."""
+    if not (isinstance(rep, dict) and rows):
+        return
+    batches = []
+    total_orders = total_qty = 0
+    for idx, r in enumerate(rows, 1):
+        don = int(r.get("so_don") or 0)
+        sp = int(r.get("so_sp") or 0)
+        total_orders += don
+        total_qty += sp
+        batches.append({
+            "dot": idx,
+            "gio": str(r.get("gio") or "—"),
+            "don": don,
+            "sp": sp,
+            "sku_count": int(r.get("so_sku") or 0),
+            "hoatoc": int(r.get("ht_don") or 0),
+            "xuat": 0,
+            "summary": {},
+        })
+    rep["batches"] = batches
+    rep["tong_don_soan"] = total_orders
+    rep["tong_sp_soan"] = total_qty
+    rep["soan_source"] = "picklog"
+    if isinstance(rep.get("funnel"), dict):
+        rep["funnel"]["soan"] = total_orders or None
+        rep["funnel"]["soan_sp"] = total_qty or None
+
+
 @st.cache_data(ttl=600, show_spinner="Đang tổng hợp 30 ngày (1 tháng)…")
 def load_week_summary():
     data = L.get_week_summary(make_fetch_json(build_session()), days=30)
@@ -5726,10 +5756,9 @@ def _render_daily():
         _dvr = load_dohana_date(_iso) if dohana.configured() else None
         _inb = load_dohana_inbound_date(_iso) if dohana.configured() else None
         _enrich_daily(_rep, _dvr, _inb)
-        if picklog.configured() and isinstance(_rep.get("funnel"), dict):
+        if picklog.configured():
             _pl = picklog.read_date(_iso)
-            _rep["funnel"]["soan"] = sum(r.get("so_don", 0) or 0 for r in _pl) or None
-            _rep["funnel"]["soan_sp"] = sum(r.get("so_sp", 0) or 0 for r in _pl) or None
+            _apply_picklog_soan_to_daily(_rep, _pl)
         _inject_huy_soan(_rep, _iso)
         st.info(f"🗂️ Báo cáo ngày **{_disp}** — query lại từ Sapo, **video lấy từ kho đã lưu** "
                 "(Dohana chỉ giữ ~30 ngày; kho Gist lưu bền cả năm). Ngày trước khi bật lưu có thể trống video.")
@@ -5754,10 +5783,9 @@ def _render_daily():
         st.warning("⚠️ Dohana tạm không phản hồi — đang dùng **video đã lưu trong kho** (có thể thiếu clip "
                    "quay trong vài phút gần nhất). Bấm **🔄 Tải lại số liệu** để thử lấy trực tiếp lại.")
     _enrich_daily(_rep, _dvr, _inb)   # gắn clip khui hàng + đối chiếu video đóng gói
-    if picklog.configured() and isinstance(_rep.get("funnel"), dict):
+    if picklog.configured():
         _pl = picklog.read_today()
-        _rep["funnel"]["soan"] = sum(r.get("so_don", 0) or 0 for r in _pl) or None
-        _rep["funnel"]["soan_sp"] = sum(r.get("so_sp", 0) or 0 for r in _pl) or None
+        _apply_picklog_soan_to_daily(_rep, _pl)
     _inject_huy_soan(_rep, _today_iso_vn())
     _now_vn = datetime.now(timezone.utc) + timedelta(hours=7)
     _nrep = _now_vn.strftime("%H:%M %d/%m/%Y")

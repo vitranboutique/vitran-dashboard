@@ -484,10 +484,20 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
     # Đợt soạn GỒM cả đơn đã hủy đã gói (đã soạn rồi mới hủy)
     _soan = rep.get("tong_don_soan", 0)
     _hdg = rep.get("huy_da_goi", 0)
-    sec2_note = (f'<div style="font-size:.77em;color:#6b7280;margin:.4em 0 0">'
-                 f'ℹ️ Tổng soạn ({_soan}) = {t["dong_goi"]} đơn đóng gói + '
-                 f'<b>{_hdg} đơn đã hủy sau khi soạn</b> (vẫn tính vì kho đã lấy hàng).</div>'
-                 if _hdg else '')
+    if rep.get("soan_source") == "picklog":
+        sec2_note = (f'<div style="font-size:.77em;color:#6b7280;margin:.4em 0 0">'
+                     f'ℹ️ Tổng soạn ({_soan}) lấy từ lịch sử phiếu nhặt đã lưu; '
+                     'đây là số kho đã in/lấy hàng trong ngày.</div>')
+    elif _hdg and _soan == int(t.get("dong_goi") or 0) + int(_hdg or 0):
+        sec2_note = (f'<div style="font-size:.77em;color:#6b7280;margin:.4em 0 0">'
+                     f'ℹ️ Tổng soạn ({_soan}) = {t["dong_goi"]} đơn đóng gói + '
+                     f'<b>{_hdg} đơn đã hủy sau khi soạn</b> (vẫn tính vì kho đã lấy hàng).</div>')
+    elif _hdg:
+        sec2_note = (f'<div style="font-size:.77em;color:#6b7280;margin:.4em 0 0">'
+                     f'ℹ️ Tổng soạn ({_soan}) lấy theo các đợt đóng gói Sapo; '
+                     f'có <b>{_hdg} đơn đã hủy sau khi soạn</b> vẫn cần tính vì kho đã lấy hàng.</div>')
+    else:
+        sec2_note = ''
     # (Đơn hủy đã chuyển lên block chi tiết ngay dưới phễu — gom theo ĐVVC + ô tick)
     nk = rep.get("nhap_kho") or {}
     nk_src = " · ".join(f"{_e(_SRC.get(k, str(k)))} {v}"
