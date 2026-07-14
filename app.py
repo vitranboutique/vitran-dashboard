@@ -5692,6 +5692,37 @@ def _render_returns():
             text = str(value or "").strip()
             return text if text.endswith("s") else text
 
+    def _clip_recorded_text(date_value="", time_value=""):
+        date_text = str(date_value or "").strip()
+        time_text = str(time_value or "").strip()
+        if not date_text and not time_text:
+            return ""
+
+        # Dohana stores date/time separately, but cached rows may already have a combined value.
+        if date_text and not time_text:
+            parts = re.split(r"[ T]+", date_text, maxsplit=1)
+            if len(parts) == 2:
+                date_text, time_text = parts[0].strip(), parts[1].strip()
+
+        date_out = date_text
+        m = re.match(r"^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$", date_text)
+        if m:
+            date_out = f"{int(m.group(3)):02d}/{int(m.group(2)):02d}"
+        else:
+            m = re.match(r"^(\d{1,2})[-/](\d{1,2})(?:[-/]\d{2,4})?$", date_text)
+            if m:
+                date_out = f"{int(m.group(1)):02d}/{int(m.group(2)):02d}"
+
+        time_text = re.sub(r"\.\d+$", "", time_text.rstrip("Z")).strip()
+        return " ".join(x for x in (date_out, time_text) if x)
+
+    def _clip_recorded_or_missing(row):
+        d = row or {}
+        text = _clip_recorded_text(d.get("clip_time") or d.get("clip_recorded") or "")
+        if text:
+            return text
+        return "không có video" if not str(d.get("clip_code") or d.get("_dohana_code") or "").strip() else ""
+
     if not credential_present():
         st.warning("⚠️ Cần kết nối Sapo (API LIVE).")
         return
@@ -6071,7 +6102,7 @@ def _render_returns():
                     "Mã đơn": d.get("order_code") or "",
                     "Mã trả": _display_return_code(d),
                     "VĐ trả về": d.get("vd_tra") or "",
-                    "Ngày giờ quay": d.get("clip_time") or "",
+                    "Ngày giờ quay": _clip_recorded_or_missing(d),
                     "Thời lượng": _clip_duration_text(d.get("clip_dur")),
                     "Ghi chú app": app_note,
                     "Ghi chú Sapo": sapo_note,
@@ -7340,10 +7371,7 @@ def _render_returns():
             _dohana_inbound_videos = [r for r in _dvids if r.get("type") == "inbound"]
 
             def _dohana_video_recorded_text(video_row):
-                return " ".join(x for x in (
-                    str((video_row or {}).get("date") or "").strip(),
-                    str((video_row or {}).get("time") or "").strip(),
-                ) if x)
+                return _clip_recorded_text((video_row or {}).get("date"), (video_row or {}).get("time"))
 
             def _dohana_inbound_video_for_return_row(d):
                 field_order = ("vd_tra", "return_code", "order_code", "vd_di")
@@ -7500,7 +7528,7 @@ def _render_returns():
                         tds.append(f"<td>{_return_waybill_cell(d)}</td>")
                     if show_clip:
                         _clip_title = _safe(d.get("clip_code") or d.get("_dohana_code") or "")
-                        _clip_time = str(d.get("clip_time") or d.get("clip_recorded") or "").strip()
+                        _clip_time = _clip_recorded_or_missing(d)
                         _clip_dur = _clip_duration_text(d.get("clip_dur"))
                         tds.append(f"<td title='{_clip_title}'>{_safe(_clip_time)}</td>")
                         tds.append(f"<td class='r' title='{_clip_title}'>{_safe(_clip_dur)}</td>")
@@ -7648,7 +7676,7 @@ def _render_returns():
                                 "Loại trả": _d.get("loai_tra") or "",
                                 "VĐ đi": _d.get("vd_di") or "",
                                 "VĐ trả về": _d.get("vd_tra") or "",
-                                "Ngày giờ quay": _d.get("clip_time") or "",
+                                "Ngày giờ quay": _clip_recorded_or_missing(_d),
                                 "Thời lượng": _clip_duration_text(_d.get("clip_dur")),
                                 "Shipper hoàn": _d.get("return_shipper") or "Chưa có",
                                 "Kết quả": _outcome,
@@ -7678,10 +7706,7 @@ def _render_returns():
             _dohana_inbound_videos = [r for r in _dvids if r.get("type") == "inbound"]
 
             def _dohana_video_recorded_text(video_row):
-                return " ".join(x for x in (
-                    str((video_row or {}).get("date") or "").strip(),
-                    str((video_row or {}).get("time") or "").strip(),
-                ) if x)
+                return _clip_recorded_text((video_row or {}).get("date"), (video_row or {}).get("time"))
 
             def _dohana_inbound_video_for_return_row(d):
                 field_order = ("vd_tra", "return_code", "order_code", "vd_di")
@@ -8106,7 +8131,7 @@ def _render_returns():
                     d = matches[0] if matches else {}
                     note = str(d.get("note") or "").strip() if matches else "Chưa thấy trong chi tiết"
                     note_preview = next((line.strip() for line in note.splitlines() if line.strip()), note)
-                    filmed_at = " ".join(x for x in (str(r.get("date") or "").strip(), str(r.get("time") or "").strip()) if x)
+                    filmed_at = _clip_recorded_text(r.get("date"), r.get("time")) or "không có video"
                     duration = _clip_duration_text(r.get("dur"))
                     shipper = d.get("return_shipper") or ("Chưa có" if matches else "")
                     bg = "" if (matches and _dohana_is_closed_note(note)) else "background:#fff3cd"
