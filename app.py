@@ -1402,11 +1402,16 @@ def _apply_picklog_soan_to_daily(rep, rows, dvr=None, dup_orders=0):
     batches = []
     total_orders = total_qty = 0
     code_groups, code_labels = [], []
+    from collections import Counter
+    carrier_counts = Counter()
     for idx, r in enumerate(rows, 1):
         don = int(r.get("so_don") or 0)
         sp = int(r.get("so_sp") or 0)
         total_orders += don
         total_qty += sp
+        for _c, _n in (r.get("carriers") or {}).items():
+            _ck = "Hỏa tốc (SPX Instant)" if str(_c) == "SPX Instant" else str(_c or "Khác")
+            carrier_counts[_ck] += int(_n or 0)
         codes = [str(c).strip() for c in (r.get("codes") or []) if str(c).strip()]
         for code in codes:
             code_groups.append([code])
@@ -1425,6 +1430,15 @@ def _apply_picklog_soan_to_daily(rep, rows, dvr=None, dup_orders=0):
     rep["tong_don_soan"] = total_orders
     rep["tong_sp_soan"] = total_qty
     rep["soan_source"] = "picklog_dedup"
+    if isinstance(rep.get("by_carrier"), list):
+        if carrier_counts:
+            for _r in rep["by_carrier"]:
+                _r["soan"] = int(carrier_counts.get(str(_r.get("carrier") or "Khác"), 0))
+        else:
+            for _r in rep["by_carrier"]:
+                _r["soan"] = int(_r.get("dg_cu") or 0) + int(_r.get("dong_goi") or 0)
+    if isinstance(rep.get("totals"), dict):
+        rep["totals"]["soan"] = total_orders
     if dup_orders:
         rep["soan_dup_orders"] = int(dup_orders)
     if isinstance(rep.get("funnel"), dict):
@@ -1438,18 +1452,22 @@ def _apply_picklog_soan_to_daily(rep, rows, dvr=None, dup_orders=0):
         unknown = max(0, total_orders - len(code_groups))
         if unknown:
             missing += [f"{unknown} đơn phiếu nhặt chưa lưu mã đối chiếu"]
+        video_total = int(dvr.get("total") or 0)
         rep["video_recon"] = {
             "available": True,
-            "total": dvr.get("total", 0),
+            "total": video_total,
             "dup": dvr.get("dup", {}),
-            "open_with_video": len(matched),
-            "missing_video": max(0, total_orders - len(matched)),
-            "missing_codes": missing,
+            "open_with_video": video_total,
+            "matched_video": len(matched),
+            "unmatched_order_count": max(0, total_orders - len(matched)),
+            "unmatched_order_codes": missing,
+            "missing_video": max(0, total_orders - video_total),
+            "missing_codes": missing if total_orders > video_total else [],
             "font_fixed": font_fixed,
             "source": "picklog_dedup",
         }
         if isinstance(rep.get("funnel"), dict):
-            rep["funnel"]["video"] = len(matched)
+            rep["funnel"]["video"] = video_total
 
 
 @st.cache_data(ttl=600, show_spinner="Đang tổng hợp 30 ngày (1 tháng)…")
@@ -3041,7 +3059,11 @@ def _render_pick():
         _m = {}
         for _s, _q in (list(_e.get("skus") or []) + list(_n.get("skus") or [])):
             _m[_s] = _m.get(_s, 0) + int(_q or 0)
-        return _codes, sorted(_m.items(), key=lambda x: (-x[1], str(x[0])))
+        _car = {}
+        for _src in (_e, _n):
+            for _c, _q in (_src.get("carriers") or {}).items():
+                _car[str(_c or "Khác")] = _car.get(str(_c or "Khác"), 0) + int(_q or 0)
+        return _codes, sorted(_m.items(), key=lambda x: (-x[1], str(x[0]))), _car
 
     k = st.columns(4)
     k[0].metric("🔴 Hỏa tốc (nhặt trước)", exp["total_orders"])
@@ -3074,7 +3096,7 @@ def _render_pick():
             if st.button(_lbl, type="primary", width="stretch"):
                 if _can_save:
                     _allsku = {s for s, _ in exp["skus"]} | {s for s, _ in nor["skus"]}
-                    _pcodes, _pskum = _pick_codes_skus(exp, nor)
+                    _pcodes, _pskum, _pcar = _pick_codes_skus(exp, nor)
                     _ok, _msg = picklog.log_batch({
                         "ngay": (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%Y-%m-%d"),
                         "gio": now_str[:5],
@@ -3084,6 +3106,7 @@ def _render_pick():
                         "so_cu": exp["old"] + nor["old"],   # đơn CŨ (xác nhận hôm trước, nay mới nhặt)
                         "codes": _pcodes,       # MÃ ĐƠN từng đơn → đối chiếu hủy trước/sau soạn
                         "sku_list": _pskum,     # [(sku, SL)] đã nhặt trong đợt
+                        "carriers": _pcar,
                     })
                     if not _ok:
                         st.error(_msg)
@@ -3119,14 +3142,14 @@ def _render_pick():
             if st.button("💾 Lưu đợt thủ công (không in)", disabled=not picklog.configured()):
                 _now_vn = datetime.now(timezone.utc) + timedelta(hours=7)
                 _allsku = {s for s, _ in exp["skus"]} | {s for s, _ in nor["skus"]}
-                _pcodes, _pskum = _pick_codes_skus(exp, nor)
+                _pcodes, _pskum, _pcar = _pick_codes_skus(exp, nor)
                 ok, msg = picklog.log_batch({
                     "ngay": _now_vn.strftime("%Y-%m-%d"), "gio": _now_vn.strftime("%H:%M"),
                     "so_don": exp["total_orders"] + nor["total_orders"],
                     "so_sp": exp["total_qty"] + nor["total_qty"], "so_sku": len(_allsku),
                     "ht_don": exp["total_orders"], "th_don": nor["total_orders"],
                     "so_cu": exp["old"] + nor["old"],
-                    "codes": _pcodes, "sku_list": _pskum,
+                    "codes": _pcodes, "sku_list": _pskum, "carriers": _pcar,
                 })
                 (st.success(msg + " Bấm 🔄 Tải lại để thấy.") if ok else st.error(msg))
             if not picklog.configured():

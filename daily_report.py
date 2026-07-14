@@ -113,20 +113,28 @@ def _carrier_rows(rows, tot):
         _gkc = (f'<td class="num" style="color:#c2410c;font-weight:800">{_gk}</td>'
                 if _gk_warn else f'<td class="num">{_gk or ""}</td>')
         _dgcu = r.get("dg_cu", 0)
+        _soan = r.get("soan")
+        if _soan is None:
+            _soan = int(_dgcu or 0) + int(r.get("dong_goi") or 0)
         _cxp, _cxu = r.get("cx_packed", 0), r.get("cx_unpacked", 0)
         _cxpc = (f'<td class="num" style="color:#c2410c;font-weight:800">{_cxp}</td>'
                  if _cxp else '<td class="num"></td>')
         _cxuc = (f'<td class="num" style="color:#b45309;font-weight:800">{_cxu}</td>'
                  if _cxu else '<td class="num"></td>')
         body += (f'<tr{cls}><td class="l">{"⚡ " if hot else ""}{_e(str(r["carrier"]))}</td>'
+                 f'<td class="num">{_soan or ""}</td>'
                  f'<td class="num">{_dgcu or ""}</td>'
                  f'<td class="num">{r["dong_goi"]}</td>'
                  f'<td class="num">{r["huy"] or ""}</td>'
                  f'<td class="num">{r.get("xuat_kho", 0)}</td>'
                  f'<td class="num">{r["shipper_nhan"]}</td>' + _gkc + _clc + _cxpc + _cxuc + '</tr>')
-    body = body or '<tr><td class="l" colspan="10">—</td></tr>'
+    body = body or '<tr><td class="l" colspan="11">—</td></tr>'
     _tcl = tot["con_lai"]
+    _tsoan = tot.get("soan")
+    if _tsoan is None:
+        _tsoan = int(tot.get("dg_cu", 0) or 0) + int(tot.get("dong_goi", 0) or 0)
     body += (f'<tr class="total"><td class="l">TỔNG CỘNG</td>'
+             f'<td class="num">{_tsoan or ""}</td>'
              f'<td class="num">{tot.get("dg_cu", 0) or ""}</td>'
              f'<td class="num">{tot["dong_goi"]}</td>'
              f'<td class="num accent">{tot["huy"] or ""}</td>'
@@ -418,12 +426,16 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
     # ---- VIDEO ĐÓNG GÓI: trình bày theo góc ĐƠN (đơn đóng gói có / thiếu video) ----
     vr = rep.get("video_recon") or {}
     if vr.get("available"):
-        _have = vr.get("open_with_video", 0)
-        _mv = vr.get("missing_video", 0)
+        _have = int(vr.get("total") or vr.get("open_with_video") or 0)
         _miss_codes = vr.get("missing_codes") or []
         _is_pick_video = vr.get("source") == "picklog_dedup"
         _video_subject = "Đơn trong phiếu nhặt đã khử trùng" if _is_pick_video else "Đơn đóng gói hôm nay"
         _video_base = rep.get("tong_don_soan") if _is_pick_video else t["dong_goi"]
+        _mv = max(0, int(_video_base or 0) - _have)
+        _matched = int(vr.get("matched_video") or vr.get("open_with_video") or 0)
+        _match_note = ""
+        if _matched and _matched != _have:
+            _match_note = f" Khớp mã phiếu nhặt: {_matched}/{_have} clip."
         _miss_row = (f'<tr><td class="l" style="padding-left:20px;color:#b45309">⤷ ⚠️ Thiếu video</td>'
                      f'<td class="num" style="color:#b45309;font-weight:900">{_mv}</td></tr>'
                      if _mv else
@@ -439,7 +451,8 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
         vid_note = _info_tip(
             'Đơn đóng gói đã gồm cả <b>đơn hỏa tốc giao xong trong ngày</b> (dòng “Hỏa tốc” bảng ĐVVC). '
             + (f'<b>{_mv} đơn chưa tìm thấy video khớp</b> — xem cảnh báo.'
-               if _mv else 'Tất cả đơn đóng gói đều có video.'))
+               if _mv else 'Tất cả đơn đóng gói đều có video.')
+            + _e(_match_note))
         _w = []
         if _mv:
             _ml = ", ".join(_e(str(c)) for c in _miss_codes[:8]) + (f" …(+{_mv - 8})" if _mv > 8 else "")
@@ -745,6 +758,7 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
   <table>
     <thead>
       <tr><th rowspan="2" class="l">Đơn vị vận chuyển</th>
+        <th rowspan="2">Soạn</th>
         <th colspan="2">Đóng gói</th><th rowspan="2">Hủy</th>
         <th rowspan="2">Đã xuất kho</th><th rowspan="2">Shipper thực nhận</th>
         <th rowspan="2">Đã giao khách</th><th rowspan="2">Chưa x.nhận</th>
