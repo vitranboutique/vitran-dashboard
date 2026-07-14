@@ -411,6 +411,8 @@ def _summarize_picking(orders):
     channels, stores, carriers, services, sku = {}, {}, {}, {}, {}
     total_qty = old = new = late = 0
     late_list = []
+    code_groups = []
+    primary_codes = []
     for o in orders:
         cd = o.get("channel_definition") or {}
         ch = cd.get("main_name") or o.get("source_name") or "Khác"
@@ -438,6 +440,9 @@ def _summarize_picking(orders):
             if cre_vn and xuly_vn > _picking_deadline_vn(cre_vn):
                 late += 1
                 late_list.append(o.get("name"))
+        aliases = sorted(_order_codes(o))
+        code_groups.append(aliases)
+        primary_codes.append((f.get("tracking_number") or o.get("name") or "").strip())
     srt = lambda d: dict(sorted(d.items(), key=lambda x: (-x[1], str(x[0]))))
     return {
         "total_orders": len(orders),
@@ -449,8 +454,10 @@ def _summarize_picking(orders):
         "skus": sorted(sku.items(), key=lambda x: (-x[1], str(x[0]))),
         # MÃ ĐƠN từng đơn trong đợt (mã vận đơn ưu tiên, fallback tên đơn) → lưu vào picklog
         # để đối chiếu đơn HỦY: mã hủy ∈ phiếu nhặt = hủy SAU soạn; không có = hủy TRƯỚC soạn.
-        "codes": [((o.get("fulfillments") or [{}])[0].get("tracking_number")
-                   or o.get("name") or "").strip() for o in orders],
+        "codes": [c for c in primary_codes if c],
+        # Nhóm alias theo từng đơn: mã đơn Sapo + mã vận đơn hiện tại/cũ + mã sàn nếu Sapo trả về.
+        # Dùng để khớp video Dohana chính xác hơn mà vẫn giữ codes flat cho khử trùng picklog.
+        "code_groups": code_groups,
     }
 
 
@@ -1321,15 +1328,37 @@ def _vn_hm(iso):
 
 
 def _order_codes(o) -> set:
-    """Mã định danh để khớp video Dohana: mã vận đơn + mã đơn (name)."""
+    """Mã định danh để khớp video Dohana: mã vận đơn + mã đơn + mã sàn/Sapo liên quan."""
     f = (o.get("fulfillments") or [{}])[0]
+
+    def add(out, val):
+        if val is None:
+            return
+        if isinstance(val, (list, tuple, set)):
+            for x in val:
+                add(out, x)
+            return
+        s = str(val).strip()
+        if s:
+            out.add(s)
+
     c = set()
-    if f.get("tracking_number"):
-        c.add(str(f["tracking_number"]))
-    for t in (f.get("tracking_numbers") or []):
-        c.add(str(t))
-    if o.get("name"):
-        c.add(str(o["name"]))
+    for src in (o, f, o.get("shipping_info") or {}, f.get("shipping_info") or {}):
+        if not isinstance(src, dict):
+            continue
+        for key in (
+            "name", "code", "order_code", "order_name", "order_number",
+            "reference", "reference_code", "source_identifier", "source_order_id",
+            "ecommerce_order_code", "channel_order_code", "tracking_number",
+            "tracking_numbers", "fulfillment_tracking_numbers", "tracking_code",
+            "shipment_code", "fulfillment_code",
+        ):
+            add(c, src.get(key))
+    for sl in (o.get("shipping_lines") or []):
+        if not isinstance(sl, dict):
+            continue
+        for key in ("tracking_number", "tracking_numbers", "tracking_code", "shipment_code", "code"):
+            add(c, sl.get(key))
     return c
 
 

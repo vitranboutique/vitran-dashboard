@@ -140,9 +140,18 @@ def _scale_count(value, old_n, new_n):
 def _trim_duplicate_codes(row, new_codes, old_code_count):
     """Trả row đã giảm số đơn khi cùng một mã bị lưu trong nhiều đợt."""
     out = dict(row or {})
+    old_codes = _codes_of(out)
     old_n = int(out.get("so_don") or old_code_count or 0)
     new_n = len(new_codes)
     out["codes"] = list(new_codes)
+    groups = out.get("code_groups") or []
+    if old_codes and isinstance(groups, list):
+        by_code = {}
+        for idx, code in enumerate(old_codes):
+            if idx < len(groups) and groups[idx]:
+                by_code[code] = groups[idx]
+        if by_code:
+            out["code_groups"] = [by_code.get(code, [code]) for code in new_codes]
     out["so_don"] = new_n
     if old_n and new_n != old_n:
         out["so_sp"] = _scale_count(out.get("so_sp"), old_n, new_n)

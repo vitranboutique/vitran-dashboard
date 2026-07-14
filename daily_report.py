@@ -426,16 +426,20 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
     # ---- VIDEO ĐÓNG GÓI: trình bày theo góc ĐƠN (đơn đóng gói có / thiếu video) ----
     vr = rep.get("video_recon") or {}
     if vr.get("available"):
-        _have = int(vr.get("total") or vr.get("open_with_video") or 0)
+        _have = int(vr.get("open_with_video") or 0)
         _miss_codes = vr.get("missing_codes") or []
         _is_pick_video = vr.get("source") == "picklog_dedup"
         _video_subject = "Đơn trong phiếu nhặt đã khử trùng" if _is_pick_video else "Đơn đóng gói hôm nay"
         _video_base = rep.get("tong_don_soan") if _is_pick_video else t["dong_goi"]
         _mv = max(0, int(_video_base or 0) - _have)
-        _matched = int(vr.get("matched_video") or vr.get("open_with_video") or 0)
+        _raw_total = int(vr.get("total") or 0)
+        _unique_total = int(vr.get("unique_total") or _raw_total or 0)
         _match_note = ""
-        if _matched and _matched != _have:
-            _match_note = f" Khớp mã phiếu nhặt: {_matched}/{_have} clip."
+        if _raw_total and _raw_total != _have:
+            _match_note = f" Dohana có {_raw_total} clip thô"
+            if _unique_total and _unique_total != _raw_total:
+                _match_note += f" / {_unique_total} mã unique"
+            _match_note += f"; khớp được {_have} đơn."
         _miss_row = (f'<tr><td class="l" style="padding-left:20px;color:#b45309">⤷ ⚠️ Thiếu video</td>'
                      f'<td class="num" style="color:#b45309;font-weight:900">{_mv}</td></tr>'
                      if _mv else
