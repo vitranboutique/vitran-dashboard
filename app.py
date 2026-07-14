@@ -5683,18 +5683,31 @@ def _render_returns():
     st.caption("Đơn trả CHƯA nhập kho (năm nay) — chia theo loại trả + tình trạng vận chuyển. "
                "Bấm 📋 để copy mã · dòng tô vàng = cần khiếu nại.")
 
-    def _clip_duration_text(value):
-        if value in (None, ""):
-            return ""
+    def _blank_value(value):
+        if value is None:
+            return True
         try:
-            return f"{int(float(value))}s"
+            if pd.isna(value):
+                return True
         except Exception:
-            text = str(value or "").strip()
+            pass
+        return isinstance(value, str) and value.strip() == ""
+
+    def _text_value(value):
+        return "" if _blank_value(value) else str(value).strip()
+
+    def _clip_duration_text(value):
+        if _blank_value(value):
+            return ""
+        text = _text_value(value)
+        try:
+            return f"{int(float(text))}s"
+        except Exception:
             return text if text.endswith("s") else text
 
     def _clip_recorded_text(date_value="", time_value=""):
-        date_text = str(date_value or "").strip()
-        time_text = str(time_value or "").strip()
+        date_text = _text_value(date_value)
+        time_text = _text_value(time_value)
         if not date_text and not time_text:
             return ""
 
@@ -5718,10 +5731,14 @@ def _render_returns():
 
     def _clip_recorded_or_missing(row):
         d = row or {}
-        text = _clip_recorded_text(d.get("clip_time") or d.get("clip_recorded") or "")
+        recorded = d.get("clip_time")
+        if _blank_value(recorded):
+            recorded = d.get("clip_recorded")
+        text = _clip_recorded_text(recorded)
         if text:
             return text
-        return "không có video" if not str(d.get("clip_code") or d.get("_dohana_code") or "").strip() else ""
+        has_clip_code = (not _blank_value(d.get("clip_code"))) or (not _blank_value(d.get("_dohana_code")))
+        return "không có video" if not has_clip_code else ""
 
     if not credential_present():
         st.warning("⚠️ Cần kết nối Sapo (API LIVE).")
