@@ -99,10 +99,13 @@ _CSS = """
 """
 
 
-def _carrier_rows(rows, tot):
+def _carrier_rows(rows, tot, video_total=0, cancel_split=None):
+    cancel_split = cancel_split or {}
     body = ""
     for r in rows:
         hot = "Hỏa tốc" in str(r["carrier"])
+        cname = str(r["carrier"])
+        cs = cancel_split.get(cname, {})
         cls = ' style="background:#fff3ed"' if hot else ''
         _cl = r["con_lai"]
         _clc = (f'<td class="num" style="color:#dc2626;font-weight:800">{_cl}</td>'
@@ -116,6 +119,11 @@ def _carrier_rows(rows, tot):
         _soan = r.get("soan")
         if _soan is None:
             _soan = int(_dgcu or 0) + int(r.get("dong_goi") or 0)
+        _htr = cs.get("truoc")
+        _hsa = cs.get("sau")
+        if _htr is None and _hsa is None:
+            _hsa = r.get("huy_sau")
+            _htr = r.get("huy_truoc")
         _cxp, _cxu = r.get("cx_packed", 0), r.get("cx_unpacked", 0)
         _cxpc = (f'<td class="num" style="color:#c2410c;font-weight:800">{_cxp}</td>'
                  if _cxp else '<td class="num"></td>')
@@ -125,19 +133,31 @@ def _carrier_rows(rows, tot):
                  f'<td class="num">{_soan or ""}</td>'
                  f'<td class="num">{_dgcu or ""}</td>'
                  f'<td class="num">{r["dong_goi"]}</td>'
-                 f'<td class="num">{r["huy"] or ""}</td>'
+                 f'<td class="num">{int(_htr or 0) or ""}</td>'
+                 f'<td class="num">{int(_hsa or 0) or ""}</td>'
+                 f'<td class="num">{r.get("video", "") or ""}</td>'
                  f'<td class="num">{r.get("xuat_kho", 0)}</td>'
                  f'<td class="num">{r["shipper_nhan"]}</td>' + _gkc + _clc + _cxpc + _cxuc + '</tr>')
-    body = body or '<tr><td class="l" colspan="11">—</td></tr>'
+    body = body or '<tr><td class="l" colspan="13">—</td></tr>'
     _tcl = tot["con_lai"]
     _tsoan = tot.get("soan")
     if _tsoan is None:
         _tsoan = int(tot.get("dg_cu", 0) or 0) + int(tot.get("dong_goi", 0) or 0)
+    _htr_tot = sum(int(v.get("truoc") or 0) for v in cancel_split.values())
+    _hsa_tot = sum(int(v.get("sau") or 0) for v in cancel_split.values())
+    if not (_htr_tot or _hsa_tot):
+        _hsa_tot = int(tot.get("huy_sau") or 0)
+        _htr_tot = int(tot.get("huy_truoc") or 0)
+    if not (_htr_tot or _hsa_tot):
+        _hsa_tot = int(tot.get("huy") or 0)
+        _htr_tot = 0
     body += (f'<tr class="total"><td class="l">TỔNG CỘNG</td>'
              f'<td class="num">{_tsoan or ""}</td>'
              f'<td class="num">{tot.get("dg_cu", 0) or ""}</td>'
              f'<td class="num">{tot["dong_goi"]}</td>'
-             f'<td class="num accent">{tot["huy"] or ""}</td>'
+             f'<td class="num">{_htr_tot or ""}</td>'
+             f'<td class="num accent">{_hsa_tot or ""}</td>'
+             f'<td class="num">{int(video_total or 0) or ""}</td>'
              f'<td class="num">{tot.get("xuat_kho", 0)}</td>'
              f'<td class="num">{tot["shipper_nhan"]}</td>'
              f'<td class="num">{tot.get("giao_khach", 0) or ""}</td>'
@@ -485,7 +505,9 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
     _exp_done = next((r for r in rep.get("by_carrier", []) if "Hỏa tốc" in str(r.get("carrier"))), None)
     _tcl = (rep.get("totals") or {}).get("con_lai", 0)
     sec1_note = _info_tip(
-        '<b>Đóng gói · Cũ</b> = đơn gói từ hôm trước, hôm nay mới xuất/xử lý; <b>· Hôm nay</b> = gói hôm nay. '
+        '<b>Cần gửi · Cũ</b> = đơn xác nhận từ hôm trước, hôm nay mới xuất/xử lý; <b>· Hôm nay</b> = đơn xác nhận hôm nay. '
+        '<b>Video</b> = số đơn đã khớp được clip đóng hàng Dohana. '
+        '<b>Hủy trước soạn</b> = khách hủy sớm, chưa cầm hàng; <b>Hủy sau soạn</b> = đã soạn/gói, cần lấy lại. '
         '<b>Đã xuất kho</b> = số ĐƠN đã bàn giao khỏi kho (= mục “Xuất kho đơn hàng” trong '
         '<b>Báo cáo sổ kho</b>, tính theo đơn). '
         '<b>Shipper thực nhận</b> = ĐVVC đã XÁC NHẬN lấy; '
@@ -501,6 +523,15 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
     else:
         lech_html = ('<div style="font-size:.77em;color:#15803d;margin:.46em 0 0;font-weight:700">'
                      '✅ Các cột khớp nhau (xuất kho = shipper nhận = giao khách) — không có chênh lệch.</div>')
+    _cancel_split = {}
+    for _h in rep.get("huy_all_detail") or []:
+        _c = str(_h.get("carrier") or "?")
+        _entry = _cancel_split.setdefault(_c, {"truoc": 0, "sau": 0})
+        if _h.get("soan") or _h.get("packed"):
+            _entry["sau"] += 1
+        else:
+            _entry["truoc"] += 1
+    _video_for_table = int((rep.get("video_recon") or {}).get("open_with_video") or 0)
     # Đợt soạn GỒM cả đơn đã hủy đã gói (đã soạn rồi mới hủy)
     _soan = rep.get("tong_don_soan", 0)
     _hdg = rep.get("huy_da_goi", 0)
@@ -763,13 +794,13 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
     <thead>
       <tr><th rowspan="2" class="l">Đơn vị vận chuyển</th>
         <th rowspan="2">Soạn</th>
-        <th colspan="2">Đóng gói</th><th rowspan="2">Hủy</th>
+        <th colspan="2">Cần gửi</th><th colspan="2">Hủy</th><th rowspan="2">Video</th>
         <th rowspan="2">Đã xuất kho</th><th rowspan="2">Shipper thực nhận</th>
         <th rowspan="2">Đã giao khách</th><th rowspan="2">Chưa x.nhận</th>
         <th colspan="2">Còn xót lại (chưa giao)</th></tr>
-      <tr><th>Cũ</th><th>Hôm nay</th><th>Đã gói</th><th>Chưa gói</th></tr>
+      <tr><th>Cũ</th><th>Hôm nay</th><th>Trước soạn</th><th>Sau soạn</th><th>Đã gói</th><th>Chưa gói</th></tr>
     </thead>
-    <tbody>{_carrier_rows(rep["by_carrier"], t)}</tbody>
+    <tbody>{_carrier_rows(rep["by_carrier"], t, _video_for_table, _cancel_split)}</tbody>
   </table>
   {sec1_note}
   {lech_html}
