@@ -421,14 +421,15 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
         _have = vr.get("open_with_video", 0)
         _mv = vr.get("missing_video", 0)
         _miss_codes = vr.get("missing_codes") or []
+        _video_subject = "Đơn trong phiếu nhặt" if vr.get("source") == "picklog" else "Đơn đóng gói hôm nay"
         _miss_row = (f'<tr><td class="l" style="padding-left:20px;color:#b45309">⤷ ⚠️ Thiếu video</td>'
                      f'<td class="num" style="color:#b45309;font-weight:900">{_mv}</td></tr>'
                      if _mv else
                      '<tr><td class="l" style="padding-left:20px;color:#15803d">⤷ ✅ Đủ video (100%)</td>'
                      '<td class="num" style="color:#15803d;font-weight:800">✓</td></tr>')
         iii_rows = (
-            f'<tr><td class="l">📦 Đơn đóng gói hôm nay</td>'
-            f'<td class="num" style="font-weight:900">{t["dong_goi"]}</td></tr>'
+            f'<tr><td class="l">📦 {_video_subject}</td>'
+            f'<td class="num" style="font-weight:900">{(rep.get("tong_don_soan") if vr.get("source") == "picklog" else t["dong_goi"])}</td></tr>'
             f'<tr><td class="l" style="padding-left:20px">⤷ ✅ Đã có video đóng gói</td>'
             f'<td class="num">{_have}</td></tr>'
             + _miss_row)
@@ -440,7 +441,7 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
         _w = []
         if _mv:
             _ml = ", ".join(_e(str(c)) for c in _miss_codes[:8]) + (f" …(+{_mv - 8})" if _mv > 8 else "")
-            _w.append(f'<b>{_mv} đơn đã đóng gói nhưng CHƯA TÌM THẤY video khớp</b> '
+            _w.append(f'<b>{_mv} đơn trong phiếu nhặt/đóng gói nhưng CHƯA TÌM THẤY video khớp</b> '
                       f'(có thể: chưa quay · quay nhầm mục “khui hàng” · mã lỗi phông nặng) '
                       f'— kiểm tra Dohana. Mã: {_ml}')
         if vr.get("dup"):
