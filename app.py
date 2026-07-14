@@ -5680,8 +5680,6 @@ def _render_daily():
 # ═════════════ HÀM RENDER: ĐƠN TRẢ HÀNG ĐANG XỬ LÝ (dùng trong tab Vận hành) ═════════════
 def _render_returns():
     st.title("📦 Đơn trả hàng đang xử lý (chưa nhập kho)")
-    st.caption("Đơn trả CHƯA nhập kho (năm nay) — chia theo loại trả + tình trạng vận chuyển. "
-               "Bấm 📋 để copy mã · dòng tô vàng = cần khiếu nại.")
 
     def _blank_value(value):
         if value is None:
@@ -5740,12 +5738,31 @@ def _render_returns():
         has_clip_code = (not _blank_value(d.get("clip_code"))) or (not _blank_value(d.get("_dohana_code")))
         return "không có video" if not has_clip_code else ""
 
+    def _can_edit_return_notes():
+        return _auth_configured() and str(CUR_ROLE or "").strip().lower() == "admin"
+
+    def _return_info(text, label="ⓘ"):
+        text = str(text or "").strip()
+        if not text:
+            return
+        st.markdown(
+            f"<details class='return-info' style='margin:.15rem 0 .35rem'>"
+            f"<summary style='cursor:pointer;color:#64748b;font-weight:700'>{_esc(label)}</summary>"
+            f"<div style='color:#64748b;font-size:.86rem;line-height:1.35;margin:.25rem 0 .35rem;white-space:pre-wrap'>{_esc(text)}</div>"
+            f"</details>",
+            unsafe_allow_html=True,
+        )
+
     if not credential_present():
         st.warning("⚠️ Cần kết nối Sapo (API LIVE).")
         return
     if st.button("🔄 Tải lại số liệu", key="returns_reload"):
         st.cache_data.clear()
         st.rerun()
+    _return_info(
+        "Đơn trả CHƯA nhập kho (năm nay), chia theo loại trả và tình trạng vận chuyển. "
+        "Bấm 📋 để copy mã. Dòng tô vàng là đơn cần khiếu nại hoặc chưa có ghi chú chuẩn."
+    )
     _return_top_search_slot = st.container()
     _return_top_drill_slot = st.container()
 
@@ -5989,7 +6006,10 @@ def _render_returns():
         if not rows:
             return
         st.markdown("**✍️ Ghi chú app cho đơn Sapo đã đóng**")
-        st.caption("Phiếu đã đóng/hủy trên Sapo không ghi chú được nữa, nên ghi chú ở đây sẽ được app dùng để lọc Cần KN.")
+        _return_info("Phiếu đã đóng/hủy trên Sapo không ghi chú được nữa, nên ghi chú ở đây sẽ được app dùng để lọc Cần KN.")
+        if not _can_edit_return_notes():
+            _return_info("Chỉ tài khoản admin mới được ghi hoặc sửa ghi chú app/SAPO. Tài khoản khác chỉ xem dữ liệu.")
+            return
         if not picklog.configured():
             st.warning("Chưa cấu hình kho lưu picklog/Gist nên chưa lưu được ghi chú app.")
             return
@@ -6038,8 +6058,8 @@ def _render_returns():
             parts = [d.get("created"), d.get("order_code"), d.get("return_code"), d.get("vd_tra")]
             return " · ".join(str(x) for x in parts if str(x or "").strip())
 
-        with st.expander("🧾 Ghi chú hàng loạt", expanded=True):
-            st.caption("Dùng khi nhiều đơn cùng một kết luận. Dán mã đơn / mã trả / vận đơn, mỗi dòng một hoặc nhiều mã đều được.")
+        with st.expander("🧾 Ghi chú hàng loạt", expanded=False):
+            _return_info("Dùng khi nhiều đơn cùng một kết luận. Dán mã đơn / mã trả / vận đơn, mỗi dòng một hoặc nhiều mã đều được.")
             quick_codes = st.text_area(
                 "Ghi nhanh app - danh sách mã",
                 height=80,
@@ -6107,7 +6127,7 @@ def _render_returns():
                         else:
                             st.error("Lưu ghi chú app lỗi. Kiểm tra token picklog/Gist.")
 
-            st.caption("Hoặc sửa nhiều dòng trực tiếp trong bảng dưới rồi bấm lưu một lần.")
+            _return_info("Hoặc sửa nhiều dòng trực tiếp trong bảng dưới rồi bấm lưu một lần.")
             edit_rows = []
             for key in choices:
                 d = row_map.get(key) or {}
@@ -6172,45 +6192,54 @@ def _render_returns():
                 else:
                     st.error("Lưu ghi chú app lỗi. Kiểm tra token picklog/Gist.")
 
-        st.markdown("**Ghi/chỉnh từng đơn**")
-        selected = st.selectbox("Chọn đơn cần ghi/chỉnh", choices, format_func=_fmt_choice,
-                                key="closed_return_app_note_select")
-        row = row_map.get(selected) or {}
-        old_note = _closed_return_app_note_text((notes or {}).get(selected))
-        sapo_note = str(row.get("sapo_note") or ("" if old_note else row.get("note") or "")).strip()
-        with st.form("closed_return_app_note_form"):
-            if sapo_note:
-                st.caption(f"Ghi chú Sapo đang có: {sapo_note[:220]}" + ("..." if len(sapo_note) > 220 else ""))
-            note_text = st.text_area(
-                "Ghi chú app",
-                value=old_note,
-                height=140,
-                placeholder="VD: 🚨 CẦN KN | 200.760đ | Khách chưa hoàn đủ hàng\n🕘 Cập nhật: 13/07/2026",
-                key=f"closed_return_app_note_text_{_ascii_code(selected)[:48]}",
-            )
-            st.caption("Prefix hợp lệ: THẮNG, THUA, HỦY, HẾT HẠN, KHÔNG CẦN KN, CẦN KN. "
-                       "THẮNG/THUA/HỦY/KHÔNG CẦN KN/HẾT HẠN sẽ rớt khỏi Cần KN; CẦN KN vẫn nằm trong bảng Cần KN.")
-            c1, c2, _ = st.columns([1, 1, 4])
-            save_btn = c1.form_submit_button("💾 Lưu ghi chú")
-            clear_btn = c2.form_submit_button("🧹 Xóa ghi chú app")
-        if save_btn or clear_btn:
-            new_notes = dict(notes or {})
-            if clear_btn:
-                new_notes.pop(selected, None)
-            else:
-                note_text = str(note_text or "").strip()
-                if note_text and not _note_has_result(note_text):
-                    st.error("Ghi chú app chưa đúng prefix chuẩn, nên app chưa lưu. Dòng đầu phải có THẮNG / THUA / HẾT HẠN / KHÔNG CẦN KN / CẦN KN.")
-                    return
-                if note_text:
-                    new_notes[selected] = _note_meta(row, note_text)
-                else:
+        with st.expander("✍️ Ghi/chỉnh từng đơn", expanded=False):
+            selected = st.selectbox("Chọn đơn cần ghi/chỉnh", choices, format_func=_fmt_choice,
+                                    key="closed_return_app_note_select")
+            row = row_map.get(selected) or {}
+            old_note = _closed_return_app_note_text((notes or {}).get(selected))
+            sapo_note = str(row.get("sapo_note") or ("" if old_note else row.get("note") or "")).strip()
+            with st.form("closed_return_app_note_form"):
+                if sapo_note:
+                    st.markdown(
+                        f"<details><summary>ⓘ Ghi chú Sapo đang có</summary>"
+                        f"<pre style='white-space:pre-wrap;margin:.5rem 0 0'>{_esc(sapo_note)}</pre></details>",
+                        unsafe_allow_html=True,
+                    )
+                note_text = st.text_area(
+                    "Ghi chú app",
+                    value=old_note,
+                    height=140,
+                    placeholder="VD: 🚨 CẦN KN | 200.760đ | Khách chưa hoàn đủ hàng\n🕘 Cập nhật: 13/07/2026",
+                    key=f"closed_return_app_note_text_{_ascii_code(selected)[:48]}",
+                )
+                st.markdown(
+                    "<details><summary>ⓘ Quy tắc prefix</summary>"
+                    "Prefix hợp lệ: THẮNG, THUA, HỦY, HẾT HẠN, KHÔNG CẦN KN, CẦN KN. "
+                    "THẮNG/THUA/HỦY/KHÔNG CẦN KN/HẾT HẠN sẽ rớt khỏi Cần KN; CẦN KN vẫn nằm trong bảng Cần KN."
+                    "</details>",
+                    unsafe_allow_html=True,
+                )
+                c1, c2, _ = st.columns([1, 1, 4])
+                save_btn = c1.form_submit_button("💾 Lưu ghi chú")
+                clear_btn = c2.form_submit_button("🧹 Xóa ghi chú app")
+            if save_btn or clear_btn:
+                new_notes = dict(notes or {})
+                if clear_btn:
                     new_notes.pop(selected, None)
-            if _save_closed_return_app_notes(new_notes):
-                st.success("Đã lưu ghi chú app. Bảng sẽ lọc lại theo ghi chú này.")
-                st.rerun()
-            else:
-                st.error("Lưu ghi chú app lỗi. Kiểm tra token picklog/Gist.")
+                else:
+                    note_text = str(note_text or "").strip()
+                    if note_text and not _note_has_result(note_text):
+                        st.error("Ghi chú app chưa đúng prefix chuẩn, nên app chưa lưu. Dòng đầu phải có THẮNG / THUA / HẾT HẠN / KHÔNG CẦN KN / CẦN KN.")
+                        return
+                    if note_text:
+                        new_notes[selected] = _note_meta(row, note_text)
+                    else:
+                        new_notes.pop(selected, None)
+                if _save_closed_return_app_notes(new_notes):
+                    st.success("Đã lưu ghi chú app. Bảng sẽ lọc lại theo ghi chú này.")
+                    st.rerun()
+                else:
+                    st.error("Lưu ghi chú app lỗi. Kiểm tra token picklog/Gist.")
 
     def _money_text(value, default="0đ"):
         value = str(value or "").strip()
@@ -6432,8 +6461,8 @@ def _render_returns():
         return out
 
     with st.expander("📝 Ghi chú SAPO hàng loạt"):
-        _can_write_sapo = _auth_configured() and CUR_ROLE == "admin"
-        st.caption("Dùng khi đã đối chiếu xong bên ngoài app. App sẽ dò phiếu trả theo mã đơn/mã trả hàng/mã vận đơn rồi ghi note vào SAPO qua API.")
+        _can_write_sapo = _can_edit_return_notes()
+        _return_info("Dùng khi đã đối chiếu xong bên ngoài app. App sẽ dò phiếu trả theo mã đơn/mã trả hàng/mã vận đơn rồi ghi note vào SAPO qua API.")
         if not _can_write_sapo:
             st.warning("Chức năng ghi SAPO chỉ mở cho tài khoản admin khi app đã cấu hình đăng nhập.")
         _default_codes = ""
@@ -6447,8 +6476,8 @@ def _render_returns():
                 st.rerun()
         with _code_col:
             _codes_text = st.text_area("Dán mã đơn / mã trả hàng / mã vận đơn", value=_default_codes,
-                                       placeholder="VD: 260204RBTMYA9C 582422766280803724 ...",
-                                       height=100, key="return_note_codes")
+                                        placeholder="VD: 260204RBTMYA9C 582422766280803724 ...",
+                                        height=100, key="return_note_codes", disabled=not _can_write_sapo)
         _codes = parse_codes(_codes_text)
         _codes_key = " ".join(_codes)
         with _lookup_col:
@@ -6502,7 +6531,7 @@ def _render_returns():
             if _not_found_count:
                 _notice.append(f"{_not_found_count} mã không tìm thấy")
             _notice.append("tắt checkbox này nếu muốn dùng phần tạo ghi chú theo mẫu bên dưới")
-            st.caption(" · ".join(_notice))
+            _return_info(" · ".join(_notice))
             if _full_note_mode:
                 _full_note_blocks = st.text_area(
                     "Dán ghi chú nhanh theo mã",
@@ -6524,7 +6553,7 @@ def _render_returns():
                 _full_note_blocks_key = _ascii_code(_full_note_blocks)[:32]
                 if _full_note_map:
                     _full_note_quick_count = len(_full_note_map)
-                    st.caption(f"Đã nhận {len(_full_note_map)} ghi chú dán nhanh; app tự map theo mã trả/mã đơn/vận đơn/Sapo ID.")
+                    _return_info(f"Đã nhận {len(_full_note_map)} ghi chú dán nhanh; app tự map theo mã trả/mã đơn/vận đơn/Sapo ID.")
                 _full_seed_rows = _build_full_note_editor_rows(_lookup_rows, _allow_final, _full_note_map)
                 if not _full_seed_rows:
                     _msg = "Không còn phiếu nào cần nhập ghi chú mới: tất cả đã có kết quả cuối hoặc không tìm thấy."
@@ -6532,7 +6561,7 @@ def _render_returns():
                         _msg += " 👉 Tick ô 🔓 ở trên để ghi chú lại các phiếu đã có kết quả."
                     st.info(_msg)
                 else:
-                    st.caption("Dán nguyên ghi chú chuẩn vào cột `Ghi chú mới`. Mỗi dòng ghi đúng một hồ sơ trả, không gom chung.")
+                    _return_info("Dán nguyên ghi chú chuẩn vào cột `Ghi chú mới`. Mỗi dòng ghi đúng một hồ sơ trả, không gom chung.")
                     _full_editor_df = st.data_editor(
                         pd.DataFrame(_full_seed_rows),
                         use_container_width=True,
@@ -6580,7 +6609,7 @@ def _render_returns():
                         }
                     _ready_count = sum(1 for _p in _full_note_plan.values() if _p.get("new_note"))
                     if _ready_count:
-                        st.caption(f"Đã sẵn sàng ghi {_ready_count} phiếu. App vẫn kiểm tra prefix chuẩn và tên shipper trước khi cho ghi.")
+                        _return_info(f"Đã sẵn sàng ghi {_ready_count} phiếu. App vẫn kiểm tra prefix chuẩn và tên shipper trước khi cho ghi.")
                     _quick_write_now = st.button(
                         f"🚀 Ghi nhanh {_ready_count} block vào SAPO",
                         disabled=(not _ready_count or not _full_note_valid or not _can_write_sapo),
@@ -6589,7 +6618,7 @@ def _render_returns():
                     )
         if (not _full_note_mode) and _preview_ready:
             st.markdown("**Tự tạo ghi chú đúng mẫu**")
-            st.caption("Dùng phần này khi chị muốn tự soạn bằng mẫu có sẵn. Chỉ ghi Cần KN/Cần KN gấp khi đã kiểm tra sàn và chị duyệt.")
+            _return_info("Dùng phần này khi chị muốn tự soạn bằng mẫu có sẵn. Chỉ ghi Cần KN/Cần KN gấp khi đã kiểm tra sàn và chị duyệt.")
         _groups = []
         for _tpl in _RETURN_NOTE_TEMPLATES:
             if _tpl["group"] not in _groups:
@@ -6698,7 +6727,7 @@ def _render_returns():
             _seed_rows = _build_individual_editor_rows(
                 st.session_state["return_note_preview_rows"], _note_label, _note_date
             )
-            st.caption("Chỉ sửa các cột cần thiết. Ghi chú đầy đủ được ẩn bên dưới trong mục xem trước.")
+            _return_info("Chỉ sửa các cột cần thiết. Ghi chú đầy đủ được ẩn bên dưới trong mục xem trước.")
             _editor_df = st.data_editor(
                 pd.DataFrame(_seed_rows),
                 use_container_width=True,
@@ -6758,7 +6787,7 @@ def _render_returns():
                         column_config={"Ghi chú sẽ ghi": st.column_config.TextColumn("Ghi chú sẽ ghi", width="large")},
                     )
                 else:
-                    st.caption("Chưa chọn dòng nào để ghi.")
+                    _return_info("Chưa chọn dòng nào để ghi.")
         if not _note_valid:
             st.error("Ghi chú chưa đúng chuẩn. Dòng đầu phải bắt đầu bằng ✅ THẮNG / Thua / Hết hạn / Không cần KN / Cần KN.")
         if not _shipper_valid:
@@ -6767,13 +6796,13 @@ def _render_returns():
             st.error("Bảng ghi chú riêng từng mã còn dòng thiếu thông tin hoặc sai prefix chuẩn.")
         if _full_note_mode and not _full_note_valid:
             st.error("Bảng agent còn dòng thiếu thông tin hoặc sai prefix chuẩn.")
-        st.caption("Khi ghi thật, app sẽ tự chèn ghi chú cũ SAPO của từng phiếu vào dòng kế cuối, ngay trước dòng Cập nhật.")
-        st.caption("Tool này chỉ ghi vào ghi chú hồ sơ trả hàng, là nơi bảng KN đang đọc kết quả.")
+        _return_info("Khi ghi thật, app sẽ tự chèn ghi chú cũ SAPO của từng phiếu vào dòng kế cuối, ngay trước dòng Cập nhật. "
+                     "Tool này chỉ ghi vào ghi chú hồ sơ trả hàng, là nơi bảng KN đang đọc kết quả.")
         _confirm_write = st.checkbox("Tôi xác nhận ghi chú các phiếu tìm thấy vào SAPO", value=False,
                                      key="return_note_confirm_write")
         _confirm_ready = _confirm_write or bool(_full_note_mode and _full_note_quick_count)
         if _full_note_mode and _full_note_quick_count:
-            st.caption("Đã dán ghi chú nhanh theo mã nên có thể bấm ghi trực tiếp; không cần tick ô xác nhận.")
+            _return_info("Đã dán ghi chú nhanh theo mã nên có thể bấm ghi trực tiếp; không cần tick ô xác nhận.")
         _write_clicked = st.button(
             "✍️ Ghi chú vào SAPO",
             disabled=(not _codes or not _preview_ready or not _confirm_ready or not _can_write_sapo
@@ -7220,12 +7249,12 @@ def _render_returns():
                 st.markdown("##### 🚨 Mất hàng theo ĐVVC / Shipper (Thua + Hết hạn)")
                 st.markdown(f"**{_lt['n']} đơn** hàng CHƯA về kho · thất thoát **{_fm(_lt['money'])}** "
                             f"_(năm nay — khớp Thua+Hết hạn ở card trên)_")
-                st.caption("🚚 Tổng theo ĐVVC")
+                _return_info("Tổng theo ĐVVC")
                 _dvr = _ls.get("by_dvvc") or []
                 st.dataframe(pd.DataFrame([{"ĐVVC": r["dvvc"], "Đơn": r["n"],
                     "Thua/Hết": f"{r['thua']}/{r['het']}", "Tiền mất": _fm(r["money"])}
                     for r in _dvr]), hide_index=True, width="stretch")
-                st.caption("🧍 Từng shipper & các đơn làm mất (gộp nhóm theo shipper; trong nhóm: mới → cũ)")
+                _return_info("Từng shipper & các đơn làm mất (gộp nhóm theo shipper; trong nhóm: mới → cũ)")
                 _ords = _ls.get("orders") or []
                 if _ords:
                     _dvc = {"J&T Express": "#DC2626", "SPX (Shopee)": "#F97316", "Viettel Post": "#7C3AED",
@@ -7271,9 +7300,8 @@ def _render_returns():
                             "<div style='overflow-x:auto'><table><thead><tr>" + _thead + "</tr></thead><tbody>"
                             + "".join(_body) + "</tbody></table></div>" + _js + "</body></html>")
                     components.html(_doc, height=min(70 + len(_ords) * 33, 900), scrolling=True)
-                st.caption("📋 Bấm nút **📋** để copy mã trả / mã VĐ · STT đếm theo TỪNG shipper · màu = ĐVVC · vạch = đổi shipper. "
-                           "⚠️ Shopee/SPX không ghi tên shipper → cột Shipper hiện ĐVVC; mã VĐ lấy từ 'VĐ về' trong ghi chú "
-                           "nếu field trống; vài đơn Shopee sàn ẩn → '—'.")
+                _return_info("Bấm nút 📋 để copy mã trả / mã VĐ. STT đếm theo từng shipper, màu = ĐVVC, vạch = đổi shipper. "
+                             "Shopee/SPX không ghi tên shipper nên cột Shipper hiện ĐVVC; mã VĐ lấy từ 'VĐ về' trong ghi chú nếu field trống; vài đơn Shopee sàn ẩn sẽ hiện '—'.")
                 st.divider()
         with _tabs[0]:
             st.markdown("##### 📊 Đang xử lý (chưa nhập kho)")
@@ -7284,10 +7312,10 @@ def _render_returns():
             _m[2].metric("📥 Đã giao người bán", f"{_rip['tot_returned']:,}")
             _m[3].metric("🚫 Không có hàng hoàn về", f"{len(_no_return_list):,}")
             _m[4].metric("🟡 Hơn 5 ngày", f"{_old_n:,}")
-            st.caption("🟡 **Dòng tô vàng = đơn CẦN KN** (hơn 5 ngày & CHƯA có ghi chú kết quả).  "
-                    "VĐ đi = mã vận đơn giao đi · VĐ trả về = mã vận đơn hoàn về "
-                    "(giao thất bại: 2 mã trùng nhau; chỉ hoàn tiền: không có kiện hàng hoàn về)."
-                    + ("  ·  ⚠️ đã chạm giới hạn quét — có thể còn đơn cũ hơn" if _rip.get("capped") else ""))
+            _return_info("🟡 Dòng tô vàng = đơn CẦN KN (hơn 5 ngày và chưa có ghi chú kết quả). "
+                         "VĐ đi = mã vận đơn giao đi. VĐ trả về = mã vận đơn hoàn về. "
+                         "Giao thất bại: 2 mã trùng nhau; chỉ hoàn tiền: không có kiện hàng hoàn về."
+                         + (" Đã chạm giới hạn quét, có thể còn đơn cũ hơn." if _rip.get("capped") else ""))
 
             def _jss(s):       # escape chuỗi cho onclick JS
                 return str(s or "").replace("\\", "\\\\").replace("'", "\\'")
@@ -7520,6 +7548,16 @@ def _render_returns():
                 cols += ["Đối soát", "Ghi chú"]
                 _sticky_n = cols.index("Mã trả hàng") + 1   # cố định các cột đầu → hết "Mã trả hàng"
                 thead = "".join(f"<th>{c}</th>" for c in cols)
+                def _note_details_cell(text):
+                    note_text = str(text or "").strip()
+                    if not note_text:
+                        return "<span class='muted'>—</span>"
+                    first = next((line.strip() for line in note_text.replace("\r", "\n").split("\n") if line.strip()), "xem ghi chú")
+                    summary = first if len(first) <= 42 else first[:39].rstrip() + "..."
+                    return (
+                        f"<details class='note-detail'><summary>{_safe(summary)}</summary>"
+                        f"<div>{_safe(note_text)}</div></details>"
+                    )
                 body = ""
                 for i, d in enumerate(items, _start + 1):
                     bg = "background:#fff3cd" if d.get("need_kn") else ""
@@ -7547,7 +7585,11 @@ def _render_returns():
                         _clip_title = _safe(d.get("clip_code") or d.get("_dohana_code") or "")
                         _clip_time = _clip_recorded_or_missing(d)
                         _clip_dur = _clip_duration_text(d.get("clip_dur"))
-                        tds.append(f"<td title='{_clip_title}'>{_safe(_clip_time)}</td>")
+                        _clip_time_html = (
+                            f"<span class='no-video'>{_safe(_clip_time)}</span>"
+                            if _clip_time == "không có video" else _safe(_clip_time)
+                        )
+                        tds.append(f"<td title='{_clip_title}'>{_clip_time_html}</td>")
                         tds.append(f"<td class='r' title='{_clip_title}'>{_safe(_clip_dur)}</td>")
                     tds += [
                         f"<td>{_safe(d.get('return_shipper'), 'Chưa có')}</td>",
@@ -7562,7 +7604,7 @@ def _render_returns():
                     if show_reason:
                         tds.append(f"<td>{_safe(d.get('reason'))}</td>")
                     tds.append(f"<td>{_doisoat(d)}</td>")
-                    tds.append(f"<td class='note' title='{_safe(note_display)}'>{_safe(note_display)}</td>")
+                    tds.append(f"<td class='note'>{_note_details_cell(note_display)}</td>")
                     body += f"<tr style='{bg}'>" + "".join(tds) + "</tr>"
                 html = f"""<style>
  body{{margin:0;font-family:Tahoma,Arial,sans-serif;color:#1f2937}}
@@ -7570,7 +7612,11 @@ def _render_returns():
  th,td{{border:1px solid #e2e6ec;padding:4px 8px;text-align:left;white-space:nowrap}}
  th{{background:#eef1f6;position:sticky;top:0;z-index:4;font-weight:700}}
  td.r{{text-align:right}}
- td.note{{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:help}}
+ .muted{{color:#cbd5e1}}
+ .no-video{{color:#dc2626;font-weight:700}}
+ td.note{{max-width:240px;white-space:normal}}
+ .note-detail summary{{cursor:pointer;color:#1d4ed8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}}
+ .note-detail div{{margin-top:4px;white-space:pre-wrap;min-width:260px;max-width:520px;line-height:1.35;color:#111827}}
  a{{color:#1d4ed8;text-decoration:none}} a:hover{{text-decoration:underline}}
  .cp{{cursor:pointer;opacity:.55;font-size:11px;user-select:none}} .cp:hover{{opacity:1}}
 </style>
@@ -7711,7 +7757,15 @@ def _render_returns():
                         _filter_desc = ", ".join(_desc) if _desc else "tất cả đơn trả"
                         if _drill_rows:
                             st.caption(f"{len(_drill_rows)} đơn: {_filter_desc}.")
-                            st.dataframe(pd.DataFrame(_drill_rows), use_container_width=True, hide_index=True)
+                            _drill_df = pd.DataFrame(_drill_rows)
+                            st.dataframe(
+                                _drill_df.style.map(
+                                    lambda v: "color:#dc2626;font-weight:700" if v == "không có video" else "",
+                                    subset=["Ngày giờ quay"],
+                                ),
+                                use_container_width=True,
+                                hide_index=True,
+                            )
                         else:
                             st.caption(f"Không có đơn phù hợp: {_filter_desc}.")
 
@@ -8092,6 +8146,17 @@ def _render_returns():
                     except Exception:
                         return ""
 
+                def _note_details_cell(text):
+                    note_text = str(text or "").strip()
+                    if not note_text:
+                        return "<span class='muted'>—</span>"
+                    first = next((line.strip() for line in note_text.replace("\r", "\n").split("\n") if line.strip()), "xem ghi chú")
+                    summary = first if len(first) <= 42 else first[:39].rstrip() + "..."
+                    return (
+                        f"<details class='note-detail'><summary>{_safe(summary)}</summary>"
+                        f"<div>{_safe(note_text)}</div></details>"
+                    )
+
                 def _video_link_cell(text, video_row):
                     text = str(text or "").strip()
                     if not text:
@@ -8147,11 +8212,14 @@ def _render_returns():
                     matches = _dohana_detail_matches(code)
                     d = matches[0] if matches else {}
                     note = str(d.get("note") or "").strip() if matches else "Chưa thấy trong chi tiết"
-                    note_preview = next((line.strip() for line in note.splitlines() if line.strip()), note)
                     filmed_at = _clip_recorded_text(r.get("date"), r.get("time")) or "không có video"
                     duration = _clip_duration_text(r.get("dur"))
                     shipper = d.get("return_shipper") or ("Chưa có" if matches else "")
                     bg = "" if (matches and _dohana_is_closed_note(note)) else "background:#fff3cd"
+                    filmed_html = (
+                        f"<span class='no-video'>{_safe(filmed_at)}</span>"
+                        if filmed_at == "không có video" else _safe(filmed_at)
+                    )
                     tds = [
                         f"<td class='r'>{i}</td>",
                         f"<td>{_safe(d.get('created'))}</td>",
@@ -8159,7 +8227,7 @@ def _render_returns():
                         f"<td>{_return_code_cell(d)}</td>",
                         f"<td>{_code_cell(d.get('vd_di'))}</td>",
                         f"<td>{_vd_ve_dohana_cell(d.get('vd_tra'), code)}</td>",
-                        f"<td>{_safe(filmed_at)}</td>",
+                        f"<td>{filmed_html}</td>",
                         f"<td class='r'>{_safe(duration)}</td>",
                         f"<td>{_tag_reason_cell(r, d)}</td>",
                         f"<td>{_safe(_return_type_label(d))}</td>",
@@ -8170,7 +8238,7 @@ def _render_returns():
                         f"<td class='r'>{_safe(_money_cell(d.get('money')))}</td>",
                         f"<td>{_safe(d.get('stock_status'))}</td>",
                         f"<td>{_doisoat(d)}</td>",
-                        f"<td class='note' title='{_safe(note)}'>{_safe(note_preview)}</td>",
+                        f"<td class='note'>{_note_details_cell(note)}</td>",
                     ]
                     body += f"<tr style='{bg}'>" + "".join(tds) + "</tr>"
 
@@ -8182,9 +8250,13 @@ def _render_returns():
  th{{background:#eef1f6;position:sticky;top:0;z-index:4;font-weight:700}}
  td{{vertical-align:top}}
  td.r{{text-align:right}}
+ .muted{{color:#cbd5e1}}
+ .no-video{{color:#dc2626;font-weight:700}}
  .sub{{color:#64748b;font-size:11px}}
  td.shipper{{max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
- td.note{{max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:help}}
+ td.note{{max-width:260px;white-space:normal}}
+ .note-detail summary{{cursor:pointer;color:#1d4ed8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px}}
+ .note-detail div{{margin-top:4px;white-space:pre-wrap;min-width:260px;max-width:520px;line-height:1.35;color:#111827}}
  a{{color:#1d4ed8;text-decoration:none}} a:hover{{text-decoration:underline}}
  .cp{{cursor:pointer;opacity:.55;font-size:11px;user-select:none}} .cp:hover{{opacity:1}}
 </style>
@@ -8222,25 +8294,26 @@ def _render_returns():
             _ckn_render_list = [d for d in _ckn_render_raw_list if not _is_closed_kn_result(d)]
             _ckn_render_list.sort(key=lambda d: str(d.get("created_on") or d.get("created") or ""), reverse=True)
             st.subheader("🚨 Đơn cần KN — lấy làm khiếu nại", anchor="don-can-kn")
-            st.caption("Gồm các đơn chưa chốt THẮNG / THUA / KHÔNG CẦN KN. "
-                       "Note CẦN KN vẫn nằm ở bảng này để nhân viên tiếp tục xử lý. "
-                       "Áp dụng cho đơn đã giao người bán chưa nhập kho, đang hoàn hơn 5 ngày, hoặc chỉ hoàn tiền/không có hàng hoàn về. "
-                       "Đây chính là các dòng tô vàng — NV lấy làm khiếu nại.")
+            _need_kn_info = ("Gồm các đơn chưa chốt THẮNG / THUA / KHÔNG CẦN KN. "
+                             "Note CẦN KN vẫn nằm ở bảng này để nhân viên tiếp tục xử lý. "
+                             "Áp dụng cho đơn đã giao người bán chưa nhập kho, đang hoàn hơn 5 ngày, hoặc chỉ hoàn tiền/không có hàng hoàn về. "
+                             "Đây chính là các dòng tô vàng — NV lấy làm khiếu nại.")
             if _closed_returns_need_kn_detail:
                 _added_closed = max(0, len(_ckn_with_closed_returns) - len(_ckn_list))
-                st.caption(f"Có {len(_closed_returns_need_kn_detail)} đơn trả hàng bị đóng có VĐ trả về chưa chốt "
-                           f"(thêm mới {_added_closed} dòng, dòng trùng thì ghép vào Cần KN sẵn có). Bảng đang xếp theo ngày tạo mới nhất.")
+                _need_kn_info += (f"\nCó {len(_closed_returns_need_kn_detail)} đơn trả hàng bị đóng có VĐ trả về chưa chốt "
+                                  f"(thêm mới {_added_closed} dòng, dòng trùng thì ghép vào Cần KN sẵn có). Bảng đang xếp theo ngày tạo mới nhất.")
             if _dohana_yellow_ckn:
                 _added = max(0, len(_ckn_render_list) - len(_ckn_with_closed_returns))
-                st.caption(f"Dohana có {len(_dohana_yellow_ckn)} dòng đang tô vàng vì chưa có ghi chú chuẩn "
-                           f"(thêm mới {_added} dòng, dòng trùng thì ghép vào Cần KN sẵn có).")
+                _need_kn_info += (f"\nDohana có {len(_dohana_yellow_ckn)} dòng đang tô vàng vì chưa có ghi chú chuẩn "
+                                  f"(thêm mới {_added} dòng, dòng trùng thì ghép vào Cần KN sẵn có).")
+            _return_info(_need_kn_info)
             _sub_table(_ckn_render_list, 520, show_reason=True, show_location=True, pg_key="ckn", per_page=50)
             st.markdown(f"**🏷️ + Đơn Dohana gắn tag KHUI HÀNG (tráo · đã dùng · trả thiếu · hư hỏng) — {len(_dtag_kn)} đơn** "
                         f"<span style='color:#6b7280'>(trong đó {len(_dtag_kn_only)} chưa khớp bảng chi tiết)</span>",
                         unsafe_allow_html=True)
             _dohana_tag_tbl(_dtag_kn)
             st.subheader("⛔ Đơn không cần KN — đã có kết luận", anchor="don-khong-can-kn")
-            st.caption("Các đơn trong bảng detail đã có ghi chú KHÔNG CẦN KN: đã nhận hàng, đã nhận/được đền tiền, hoặc shop đóng thiếu thật. Nhóm này không trộn vào danh sách CẦN KN.")
+            _return_info("Các đơn trong bảng detail đã có ghi chú KHÔNG CẦN KN: đã nhận hàng, đã nhận/được đền tiền, hoặc shop đóng thiếu thật. Nhóm này không trộn vào danh sách CẦN KN.")
             _sub_table(_khong_can_kn_list, 300, show_reason=True, pg_key="khong_can_kn")
             st.markdown(f"**🏷️ + Đơn Dohana gắn tag ĐÓNG HÀNG (đóng thiếu SP) — {len(_dtag_nokn)} đơn** "
                         f"<span style='color:#6b7280'>(trong đó {len(_dtag_nokn_only)} chưa khớp bảng chi tiết)</span>",
@@ -8260,9 +8333,9 @@ def _render_returns():
             if _closed_returns_with_waybill_detail:
                 st.markdown(f"### 🧭 Đơn trả hàng bị đóng có VĐ trả về — {len(_closed_returns_with_waybill_detail)} đơn")
                 if _closed_returns_loaded_full_year:
-                    st.caption("Đang hiển thị dữ liệu đã quét đủ năm nay. Dòng chưa chốt THẮNG / THUA / KHÔNG CẦN KN sẽ tô vàng và được đưa lên bảng Cần KN.")
+                    _return_info("Đang hiển thị dữ liệu đã quét đủ năm nay. Dòng chưa chốt THẮNG / THUA / KHÔNG CẦN KN sẽ tô vàng và được đưa lên bảng Cần KN.")
                 else:
-                    st.caption("Đang hiển thị nhanh từ dữ liệu đã quét sẵn. Bấm nút dưới để quét đủ năm nay; app sẽ cache lại sau khi quét xong.")
+                    _return_info("Đang hiển thị nhanh từ dữ liệu đã quét sẵn. Bấm nút dưới để quét đủ năm nay; app sẽ cache lại sau khi quét xong.")
                     if st.button("🔄 Quét đủ năm nay", key="load_closed_returns_full_year_btn"):
                         st.session_state["closed_returns_full_year_loaded"] = True
                         st.rerun()
@@ -8281,16 +8354,16 @@ def _render_returns():
                 )
             if _canceled_returns_detail:
                 with st.expander(f"🗂️ Tất cả phiếu Sapo đã hủy — {len(_canceled_returns_detail)} dòng", expanded=False):
-                    st.caption("Nhóm này không tính vào KPI đang xử lý, nhưng vẫn hiện khi tìm mã đơn/mã trả để kiểm tra trên sàn.")
+                    _return_info("Nhóm này không tính vào KPI đang xử lý, nhưng vẫn hiện khi tìm mã đơn/mã trả để kiểm tra trên sàn.")
                     _sub_table(_canceled_returns_detail, 260, show_type=True, show_reason=True, show_location=True, pg_key="sapo_cancelled")
 
         with _tabs[2]:
             # ── 🎥 KHO VIDEO DOHANA (lưu CẢ NĂM, vượt hạn 30 ngày của Dohana) — tra cứu metadata ──
             st.divider()
             st.subheader("🎥 Kho video Dohana (lưu cả năm)")
-            st.caption(f"Đã lưu **{len(_dvids)}** video (đóng hàng + khui hàng): trạng thái · ngày quay · giờ · "
-                       "thời lượng · tag. Tag đã từng thấy sẽ được khóa trong kho, DHN gỡ tag sau này cũng không mất. "
-                       "Dohana chỉ giữ 30 ngày — kho này gom dần (13/16/19h) nên đọc được đến cuối năm.")
+            _return_info(f"Đã lưu {len(_dvids)} video (đóng hàng + khui hàng): trạng thái, ngày quay, giờ, "
+                         "thời lượng, tag. Tag đã từng thấy sẽ được khóa trong kho, DHN gỡ tag sau này cũng không mất. "
+                         "Dohana chỉ giữ 30 ngày; kho này gom dần (13/16/19h) nên đọc được đến cuối năm.")
             _vq = st.text_input("Tra video theo mã đơn", key="dohana_vid_q", placeholder="Dán/nhập mã đơn…")
             if _vq and _vq.strip():
                 _q = _vq.strip()
