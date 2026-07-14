@@ -1586,7 +1586,7 @@ def load_returns_followup():
 
 @st.cache_data(ttl=600, show_spinner="Đang quét đơn trả đang xử lý…")
 def load_returns_inprogress():
-    _cache_ver = 13  # bump khi đổi cấu trúc trả về → buộc tính lại (tránh cache cũ gây lỗi)
+    _cache_ver = 14  # bump khi đổi cấu trúc trả về → buộc tính lại (tránh cache cũ gây lỗi)
     return L.get_returns_in_progress(make_fetch_json(build_session()), canceled_max_pages=120)
 
 
@@ -7027,15 +7027,27 @@ def _render_returns():
             compact = _note_prefix_compact(d.get("note"))
             return bool(d.get("khong_can_kn_note")) or _compact_is_khong_can_kn(compact)
 
-        _khong_can_kn_list = [d for d in _rip["detail"] if _note_is_khong_can_kn(d)]
-        _ckn_list = [d for d in _rip["detail"] if d.get("need_kn")]
-        _no_return_list = [d for d in _rip["detail"] if d.get("ship_code") == "no_return"]
+        def _has_return_waybill(d):
+            return bool(str((d or {}).get("vd_tra") or "").strip())
+
+        def _drop_need_kn_without_return_waybill(rows):
+            for d in rows or []:
+                if not _has_return_waybill(d):
+                    d["need_kn"] = False
+            return rows
+
+        _detail_rows = _drop_need_kn_without_return_waybill(_rip.get("detail") or [])
+        _khong_can_kn_list = [d for d in _detail_rows if _note_is_khong_can_kn(d)]
+        _ckn_list = [d for d in _detail_rows if d.get("need_kn") and _has_return_waybill(d)]
+        _no_return_list = [d for d in _detail_rows if d.get("ship_code") == "no_return"]
         _khong_can_kn_money = sum(int(d.get("khong_can_kn_money")
                                       if d.get("khong_can_kn_money") is not None
                                       else d.get("money") or 0)
                                   for d in _khong_can_kn_list)
+        _ckn_money = sum(int(d.get("money") or 0) for d in _ckn_list)
         _oc = dict(_oc)
         _oc["khong_kn"] = {"n": len(_khong_can_kn_list), "money": _khong_can_kn_money}
+        _oc["can_kn"] = {"n": len(_ckn_list), "money": _ckn_money}
         _tabs = st.tabs(["📊 Đang xử lý", "📈 Thống kê", "🎥 Kho video"])
         with _tabs[1]:
             st.markdown("##### 🧾 Kết quả khiếu nại (đang xử lý năm nay)")
@@ -7098,14 +7110,14 @@ def _render_returns():
                     return "Cần KN"
                 return "Chưa chốt"
 
-            _all_returns_detail = _rip.get("all_detail") or _rip.get("detail") or []
-            _canceled_returns_detail = _rip.get("canceled_detail") or []
+            _all_returns_detail = _drop_need_kn_without_return_waybill(_rip.get("all_detail") or _detail_rows)
+            _canceled_returns_detail = _drop_need_kn_without_return_waybill(_rip.get("canceled_detail") or [])
             _closed_returns_loaded_full_year = bool(st.session_state.get("closed_returns_full_year_loaded"))
             _closed_returns_capped = bool(_rip.get("canceled_capped"))
             if _closed_returns_loaded_full_year:
                 try:
                     _closed_rip = load_closed_returns_full_year()
-                    _canceled_returns_detail = _closed_rip.get("canceled_detail") or []
+                    _canceled_returns_detail = _drop_need_kn_without_return_waybill(_closed_rip.get("canceled_detail") or [])
                     _closed_returns_capped = bool(_closed_rip.get("canceled_capped"))
                 except Exception as _e:
                     st.warning(f"Chưa quét được đơn trả bị đóng cả năm: `{_e}`")
@@ -7507,6 +7519,8 @@ def _render_returns():
                     return "Đã nhận/đã nhập kho"
                 if _note_is_khong_can_kn(d):
                     return "Không cần KN"
+                if not _has_return_waybill(d):
+                    return "Không có VĐ trả về / không cần KN"
                 if d.get("need_kn"):
                     return "Cần KN"
                 if d.get("ship_code") == "no_return":
@@ -7582,7 +7596,7 @@ def _render_returns():
                     )
                 body = ""
                 for i, d in enumerate(items, _start + 1):
-                    bg = "background:#fff3cd" if d.get("need_kn") else ""
+                    bg = "background:#fff3cd" if d.get("need_kn") and _has_return_waybill(d) else ""
                     note = d.get("note") or ""
                     note_display = f"📝 APP · {note}" if d.get("app_note") else note
                     tds = [f"<td class='r'>{i}</td>"]
@@ -8312,12 +8326,16 @@ def _render_returns():
             _dohana_yellow_ckn = _dohana_yellow_need_kn_rows(_dtag_kn + _dtag_nokn)
             _ckn_with_closed_returns = _merge_need_kn_rows(_ckn_list, _closed_returns_need_kn_detail)
             _ckn_render_raw_list = _merge_need_kn_rows(_ckn_with_closed_returns, _dohana_yellow_ckn)
-            _ckn_render_list = [d for d in _ckn_render_raw_list if not _is_closed_kn_result(d)]
+            _ckn_render_list = [
+                d for d in _ckn_render_raw_list
+                if _has_return_waybill(d) and not _is_closed_kn_result(d)
+            ]
             _ckn_render_list.sort(key=lambda d: str(d.get("created_on") or d.get("created") or ""), reverse=True)
             st.subheader("🚨 Đơn cần KN — lấy làm khiếu nại", anchor="don-can-kn")
             _need_kn_info = ("Gồm các đơn chưa chốt THẮNG / THUA / KHÔNG CẦN KN. "
                              "Note CẦN KN vẫn nằm ở bảng này để nhân viên tiếp tục xử lý. "
-                             "Áp dụng cho đơn đã giao người bán chưa nhập kho, đang hoàn hơn 5 ngày, hoặc chỉ hoàn tiền/không có hàng hoàn về. "
+                             "Chỉ áp dụng cho đơn có VĐ trả về: đã giao người bán chưa nhập kho, hoặc đang hoàn hơn 5 ngày. "
+                             "Đơn không có VĐ trả về sẽ không tô vàng và không đưa vào Cần KN. "
                              "Đây chính là các dòng tô vàng — NV lấy làm khiếu nại.")
             if _closed_returns_need_kn_detail:
                 _added_closed = max(0, len(_ckn_with_closed_returns) - len(_ckn_list))

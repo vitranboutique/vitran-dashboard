@@ -1762,7 +1762,7 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120, canceled_max_pages
         # NGOẠI LỆ chỉ cho ĐANG HOÀN HÀNG khi chưa quá 7 ngày.
         # Quá 7 ngày mà chưa có shipper hoàn/tên shipper vẫn phải vào nhóm CẦN KN.
         if sstat == "no_return":
-            complaint, reason = True, "Chỉ hoàn tiền/không có hàng hoàn về — cần kết luận KN"
+            complaint, reason = False, "Không có VĐ trả về — không cần highlight/KN"
         elif rtype == "return_and_refund" and sstat == "returning" and n_track < 2 and (age or 0) <= _kn_days:
             complaint, reason = False, "Người mua chưa giao ĐVVC (1 VĐ) — chưa cần khiếu nại"
         elif sstat == "returned":
@@ -1871,12 +1871,15 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120, canceled_max_pages
             oc["khong_kn"]["money"] += amt
     # CẦN KN (cờ need_kn, dùng cho highlight + đếm). LOẠI đơn đã có ghi chú KẾT QUẢ chuẩn.
     #  • ĐÃ GIAO NGƯỜI BÁN (returned) → MẶC ĐỊNH cần KN (bất kể tuổi).
-    #  • KHÔNG CÓ HÀNG HOÀN VỀ / CHỈ HOÀN TIỀN (no_return) → cần KN nếu chưa có kết luận chuẩn.
+    #  • KHÔNG CÓ VĐ TRẢ VỀ → không highlight và không đưa vào CẦN KN.
     #  • ĐANG HOÀN HÀNG (returning) → cần KN nếu QUÁ 7 ngày; chỉ chưa cần khi refund 1 VĐ và chưa quá 7 ngày.
     for d in detail:
         pre = _asc((d.get("note") or "").split("|")[0])
         has_can_kn_note = _is_can_kn(pre)
-        if _resolved(pre):
+        has_return_waybill = bool(str(d.get("vd_tra") or "").strip())
+        if not has_return_waybill:
+            d["need_kn"] = False
+        elif _resolved(pre):
             d["need_kn"] = False
         elif has_can_kn_note:
             d["need_kn"] = True
@@ -1885,7 +1888,7 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120, canceled_max_pages
         elif d.get("ship_code") == "returned":
             d["need_kn"] = True
         elif d.get("ship_code") == "no_return":
-            d["need_kn"] = True
+            d["need_kn"] = False
         elif d.get("loai_tra_code") == "return_and_refund" and (d.get("n_track") or 0) < 2 and (d.get("age") or 0) <= _kn_days:
             d["need_kn"] = False
         else:
