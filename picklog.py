@@ -116,6 +116,108 @@ def _read_all():
     return None
 
 
+def _codes_of(row):
+    return [str(c).strip() for c in (row or {}).get("codes", []) if str(c).strip()]
+
+
+def _intv(row, key):
+    try:
+        return int((row or {}).get(key) or 0)
+    except Exception:
+        return 0
+
+
+def _scale_count(value, old_n, new_n):
+    try:
+        value = int(value or 0)
+    except Exception:
+        value = 0
+    if not (old_n and new_n and value):
+        return 0
+    return int(round(value * new_n / old_n))
+
+
+def _trim_duplicate_codes(row, new_codes, old_code_count):
+    """Trả row đã giảm số đơn khi cùng một mã bị lưu trong nhiều đợt."""
+    out = dict(row or {})
+    old_n = int(out.get("so_don") or old_code_count or 0)
+    new_n = len(new_codes)
+    out["codes"] = list(new_codes)
+    out["so_don"] = new_n
+    if old_n and new_n != old_n:
+        out["so_sp"] = _scale_count(out.get("so_sp"), old_n, new_n)
+        out["ht_don"] = min(_intv(out, "ht_don"), new_n)
+        out["th_don"] = max(0, new_n - _intv(out, "ht_don"))
+        out["so_cu"] = min(_intv(out, "so_cu"), new_n)
+        out["dedup_note"] = f"Đã bỏ {max(0, old_code_count - new_n)} mã trùng"
+    return out
+
+
+def dedupe_logs(rows):
+    """Khử trùng lịch sử phiếu nhặt.
+
+    Ưu tiên khử theo mã đơn/vận đơn trong `codes`; nếu dòng cũ không có codes
+    thì chỉ khử dòng trùng y hệt theo ngày/giờ/số đơn/số SP.
+    """
+    out, seen_exact, seen_codes, seen_no_code = [], set(), set(), set()
+    dup_orders = 0
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        codes = _codes_of(row)
+        exact = (
+            row.get("ngay"), str(row.get("gio", "")), _intv(row, "so_don"),
+            _intv(row, "so_sp"), tuple(sorted(codes)),
+        )
+        if exact in seen_exact:
+            dup_orders += _intv(row, "so_don") or len(codes)
+            continue
+        seen_exact.add(exact)
+        if codes:
+            new_codes = []
+            for code in codes:
+                if code in seen_codes:
+                    continue
+                seen_codes.add(code)
+                new_codes.append(code)
+            if not new_codes:
+                dup_orders += _intv(row, "so_don") or len(codes)
+                continue
+            if len(new_codes) < len(codes):
+                dup_orders += len(codes) - len(new_codes)
+                out.append(_trim_duplicate_codes(row, new_codes, len(codes)))
+            else:
+                out.append(dict(row))
+            continue
+        no_code_key = (row.get("ngay"), str(row.get("gio", "")), _intv(row, "so_don"), _intv(row, "so_sp"))
+        if no_code_key in seen_no_code:
+            dup_orders += _intv(row, "so_don")
+            continue
+        seen_no_code.add(no_code_key)
+        out.append(dict(row))
+    return out, dup_orders
+
+
+def summarize_logs(rows):
+    clean, dup_orders = dedupe_logs(rows)
+    return {
+        "rows": clean,
+        "so_don": sum(_intv(r, "so_don") for r in clean),
+        "so_sp": sum(_intv(r, "so_sp") for r in clean),
+        "dup_orders": dup_orders,
+    }
+
+
+def summaries_by_date():
+    data = _read_all()
+    groups = {}
+    for row in (data or {}).get("logs", []):
+        day = row.get("ngay")
+        if day:
+            groups.setdefault(day, []).append(row)
+    return {day: summarize_logs(rows) for day, rows in groups.items()}
+
+
 def log_batch(payload: dict):
     """Ghi 1 lượt in phiếu (đọc gist → thêm dòng → ghi lại). Trả (ok, msg)."""
     gid = _resolve_gid()
@@ -124,7 +226,26 @@ def log_batch(payload: dict):
     data = _read_all()
     if data is None:
         return False, "Không đọc được gist (token/mạng?)."
-    data.setdefault("logs", []).append(payload)
+    logs = data.setdefault("logs", [])
+    day = (payload or {}).get("ngay")
+    existing_rows = [r for r in logs if r.get("ngay") == day]
+    existing_codes = set()
+    for r in existing_rows:
+        existing_codes.update(_codes_of(r))
+    payload_codes = _codes_of(payload)
+    if payload_codes:
+        new_codes = [c for c in payload_codes if c not in existing_codes]
+        if not new_codes:
+            return True, "Đợt này đã có trong lịch sử, không lưu trùng."
+        if len(new_codes) < len(payload_codes):
+            payload = _trim_duplicate_codes(payload, new_codes, len(payload_codes))
+    else:
+        exact = ((payload or {}).get("ngay"), str((payload or {}).get("gio", "")),
+                 _intv(payload, "so_don"), _intv(payload, "so_sp"))
+        for r in existing_rows:
+            if (r.get("ngay"), str(r.get("gio", "")), _intv(r, "so_don"), _intv(r, "so_sp")) == exact:
+                return True, "Đợt này đã có trong lịch sử, không lưu trùng."
+    logs.append(payload)
     try:
         body = {"files": {_FILE: {"content": json.dumps(data, ensure_ascii=False)}}}
         r = requests.patch(f"{_API}/gists/{gid}", headers=_hdr(),
@@ -148,11 +269,26 @@ def log_batches(payloads: list):
         return False, 0, 0, 0, "Không đọc được gist (token/mạng?)."
     logs = data.setdefault("logs", [])
     existing = {}
+    existing_codes_by_day = {}
     for r in logs:
         existing[(r.get("ngay"), str(r.get("gio", "")), int(r.get("so_don") or 0))] = r
+        day = r.get("ngay")
+        if day:
+            existing_codes_by_day.setdefault(day, set()).update(_codes_of(r))
     added = updated = skipped = 0
     for p in (payloads or []):
         key = (p.get("ngay"), str(p.get("gio", "")), int(p.get("so_don") or 0))
+        codes = _codes_of(p)
+        if codes:
+            seen_codes = existing_codes_by_day.setdefault(p.get("ngay"), set())
+            new_codes = [c for c in codes if c not in seen_codes]
+            if not new_codes:
+                skipped += 1
+                continue
+            if len(new_codes) < len(codes):
+                p = _trim_duplicate_codes(p, new_codes, len(codes))
+                key = (p.get("ngay"), str(p.get("gio", "")), int(p.get("so_don") or 0))
+            seen_codes.update(new_codes)
         old = existing.get(key)
         if old is not None:
             if int(p.get("so_cu") or 0) and not int(old.get("so_cu") or 0):
@@ -217,7 +353,17 @@ def read_date(day_iso: str) -> list:
     data = _read_all()
     if not data:
         return []
-    return [r for r in data.get("logs", []) if r.get("ngay") == day_iso]
+    rows = [r for r in data.get("logs", []) if r.get("ngay") == day_iso]
+    return summarize_logs(rows)["rows"]
+
+
+def read_date_summary(day_iso: str) -> dict:
+    """Tổng phiếu nhặt trong ngày sau khi khử trùng."""
+    data = _read_all()
+    if not data:
+        return {"rows": [], "so_don": 0, "so_sp": 0, "dup_orders": 0}
+    rows = [r for r in data.get("logs", []) if r.get("ngay") == day_iso]
+    return summarize_logs(rows)
 
 
 # ─── LỊCH SỬ LƯU TTKH (mỗi lần ghi Sapo) — LƯU BỀN ĐỂ THỐNG KÊ THEO NGÀY ───

@@ -421,7 +421,9 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
         _have = vr.get("open_with_video", 0)
         _mv = vr.get("missing_video", 0)
         _miss_codes = vr.get("missing_codes") or []
-        _video_subject = "Đơn đóng gói hôm nay"
+        _is_pick_video = vr.get("source") == "picklog_dedup"
+        _video_subject = "Đơn trong phiếu nhặt đã khử trùng" if _is_pick_video else "Đơn đóng gói hôm nay"
+        _video_base = rep.get("tong_don_soan") if _is_pick_video else t["dong_goi"]
         _miss_row = (f'<tr><td class="l" style="padding-left:20px;color:#b45309">⤷ ⚠️ Thiếu video</td>'
                      f'<td class="num" style="color:#b45309;font-weight:900">{_mv}</td></tr>'
                      if _mv else
@@ -429,7 +431,7 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
                      '<td class="num" style="color:#15803d;font-weight:800">✓</td></tr>')
         iii_rows = (
             f'<tr><td class="l">📦 {_video_subject}</td>'
-            f'<td class="num" style="font-weight:900">{t["dong_goi"]}</td></tr>'
+            f'<td class="num" style="font-weight:900">{_video_base}</td></tr>'
             f'<tr><td class="l" style="padding-left:20px">⤷ ✅ Đã có video đóng gói</td>'
             f'<td class="num">{_have}</td></tr>'
             + _miss_row)
@@ -441,7 +443,7 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
         _w = []
         if _mv:
             _ml = ", ".join(_e(str(c)) for c in _miss_codes[:8]) + (f" …(+{_mv - 8})" if _mv > 8 else "")
-            _w.append(f'<b>{_mv} đơn đã đóng gói nhưng CHƯA TÌM THẤY video khớp</b> '
+            _w.append(f'<b>{_mv} đơn trong phiếu nhặt/đóng gói nhưng CHƯA TÌM THẤY video khớp</b> '
                       f'(có thể: chưa quay · quay nhầm mục “khui hàng” · mã lỗi phông nặng) '
                       f'— kiểm tra Dohana. Mã: {_ml}')
         if vr.get("dup"):
@@ -485,7 +487,13 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
     # Đợt soạn GỒM cả đơn đã hủy đã gói (đã soạn rồi mới hủy)
     _soan = rep.get("tong_don_soan", 0)
     _hdg = rep.get("huy_da_goi", 0)
-    if _hdg and _soan == int(t.get("dong_goi") or 0) + int(_hdg or 0):
+    if rep.get("soan_source") == "picklog_dedup":
+        _dup = int(rep.get("soan_dup_orders") or 0)
+        _dup_txt = f" Đã tự bỏ {_dup} đơn/mã bị lưu trùng." if _dup else ""
+        sec2_note = (f'<div style="font-size:.77em;color:#6b7280;margin:.4em 0 0">'
+                     f'ℹ️ Tổng soạn ({_soan}) lấy từ lịch sử phiếu nhặt đã lưu, '
+                     f'đã khử trùng theo mã đơn/vận đơn.{_dup_txt}</div>')
+    elif _hdg and _soan == int(t.get("dong_goi") or 0) + int(_hdg or 0):
         sec2_note = (f'<div style="font-size:.77em;color:#6b7280;margin:.4em 0 0">'
                      f'ℹ️ Tổng soạn ({_soan}) = {t["dong_goi"]} đơn đóng gói + '
                      f'<b>{_hdg} đơn đã hủy sau khi soạn</b> (vẫn tính vì kho đã lấy hàng).</div>')
