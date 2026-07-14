@@ -7651,6 +7651,10 @@ def _render_returns():
                     raw_location = str((d or {}).get("_location") or _row_location(d) or "").strip()
                     full = " · ".join(x for x in (raw_reason, raw_location) if x) or "Cần kiểm tra"
                     compact = _search_norm(full + " " + str((d or {}).get("_dohana_tag_label") or ""))
+                    ship_code = str((d or {}).get("ship_code") or "").strip().lower()
+                    stock_code = str((d or {}).get("stock_code") or "").strip().lower()
+                    return_type = str((d or {}).get("loai_tra_code") or "").strip().lower()
+                    has_shipper = bool(str((d or {}).get("return_shipper") or "").strip())
                     if "DONGTHIEU" in compact:
                         label = "📦 Đóng thiếu"
                     elif "HUHONG" in compact or "HANGHONG" in compact or "HONG" in compact:
@@ -7661,11 +7665,19 @@ def _render_returns():
                         label = "🔁 Tráo/sai hàng"
                     elif "DASUDUNG" in compact or "DADUNG" in compact or "SUDUNG" in compact:
                         label = "♻️ Đã sử dụng"
-                    elif "SAPOGHICANKN" in compact or "CANKN" in compact:
-                        label = "🚨 Sapo Cần KN"
                     elif "BITDONG" in compact or "DONGCOVD" in compact or "SAPODAHUY" in compact:
                         label = "🧭 Đơn bị đóng"
-                    elif "CHUANHAPKHO" in compact or "CHUANHAN" in compact:
+                    elif "CHUANHAPKHO" in compact or "CHUANHAN" in compact or ship_code == "returned":
+                        label = "📥 Hoàn chưa nhập"
+                    elif "NHAPKHO1PHAN" in compact or "PARTIAL" in stock_code:
+                        label = "📦 Nhập thiếu"
+                    elif return_type == "delivery_failed":
+                        label = "📕 Giao thất bại"
+                    elif ship_code == "returning" and not has_shipper:
+                        label = "🚚 Thiếu shipper"
+                    elif ship_code == "returning":
+                        label = "⏳ Hoàn quá ngày"
+                    elif stock_code in ("unstocked", "unrestock", "not_stocked", "not_restocked", "no_stock", "no_restock"):
                         label = "📥 Chưa nhập kho"
                     elif "SHIPPER" in compact and ("CHUACO" in compact or "THIEU" in compact):
                         label = "🚚 Thiếu shipper"
@@ -7673,8 +7685,10 @@ def _render_returns():
                         label = "⏳ Hoàn quá ngày"
                     elif "DOHANATAG" in compact or "CHUACOGHICHUCHUAN" in compact:
                         label = "🏷 Tag chưa chốt"
+                    elif "CANKN" in compact:
+                        label = "📥 Chưa nhập kho"
                     else:
-                        label = "⚠️ Cần xử lý"
+                        label = "⚠️ Chưa có KQ"
                     if len(label) > 20:
                         label = label[:19].rstrip() + "…"
                     return f"<span class='reason-badge' title='{_safe(full)}'>{_safe(label)}</span>"
