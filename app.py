@@ -553,6 +553,7 @@ def _week_table_html(data):
 def _ascii_code(s):
     """Chuẩn hoá mã để khớp: BỎ DẤU tiếng Việt (do app Dohana lỗi phông biến YX→Ỹ…),
     in HOA, chỉ giữ chữ-số. VD 'GỸQMQTD' -> 'GYQMQTD'."""
+    s = str(s or "").replace("Đ", "D").replace("đ", "d")
     s = unicodedata.normalize("NFKD", str(s or ""))
     s = "".join(c for c in s if not unicodedata.combining(c))
     return "".join(c for c in s.upper() if c.isalnum())
