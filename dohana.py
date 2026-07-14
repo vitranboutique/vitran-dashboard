@@ -55,6 +55,32 @@ def _vn_time(iso):
         return ""
 
 
+def _video_slug(v):
+    """Return the public Dohana tracking slug if the API includes one."""
+    for k in ("slug", "videoSlug", "video_slug", "trackingSlug", "tracking_slug"):
+        s = str((v or {}).get(k) or "").strip()
+        if s:
+            return s
+    return ""
+
+
+def _video_link(v):
+    """Build a stable Dohana video URL from direct URL fields or the video slug."""
+    for k in ("url", "link", "videoUrl", "video_url", "trackingUrl", "tracking_url"):
+        s = str((v or {}).get(k) or "").strip()
+        if s.startswith(("http://", "https://")):
+            return s
+    slug = _video_slug(v)
+    if not slug:
+        return ""
+    if slug.startswith(("http://", "https://")):
+        return slug
+    slug = slug.lstrip("/")
+    if slug.startswith("tracking/"):
+        return f"https://dhn.io.vn/{slug}"
+    return f"https://dhn.io.vn/tracking/{slug}"
+
+
 def _valid_tag_text(x, tag_id=""):
     s = str(x or "").strip()
     if not s or s == str(tag_id or "").strip():
@@ -162,7 +188,7 @@ def _fetch_tag_names():
 
 def _records_from(vids, typ):
     """Metadata MỌI video (khử trùng theo mã, giữ bản MỚI NHẤT) để tích luỹ lưu cả năm —
-    {code, type, status, date(VN yyyy-mm-dd), time(VN HH:MM:SS), dur(giây), tag_id}."""
+    {code, type, status, date(VN yyyy-mm-dd), time(VN HH:MM:SS), dur(giây), tag_id, slug, link}."""
     seen, out, idx = set(), [], {}
     for v in sorted(vids, key=lambda x: str(x.get("createdAt") or ""), reverse=True):
         oc = v.get("orderCode")
@@ -177,6 +203,12 @@ def _records_from(vids, typ):
                 rec["tag_id"] = tag_id
             if tag_name and not rec.get("tag_name"):
                 rec["tag_name"] = tag_name
+            slug = _video_slug(v)
+            link = _video_link(v)
+            if slug and not rec.get("slug"):
+                rec["slug"] = slug
+            if link and not rec.get("link"):
+                rec["link"] = link
             continue
         seen.add(oc)
         dur = v.get("duration")
@@ -186,6 +218,8 @@ def _records_from(vids, typ):
                "dur": int(dur) if isinstance(dur, (int, float)) else None,
                "tag_id": tag_id,
                "tag_name": tag_name,
+               "slug": _video_slug(v),
+               "link": _video_link(v),
                "staff": ((v.get("user") or {}).get("firstName") or "").strip()}
         out.append(rec)
         idx[oc] = rec
@@ -310,6 +344,8 @@ def inbound_videos(days_match: int = 3, max_pages: int = 25, target_date=None):
             "recorded": _vn_dt(v.get("createdAt")),
             "tag_id": v.get("tagId"),
             "tag": _tag_name(v.get("tagId"), _raw_tag_name(v)),
+            "slug": _video_slug(v),
+            "link": _video_link(v),
             "staff": ((v.get("user") or {}).get("firstName") or "").strip(),   # NV quay clip
         }
     return {

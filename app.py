@@ -657,6 +657,7 @@ def _enrich_daily(rep, dvr, inb):
             m = meta.get(hit) if hit else None
             d["clip_dur"] = m.get("dur") if m else None
             d["clip_time"] = m.get("recorded") if m else ""
+            d["clip_link"] = m.get("link") if m else ""
             d["clip_tag_id"] = _video_tag_id(m) if m else ""
             d["clip_tag"] = _clip_tag(m)
             d["clip_staff"] = m.get("staff") if m else ""
@@ -704,6 +705,7 @@ def _enrich_daily(rep, dvr, inb):
                 if m:
                     d["clip_dur"] = m.get("dur")
                     d["clip_time"] = m.get("recorded")
+                    d["clip_link"] = m.get("link")
                     d["clip_tag_id"] = _video_tag_id(m)
                     d["clip_tag"] = _clip_tag(m)
                     d["clip_staff"] = m.get("staff")
@@ -718,6 +720,7 @@ def _enrich_daily(rep, dvr, inb):
              "tag": _clip_tag(meta.get(c) or {}),
              "dur": (meta.get(c) or {}).get("dur"),
              "recorded": (meta.get(c) or {}).get("recorded", ""),
+             "link": (meta.get(c) or {}).get("link", ""),
              "staff": (meta.get(c) or {}).get("staff", "")}
             for c in nk["clip_unmatched"]
         ]
@@ -735,7 +738,8 @@ def _enrich_daily(rep, dvr, inb):
     for d in nk.get("detail", []):
         recon.append({
             "clip_code": d.get("clip_code"), "clip_time": d.get("clip_time"),
-            "clip_dur": d.get("clip_dur"), "clip_tag": d.get("clip_tag"),
+            "clip_dur": d.get("clip_dur"), "clip_link": d.get("clip_link"),
+            "clip_tag": d.get("clip_tag"),
             "clip_tag_id": d.get("clip_tag_id"),
             "clip_alt": d.get("clip_altcode"), "has_clip": bool(d.get("clip")),
             "order_code": d.get("order_code"), "recv_time": d.get("recv_time"),
@@ -752,7 +756,8 @@ def _enrich_daily(rep, dvr, inb):
         info = _abc.get(u.get("code")) or {}   # đơn hoàn CHƯA nhập kho (vd tráo hàng giữ tranh chấp)
         recon.append({
             "clip_code": u.get("code"), "clip_time": u.get("recorded"),
-            "clip_dur": u.get("dur"), "clip_tag": u.get("tag"),
+            "clip_dur": u.get("dur"), "clip_link": u.get("link"),
+            "clip_tag": u.get("tag"),
             "clip_tag_id": u.get("tag_id"),
             "clip_alt": False, "has_clip": True,
             "order_code": info.get("order_code") or "", "recv_time": "", "vd_gui": info.get("vd_gui") or "",
@@ -1261,6 +1266,7 @@ def _dohana_inb_from_store(date_iso, days_match=3):
             meta[c] = {"dur": r.get("dur"), "recorded": (f"{r.get('time') or ''} {_dd}").strip(),
                        "tag_id": _video_tag_id(r),
                        "tag": _video_tag_label(r),
+                       "link": r.get("link") or "",
                        "staff": r.get("staff") or ""}
     return {"total": len(day), "count": count, "match": set(count),
             "today_codes": {r.get("code") for r in day if r.get("code")},
@@ -1304,7 +1310,11 @@ def load_dohana_date(date_iso):
     from datetime import date as _date
     live = dohana.today_package_videos(target_date=_date.fromisoformat(date_iso))
     if live is not None:
-        return _dohana_merge(live)
+        merged = _dohana_merge(live)
+        if merged.get("total") or merged.get("match") or not picklog.configured():
+            return merged
+        store = _dohana_pkg_from_store(date_iso)
+        return store if (store.get("total") or store.get("match")) else merged
     return _dohana_pkg_from_store(date_iso) if picklog.configured() else None
 
 
@@ -1313,7 +1323,11 @@ def load_dohana_inbound_date(date_iso):
     from datetime import date as _date
     live = dohana.inbound_videos(target_date=_date.fromisoformat(date_iso))
     if live is not None:
-        return _dohana_merge(live)
+        merged = _dohana_merge(live)
+        if merged.get("total") or merged.get("match") or not picklog.configured():
+            return merged
+        store = _dohana_inb_from_store(date_iso)
+        return store if (store.get("total") or store.get("match")) else merged
     return _dohana_inb_from_store(date_iso) if picklog.configured() else None
 
 
@@ -7376,14 +7390,24 @@ def _render_returns():
                         tds.append(f"<td>{_safe(d.get('reason'))}</td>")
                     if show_clip:
                         _clip_title = _safe(d.get("clip_code") or d.get("_dohana_code") or "")
-                        _clip_time = _safe(d.get("clip_time") or d.get("clip_recorded") or "")
+                        _clip_link = str(d.get("clip_link") or d.get("_dohana_link") or "").strip()
+                        _clip_time = str(d.get("clip_time") or d.get("clip_recorded") or "").strip()
                         _clip_dur = d.get("clip_dur")
                         try:
                             _clip_dur = f"{int(float(_clip_dur))}s" if _clip_dur not in (None, "") else ""
                         except Exception:
                             _clip_dur = str(_clip_dur or "")
-                        tds.append(f"<td title='{_clip_title}'>{_clip_time}</td>")
-                        tds.append(f"<td class='r' title='{_clip_title}'>{_safe(_clip_dur)}</td>")
+                        def _clip_cell_text(txt):
+                            txt = str(txt or "").strip()
+                            if not txt:
+                                return ""
+                            body = _safe(txt)
+                            if _clip_link:
+                                return (f"<a href='{_esc(_clip_link)}' target='_blank' rel='noopener' "
+                                        f"title='Mở video Dohana'>{body}</a>")
+                            return body
+                        tds.append(f"<td title='{_clip_title}'>{_clip_cell_text(_clip_time)}</td>")
+                        tds.append(f"<td class='r' title='{_clip_title}'>{_clip_cell_text(_clip_dur)}</td>")
                     tds.append(f"<td>{_doisoat(d)}</td>")
                     tds.append(f"<td class='note' title='{_safe(note_display)}'>{_safe(note_display)}</td>")
                     body += f"<tr style='{bg}'>" + "".join(tds) + "</tr>"
@@ -7586,6 +7610,7 @@ def _render_returns():
                     d["clip_code"] = str(video.get("code") or "").strip()
                     d["clip_time"] = _dohana_video_recorded_text(video)
                     d["clip_dur"] = video.get("dur")
+                    d["clip_link"] = str(video.get("link") or "").strip()
                     d["clip_tag_id"] = _video_tag_id(video)
                     d["clip_tag"] = _video_tag_label(video)
 
@@ -7912,6 +7937,17 @@ def _render_returns():
                     except Exception:
                         return ""
 
+                def _video_link_cell(text, video_row):
+                    text = str(text or "").strip()
+                    if not text:
+                        return ""
+                    link = str((video_row or {}).get("link") or "").strip()
+                    body = _safe(text)
+                    if link:
+                        return (f"<a href='{_esc(link)}' target='_blank' rel='noopener' "
+                                f"title='Mở video Dohana'>{body}</a>")
+                    return body
+
                 def _return_type_label(d):
                     label = str((d or {}).get("loai_tra") or "").strip()
                     if label:
@@ -7965,8 +8001,8 @@ def _render_returns():
                         f"<td>{_code_cell(d.get('vd_di'))}</td>",
                         f"<td>{_vd_ve_dohana_cell(d.get('vd_tra'), code)}</td>",
                         f"<td>{_tag_reason_cell(r, d)}</td>",
-                        f"<td>{_safe(filmed_at)}</td>",
-                        f"<td class='r'>{_safe(duration + 's' if duration else '')}</td>",
+                        f"<td>{_video_link_cell(filmed_at, r)}</td>",
+                        f"<td class='r'>{_video_link_cell(duration + 's' if duration else '', r)}</td>",
                         f"<td>{_safe(_return_type_label(d))}</td>",
                         f"<td class='shipper' title='{_safe(shipper)}'>{_safe(shipper)}</td>",
                         f"<td>{_safe(d.get('gian_hang'))}</td>",

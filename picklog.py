@@ -313,7 +313,7 @@ def update_ttkh_pending(add: dict = None, remove_ids: list = None) -> bool:
 
 # ─── METADATA VIDEO DOHANA (đóng hàng + khui hàng) — LƯU CẢ NĂM ───
 # Dohana chỉ giữ 30 ngày rồi XOÁ số liệu. Tích luỹ dần qua các lần fetch 3×/ngày vào GIST (không tự
-# xoá) → cuối năm VẪN ĐỌC được: trạng thái · ngày quay · giờ · thời lượng · tag. Khử trùng (code,type).
+# xoá) → cuối năm VẪN ĐỌC được: trạng thái · ngày quay · giờ · thời lượng · tag · link xem video. Khử trùng (code,type).
 _DFILE = "vitran_dohana_videos.json"
 
 
@@ -352,9 +352,20 @@ def _write_gist_file(fname, data):
 
 
 def read_dohana_videos() -> list:
-    """Toàn bộ metadata video Dohana đã tích luỹ: [{code,type,status,date,time,dur,tag_id,first_seen}]."""
+    """Toàn bộ metadata video Dohana đã tích luỹ: [{code,type,status,date,time,dur,tag_id,slug,link,first_seen}]."""
     d = _read_gist_file(_DFILE)
     return (d or {}).get("videos", []) if d else []
+
+
+def _dohana_has_value(v) -> bool:
+    return v is not None and str(v).strip() != ""
+
+
+def _fill_missing_dohana_field(rec: dict, src: dict, key: str) -> bool:
+    if _dohana_has_value(rec.get(key)) or not _dohana_has_value(src.get(key)):
+        return False
+    rec[key] = src.get(key)
+    return True
 
 
 def _lock_dohana_tag(rec: dict, tag_id, tag_name, today: str) -> bool:
@@ -381,7 +392,8 @@ def _lock_dohana_tag(rec: dict, tag_id, tag_name, today: str) -> bool:
 
 def merge_dohana_videos(new_list) -> list:
     """Gộp metadata video mới (từ fetch) vào kho, khử trùng (code,type).
-    Tag đã từng thấy sẽ được khóa vĩnh viễn trong record để không mất khi DHN gỡ tag/xóa video."""
+    Tag đã từng thấy sẽ được khóa vĩnh viễn trong record để không mất khi DHN gỡ tag/xóa video.
+    Các field clip đã có (ngày/giờ/thời lượng/link) chỉ được bổ sung khi còn trống, không bị xóa bởi lần fetch sau."""
     gid = _resolve_gid()
     cur = read_dohana_videos()
     if not gid:
@@ -403,7 +415,8 @@ def merge_dohana_videos(new_list) -> list:
         if old is None:
             rec = {"code": c, "type": ty, "status": r.get("status"), "date": r.get("date"),
                    "time": r.get("time"), "dur": r.get("dur"), "tag_id": tag_id,
-                   "tag_name": tag_name, "staff": r.get("staff"), "first_seen": today}
+                   "tag_name": tag_name, "slug": r.get("slug"), "link": r.get("link"),
+                   "staff": r.get("staff"), "first_seen": today}
             _lock_dohana_tag(rec, tag_id, tag_name, today)
             cur.append(rec)
             idx[(c, ty)] = rec
@@ -411,6 +424,9 @@ def merge_dohana_videos(new_list) -> list:
         else:
             if _lock_dohana_tag(old, tag_id, tag_name, today):
                 changed = True
+            for key in ("status", "date", "time", "dur", "staff", "slug", "link"):
+                if _fill_missing_dohana_field(old, r, key):
+                    changed = True
             if tag_name and not old.get("tag_name"):
                 old["tag_name"] = tag_name
                 changed = True
