@@ -1568,7 +1568,7 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120, canceled_max_pages
     Cờ CẦN KHIẾU NẠI:
       • đã giao người bán (returned) mà chưa nhập kho → khiếu nại
       • đang hoàn hàng (returning) HƠN 5 ngày → khiếu nại
-      • 'Trả hàng hoàn tiền' có mã hoàn về nhưng chưa có tên shipper hoàn → hơn 5 ngày vẫn khiếu nại
+      • 'Trả hàng hoàn tiền' có mã hoàn về và đang hoàn quá 5 ngày → vẫn khiếu nại
       • NGOẠI LỆ: 'Trả hàng hoàn tiền' chỉ 1 VĐ và chưa quá 5 ngày → CHƯA khiếu nại
     (Giao hàng thất bại có 1 VĐ trả là bình thường; Trả hàng hoàn tiền phải có 2 VĐ.)
     Kèm SKU, SL SP, tổng tiền (total_price) mỗi đơn."""
@@ -1759,8 +1759,8 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120, canceled_max_pages
         has_return_waybill = bool(si.get("tracking_number"))
         cdate = _vn_date_of(x.get("created_on"))
         age = (today - cdate).days if cdate else None
-        # NGOẠI LỆ chỉ cho ĐANG HOÀN HÀNG khi chưa quá 7 ngày.
-        # Quá 7 ngày mà chưa có shipper hoàn/tên shipper vẫn phải vào nhóm CẦN KN.
+        # Ngoại lệ chỉ cho ĐANG HOÀN HÀNG khi chưa quá ngưỡng KN.
+        # Quá ngưỡng thì vào CẦN KN theo số ngày hoàn quá hạn, không lấy thiếu shipper làm lý do.
         if sstat == "no_return":
             complaint, reason = False, "Không có VĐ trả về — không cần highlight/KN"
         elif rtype == "return_and_refund" and sstat == "returning" and n_track < 2 and (age or 0) <= _kn_days:
@@ -1768,7 +1768,7 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120, canceled_max_pages
         elif sstat == "returned":
             complaint, reason = True, "Đã giao người bán mà chưa nhập kho — cần khiếu nại"
         elif rtype == "return_and_refund" and sstat == "returning" and has_return_waybill and not return_shipper and age is not None and age > _kn_days:
-            complaint, reason = True, f"Có mã hoàn về nhưng chưa có tên shipper hoàn {age} ngày — cần khiếu nại"
+            complaint, reason = True, f"Đang hoàn hàng {age} ngày (quá 5 ngày) — cần khiếu nại"
         elif sstat == "returning" and age is not None and age > _kn_days:
             complaint, reason = True, f"Đang hoàn hàng {age} ngày (quá 5 ngày) — cần khiếu nại"
         else:

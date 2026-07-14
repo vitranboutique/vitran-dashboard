@@ -7654,7 +7654,14 @@ def _render_returns():
                     ship_code = str((d or {}).get("ship_code") or "").strip().lower()
                     stock_code = str((d or {}).get("stock_code") or "").strip().lower()
                     return_type = str((d or {}).get("loai_tra_code") or "").strip().lower()
-                    has_shipper = bool(str((d or {}).get("return_shipper") or "").strip())
+                    def _age_label():
+                        age = (d or {}).get("age")
+                        try:
+                            age = int(age)
+                        except Exception:
+                            m = re.search(r"(\d+)\s*ngày", full, flags=re.IGNORECASE)
+                            age = int(m.group(1)) if m else 0
+                        return f"⏳ Quá hạn {age}n" if age > 0 else "⏳ Hoàn quá hạn"
                     if "DONGTHIEU" in compact:
                         label = "📦 Đóng thiếu"
                     elif "HUHONG" in compact or "HANGHONG" in compact or "HONG" in compact:
@@ -7667,26 +7674,22 @@ def _render_returns():
                         label = "♻️ Đã sử dụng"
                     elif "BITDONG" in compact or "DONGCOVD" in compact or "SAPODAHUY" in compact:
                         label = "🧭 Đơn bị đóng"
-                    elif "CHUANHAPKHO" in compact or "CHUANHAN" in compact or ship_code == "returned":
-                        label = "📥 Hoàn chưa nhập"
                     elif "NHAPKHO1PHAN" in compact or "PARTIAL" in stock_code:
                         label = "📦 Nhập thiếu"
                     elif return_type == "delivery_failed":
                         label = "📕 Giao thất bại"
-                    elif ship_code == "returning" and not has_shipper:
-                        label = "🚚 Thiếu shipper"
                     elif ship_code == "returning":
-                        label = "⏳ Hoàn quá ngày"
+                        label = _age_label()
+                    elif ship_code == "returned":
+                        label = "📍 Đã giao shop"
                     elif stock_code in ("unstocked", "unrestock", "not_stocked", "not_restocked", "no_stock", "no_restock"):
-                        label = "📥 Chưa nhập kho"
-                    elif "SHIPPER" in compact and ("CHUACO" in compact or "THIEU" in compact):
-                        label = "🚚 Thiếu shipper"
+                        label = "📦 Kho chưa nhận"
                     elif "QUA5NGAY" in compact or "QUA7NGAY" in compact or "DANGHOAN" in compact:
-                        label = "⏳ Hoàn quá ngày"
+                        label = _age_label()
                     elif "DOHANATAG" in compact or "CHUACOGHICHUCHUAN" in compact:
                         label = "🏷 Tag chưa chốt"
                     elif "CANKN" in compact:
-                        label = "📥 Chưa nhập kho"
+                        label = _age_label() if (d or {}).get("age") else "⚠️ Chưa chốt KQ"
                     else:
                         label = "⚠️ Chưa có KQ"
                     if len(label) > 20:
