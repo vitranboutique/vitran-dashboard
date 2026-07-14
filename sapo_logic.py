@@ -1447,11 +1447,21 @@ def get_week_summary(fetch_json, days: int = 7) -> dict:
         if dp and f.get("shipment_status") == "delivered":
             _bump("giao_khach", dp)
     huy_codes_day = {}   # iso -> [mã VĐ/đơn hủy] để app.py tách hủy trước/sau soạn (đối chiếu phiếu nhặt)
+    huy_packed_codes_day = {}  # iso -> [mã VĐ/đơn hủy đã đóng gói rồi hủy] khớp popup cảnh báo hôm nay
     try:
         canc = get_cancelled(fetch_json, days=max(days, days_this_month))
         # Đếm CẢ packed + not_packed (khớp "Hủy hôm nay" ở báo cáo cuối ngày). Đơn not_packed
         # (hủy rất sớm) chắc chắn TRƯỚC soạn; đơn packed cần đối chiếu mã phiếu nhặt để biết.
-        for o in (canc.get("packed", []) + canc.get("not_packed", [])):
+        for o in canc.get("packed", []):
+            d = _vn_date_of(o.get("cancelled_on"))
+            if d:
+                _bump("huy", d)
+                _c = (f0(o).get("tracking_number") or o.get("name") or "").strip()
+                if _c:
+                    _iso = d.isoformat()
+                    huy_codes_day.setdefault(_iso, []).append(_c)
+                    huy_packed_codes_day.setdefault(_iso, []).append(_c)
+        for o in canc.get("not_packed", []):
             d = _vn_date_of(o.get("cancelled_on"))
             if d:
                 _bump("huy", d)
@@ -1498,6 +1508,8 @@ def get_week_summary(fetch_json, days: int = 7) -> dict:
             "ngay": d.strftime("%d/%m"), "thu": _wd[d.weekday()], "iso": d.isoformat(),
             "dong_goi": a["dong_goi"], "huy": a["huy"],
             "huy_codes": huy_codes_day.get(d.isoformat(), []),   # mã đơn hủy → tách trước/sau soạn ở app.py
+            "huy_packed_codes": huy_packed_codes_day.get(d.isoformat(), []),
+            "huy_packed": len(huy_packed_codes_day.get(d.isoformat(), [])),
             "soan": a["soan"],                       # số đơn in phiếu giao/nhặt (shipment_created_on) trong ngày
             "shipper_nhan": a["shipper_nhan"], "giao_khach": a["giao_khach"],
             "hoan_don": a["hoan_don"], "hoan_sp": a["hoan_sp"],

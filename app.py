@@ -1462,6 +1462,13 @@ def load_week_summary():
             _psumm = picklog.summaries_by_date()
             _psum = {k: int(v.get("so_don") or 0) for k, v in _psumm.items()}
             _psp = {k: int(v.get("so_sp") or 0) for k, v in _psumm.items()}
+            _pcodes = {}
+            for _iso, _summ in _psumm.items():
+                _codes = set()
+                for _r in _summ.get("rows") or []:
+                    _codes.update(str(c).strip() for c in (_r.get("codes") or []) if str(c).strip())
+                if _codes:
+                    _pcodes[_iso] = _codes
             for _d in data.get("days", []):
                 _iso = _d.get("iso")
                 if _iso in _psum:
@@ -1471,13 +1478,23 @@ def load_week_summary():
                     _dup = int((_psumm.get(_iso) or {}).get("dup_orders") or 0)
                     if _dup:
                         _d["ghi_chu"] = (str(_d.get("ghi_chu") or "") + f" · đã bỏ {_dup} đơn phiếu trùng").strip(" ·")
-                # HỦY SAU SOẠN (suy ra từ đối chiếu, cho NGÀY ĐÃ QUA — đã chốt số):
-                #   Đơn đã SOẠN mà KHÔNG tới shipper (và hết tồn) = đã hủy SAU soạn.
-                #   → Hủy sau soạn = Soạn − Shipper nhận, kẹp trong [0, tổng Hủy].
-                #   (Nếu Soạn − Shipper > tổng Hủy thì phần dư là CÒN TỒN, không tính vào hủy.)
-                # Hôm nay số còn chạy (chưa giao hết) → chưa suy được → "—".
+                # HỦY SAU SOẠN:
+                # Ưu tiên đối chiếu mã đơn hủy với mã đã lưu trong phiếu nhặt; cách này dùng được cả hôm nay.
+                # Nếu ngày cũ thiếu mã phiếu nhặt thì fallback theo chênh Soạn - Shipper nhận.
                 _huy = int(_d.get("huy") or 0)
-                if _d.get("is_today"):
+                _huy_codes = {str(c).strip() for c in (_d.get("huy_codes") or []) if str(c).strip()}
+                _huy_packed_codes = {str(c).strip() for c in (_d.get("huy_packed_codes") or []) if str(c).strip()}
+                _picked_codes = _pcodes.get(_iso) or set()
+                if _huy_codes and _picked_codes:
+                    _hsau = len(_huy_codes & _picked_codes)
+                    _d["huy_sau"] = min(_huy, _hsau)
+                    _d["huy_truoc"] = max(0, _huy - _d["huy_sau"])
+                    _d["huy_split_known"] = True
+                elif _huy_packed_codes:
+                    _d["huy_sau"] = min(_huy, len(_huy_packed_codes))
+                    _d["huy_truoc"] = max(0, _huy - _d["huy_sau"])
+                    _d["huy_split_known"] = True
+                elif _d.get("is_today"):
                     _d["huy_split_known"] = False
                     _d["huy_sau"] = _d["huy_truoc"] = 0
                 else:
@@ -5719,10 +5736,9 @@ def _render_daily():
                        'bị nhập kho). '
                        'Đối chiếu đóng: **Soạn** vs **Đóng gói (video)** · **Shipper nhận** nên = **Soạn (đơn) − Hủy sau soạn** '
                        '(lệch → cảnh báo) · Đối chiếu hoàn: **Vid hoàn** vs Hoàn đơn. '
-                       '2 cột hủy (tổng = báo cáo): **Hủy sau soạn** (đỏ) = **Soạn − Shipper nhận** (đơn đã cầm hàng ra '
-                       'mà không tới shipper → đã hủy sau soạn, cần lấy lại), kẹp trong [0, tổng Hủy]; **Hủy trước soạn** = '
-                       'Hủy − Hủy sau soạn (khách hủy sớm). Suy ra từ đối chiếu nên **chỉ áp dụng cho ngày ĐÃ QUA** '
-                       '(đã chốt số); **hôm nay** số còn chạy → hiện **"—"**. '
+                       '2 cột hủy (tổng = báo cáo): **Hủy sau soạn** (đỏ) ưu tiên theo mã hủy có nằm trong phiếu nhặt '
+                       '(kể cả hôm nay); ngày cũ thiếu mã thì suy ra từ **Soạn − Shipper nhận**, kẹp trong [0, tổng Hủy]. '
+                       '**Hủy trước soạn** = Hủy − Hủy sau soạn (khách hủy sớm). '
                        'Nếu Đóng gói(video) *thiếu* đúng bằng Vid hoàn *dư* (hoặc ngược lại) → gần chắc là quay lộn 2 bên. '
                        'Cột **⚠️ Mất hàng (đóng)** (đỏ) = video đóng bị gắn tag *đóng thiếu/sai SP*: soạn & quay đủ '
                        'nhưng cuối bị thiếu → **mất hàng khi đóng**, cần truy. Vạch dọc đậm ngăn khối **Đóng hàng** (xanh) '
