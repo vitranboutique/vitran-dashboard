@@ -8994,12 +8994,16 @@ def _render_returns():
                                   ("order_source", "gian_hang", "order_link")).lower()
                 if not order_code or "tiktok" not in source:
                     return "<span class='muted'>—</span>"
-                code_js = order_code.replace("\\", "\\\\").replace("'", "\\'")
+                ticket_url = _with_url_query(
+                    TIKTOK_TICKET_LIST_URL,
+                    order_id=order_code,
+                    search_type="order_id",
+                    tab="all",
+                )
                 return (
-                    f"<a href='{_esc(TIKTOK_TICKET_LIST_URL)}' target='_blank' "
-                    f"onclick=\"cp('{code_js}',this)\" "
-                    f"title='Đã copy mã đơn {_esc(order_code)}. Tìm theo ID đơn hàng; nếu không có kết quả thì tạo phiếu ngay'>"
-                    "📨 Kiểm tra / tạo</a>"
+                    f"<a href='{_esc(ticket_url)}' target='_blank' "
+                    f"title='Mở tất cả phiếu của đơn {_esc(order_code)}; nếu chưa có thì tạo phiếu ngay'>"
+                    "📨 Xem / tạo</a>"
                 )
 
             def _sub_table(items, h, show_type=False, show_reason=False, show_clip=False, merge_delivery_vd=False, show_location=False, pg_key=None, per_page=14, show_ticket=False):
@@ -9891,9 +9895,9 @@ def _render_returns():
             # ── 🚫 Đơn ĐÃ NHẬP KHO nhưng KHÔNG có video khui (đơn đã nhập kho — render bằng _sub_table cho đồng nhất) ──
             _nvhelp = ("Danh sách lấy trực tiếp từ cột Vid hoàn của Báo cáo vận hành cuối ngày: gồm toàn bộ "
                        "đơn đang báo chưa quay và kho cũ. SAPO chỉ bổ sung thông tin mã đơn/mã trả/vận đơn. "
-                       "Tô vàng = đơn chưa có ghi chú chuẩn (cần KN). Với đơn TikTok, bấm Kiểm tra / tạo để copy mã đơn "
-                       "và mở Nhật ký phiếu; chọn ID đơn hàng rồi dán. Nếu không có kết quả thì tạo phiếu ngay, "
-                       "nếu có nhiều phiếu thì TikTok sẽ hiện đầy đủ.")
+                       "Tô vàng = đơn chưa có ghi chú chuẩn (cần KN). Với đơn TikTok, bấm Xem / tạo để mở thẳng "
+                       "tab Tất cả với ID đơn hàng đã điền sẵn. Nếu không có kết quả thì tạo phiếu ngay; nếu có nhiều "
+                       "phiếu thì TikTok sẽ hiện đầy đủ.")
             st.markdown('**🚫 + Đơn ĐÃ NHẬP KHO nhưng KHÔNG có video khui** '
                         f'<abbr title="{_esc(_nvhelp)}" style="cursor:help;color:#2563eb;text-decoration:none">ⓘ</abbr>',
                         unsafe_allow_html=True)
