@@ -1861,6 +1861,20 @@ def load_week_summary():
                 orders = [v for v in vals if _is_order_code(v)]
                 return _short_codes(waybills), _short_codes(orders)
 
+            def _match_codes_from_group(group, video_code=""):
+                vals = [video_code, *(group or [])]
+                out = []
+                for val in vals:
+                    raw = str(val or "").strip()
+                    if not raw:
+                        continue
+                    parts = _codes_from_item(raw) if "|" in raw or ":" in raw else [raw]
+                    for part in parts:
+                        code = str(part or "").strip()
+                        if code and (_is_waybill_code(code) or _is_order_code(code) or _order_context_label(code)):
+                            out.append(code)
+                return list(dict.fromkeys(out))
+
             def _package_label(group, video_code=""):
                 wb, oc = _codes_from_group(group)
                 if not wb and _is_waybill_code(video_code):
@@ -2081,7 +2095,7 @@ def load_week_summary():
                                 _group = [str(c).strip() for c in _code_groups[_idx] if str(c).strip()]
                             else:
                                 _group = [_code]
-                            _groups.append(_group)
+                            _groups.append(_match_codes_from_group(_group, _code))
                             _labels.append(_package_context_label(_group, _code))
                     if not _groups:
                         continue
@@ -2094,6 +2108,10 @@ def load_week_summary():
                               if _is_waybill_code(c) or _order_context_label(c) or _is_order_code(c)]
                     _unknown_extra = [c for c in _extra_raw
                                       if not (_is_waybill_code(c) or _order_context_label(c) or _is_order_code(c))]
+                    _overlap = set(_missing) & set(_extra)
+                    if _overlap:
+                        _missing = [x for x in _missing if x not in _overlap]
+                        _extra = [x for x in _extra if x not in _overlap]
                     _package_missing_by_day[_iso] = _missing
                     _package_extra_by_day[_iso] = _extra
                     _package_unknown_unmatched_by_day[_iso] = _unknown_extra
