@@ -94,6 +94,7 @@ SHOPEE_SHOP_CONTEXT_IDS = {
 }
 TIKTOK_ORDER_LIST_URL = "https://seller-vn.tiktok.com/order?selected_sort=6&tab=all"
 TIKTOK_ORDER_SEARCH_URL = TIKTOK_ORDER_LIST_URL + "&main_order_id={}"
+TIKTOK_TICKET_LIST_URL = "https://seller-vn.tiktok.com/ticket?shop_region=VN"
 
 
 def _plain_text_key(value):
@@ -8987,7 +8988,21 @@ def _render_returns():
                      "&created_on_min=2024-01-01&created_on_max=2027-12-31&paid=" + paid)
                 return f"<a href='{_esc(u)}' target='_blank' title='Mở đối soát — tab {tab} thanh toán'>🔍 {tab}</a>"
 
-            def _sub_table(items, h, show_type=False, show_reason=False, show_clip=False, merge_delivery_vd=False, show_location=False, pg_key=None, per_page=14):
+            def _ticket_cell(d):
+                order_code = str((d or {}).get("order_code") or "").strip()
+                source = " ".join(str((d or {}).get(k) or "") for k in
+                                  ("order_source", "gian_hang", "order_link")).lower()
+                if not order_code or "tiktok" not in source:
+                    return "<span class='muted'>—</span>"
+                code_js = order_code.replace("\\", "\\\\").replace("'", "\\'")
+                return (
+                    f"<a href='{_esc(TIKTOK_TICKET_LIST_URL)}' target='_blank' "
+                    f"onclick=\"cp('{code_js}',this)\" "
+                    f"title='Đã copy mã đơn {_esc(order_code)}. Tìm theo ID đơn hàng; nếu không có kết quả thì tạo phiếu ngay'>"
+                    "📨 Kiểm tra / tạo</a>"
+                )
+
+            def _sub_table(items, h, show_type=False, show_reason=False, show_clip=False, merge_delivery_vd=False, show_location=False, pg_key=None, per_page=14, show_ticket=False):
                 if not items:
                     st.caption("— Không có —")
                     return
@@ -9010,7 +9025,10 @@ def _render_returns():
                 cols = ["STT"]
                 if show_reason:
                     cols += ["Lý do KN"]
-                cols += ["Ngày tạo", "Mã đơn", "Mã trả hàng"]
+                cols += ["Ngày tạo", "Mã đơn"]
+                if show_ticket:
+                    cols += ["Phiếu yêu cầu"]
+                cols += ["Mã trả hàng"]
                 cols += ["Vận đơn"] if merge_delivery_vd else ["VĐ đi", "VĐ trả về"]
                 if show_clip:
                     cols += ["Ngày giờ quay", "Thời lượng"]
@@ -9094,8 +9112,10 @@ def _render_returns():
                     tds += [
                         f"<td>{_safe(d.get('created'))}</td>",
                         f"<td>{_code_cell(d['order_code'], _order_link_for_row(d))}</td>",
-                        f"<td>{_return_code_cell(d)}</td>",
                     ]
+                    if show_ticket:
+                        tds.append(f"<td>{_ticket_cell(d)}</td>")
+                    tds.append(f"<td>{_return_code_cell(d)}</td>")
                     if merge_delivery_vd:
                         _vd_val = d.get('vd_di') or d.get('vd_tra')
                         if str(d.get("vd_tra") or "").strip():
@@ -9871,7 +9891,9 @@ def _render_returns():
             # ── 🚫 Đơn ĐÃ NHẬP KHO nhưng KHÔNG có video khui (đơn đã nhập kho — render bằng _sub_table cho đồng nhất) ──
             _nvhelp = ("Danh sách lấy trực tiếp từ cột Vid hoàn của Báo cáo vận hành cuối ngày: gồm toàn bộ "
                        "đơn đang báo chưa quay và kho cũ. SAPO chỉ bổ sung thông tin mã đơn/mã trả/vận đơn. "
-                       "Tô vàng = đơn chưa có ghi chú chuẩn (cần KN).")
+                       "Tô vàng = đơn chưa có ghi chú chuẩn (cần KN). Với đơn TikTok, bấm Kiểm tra / tạo để copy mã đơn "
+                       "và mở Nhật ký phiếu; chọn ID đơn hàng rồi dán. Nếu không có kết quả thì tạo phiếu ngay, "
+                       "nếu có nhiều phiếu thì TikTok sẽ hiện đầy đủ.")
             st.markdown('**🚫 + Đơn ĐÃ NHẬP KHO nhưng KHÔNG có video khui** '
                         f'<abbr title="{_esc(_nvhelp)}" style="cursor:help;color:#2563eb;text-decoration:none">ⓘ</abbr>',
                         unsafe_allow_html=True)
@@ -9887,7 +9909,8 @@ def _render_returns():
                                + (f" · 🟡 **{_nvneed}** chưa có ghi chú chuẩn (tô vàng, cần KN)" if _nvneed else ""))
 
                     _sub_table(_nvrows, 520, show_reason=True, show_type=True,
-                               show_location=True, pg_key="restock_novideo", per_page=50)
+                               show_location=True, pg_key="restock_novideo", per_page=50,
+                               show_ticket=True)
             except Exception as _env:
                 st.caption(f"Chưa dò được đơn nhập kho thiếu video: {_env}")
             _type_block("💸 Trả hàng hoàn tiền", "return_and_refund")
