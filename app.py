@@ -624,8 +624,6 @@ def _render_week_video_audit(data):
                 cells = [
                     "<tr>",
                     f'<td style="padding:6px 8px;border:1px solid #d6dce6;white-space:nowrap">{_esc(str(r.get("Ngày") or ""))}</td>',
-                    f'<td style="padding:6px 8px;border:1px solid #d6dce6;white-space:nowrap">{_esc(str(r.get("Nhóm tuổi") or ""))}</td>',
-                    _fmt_cell(r.get("Mã đối chiếu")),
                     f'<td style="padding:6px 8px;border:1px solid #d6dce6;text-align:right;font-weight:800">{_num(r.get("Đóng thiếu SL"))}</td>',
                     _fmt_cell(r.get("Đóng thiếu")),
                     f'<td style="padding:6px 8px;border:1px solid #d6dce6;text-align:right;font-weight:800">{_num(r.get("Đóng dư SL"))}</td>',
@@ -635,7 +633,6 @@ def _render_week_video_audit(data):
                     f'<td style="padding:6px 8px;border:1px solid #d6dce6;text-align:right;font-weight:800">{_num(r.get("Hoàn dư SL"))}</td>',
                     _fmt_cell(r.get("Hoàn dư")),
                     _fmt_cell(r.get("Khớp lộn mục"), has_match),
-                    _fmt_cell(r.get("Video chưa khớp đơn")),
                     f'<td style="padding:6px 8px;border:1px solid #d6dce6;background:{chot_bg};font-weight:800;vertical-align:top">{_esc(chot)}</td>',
                     "</tr>",
                 ]
@@ -647,12 +644,9 @@ def _render_week_video_audit(data):
   <thead>
     <tr>
       <th rowspan="2" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#e2e8f0">Ngày</th>
-      <th rowspan="2" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#e2e8f0">Nhóm tuổi</th>
-      <th rowspan="2" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#e2e8f0;min-width:260px">Mã đối chiếu</th>
       <th colspan="4" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#dbeafe">Đóng hàng</th>
       <th colspan="4" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#ffedd5">Nhập hàng hoàn</th>
       <th rowspan="2" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#fef3c7;min-width:220px">Khớp lộn mục</th>
-      <th rowspan="2" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#f8fafc;min-width:190px">Video chưa khớp đơn</th>
       <th rowspan="2" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#f1f5f9;min-width:160px">Chốt</th>
     </tr>
     <tr>
@@ -1269,6 +1263,28 @@ def _note_is_standard(note: str) -> bool:
     compact = "".join(ch for ch in _ascii_code(first) if ch.isalnum())
     return any(t in compact for t in
                ("KHONGCANKN", "KHONGCANKHIEUNAI", "HETHAN", "THANG", "THUA", "HUY", "CANKN"))
+
+
+def _nv_row_restock(it):
+    """Đổi 1 đơn 'ĐÃ nhập kho nhưng thiếu video khui' (đã enrich) → row cho _sub_table.
+    Lý do KN = 'NV nhập kho sai' cho CẢ bảng; tô vàng (need_kn) đến khi có ghi chú CHUẨN thì thôi
+    (khi đó tự rớt khỏi Cần KN). Dùng chung cho bảng 'theo loại' lẫn danh sách Cần KN."""
+    _std = _note_is_standard(it.get("ghi_chu", ""))
+    return {
+        "order_code": it.get("order_code") or "", "return_code": it.get("return_code") or "",
+        "order_source": it.get("order_source") or "", "gian_hang": it.get("gian_hang") or "",
+        "order_link": it.get("order_link") or "", "return_link": it.get("return_link") or "",
+        "vd_di": it.get("vd_di") or "", "vd_tra": it.get("vd_tra") or "",
+        "created": it.get("ngay_tao") or it.get("restock_date") or "",
+        "created_on": it.get("restock_date") or "",
+        "note": it.get("ghi_chu") or "", "reason": it.get("ly_do") or "",
+        "_reason_label": "❌ NV nhập kho sai",          # CẢ bảng lý do = nhân viên nhập sai
+        "loai_tra": it.get("loai_tra") or "", "loai_tra_code": it.get("loai_tra_code") or "",
+        "sku": it.get("sku") or "", "qty": it.get("sp") or 0, "money": it.get("money") or 0,
+        "stock_status": "Đã nhập kho", "return_shipper": it.get("carrier") or "",
+        "need_kn": (not _std),                          # tô vàng + vào Cần KN tới khi có ghi chú chuẩn
+        "_restock_novideo": True,
+    }
 
 
 def _return_row_from_sapo_api(row: dict, detail: dict | None = None) -> dict:
@@ -2472,9 +2488,9 @@ def load_restock_novideo(days: int = 30):
     ledger = picklog.read_restock_novideo() if picklog.configured() else {"items": {}}
     items = ledger.get("items", {})
     changed = False
-    _DISPLAY = ("order_code", "return_id", "order_id", "vd_di", "vd_tra", "ngay_tao", "restock_date",
-                "recv_time", "nhan_vien", "sku", "sp", "sp_nhap", "ly_do", "loai_tra", "loai_tra_code",
-                "gian_hang", "ghi_chu")
+    _DISPLAY = ("order_code", "return_id", "order_id", "order_link", "return_link", "vd_di", "vd_tra",
+                "ngay_tao", "restock_date", "recv_time", "nhan_vien", "sku", "sp", "sp_nhap", "money",
+                "ly_do", "loai_tra", "loai_tra_code", "gian_hang", "order_source", "ghi_chu")
     # AN TOÀN: kho video rỗng (Dohana 429 / chưa sync) → KHÔNG dò (tránh gắn oan cả loạt vào sổ vĩnh
     # viễn). Chỉ giữ nguyên sổ cũ. UI sẽ báo "kho video trống".
     if not inbound_codes:
@@ -8758,6 +8774,9 @@ def _render_returns():
                         f"<div>{_safe(note_text)}</div></details>"
                     )
                 def _reason_brief_cell(d):
+                    _forced = str((d or {}).get("_reason_label") or "").strip()
+                    if _forced:      # nhãn ÉP (vd bảng nhập-kho-thiếu-video: cả cột = "NV nhập kho sai")
+                        return f"<span class='reason-badge' title='{_safe(_forced)}'>{_safe(_forced)}</span>"
                     raw_reason = str((d or {}).get("reason") or "").strip()
                     raw_location = str((d or {}).get("_location") or _row_location(d) or "").strip()
                     full = " · ".join(x for x in (raw_reason, raw_location) if x) or "Cần kiểm tra"
@@ -9601,28 +9620,7 @@ def _render_returns():
                     st.warning(f"⚠️ **{len(_nvact)}** đơn ĐÃ nhập kho nhưng KHÔNG có video khui"
                                + (f" · 🟡 **{_nvneed}** chưa có ghi chú chuẩn (tô vàng, cần KN)" if _nvneed else ""))
 
-                    def _nv_row(it):
-                        _src = str(it.get("gian_hang") or "").lower()
-                        _rc = str(it.get("return_code") or "")
-                        if "shopee" in _src:
-                            _rl = _shopee_return_url(_rc)
-                        elif it.get("return_id"):
-                            _rl = f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{it.get('return_id')}"
-                        else:
-                            _rl = ""
-                        _ol = (f"https://vitranboutiquehcm.mysapo.net/admin/orders/{it.get('order_id')}"
-                               if it.get("order_id") else "")
-                        return {"order_code": it.get("order_code") or "", "return_code": _rc,
-                                "order_source": it.get("gian_hang") or "", "gian_hang": it.get("gian_hang") or "",
-                                "order_link": _ol, "return_link": _rl,
-                                "vd_di": it.get("vd_di") or "", "vd_tra": it.get("vd_tra") or "",
-                                "created": it.get("ngay_tao") or it.get("restock_date") or "",
-                                "note": it.get("ghi_chu") or "", "reason": it.get("ly_do") or "",
-                                "loai_tra": it.get("loai_tra") or "", "loai_tra_code": it.get("loai_tra_code") or "",
-                                "sku": it.get("sku") or "", "qty": it.get("sp") or 0, "money": 0,
-                                "stock_status": "Đã nhập kho", "return_shipper": it.get("carrier") or "",
-                                "need_kn": (not it.get("_std"))}
-                    _sub_table([_nv_row(_it) for _it in _nvact], 520, show_reason=True, show_type=True,
+                    _sub_table([_nv_row_restock(_it) for _it in _nvact], 520, show_reason=True, show_type=True,
                                show_location=True, pg_key="restock_novideo", per_page=50)
                     _nvopts = [r.get("return_code") or r.get("order_code") for r in _nvact]
                     _nvsel = st.multiselect("✔️ Bỏ qua đơn đã kiểm tra ổn (ẩn cảnh báo, vẫn giữ trong sổ):",
