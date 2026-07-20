@@ -8305,6 +8305,20 @@ def _render_returns():
                     st.session_state["closed_returns_full_year_loaded"] = False
             _closed_return_app_notes = _load_closed_return_app_notes()
             _apply_closed_return_app_notes(_canceled_returns_detail, _closed_return_app_notes)
+
+            def _restock_novideo_rows():
+                # Đơn 'ĐÃ nhập kho nhưng thiếu video khui' → gắn ghi chú Y HỆT các bảng khác (khớp theo
+                # MÃ TRẢ/mã đơn/VĐ + chuẩn hoá qua _apply_closed_return_app_notes) → need_kn đúng:
+                # có ghi chú CHUẨN thì hết vàng & tự rớt khỏi Cần KN.
+                try:
+                    _items = load_restock_novideo(days=30).get("active") or []
+                except Exception:
+                    return []
+                _rows = [_nv_row_restock(_it) for _it in _items]
+                _apply_closed_return_app_notes(_rows, _closed_return_app_notes)
+                for _d in _rows:
+                    _d["need_kn"] = not _note_is_standard(_d.get("note", ""))
+                return _rows
             _closed_returns_with_waybill_detail = [
                 d for d in _canceled_returns_detail
                 if str(d.get("vd_tra") or "").strip()
@@ -9561,8 +9575,7 @@ def _render_returns():
             #   có ghi chú chuẩn thì tự rớt khỏi đây & mất màu vàng). Dùng chung _nv_row_restock cho đồng nhất.
             _nv_ckn_added = 0
             try:
-                _nv_ckn = [_nv_row_restock(_it) for _it in (load_restock_novideo(days=30).get("active") or [])
-                           if not _note_is_standard(_it.get("ghi_chu", ""))]
+                _nv_ckn = [d for d in _restock_novideo_rows() if d.get("need_kn")]
                 if _nv_ckn:
                     _nv_ckn_added = len(_nv_ckn)
                     _ckn_render_raw_list = _merge_need_kn_rows(_ckn_render_raw_list, _nv_ckn)
@@ -9620,23 +9633,21 @@ def _render_returns():
                         unsafe_allow_html=True)
             try:
                 _nv = load_restock_novideo(days=30)
-                _nvact = _nv.get("active", [])
+                _nvrows = _restock_novideo_rows()      # đã gắn ghi chú CHUẨN (khớp mã trả) + need_kn
                 if _nv.get("video_store", 0) == 0:
                     st.caption("Kho video khui đang trống → tạm chưa kết luận. Mở bảng Tổng hợp 30 ngày để đồng bộ.")
-                elif not _nvact:
+                elif not _nvrows:
                     st.caption("✅ Không có đơn nhập kho nào thiếu video khui trong 30 ngày.")
                 else:
-                    for _rr in _nvact:
-                        _rr["_std"] = _note_is_standard(_rr.get("ghi_chu", ""))
-                    _nvact = sorted(_nvact, key=lambda r: str(r.get("restock_date") or ""), reverse=True)
-                    _nvact = sorted(_nvact, key=lambda r: 0 if not r.get("_std") else 1)
-                    _nvneed = sum(1 for r in _nvact if not r.get("_std"))
-                    st.warning(f"⚠️ **{len(_nvact)}** đơn ĐÃ nhập kho nhưng KHÔNG có video khui"
+                    _nvrows = sorted(_nvrows, key=lambda r: str(r.get("created_on") or ""), reverse=True)
+                    _nvrows = sorted(_nvrows, key=lambda r: 0 if r.get("need_kn") else 1)   # vàng (cần KN) lên đầu
+                    _nvneed = sum(1 for r in _nvrows if r.get("need_kn"))
+                    st.warning(f"⚠️ **{len(_nvrows)}** đơn ĐÃ nhập kho nhưng KHÔNG có video khui"
                                + (f" · 🟡 **{_nvneed}** chưa có ghi chú chuẩn (tô vàng, cần KN)" if _nvneed else ""))
 
-                    _sub_table([_nv_row_restock(_it) for _it in _nvact], 520, show_reason=True, show_type=True,
+                    _sub_table(_nvrows, 520, show_reason=True, show_type=True,
                                show_location=True, pg_key="restock_novideo", per_page=50)
-                    _nvopts = [r.get("return_code") or r.get("order_code") for r in _nvact]
+                    _nvopts = [r.get("return_code") or r.get("order_code") for r in _nvrows]
                     _nvsel = st.multiselect("✔️ Bỏ qua đơn đã kiểm tra ổn (ẩn cảnh báo, vẫn giữ trong sổ):",
                                             _nvopts, key="nv_dismiss_sel")
                     if _nvsel and st.button(f"Bỏ qua {len(_nvsel)} đơn", key="nv_dismiss_btn"):
