@@ -9000,6 +9000,7 @@ def _render_returns():
                 )
                 return (
                     f"<a href='{_esc(ticket_url)}' target='_blank' "
+                    "onclick=\"var w=window.open(this.href,'_blank');if(w){w.focus();}return false;\" "
                     f"title='Mở tất cả phiếu của đơn {_esc(order_code)}; nếu chưa có thì tạo phiếu ngay'>"
                     "📨 Xem / tạo</a>"
                 )
@@ -9027,9 +9028,9 @@ def _render_returns():
                 cols = ["STT"]
                 if show_reason:
                     cols += ["Lý do KN"]
-                cols += ["Ngày tạo", "Mã đơn"]
                 if show_ticket:
                     cols += ["Phiếu yêu cầu"]
+                cols += ["Ngày tạo", "Mã đơn"]
                 cols += ["Mã trả hàng"]
                 cols += ["Vận đơn"] if merge_delivery_vd else ["VĐ đi", "VĐ trả về"]
                 if show_clip:
@@ -9111,12 +9112,12 @@ def _render_returns():
                     tds = [f"<td class='r'>{i}</td>"]
                     if show_reason:
                         tds.append(f"<td>{_reason_brief_cell(d)}</td>")
+                    if show_ticket:
+                        tds.append(f"<td>{_ticket_cell(d)}</td>")
                     tds += [
                         f"<td>{_safe(d.get('created'))}</td>",
                         f"<td>{_code_cell(d['order_code'], _order_link_for_row(d))}</td>",
                     ]
-                    if show_ticket:
-                        tds.append(f"<td>{_ticket_cell(d)}</td>")
                     tds.append(f"<td>{_return_code_cell(d)}</td>")
                     if merge_delivery_vd:
                         _vd_val = d.get('vd_di') or d.get('vd_tra')
