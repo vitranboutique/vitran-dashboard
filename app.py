@@ -1820,6 +1820,21 @@ def load_week_summary():
                         out.append(code)
                 return list(dict.fromkeys(out))
 
+            def _is_waybill_code(code):
+                s = _ascii_code(code)
+                if not s:
+                    return False
+                if s.startswith(("SPXVN", "VTPVN", "VTP", "GHN")):
+                    return True
+                return bool(re.fullmatch(r"8[4567]\d{8,14}", s))
+
+            def _prefer_waybill_label(codes, fallback=""):
+                vals = [str(v or "").strip() for v in (codes or []) if str(v or "").strip()]
+                waybills = [v for v in vals if _is_waybill_code(v)]
+                picked = waybills or vals or [str(fallback or "").strip()]
+                picked = list(dict.fromkeys([v for v in picked if v]))
+                return " · ".join(picked[:6]) + (f" · ...(+{len(picked) - 6})" if len(picked) > 6 else "")
+
             def _code_match(a, b):
                 if not a or not b:
                     return False
@@ -1831,15 +1846,22 @@ def load_week_summary():
                     return _subseq(a, b) or _subseq(b, a)
                 return False
 
+            def _match_tokens(a_item, b_item):
+                atoks = _codes_from_item(a_item)
+                btoks = _codes_from_item(b_item)
+                awb = [x for x in atoks if _is_waybill_code(x)]
+                bwb = [x for x in btoks if _is_waybill_code(x)]
+                if awb or bwb:
+                    return bool(awb and bwb and any(_code_match(a, b) for a in awb for b in bwb))
+                return any(_code_match(a, b) for a in atoks for b in btoks)
+
             def _cross_matches(missing, extra, limit=20):
                 pairs = []
                 for miss in missing or []:
-                    mtoks = _codes_from_item(miss)
-                    if not mtoks:
+                    if not _codes_from_item(miss):
                         continue
                     for ex in extra or []:
-                        etoks = _codes_from_item(ex)
-                        if any(_code_match(m, e) for m in mtoks for e in etoks):
+                        if _match_tokens(miss, ex):
                             pairs.append(f"{miss} ↔ {ex}")
                             break
                 pairs = list(dict.fromkeys(pairs))
@@ -1857,8 +1879,7 @@ def load_week_summary():
                         ex_key = str(ex or "").strip()
                         if not ex_key or ex_key in used_extra:
                             continue
-                        etoks = _codes_from_item(ex_key)
-                        if any(_code_match(m, e) for m in mtoks for e in etoks):
+                        if _match_tokens(miss, ex_key):
                             pairs.append((str(miss).strip(), ex_key))
                             used_extra.add(ex_key)
                             break
@@ -1970,11 +1991,12 @@ def load_week_summary():
                         _codes = [str(c).strip() for c in (_row.get("codes") or []) if str(c).strip()]
                         _code_groups = _row.get("code_groups") or [[c] for c in _codes]
                         for _idx, _code in enumerate(_codes):
-                            _labels.append(_code)
                             if _idx < len(_code_groups) and _code_groups[_idx]:
-                                _groups.append([str(c).strip() for c in _code_groups[_idx] if str(c).strip()])
+                                _group = [str(c).strip() for c in _code_groups[_idx] if str(c).strip()]
                             else:
-                                _groups.append([_code])
+                                _group = [_code]
+                            _groups.append(_group)
+                            _labels.append(_prefer_waybill_label(_group, _code))
                     if not _groups:
                         continue
                     _pkg_codes = set(package_codes_by_day.get(_iso, []))
@@ -2027,14 +2049,12 @@ def load_week_summary():
 
                 def _return_label(c):
                     vals = [
-                        c.get("order_code"),
-                        c.get("return_code"),
                         c.get("vd_tra"),
                         *(c.get("codes") or []),
+                        c.get("return_code"),
+                        c.get("order_code"),
                     ]
-                    vals = [str(v or "").strip() for v in vals if str(v or "").strip()]
-                    vals = list(dict.fromkeys(vals))
-                    return " · ".join(vals[:8]) + (f" · ...(+{len(vals) - 8})" if len(vals) > 8 else "")
+                    return _prefer_waybill_label(vals, c.get("order_code") or c.get("return_code") or "")
 
                 _inb = [
                     (_norm(r.get("code")), _cg(r.get("code")), _pdate(r.get("date")))
