@@ -2063,11 +2063,15 @@ def load_week_summary():
                     "inbound_extra": max(-_ret_gap, 0),
                 }
 
-            def _limit_rows(rows, limit):
+            def _limit_rows(rows, limit, pad_label=""):
                 rows = list(rows or [])
                 if limit is None:
                     return rows
-                return rows[:max(0, int(limit or 0))]
+                n = max(0, int(limit or 0))
+                rows = rows[:n]
+                if pad_label and len(rows) < n:
+                    rows += [f"{pad_label} #{i}" for i in range(len(rows) + 1, n + 1)]
+                return rows
 
             def _add_matrix(iso, pkg_missing, pkg_extra, return_missing, inbound_extra, pkg_unknown=None, day=None):
                 pkg_missing = _uniq(pkg_missing)
@@ -2089,10 +2093,14 @@ def load_week_summary():
                 rem_pkg_extra_rows = [x for x in pkg_extra if x not in p2_extra]
                 pkg_unknown_rows = [f"Chưa khớp đơn: {x}" for x in pkg_unknown]
                 display_pkg_extra_rows = rem_pkg_extra_rows + pkg_unknown_rows
-                rem_pkg_missing_rows = _limit_rows(rem_pkg_missing_rows, limits.get("pkg_missing"))
-                rem_inbound_extra_rows = _limit_rows(rem_inbound_extra_rows, limits.get("inbound_extra"))
-                rem_return_missing_rows = _limit_rows(rem_return_missing_rows, limits.get("return_missing"))
-                display_pkg_extra_rows = _limit_rows(display_pkg_extra_rows, limits.get("pkg_extra"))
+                rem_pkg_missing_rows = _limit_rows(rem_pkg_missing_rows, limits.get("pkg_missing"),
+                                                   "Chưa lấy được mã đóng thiếu")
+                rem_inbound_extra_rows = _limit_rows(rem_inbound_extra_rows, limits.get("inbound_extra"),
+                                                     "Chưa lấy được mã video hoàn dư")
+                rem_return_missing_rows = _limit_rows(rem_return_missing_rows, limits.get("return_missing"),
+                                                      "Chưa lấy được mã hoàn thiếu")
+                display_pkg_extra_rows = _limit_rows(display_pkg_extra_rows, limits.get("pkg_extra"),
+                                                     "Chưa lấy được mã video đóng dư")
                 rem_pkg_missing = len(rem_pkg_missing_rows)
                 rem_inbound_extra = len(rem_inbound_extra_rows)
                 rem_return_missing = len(rem_return_missing_rows)
@@ -9802,11 +9810,12 @@ def _render_returns():
                 from collections import Counter as _Cnt
 
                 def _dup_madon(rows):
-                    _cs = [str(_display_return_code(d) or "").strip() for d in (rows or [])]
-                    _cs = [c for c in _cs if c]
+                    _all = [str(_display_return_code(d) or "").strip() for d in (rows or [])]
+                    _cs = [c for c in _all if c]
+                    _empty = len(_all) - len(_cs)          # dòng mã trả để TRỐNG (mã trả trùng mã đơn)
                     _cnt = _Cnt(_cs)
                     _dd = {k: v for k, v in _cnt.items() if v > 1}
-                    return len(rows or []), len(_cnt), sum(v - 1 for v in _dd.values()), _dd
+                    return len(rows or []), len(_cnt), sum(v - 1 for v in _dd.values()), _empty, _dd
                 _dup_tables = [
                     ("🚨 Cần KN", _ckn_render_list),
                     ("⛔ Không cần KN", _khong_can_kn_list),
@@ -9821,15 +9830,19 @@ def _render_returns():
                     _dup_tables.append(("🗂️ Phiếu đã hủy", _canceled_returns_detail))
                 _dup_out, _tot_dup = [], 0
                 for _nm, _rws in _dup_tables:
-                    _t, _dist, _ndup, _dd = _dup_madon(_rws)
+                    _t, _dist, _ndup, _empty, _dd = _dup_madon(_rws)
                     _tot_dup += _ndup
                     _dup_out.append({
                         "Bảng": _nm, "Số dòng": _t, "Mã trả (khác nhau)": _dist,
+                        "Trống mã trả": _empty,          # = mã trả trùng mã đơn (cột Mã trả để trống)
                         "⚠️ Mã TRÙNG (dòng dư)": _ndup,
                         "Ví dụ (mã × số lần)": ", ".join(f"{k} ×{v}" for k, v in list(_dd.items())[:6]) or "—",
                     })
                 st.dataframe(pd.DataFrame(_dup_out), hide_index=True, use_container_width=True,
                              column_config={"Ví dụ (mã × số lần)": st.column_config.TextColumn(width="large")})
+                st.caption("**Số dòng = Mã trả (khác nhau) + Trống mã trả + Mã TRÙNG (dòng dư).** "
+                           "'Trống mã trả' = đơn có mã trả TRÙNG mã đơn (Shopee/TikTok để mã trả = mã đơn) → "
+                           "cột Mã trả để trống, KHÔNG phải lỗi. Chỉ **⚠️ Mã TRÙNG > 0** mới là trùng thật.")
                 if _tot_dup:
                     st.warning(f"⚠️ Tổng **{_tot_dup}** dòng mã trả bị trùng — bảng nào cột **⚠️ Mã TRÙNG** > 0 là có.")
                 else:
