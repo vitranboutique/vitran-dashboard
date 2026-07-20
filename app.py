@@ -8553,9 +8553,7 @@ def _render_returns():
                             "ngay_tao": _entry.get("date") or "",
                             "restock_date": _entry.get("date") or "",
                         })
-                    _is_old = _entry.get("age") == "Kho cũ"
-                    _row["_reason_label"] = ("🕒 Kho cũ thiếu video" if _is_old
-                                                   else "⚠️ Chưa quay video khui")
+                    _row["_reason_label"] = "❌ Nhân viên nhập kho sai"
                     _row["_report_video_age"] = _entry.get("age") or ""
                     _row["_report_video_missing"] = True
                     _rows.append(_row)
