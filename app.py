@@ -711,6 +711,9 @@ def _enrich_daily(rep, dvr, inb):
         for d in nk.get("detail", []):
             if d.get("clip") or not leftover:
                 continue
+            if d.get("loai_tra_code") == "delivery_failed":
+                continue   # GIAO THẤT BẠI: VĐ về = VĐ đi = mã Dohana chính xác → KHÔNG ghép mềm
+                           # (tránh gán nhầm clip J&T khác vào đơn — như ca user báo link sai)
             rp = _cgname(d.get("carrier"))
             pick = next((c for c in leftover if _cg(c) == rp), None)
             if pick:
@@ -762,6 +765,7 @@ def _enrich_daily(rep, dvr, inb):
             "clip_alt": d.get("clip_altcode"), "has_clip": bool(d.get("clip")),
             "order_code": d.get("order_code"), "recv_time": d.get("recv_time"),
             "vd_gui": d.get("tracking"),   # mã VĐ GIAO ĐI (tra Sapo/sàn được)
+            "return_code": d.get("return_code") or "",     # MÃ ĐƠN TRẢ (tra trên sàn, vd 585...-R1)
             "track_return": d.get("track_return") or "",   # VĐ HOÀN VỀ (giao thất bại = trùng mã đi = mã Dohana)
             # Cột "Đã nhận hàng trả (Sapo)" → CHỉ lấy NV nhận hàng từ Sapo,
             # KHÔNG fallback sang NV quay clip (Dohana) để tránh hiển thị sai người.
@@ -780,6 +784,7 @@ def _enrich_daily(rep, dvr, inb):
             "clip_tag_id": u.get("tag_id"),
             "clip_alt": False, "has_clip": True,
             "order_code": info.get("order_code") or "", "recv_time": "", "vd_gui": info.get("vd_gui") or "",
+            "return_code": info.get("return_code") or "",
             "track_return": info.get("track_return") or u.get("code") or "",   # clip dư: mã clip chính là VĐ hoàn về
             "nhan_vien": u.get("staff") or "",
             "sku": info.get("sku") or "", "loai_tra": info.get("loai_tra") or "",

@@ -430,11 +430,9 @@ def _recon_rows(rows, start=0, clip_on=True):
         _vdg = str(r.get("vd_gui") or "")
         vdg_cell = (f'{_e(_vdg)}' if _vdg and _vdg != r.get("order_code")
                     else '<span style="color:#cbd5e1">—</span>')
-        # Mã trả (VĐ hoàn về): giao thất bại → trùng mã Dohana (clip) → tô xanh + ✓
-        _vdt = str(r.get("track_return") or "")
-        _ccx = str(r.get("clip_code") or "")
-        vdt_cell = (f'<b style="color:#15803d">{_e(_vdt)} ✓</b>' if (_vdt and _ccx and _vdt == _ccx)
-                    else (f'{_e(_vdt)}' if _vdt else '<span style="color:#cbd5e1">—</span>'))
+        # Mã ĐƠN trả (tra trên sàn, vd 585...-R1) — KHÁC mã vận đơn trả (đã có ở cột VĐ)
+        _rct = str(r.get("return_code") or "")
+        vdt_cell = f'{_e(_rct)}' if _rct else '<span style="color:#cbd5e1">—</span>'
         body += (f'<tr><td>{i}</td>'
                  f'<td class="l"{clip_td}>{clip_cell}</td>'
                  f'<td class="l"{sapo_td}>{sapo_cell}</td>'
@@ -853,7 +851,7 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
               '<th class="l">🎥 Clip khui hàng (Dohana)<br><span style="font-weight:600;font-size:.85em">mã · thời lượng · giờ quay</span></th>'
               '<th class="l">📥 Đã nhận hàng trả (Sapo)<br><span style="font-weight:600;font-size:.85em">mã đơn · giờ nhận · NV</span></th>'
               '<th class="l">🚚 Mã VĐ gửi đi<br><span style="font-weight:600;font-size:.85em">(tra Sapo/sàn)</span></th>'
-              '<th class="l">🔙 Mã trả (VĐ hoàn về)<br><span style="font-weight:600;font-size:.85em">giao thất bại = mã Dohana</span></th>'
+              '<th class="l">🔙 Mã đơn trả<br><span style="font-weight:600;font-size:.85em">(tra trên sàn)</span></th>'
               '<th class="l">Sản phẩm (SKU × SL)</th><th class="l">Loại trả hàng</th>'
               '<th class="l">🏷️ Tag app đóng hàng</th></tr></thead>')
     _legend = ('<div style="font-size:.72em;color:#6b7280;margin:.25em 0 0">🔎 <b>Mã clip</b> = tra trên '

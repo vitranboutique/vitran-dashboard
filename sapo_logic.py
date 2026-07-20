@@ -2124,8 +2124,9 @@ def get_returns_received_today(fetch_json, scan_days: int = 60, max_pages: int =
             # Hiển thị MÃ TRA ĐƯỢC ở Sapo: ưu tiên mã đơn (sàn), kèm VĐ giao đi. KHÔNG show VĐ
             # hoàn-về (track) làm mã chính vì tra Sapo không ra (chỉ nằm trên phiếu hoàn).
             "order_code": order_name or x.get("name") or "?",
+            "return_code": x.get("name") or "",     # MÃ ĐƠN TRẢ (tra trên sàn, vd 585...-R1)
             "tracking": out_track or order_name or track or "?",
-            "track_return": track,
+            "track_return": track,                  # mã VĐ HOÀN VỀ (giao thất bại = VĐ đi)
             "carrier": si.get("carrier_name") or "?",
             "order_name": order_name,
             "sku": sku,
