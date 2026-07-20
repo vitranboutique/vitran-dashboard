@@ -1605,6 +1605,28 @@ def load_daily_return_video_codes(date_iso):
             missing.append(_label(row))
         elif row.get("has_clip") and not row.get("has_sapo"):
             extra.append(_label(row))
+    # Fallback đọc thẳng từ 2 nguồn A4 gốc để không mất mã nếu recon_rows chưa dựng đủ.
+    nk = rep.get("nhap_kho") or {}
+    for row in nk.get("detail") or []:
+        if not row.get("clip"):
+            missing.append(
+                f"VĐ đi/đóng: {str(row.get('tracking') or '').strip()} | "
+                f"VĐ hoàn: {str(row.get('track_return') or '').strip()} | "
+                f"Mã trả: {str(row.get('return_code') or '').strip()} | "
+                f"Mã đơn: {str(row.get('order_code') or '').strip()}"
+            )
+    abc = nk.get("all_by_code") or {}
+    for row in nk.get("clip_unmatched_detail") or []:
+        code = str(row.get("code") or "").strip()
+        info = abc.get(code) or {}
+        extra.append(
+            f"VĐ đi/đóng: {str(info.get('vd_gui') or '').strip()} | "
+            f"VĐ hoàn: {code} | "
+            f"Mã trả: {str(info.get('return_code') or '').strip()} | "
+            f"Mã đơn: {str(info.get('order_code') or '').strip()}"
+        )
+    missing = list(dict.fromkeys([x for x in missing if str(x or "").strip()]))
+    extra = list(dict.fromkeys([x for x in extra if str(x or "").strip()]))
     return {"return_missing": missing, "inbound_extra": extra}
 
 
@@ -2454,8 +2476,11 @@ def load_week_summary():
                         _a4_codes = load_daily_return_video_codes(iso)
                         _return_missing = _uniq(list(_return_missing) + list(_a4_codes.get("return_missing") or []))
                         _inbound_extra = _uniq(list(_inbound_extra) + list(_a4_codes.get("inbound_extra") or []))
-                    except Exception:
-                        pass
+                    except Exception as _a4e:
+                        if _need_ret:
+                            _return_missing = _uniq(list(_return_missing) + [f"Lỗi lấy mã A4 {iso}: {type(_a4e).__name__}"])
+                        if _need_inb_extra:
+                            _inbound_extra = _uniq(list(_inbound_extra) + [f"Lỗi lấy mã A4 {iso}: {type(_a4e).__name__}"])
                 if _need_ret and len(_return_missing) < _need_ret:
                     _seen_ret = set(_return_missing)
                     for _cand in _return_all_by_day.get(iso, []):
