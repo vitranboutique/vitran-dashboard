@@ -1838,7 +1838,7 @@ def load_week_summary():
             def _prefer_waybill_label(codes, fallback=""):
                 vals = [str(v or "").strip() for v in (codes or []) if str(v or "").strip()]
                 waybills = [v for v in vals if _is_waybill_code(v)]
-                picked = waybills or [str(fallback or "").strip() or "Chưa có vận đơn"]
+                picked = waybills or [str(fallback or "").strip()]
                 picked = list(dict.fromkeys([v for v in picked if v]))
                 return " · ".join(picked[:6]) + (f" · ...(+{len(picked) - 6})" if len(picked) > 6 else "")
 
@@ -2044,8 +2044,9 @@ def load_week_summary():
                             else:
                                 _group = [_code]
                             _label = _prefer_waybill_label(_group, "")
-                            _groups.append([c for c in _group if _is_waybill_code(c)])
-                            _labels.append(f"VĐ đi/đóng: {_label}")
+                            if _label:
+                                _groups.append([c for c in _group if _is_waybill_code(c)])
+                                _labels.append(f"VĐ đi/đóng: {_label}")
                     if not _groups:
                         continue
                     _pkg_codes = set(package_codes_by_day.get(_iso, []))
