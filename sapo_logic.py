@@ -2294,31 +2294,26 @@ def get_restocked_returns_range(fetch_json, days: int = 30, max_pages: int = 24)
         _recv_uid = next((u for u in (x.get("restocked_user_ids") or []) if u), None) or x.get("user_id")
         _recv_on = next((o for o in ons if _vn_date_of(o) == rdate), ons[0] if ons else None)
         _ct = _vn_date_of(x.get("created_on"))
-        # ── TIỀN + GIAN HÀNG chuẩn + LINK SÀN (giống _return_row_from_sapo_api để bảng đồng nhất) ──
+        # ── TIỀN + GIAN HÀNG + LINK SÀN — DỰNG Y HỆT get_returns_in_progress._return_detail_row (bảng Cần KN) ──
         _order = x.get("order") or {}
         _money = x.get("total_price") or _order.get("total_price")
         if _money in (None, "") and lis:
             _money = sum((li.get("total_price") or li.get("line_amount")
                           or ((li.get("price") or 0) * (li.get("quantity") or 0))) for li in lis)
-        _chan = _order.get("channel_definition") or x.get("channel_definition") or {}
-        _srcname = str(x.get("order_source") or _order.get("source_name") or _order.get("source")
-                       or _chan.get("source_name") or _chan.get("name") or "").strip()
-        _srcl = _srcname.lower()
-        _srclabel = {"tiktokshop": "Tiktokshop", "tiktok": "Tiktokshop",
-                     "shopee": "Shopee", "shopee2": "Shopee"}.get(_srcl, _srcname.title())
-        _branch = _chan.get("branch_name") or _chan.get("main_name") or "VITRAN BOUTIQUE"
-        # branch_name Sapo thường ĐÃ gồm nền tảng (vd "VITRAN BOUTIQUE - Tiktokshop") → đừng nối lại
-        _gh = (_branch if (_srclabel and _srclabel.lower() in _branch.lower())
-               else " - ".join(s for s in (_branch, _srclabel) if s))
-        _oc, _rcn = order_name or "", x.get("name") or ""
-        if "shopee" in _srcl:
-            _olink = shopee_order_detail_url(x, x, _order, keyword=_oc)
-            _rlink = shopee_return_detail_url(x, x, keyword=(_rcn or track or _oc))
-        elif "tiktok" in _srcl:
+        _chan = _order.get("channel_definition") or {}
+        _gh = (_chan.get("branch_name") or _chan.get("main_name")
+               or (x.get("order_source") or "").title() or "—")
+        _oc = _order.get("name") or x.get("name") or ""
+        _rcn = x.get("name") or ""
+        _osrc = (x.get("order_source") or "").lower()
+        if "tiktok" in _osrc:
             _olink = tiktok_order_detail_url(_oc)
             _rk = re.sub(r"[^A-Z0-9]+", "", str(_rcn).upper())
             _ok = re.sub(r"[^A-Z0-9]+", "", str(_oc).upper())
-            _rlink = _olink if (_rk and _rk == _ok) else tiktok_return_search_url(x, x, _rcn, track)
+            _rlink = _olink if (_rk and _rk == _ok) else tiktok_return_search_url(x, _rcn, track)
+        elif "shopee" in _osrc:
+            _olink = shopee_order_detail_url(x, _order, keyword=_oc)
+            _rlink = shopee_return_detail_url(x, keyword=_rcn or track or _oc)
         else:
             _olink = f"https://vitranboutiquehcm.mysapo.net/admin/orders/{_order.get('id')}" if _order.get("id") else ""
             _rlink = f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{x.get('id')}" if x.get("id") else ""
@@ -2342,8 +2337,8 @@ def get_restocked_returns_range(fetch_json, days: int = 30, max_pages: int = 24)
             "ly_do": _reason_vn.get(rsn, rsn or "—"),
             "loai_tra": _type_vn.get(x.get("return_type"), x.get("return_type") or "—"),
             "loai_tra_code": x.get("return_type") or "",
-            "gian_hang": _gh or (x.get("order_source") or "—"),   # "VITRAN BOUTIQUE - Tiktokshop/Shopee"
-            "order_source": _srcname,
+            "gian_hang": _gh,                          # = branch_name (đã gồm nền tảng) như bảng Cần KN
+            "order_source": x.get("order_source") or "",
             "carrier": si.get("carrier_name") or "",    # ĐVVC → ghép mềm clip khui khi mã VĐ hoàn lệch
             "codes": sorted(codes),
         })

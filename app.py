@@ -2304,7 +2304,12 @@ def load_week_summary():
                 _matched_by_day = _Dd(set)
                 _matched_inbound_codes_by_day = _Dd(set)
                 _return_missing_by_day = _Dd(list)
+                _return_all_by_day = _Dd(list)
                 for c in _cands:
+                    _cday0 = str(c.get("restock_date") or "")
+                    _clabel0 = _return_label(c)
+                    if _cday0 and _clabel0:
+                        _return_all_by_day[_cday0].append(_clabel0)
                     _hit = next((x for x in (_norm(z) for z in c.get("codes", [])) if x in _inbound_codes), None)
                     c["_exact"] = _hit
                     if _hit:
@@ -2359,6 +2364,7 @@ def load_week_summary():
                 _matched_vhoan = {}
                 _return_missing_by_day = {}
                 _inbound_extra_by_day = {}
+                _return_all_by_day = {}
 
             def _tagstr(cnt):
                 return " · ".join(f"{n} ×{c}" for n, c in cnt.items()) if cnt else ""
@@ -2389,6 +2395,15 @@ def load_week_summary():
                 _return_missing = _return_missing_by_day.get(iso, [])
                 _inbound_extra = _inbound_extra_by_day.get(iso, [])
                 _pkg_unknown = _package_unknown_unmatched_by_day.get(iso, [])
+                _need_ret = _day_video_limits(day).get("return_missing")
+                if _need_ret and len(_return_missing) < _need_ret:
+                    _seen_ret = set(_return_missing)
+                    for _cand in _return_all_by_day.get(iso, []):
+                        if _cand not in _seen_ret:
+                            _return_missing.append(_cand)
+                            _seen_ret.add(_cand)
+                        if len(_return_missing) >= _need_ret:
+                            break
                 _pkg_miss_vs_inbound_extra = _cross_matches(_pkg_missing, _inbound_extra)
                 _return_miss_vs_pkg_extra = _cross_matches(_return_missing, _pkg_extra)
                 _add_matrix(iso, _pkg_missing, _pkg_extra, _return_missing, _inbound_extra, _pkg_unknown, day)
