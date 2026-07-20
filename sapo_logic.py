@@ -2274,6 +2274,7 @@ def get_restocked_returns_range(fetch_json, days: int = 30, max_pages: int = 24)
             "loai_tra": _type_vn.get(x.get("return_type"), x.get("return_type") or "—"),
             "loai_tra_code": x.get("return_type") or "",
             "gian_hang": x.get("order_source") or "—",
+            "carrier": si.get("carrier_name") or "",    # ĐVVC → ghép mềm clip khui khi mã VĐ hoàn lệch
             "codes": sorted(codes),
         })
     out.sort(key=lambda r: r.get("restock_date", ""), reverse=True)   # mới nhập kho lên đầu

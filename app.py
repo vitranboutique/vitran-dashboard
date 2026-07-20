@@ -6717,12 +6717,16 @@ def _render_returns():
     st.title("📦 Đơn trả hàng đang xử lý (chưa nhập kho)")
 
     # ══════════ ĐƠN ĐÃ NHẬP KHO NHƯNG KHÔNG CÓ VIDEO KHUI — lưu VĨNH VIỄN ══════════
-    st.markdown("### 🚫 Đơn nhập kho nhưng KHÔNG có video khui")
-    st.caption("Đơn đã nhập LẠI kho (Sapo) nhưng KHÔNG có video khui hàng nào khớp mã trong **kho video "
-               "đã lưu** → nghi NV nhập kho nhầm / quên quay clip khui. Danh sách **lưu VĨNH VIỄN** (file "
-               "Gist riêng), KHÔNG mất khi Dohana xoá video. Video xuất hiện sau → tự gỡ. "
-               "🟡 Đơn **chưa có ghi chú chuẩn** (nhãn kết quả KN) được **tô vàng & đưa lên đầu** để xử lý trước. "
-               "Đã kiểm tra ổn thì chọn ở ô **Bỏ qua** cuối mục.")
+    _nv_help = ("Đơn đã nhập LẠI kho (Sapo) nhưng KHÔNG có video khui nào khớp (kể cả ghép mềm theo "
+                "ĐVVC + ngày như báo cáo A4) trong kho video đã lưu → nghi NV nhập kho nhầm / quên quay "
+                "clip khui. Lưu VĨNH VIỄN (Gist riêng), không mất khi Dohana xoá video; video xuất hiện "
+                "sau → tự gỡ. Đơn chưa có ghi chú chuẩn (nhãn KQ khiếu nại) được tô vàng & đưa lên đầu. "
+                "Link: Mã đơn → sàn (Shopee/TikTok) hoặc Sapo · Mã trả → phiếu trả Sapo · "
+                "VĐ trả về → app đóng hàng (Dohana). Ghi chú lấy từ kho ghi chú riêng của trang trả hàng. "
+                "Bỏ qua đơn đã kiểm tra ổn ở ô cuối mục.")
+    st.markdown('### 🚫 Đơn nhập kho nhưng KHÔNG có video khui '
+                f'<abbr title="{_esc(_nv_help)}" style="cursor:help;color:#2563eb;font-size:.72em;'
+                'text-decoration:none">ⓘ</abbr>', unsafe_allow_html=True)
     try:
         _nv = load_restock_novideo(days=30)
         _act = _nv.get("active", [])
@@ -6752,6 +6756,19 @@ def _render_returns():
             def _lnk(val, url):
                 v = _esc(str(val or ""))
                 return f"<a href='{_esc(url)}' target='_blank' rel='noopener'>{v}</a>" if (val and url) else (v or "—")
+
+            def _order_url(r):                       # Mã đơn → SÀN (Shopee/TikTok) hoặc Sapo
+                oc = str(r.get("order_code") or "").strip()
+                src = str(r.get("gian_hang") or "").lower()
+                if oc and "tiktok" in src:
+                    return _tiktok_order_url(oc)
+                if oc and "shopee" in src:
+                    return _shopee_order_url(oc)
+                return f"{_SAPO}/orders/{r.get('order_id')}" if r.get("order_id") else ""
+
+            def _dohana_url(r):                      # VĐ trả về → APP ĐÓNG HÀNG (Dohana nhập hàng hoàn)
+                code = str(r.get("vd_tra") or "").strip()
+                return _with_url_query("https://dhn.io.vn/order/inbound/", q=code, orderCode=code) if code else ""
             _ths = ["STT", "Cần KN", "Ngày nhập", "Ngày tạo", "Mã đơn", "Mã trả", "VĐ đi", "VĐ trả về",
                     "NV nhận", "SL", "Nhập", "SKU", "Lý do", "Loại trả", "Gian hàng", "Ghi chú"]
             _thh = "".join(f"<th style='position:sticky;top:0;background:#e5e7eb;border:1px solid #cbd5e1;"
@@ -6760,14 +6777,13 @@ def _render_returns():
             for _i, _r in enumerate(_act2, 1):
                 _need = not _r.get("_std")
                 _bg = "#fff6bf" if _need else "#ffffff"       # 🟡 tô vàng nếu chưa có ghi chú chuẩn
-                _rid, _oid = _r.get("return_id"), _r.get("order_id")
+                _rid = _r.get("return_id")
                 _rurl = f"{_SAPO}/order_returns/{_rid}" if _rid else ""
-                _ourl = f"{_SAPO}/orders/{_oid}" if _oid else ""
                 _gc = _esc(_r.get("ghi_chu", "") or "—").replace("\n", "<br>")
                 _cells = [str(_i), ("🟡 CẦN KN" if _need else "✓"),
                           _esc(_r.get("restock_date", "")), _esc(_r.get("ngay_tao", "")),
-                          _lnk(_r.get("order_code"), _ourl), _lnk(_r.get("return_code"), _rurl),
-                          _esc(_r.get("vd_di", "") or "—"), _lnk(_r.get("vd_tra"), _rurl),
+                          _lnk(_r.get("order_code"), _order_url(_r)), _lnk(_r.get("return_code"), _rurl),
+                          _esc(_r.get("vd_di", "") or "—"), _lnk(_r.get("vd_tra"), _dohana_url(_r)),
                           _esc(_r.get("nhan_vien", "") or "—"), str(_r.get("sp", 0)), str(_r.get("sp_nhap", 0)),
                           _esc(_r.get("sku", "") or "—"), _esc(_r.get("ly_do", "") or "—"),
                           _esc(_r.get("loai_tra", "") or "—"), _esc(_r.get("gian_hang", "") or "—"), _gc]
@@ -6780,8 +6796,6 @@ def _render_returns():
                         f"<table style='border-collapse:collapse;font-size:12px;width:100%'>"
                         f"<thead><tr>{_thh}</tr></thead><tbody>{_body}</tbody></table></div>",
                         unsafe_allow_html=True)
-            st.caption("🔗 Mã đơn → trang đơn Sapo · Mã trả / VĐ trả về → trang phiếu trả Sapo. "
-                       "Ghi chú lấy từ kho ghi chú riêng của trang trả hàng (không phải note Sapo).")
             _opts = [r.get("return_code") or r.get("order_code") for r in _act]
             _sel = st.multiselect("✔️ Bỏ qua đơn đã kiểm tra là ổn (ẩn khỏi cảnh báo, vẫn giữ trong sổ):",
                                   _opts, key="nv_dismiss_sel")
