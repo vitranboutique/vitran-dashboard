@@ -8827,7 +8827,7 @@ def _render_returns():
                     return f"<span class='reason-badge' title='{_safe(full)}'>{_safe(label)}</span>"
                 body = ""
                 for i, d in enumerate(items, _start + 1):
-                    bg = "background:#fff3cd" if d.get("need_kn") and _has_return_waybill(d) else ""
+                    bg = "background:#fff3cd" if d.get("need_kn") and (_has_return_waybill(d) or d.get("_restock_novideo")) else ""
                     note = d.get("note") or ""
                     note_display = f"📝 APP · {note}" if d.get("app_note") else note
                     tds = [f"<td class='r'>{i}</td>"]
