@@ -1842,25 +1842,26 @@ def load_week_summary():
                 picked = list(dict.fromkeys([v for v in picked if v]))
                 return " · ".join(picked[:6]) + (f" · ...(+{len(picked) - 6})" if len(picked) > 6 else "")
 
-            def _codes_from_items(items):
+            def _compare_code_line(item):
+                raw = str(item or "")
                 waybills, returns, orders = [], [], []
-                for item in items or []:
-                    raw = str(item or "")
-                    for token in _codes_from_item(item):
-                        if _is_waybill_code(token):
-                            waybills.append(token)
-                    returns.extend(re.findall(r"(?:Mã trả|Ma tra)\s*:\s*([A-Za-z0-9_.-]+)", raw, flags=re.I))
-                    returns.extend(re.findall(r"\b\d{12,24}-R\d+\b", raw))
-                    orders.extend(re.findall(r"(?:Mã đơn|Ma don)\s*:\s*([A-Za-z0-9_.-]+)", raw, flags=re.I))
-                return {
-                    "waybill": _short_codes(waybills),
-                    "return": _short_codes(returns),
-                    "order": _short_codes(orders),
-                }
+                for token in _codes_from_item(raw):
+                    if _is_waybill_code(token):
+                        waybills.append(token)
+                returns.extend(re.findall(r"(?:Mã trả|Ma tra)\s*:\s*([A-Za-z0-9_.-]+)", raw, flags=re.I))
+                returns.extend(re.findall(r"\b\d{12,24}-R\d+\b", raw))
+                orders.extend(re.findall(r"(?:Mã đơn|Ma don)\s*:\s*([A-Za-z0-9_.-]+)", raw, flags=re.I))
+                return f"VĐ: {_short_codes(waybills)} | Mã trả: {_short_codes(returns)} | Mã đơn: {_short_codes(orders)}"
 
-            def _compare_code_line(items):
-                c = _codes_from_items(items)
-                return f"VĐ: {c['waybill']} | Mã trả: {c['return']} | Mã đơn: {c['order']}"
+            def _compare_code_lines(*groups, limit=12):
+                items = []
+                for group in groups:
+                    items.extend(_uniq(group))
+                items = list(dict.fromkeys(items))
+                lines = [_compare_code_line(item) for item in items[:limit]]
+                if len(items) > limit:
+                    lines.append(f"...(+{len(items) - limit})")
+                return "\n".join(lines)
 
             def _code_match(a, b):
                 if not a or not b:
@@ -1948,7 +1949,7 @@ def load_week_summary():
                 _video_matrix.append({
                     "Ngày": iso,
                     "Nhóm tuổi": _audit_age(iso),
-                    "Mã đối chiếu": _compare_code_line(pkg_missing + pkg_extra + return_missing + inbound_extra),
+                    "Mã đối chiếu": _compare_code_lines(return_missing, pkg_missing, pkg_extra, inbound_extra),
                     "Đóng thiếu SL": len(pkg_missing),
                     "Đóng thiếu": _short_codes(pkg_missing),
                     "Đóng dư SL": len(pkg_extra),
