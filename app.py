@@ -2013,10 +2013,12 @@ def load_week_summary():
                 rem_inbound_extra_rows = [x for x in inbound_extra if x not in p1_extra]
                 rem_return_missing_rows = [x for x in return_missing if x not in p2_missing]
                 rem_pkg_extra_rows = [x for x in pkg_extra if x not in p2_extra]
+                pkg_unknown_rows = [f"Chưa khớp đơn: {x}" for x in pkg_unknown]
+                display_pkg_extra_rows = rem_pkg_extra_rows + pkg_unknown_rows
                 rem_pkg_missing = len(rem_pkg_missing_rows)
                 rem_inbound_extra = len(rem_inbound_extra_rows)
                 rem_return_missing = len(rem_return_missing_rows)
-                rem_pkg_extra = len(rem_pkg_extra_rows)
+                rem_pkg_extra = len(display_pkg_extra_rows)
                 parts = []
                 if rem_pkg_missing:
                     parts.append(f"Thiếu video đóng: {rem_pkg_missing}")
@@ -2026,8 +2028,6 @@ def load_week_summary():
                     parts.append(f"Dư video đóng: {rem_pkg_extra}")
                 if rem_inbound_extra:
                     parts.append(f"Dư video khui hoàn: {rem_inbound_extra}")
-                if pkg_unknown:
-                    parts.append(f"Video đóng chưa khớp đơn: {len(pkg_unknown)}")
                 if not parts and (pkg_missing or pkg_extra or return_missing or inbound_extra):
                     chot = "Đủ sau khi chuyển lộn mục"
                 elif parts:
@@ -2042,7 +2042,7 @@ def load_week_summary():
                     "Đóng thiếu SL": rem_pkg_missing,
                     "Đóng thiếu": _short_codes(rem_pkg_missing_rows),
                     "Đóng dư SL": rem_pkg_extra,
-                    "Đóng dư": _short_codes(rem_pkg_extra_rows),
+                    "Đóng dư": _short_codes(display_pkg_extra_rows),
                     "Hoàn thiếu SL": rem_return_missing,
                     "Hoàn thiếu": _short_codes(rem_return_missing_rows),
                     "Hoàn dư SL": rem_inbound_extra,
