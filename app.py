@@ -1963,6 +1963,28 @@ def load_week_summary():
                     return True
                 return any(_code_match(a, b) for a in atoks for b in btoks)
 
+            def _group_matches_video(group, video_code):
+                gtoks = []
+                for item in group or []:
+                    raw = str(item or "").strip()
+                    if not raw:
+                        continue
+                    gtoks.extend(_codes_from_item(raw) if "|" in raw or ":" in raw else [_ascii_code(raw)])
+                vtoks = _codes_from_item(video_code)
+                return any(_code_match(g, v) for g in gtoks for v in vtoks)
+
+            def _match_video_occurrences(groups, video_codes):
+                matched, used_videos = {}, set()
+                for gi, group in enumerate(groups or []):
+                    for vi, vc in enumerate(video_codes or []):
+                        if vi in used_videos:
+                            continue
+                        if _group_matches_video(group, vc):
+                            matched[gi] = (vi, vc)
+                            used_videos.add(vi)
+                            break
+                return matched, used_videos
+
             def _cross_matches(missing, extra, limit=20):
                 pairs = []
                 for miss in missing or []:
@@ -1983,13 +2005,13 @@ def load_week_summary():
                     mtoks = _codes_from_item(miss)
                     if not mtoks:
                         continue
-                    for ex in extra or []:
+                    for ex_idx, ex in enumerate(extra or []):
                         ex_key = str(ex or "").strip()
-                        if not ex_key or ex_key in used_extra:
+                        if not ex_key or ex_idx in used_extra:
                             continue
                         if _match_tokens(miss, ex_key):
                             pairs.append((str(miss).strip(), ex_key))
-                            used_extra.add(ex_key)
+                            used_extra.add(ex_idx)
                             break
                 return pairs
 
@@ -1998,10 +2020,10 @@ def load_week_summary():
 
             def _add_matrix(iso, pkg_missing, pkg_extra, return_missing, inbound_extra, pkg_unknown=None):
                 pkg_missing = _uniq(pkg_missing)
-                pkg_extra = _uniq(pkg_extra)
+                pkg_extra = [str(v or "").strip() for v in (pkg_extra or []) if str(v or "").strip()]
                 return_missing = _uniq(return_missing)
-                inbound_extra = _uniq(inbound_extra)
-                pkg_unknown = _uniq(pkg_unknown)
+                inbound_extra = [str(v or "").strip() for v in (inbound_extra or []) if str(v or "").strip()]
+                pkg_unknown = [str(v or "").strip() for v in (pkg_unknown or []) if str(v or "").strip()]
                 p1 = _cross_match_pairs(pkg_missing, inbound_extra)      # thiếu đóng ↔ dư khui
                 p2 = _cross_match_pairs(return_missing, pkg_extra)       # thiếu khui ↔ dư đóng
                 match_txt = _short_codes([f"{a} ↔ {b}" for a, b in (p1 + p2)], limit=16)
@@ -2126,11 +2148,10 @@ def load_week_summary():
                                 _group = [_code]
                             _groups.append(_match_codes_from_group(_group, _code))
                             _labels.append(_package_context_label(_group, _code))
-                    _pkg_codes = set(package_codes_by_day.get(_iso, [])) | set(package_unknown_by_day.get(_iso, []))
-                    _matched, _font = match_packing_videos(_groups, _pkg_codes) if _groups else ({}, [])
-                    _matched_vids = {str(v[0]).strip() for v in _matched.values() if v and str(v[0]).strip()}
+                    _pkg_codes = list(package_codes_by_day.get(_iso, [])) + list(package_unknown_by_day.get(_iso, []))
+                    _matched, _matched_vid_idxs = _match_video_occurrences(_groups, _pkg_codes) if _groups else ({}, set())
                     _missing = [_labels[i] for i in range(len(_labels)) if i not in _matched]
-                    _extra_raw = sorted(_pkg_codes - _matched_vids)
+                    _extra_raw = [c for i, c in enumerate(_pkg_codes) if i not in _matched_vid_idxs]
                     _extra = [_package_context_label([c], c) for c in _extra_raw
                               if _is_waybill_code(c) or _order_context_label(c) or _is_order_code(c)]
                     _unknown_extra = [c for c in _extra_raw
