@@ -1850,6 +1850,27 @@ def load_week_summary():
                     raw = raw.split(":", 1)[1].strip()
                 return raw
 
+            def _short_display_code(item, prefer=""):
+                raw = _display_code_raw(item)
+                if not raw:
+                    return ""
+                if "|" not in raw and ":" not in raw:
+                    return raw
+                def _field(pattern):
+                    m = re.search(pattern, raw, flags=re.I)
+                    if not m:
+                        return ""
+                    return _short_codes(_codes_from_item(m.group(1)), limit=3)
+                if prefer == "return":
+                    got = _field(r"(?:VĐ hoàn|VD hoan)\s*:\s*([^|]+)")
+                    if got:
+                        return got
+                got = _field(r"(?:VĐ đi/đóng|VD di/dong|VĐ đóng|VD dong|VĐ đi|VD di)\s*:\s*([^|]+)")
+                if got:
+                    return got
+                got = _field(r"(?:Mã đơn|Ma don|Mã trả|Ma tra)\s*:\s*([^|]+)")
+                return got or raw
+
             def _is_waybill_code(code):
                 s = _ascii_code(code)
                 if not s:
@@ -2024,12 +2045,37 @@ def load_week_summary():
             def _uniq(vals):
                 return list(dict.fromkeys([str(v or "").strip() for v in (vals or []) if str(v or "").strip()]))
 
-            def _add_matrix(iso, pkg_missing, pkg_extra, return_missing, inbound_extra, pkg_unknown=None):
+            def _day_video_limits(day):
+                if not isinstance(day, dict):
+                    return {}
+                def _n(key):
+                    try:
+                        return int(round(float(day.get(key) or 0)))
+                    except Exception:
+                        return 0
+                _dispute = sum(int(x) for x in re.findall(r"×\s*(\d+)", str(day.get("tag_hoan") or "")))
+                _pkg_gap = _n("soan") - _n("vid_dong")
+                _ret_gap = _dispute + _n("hoan_don") - _n("vid_hoan")
+                return {
+                    "pkg_missing": max(_pkg_gap, 0),
+                    "pkg_extra": max(-_pkg_gap, 0),
+                    "return_missing": max(_ret_gap, 0),
+                    "inbound_extra": max(-_ret_gap, 0),
+                }
+
+            def _limit_rows(rows, limit):
+                rows = list(rows or [])
+                if limit is None:
+                    return rows
+                return rows[:max(0, int(limit or 0))]
+
+            def _add_matrix(iso, pkg_missing, pkg_extra, return_missing, inbound_extra, pkg_unknown=None, day=None):
                 pkg_missing = _uniq(pkg_missing)
                 pkg_extra = [str(v or "").strip() for v in (pkg_extra or []) if str(v or "").strip()]
                 return_missing = _uniq(return_missing)
                 inbound_extra = [str(v or "").strip() for v in (inbound_extra or []) if str(v or "").strip()]
                 pkg_unknown = [str(v or "").strip() for v in (pkg_unknown or []) if str(v or "").strip()]
+                limits = _day_video_limits(day)
                 p1 = _cross_match_pairs(pkg_missing, inbound_extra)      # thiếu đóng ↔ dư khui
                 p2 = _cross_match_pairs(return_missing, pkg_extra)       # thiếu khui ↔ dư đóng
                 match_txt = _short_codes([f"{a} ↔ {b}" for a, b in (p1 + p2)], limit=16)
@@ -2043,6 +2089,10 @@ def load_week_summary():
                 rem_pkg_extra_rows = [x for x in pkg_extra if x not in p2_extra]
                 pkg_unknown_rows = [f"Chưa khớp đơn: {x}" for x in pkg_unknown]
                 display_pkg_extra_rows = rem_pkg_extra_rows + pkg_unknown_rows
+                rem_pkg_missing_rows = _limit_rows(rem_pkg_missing_rows, limits.get("pkg_missing"))
+                rem_inbound_extra_rows = _limit_rows(rem_inbound_extra_rows, limits.get("inbound_extra"))
+                rem_return_missing_rows = _limit_rows(rem_return_missing_rows, limits.get("return_missing"))
+                display_pkg_extra_rows = _limit_rows(display_pkg_extra_rows, limits.get("pkg_extra"))
                 rem_pkg_missing = len(rem_pkg_missing_rows)
                 rem_inbound_extra = len(rem_inbound_extra_rows)
                 rem_return_missing = len(rem_return_missing_rows)
@@ -2062,20 +2112,23 @@ def load_week_summary():
                     chot = "Còn lệch: " + "; ".join(parts)
                 else:
                     return
+                def _disp(vals, prefer=""):
+                    return [_short_display_code(v, prefer) for v in vals if _short_display_code(v, prefer)]
                 _video_matrix.append({
                     "Ngày": iso,
                     "Nhóm tuổi": _audit_age(iso),
                     "Mã đối chiếu": _compare_code_lines(rem_return_missing_rows, rem_pkg_missing_rows,
                                                         rem_pkg_extra_rows, rem_inbound_extra_rows),
                     "Đóng thiếu SL": rem_pkg_missing,
-                    "Đóng thiếu": _short_codes(rem_pkg_missing_rows),
+                    "Đóng thiếu": _short_codes(_disp(rem_pkg_missing_rows, "package")),
                     "Đóng dư SL": rem_pkg_extra,
-                    "Đóng dư": _short_codes(display_pkg_extra_rows),
+                    "Đóng dư": _short_codes(_disp(display_pkg_extra_rows, "package")),
                     "Hoàn thiếu SL": rem_return_missing,
-                    "Hoàn thiếu": _short_codes(rem_return_missing_rows),
+                    "Hoàn thiếu": _short_codes(_disp(rem_return_missing_rows, "return")),
                     "Hoàn dư SL": rem_inbound_extra,
-                    "Hoàn dư": _short_codes(rem_inbound_extra_rows),
-                    "Khớp lộn mục": match_txt,
+                    "Hoàn dư": _short_codes(_disp(rem_inbound_extra_rows, "return")),
+                    "Khớp lộn mục": _short_codes([f"{_short_display_code(a)} ↔ {_short_display_code(b)}"
+                                                  for a, b in (p1 + p2)], limit=16),
                     "Video chưa khớp đơn": _short_codes(pkg_unknown),
                     "Chốt": chot,
                 })
@@ -2338,7 +2391,7 @@ def load_week_summary():
                 _pkg_unknown = _package_unknown_unmatched_by_day.get(iso, [])
                 _pkg_miss_vs_inbound_extra = _cross_matches(_pkg_missing, _inbound_extra)
                 _return_miss_vs_pkg_extra = _cross_matches(_return_missing, _pkg_extra)
-                _add_matrix(iso, _pkg_missing, _pkg_extra, _return_missing, _inbound_extra, _pkg_unknown)
+                _add_matrix(iso, _pkg_missing, _pkg_extra, _return_missing, _inbound_extra, _pkg_unknown, day)
                 _add_audit(
                     iso, "Thiếu video đóng hàng", _pkg_missing,
                     _inbound_extra,
