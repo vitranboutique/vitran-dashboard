@@ -2125,23 +2125,28 @@ def load_week_summary():
                         return None
 
                 def _return_label(c):
-                    vals = [
-                        c.get("vd_tra"),
-                        *(c.get("codes") or []),
-                        c.get("return_code"),
-                        c.get("order_code"),
-                    ]
-                    wb = _prefer_waybill_label(vals, "")
+                    vd_tra = str(c.get("vd_tra") or "").strip()
+                    vals = [*(c.get("codes") or []), c.get("return_code"), c.get("order_code")]
+                    all_wbs = [str(v or "").strip() for v in vals if _is_waybill_code(v)]
+                    out_wbs = [v for v in all_wbs if _ascii_code(v) != _ascii_code(vd_tra)]
+                    wb = vd_tra or _prefer_waybill_label(all_wbs, "")
                     rc = str(c.get("return_code") or "").strip()
                     oc = str(c.get("order_code") or "").strip()
                     parts = []
+                    parts.append(f"VĐ đi/đóng: {_short_codes(out_wbs)}")
                     if wb and wb != "Chưa có vận đơn":
                         parts.append(f"VĐ hoàn: {wb}")
+                    else:
+                        parts.append("VĐ hoàn:")
                     if rc:
                         parts.append(f"Mã trả: {rc}")
+                    else:
+                        parts.append("Mã trả:")
                     if oc:
                         parts.append(f"Mã đơn: {oc}")
-                    return " | ".join(parts) or "VĐ hoàn: | Mã trả: | Mã đơn:"
+                    else:
+                        parts.append("Mã đơn:")
+                    return " | ".join(parts)
 
                 _inb = [
                     (_norm(r.get("code")), _cg(r.get("code")), _pdate(r.get("date")))
@@ -2149,6 +2154,13 @@ def load_week_summary():
                 ]
                 _inbound_codes = {c for c, _cgx, _dx in _inb}
                 _cands = L.get_restocked_returns_range(make_fetch_json(build_session()), days=32, max_pages=30)
+                _return_label_by_code = {}
+                for c in _cands:
+                    _label = _return_label(c)
+                    for z in [c.get("vd_tra"), c.get("return_code"), c.get("order_code"), *(c.get("codes") or [])]:
+                        nz = _norm(z)
+                        if nz:
+                            _return_label_by_code.setdefault(nz, _label)
                 _exact_used = set()
                 _matched_by_day = _Dd(set)
                 _matched_inbound_codes_by_day = _Dd(set)
@@ -2200,7 +2212,10 @@ def load_week_summary():
                 for dd, codes in inbound_codes_by_day.items():
                     _raw = {_norm(c) for c in codes if _norm(c)}
                     _used = set(_matched_inbound_codes_by_day.get(dd, set())) | set(_tagged_inbound_codes_by_day.get(dd, set()))
-                    _inbound_extra_by_day[dd] = sorted(_raw - _used)
+                    _inbound_extra_by_day[dd] = [
+                        _return_label_by_code.get(c) or f"VĐ đi/đóng: | VĐ hoàn: {c} | Mã trả: | Mã đơn:"
+                        for c in sorted(_raw - _used)
+                    ]
             except Exception:
                 _matched_vhoan = {}
                 _return_missing_by_day = {}
