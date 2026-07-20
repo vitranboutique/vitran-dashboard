@@ -2307,7 +2307,9 @@ def get_restocked_returns_range(fetch_json, days: int = 30, max_pages: int = 24)
         _srclabel = {"tiktokshop": "Tiktokshop", "tiktok": "Tiktokshop",
                      "shopee": "Shopee", "shopee2": "Shopee"}.get(_srcl, _srcname.title())
         _branch = _chan.get("branch_name") or _chan.get("main_name") or "VITRAN BOUTIQUE"
-        _gh = " - ".join(s for s in (_branch, _srclabel) if s)
+        # branch_name Sapo thường ĐÃ gồm nền tảng (vd "VITRAN BOUTIQUE - Tiktokshop") → đừng nối lại
+        _gh = (_branch if (_srclabel and _srclabel.lower() in _branch.lower())
+               else " - ".join(s for s in (_branch, _srclabel) if s))
         _oc, _rcn = order_name or "", x.get("name") or ""
         if "shopee" in _srcl:
             _olink = shopee_order_detail_url(x, x, _order, keyword=_oc)

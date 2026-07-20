@@ -2519,8 +2519,7 @@ def load_restock_novideo(days: int = 30):
     changed = False
     _DISPLAY = ("order_code", "return_id", "order_id", "order_link", "return_link", "vd_di", "vd_tra",
                 "ngay_tao", "restock_date", "recv_time", "nhan_vien", "sku", "sp", "sp_nhap", "money",
-                "ly_do", "loai_tra", "loai_tra_code", "gian_hang", "order_source", "ghi_chu",
-                "_shop_enriched")
+                "ly_do", "loai_tra", "loai_tra_code", "gian_hang", "order_source", "ghi_chu")
     # AN TOÀN: kho video rỗng (Dohana 429 / chưa sync) → KHÔNG dò (tránh gắn oan cả loạt vào sổ vĩnh
     # viễn). Chỉ giữ nguyên sổ cũ. UI sẽ báo "kho video trống".
     if not inbound_codes:
@@ -2593,18 +2592,6 @@ def load_restock_novideo(days: int = 30):
                 changed = True
             continue
         it = items.get(key)                                # KHÔNG khớp video khui nào
-        # Shopee có 2 shop → Chrome launcher cần ĐÚNG shop; list endpoint thiếu channel_definition nên
-        # gian_hang fallback "VITRAN BOUTIQUE" (dễ sai shop). Lấy full order 1 LẦN → set gian_hang đúng shop.
-        if ("shopee" in str(c.get("order_source") or c.get("gian_hang") or "").lower()
-                and c.get("order_id") and not (it and it.get("_shop_enriched"))):
-            try:
-                _cdef = (get_order(build_session(), c.get("order_id")) or {}).get("channel_definition") or {}
-                _shopnm = _cdef.get("branch_name") or _cdef.get("main_name")
-                if _shopnm:
-                    c["gian_hang"] = f"{_shopnm} - Shopee"
-                c["_shop_enriched"] = True
-            except Exception:
-                pass
         if it is None:
             rec = {k: c.get(k) for k in _DISPLAY}
             rec.update({"return_code": key, "status": "active",
