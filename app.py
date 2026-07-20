@@ -454,7 +454,6 @@ def _week_table_html(data):
         out = {}
         for k, lech, tip in (
             ("vid_dong", _n("soan") - _n("vid_dong"), "Soạn − Đóng gói(video): đơn đã nhặt mà chưa gói/quay video"),
-            ("vid_hoan", _n("hoan_don") - _n("vid_hoan"), "Hoàn đơn − Vid hoàn (lệch video hoàn)"),
             ("shipper_nhan", (0 if d.get("is_today") else _n("soan") - _n("huy_sau") - _n("shipper_nhan")),
              "Shipper nhận nên = Soạn (đơn) − Hủy sau soạn. Lệch = đơn đã soạn mà chưa giao shipper "
              "(còn tồn / hủy sau soạn chưa trừ / lệch ngày giao)."),
@@ -467,27 +466,30 @@ def _week_table_html(data):
                                 "Ngày đã quá hạn Dohana (~25 ngày) — không đồng bộ lại được. "
                                 "Số video có thể thiếu do kho lưu lúc đó chưa đầy, KHÔNG chắc NV quên quay")
                 continue
-            if k == "vid_hoan" and lech < 0:   # DƯ video hoàn → tách phần tranh chấp (đúng) vs dư thật
-                du = -lech
-                ok = min(du, _dispute)         # phần dư giải thích được bởi tag tranh chấp = ĐÚNG QUY TRÌNH
-                extra = du - ok                # phần dư còn lại = cảnh báo
-                _b = ""
-                if ok:
-                    _b += _badge("▲", "#047857", "#d1fae5", "✓ tráo/đã dùng", ok,
-                                 "Video khui có tag tranh chấp (tráo/đã dùng/hư/thiếu) → NV KHÔNG nhập "
-                                 "kho là ĐÚNG QUY TRÌNH, không tính lỗi. ⚠️ Nếu các đơn này LẠI được nhập "
-                                 "kho thì mới là sai.")
-                if extra:
-                    _b += _badge("▲", "#1d4ed8", "#dbeafe", "dư", extra,
-                                 "Video khui DƯ hơn cả đơn hoàn lẫn tag tranh chấp — kiểm lại "
-                                 "(quay lộn vị trí / quay dư / thiếu gắn tag).")
-                if _b:
-                    out[k] = _b
-                continue
             if lech > 0:      # THIẾU (đỏ) — bên này thiếu video, cần quay bù / chuyển tới
                 out[k] = _badge("▼", "#b91c1c", "#fee2e2", "thiếu", abs(lech), tip)
             else:             # DƯ (xanh) — bên này dư video, có thể quay lộn sang → chuyển đi
                 out[k] = _badge("▲", "#1d4ed8", "#dbeafe", "dư", abs(lech), tip)
+
+        # ── VID HOÀN: đo "THIẾU CLIP KHUI" (đơn hoàn CHƯA quay) TRỰC TIẾP, không bị triệt tiêu ──
+        # Đơn tráo/đã dùng/hư (tag_hoan) CÓ quay clip nhưng KHÔNG nhập kho → làm Vid hoàn "dư" hơn
+        # Hoàn(nhập kho); phần dư đó dễ che lấp 1 đơn chưa quay khiến "lệch" = 0 (giấu lỗi). Cộng bù
+        # phần tráo để lộ đúng số đơn chưa quay: thiếu clip = tag tranh chấp + Hoàn nhập kho − Vid hoàn.
+        _tc = _dispute + _n("hoan_don") - _n("vid_hoan")
+        if _tc > 0:
+            if _stale:        # ngoài hạn Dohana → kho video lúc đó có thể chưa đầy, KHÔNG đổ lỗi NV
+                out["vid_hoan"] = _badge("▽", "#64748b", "#f1f5f9", "kho cũ", _tc,
+                    "Ngày quá hạn Dohana (~25 ngày) — kho video lúc đó có thể chưa đầy, "
+                    "KHÔNG chắc NV quên quay.")
+            else:
+                out["vid_hoan"] = _badge("⚠", "#b91c1c", "#fee2e2", "chưa quay", _tc,
+                    "THIẾU CLIP KHUI = (tag tráo/đã dùng/hư) + Hoàn nhập kho − Vid hoàn. >0 = còn đơn "
+                    "hoàn CHƯA quay clip khui (đã bù phần tráo/đã dùng vốn CÓ quay mà không nhập kho). "
+                    "Mở báo cáo A4 ngày này để biết ĐƠN nào chưa quay.")
+        elif _tc < 0:
+            out["vid_hoan"] = _badge("▲", "#1d4ed8", "#dbeafe", "video lẻ", -_tc,
+                "Video khui DƯ hơn cả đơn hoàn lẫn tag tráo/đã dùng — có thể NV quay LỘN bên đóng "
+                "hàng, quay dư, hoặc quên gắn tag. Mở A4 để đối chiếu.")
         return out
 
     head = "".join(
@@ -5913,14 +5915,16 @@ def _render_daily():
             for _d in _wk.get("days", []):
                 _d["ghi_chu"] = _notes.get(_d.get("iso"), "")
             st.markdown(_week_table_html(_wk), unsafe_allow_html=True)
-            st.caption('Badge lệch cạnh số — 🔴 **▼ thiếu** (đỏ): bên này THIẾU video, cần quay bù '
-                       'hoặc chuyển video từ bên kia sang · 🔵 **▲ dư** (xanh dương): bên này DƯ video, '
-                       'có thể NV quay lộn vị trí → chuyển bớt sang bên kia · '
-                       '🟢 **▲ ✓ tráo/đã dùng** (xanh lá): Vid hoàn dư vì hàng khách tráo / đã dùng / hư / '
-                       'thiếu — NV **không nhập kho là ĐÚNG**, KHÔNG tính lỗi (chỉ sai nếu các đơn này lại '
-                       'bị nhập kho). '
-                       'Đối chiếu đóng: **Soạn** vs **Đóng gói (video)** · **Shipper nhận** nên = **Soạn (đơn) − Hủy sau soạn** '
-                       '(lệch → cảnh báo) · Đối chiếu hoàn: **Vid hoàn** vs Hoàn đơn. '
+            st.caption('Badge cạnh số — **Đóng gói (video):** 🔴 **▼ thiếu** = đơn đã soạn mà chưa gói/quay video · '
+                       '🔵 **▲ dư** = quay dư/lộn.  ·  '
+                       '**Vid hoàn:** 🔴 **⚠ chưa quay** (đỏ) = còn đơn hoàn CHƯA quay clip khui — số này ĐÃ CỘNG BÙ '
+                       'phần tráo/đã dùng (vốn có quay mà không nhập kho) nên **không bị giấu dù Vid hoàn = Hoàn đơn**; '
+                       'mở báo cáo A4 ngày đó để biết ĐƠN nào chưa quay · '
+                       '🔵 **▲ video lẻ** (xanh) = video khui dư hơn cả đơn hoàn lẫn tráo → NV quay LỘN bên đóng hàng / '
+                       'quay dư / quên gắn tag. '
+                       '👉 Đơn **tráo / đã dùng / hư** (KHÔNG nhập kho là ĐÚNG) xem ở cột **Tag hoàn**. '
+                       'Công thức thiếu clip = **Tag tranh chấp + Hoàn nhập kho − Vid hoàn**. '
+                       '**Shipper nhận** nên = **Soạn (đơn) − Hủy sau soạn** (lệch → cảnh báo). '
                        '2 cột hủy (tổng = báo cáo): **Hủy sau soạn** (đỏ) ưu tiên theo mã hủy có nằm trong phiếu nhặt '
                        '(kể cả hôm nay); ngày cũ thiếu mã thì suy ra từ **Soạn − Shipper nhận**, kẹp trong [0, tổng Hủy]. '
                        '**Hủy trước soạn** = Hủy − Hủy sau soạn (khách hủy sớm). '
