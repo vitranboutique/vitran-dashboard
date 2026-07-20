@@ -635,7 +635,7 @@ def _render_week_video_audit(data):
                     f'<td style="padding:6px 8px;border:1px solid #d6dce6;text-align:right;font-weight:800">{_num(r.get("Hoàn dư SL"))}</td>',
                     _fmt_cell(r.get("Hoàn dư")),
                     _fmt_cell(r.get("Khớp lộn mục"), has_match),
-                    _fmt_cell(r.get("Video chưa đọc VĐ")),
+                    _fmt_cell(r.get("Video chưa khớp đơn")),
                     f'<td style="padding:6px 8px;border:1px solid #d6dce6;background:{chot_bg};font-weight:800;vertical-align:top">{_esc(chot)}</td>',
                     "</tr>",
                 ]
@@ -652,7 +652,7 @@ def _render_week_video_audit(data):
       <th colspan="4" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#dbeafe">Đóng hàng</th>
       <th colspan="4" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#ffedd5">Nhập hàng hoàn</th>
       <th rowspan="2" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#fef3c7;min-width:220px">Khớp lộn mục</th>
-      <th rowspan="2" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#f8fafc;min-width:190px">Video chưa đọc VĐ</th>
+      <th rowspan="2" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#f8fafc;min-width:190px">Video chưa khớp đơn</th>
       <th rowspan="2" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#f1f5f9;min-width:160px">Chốt</th>
     </tr>
     <tr>
@@ -1842,6 +1842,32 @@ def load_week_summary():
                 picked = list(dict.fromkeys([v for v in picked if v]))
                 return " · ".join(picked[:6]) + (f" · ...(+{len(picked) - 6})" if len(picked) > 6 else "")
 
+            def _is_order_code(code):
+                s = _ascii_code(code)
+                if not s or _is_waybill_code(s):
+                    return False
+                if s.startswith("FUN") or s.startswith("SAPO"):
+                    return False
+                if s.isdigit() and len(s) < 12:
+                    return False
+                if s.startswith(("58", "26", "25")) and len(s) >= 10:
+                    return True
+                return bool(re.search(r"[A-Z]", s) and re.search(r"\d", s) and len(s) >= 8)
+
+            def _codes_from_group(group):
+                vals = [str(v or "").strip() for v in (group or []) if str(v or "").strip()]
+                waybills = [v for v in vals if _is_waybill_code(v)]
+                orders = [v for v in vals if _is_order_code(v)]
+                return _short_codes(waybills), _short_codes(orders)
+
+            def _package_label(group, video_code=""):
+                wb, oc = _codes_from_group(group)
+                if not wb and _is_waybill_code(video_code):
+                    wb = str(video_code).strip()
+                if not oc and _is_order_code(video_code):
+                    oc = str(video_code).strip()
+                return f"VĐ đi/đóng: {wb} | VĐ hoàn: | Mã trả: | Mã đơn: {oc}"
+
             def _compare_code_line(item):
                 raw = str(item or "")
                 outbound_wbs, return_wbs, returns, orders = [], [], [], []
@@ -1951,7 +1977,7 @@ def load_week_summary():
                 if rem_inbound_extra:
                     parts.append(f"Dư video khui hoàn: {rem_inbound_extra}")
                 if pkg_unknown:
-                    parts.append(f"Video đóng chưa đọc VĐ: {len(pkg_unknown)}")
+                    parts.append(f"Video đóng chưa khớp đơn: {len(pkg_unknown)}")
                 if not parts and (pkg_missing or pkg_extra or return_missing or inbound_extra):
                     chot = "Đủ sau khi chuyển lộn mục"
                 elif parts:
@@ -1971,7 +1997,7 @@ def load_week_summary():
                     "Hoàn dư SL": len(inbound_extra),
                     "Hoàn dư": _short_codes(inbound_extra),
                     "Khớp lộn mục": match_txt,
-                    "Video chưa đọc VĐ": _short_codes(pkg_unknown),
+                    "Video chưa khớp đơn": _short_codes(pkg_unknown),
                     "Chốt": chot,
                 })
 
@@ -2031,7 +2057,7 @@ def load_week_summary():
                         thoan.setdefault(d, _Ct())[tn] += 1
             _mpref = (data.get("days") or [{}])[0].get("iso", "")[:7]   # 'YYYY-MM' tháng này
 
-            _package_missing_by_day, _package_extra_by_day = {}, {}
+            _package_missing_by_day, _package_extra_by_day, _package_unknown_unmatched_by_day = {}, {}, {}
             try:
                 for _iso, _summ in (_psumm if "_psumm" in locals() else {}).items():
                     _groups, _labels = [], []
@@ -2043,21 +2069,22 @@ def load_week_summary():
                                 _group = [str(c).strip() for c in _code_groups[_idx] if str(c).strip()]
                             else:
                                 _group = [_code]
-                            _label = _prefer_waybill_label(_group, "")
-                            if _label:
-                                _groups.append([c for c in _group if _is_waybill_code(c)])
-                                _labels.append(f"VĐ đi/đóng: {_label}")
+                            _groups.append(_group)
+                            _labels.append(_package_label(_group, _code))
                     if not _groups:
                         continue
-                    _pkg_codes = set(package_codes_by_day.get(_iso, []))
+                    _pkg_codes = set(package_codes_by_day.get(_iso, [])) | set(package_unknown_by_day.get(_iso, []))
                     _matched, _font = match_packing_videos(_groups, _pkg_codes)
                     _matched_vids = {str(v[0]).strip() for v in _matched.values() if v and str(v[0]).strip()}
                     _missing = [_labels[i] for i in range(len(_labels)) if i not in _matched]
-                    _extra = sorted(_pkg_codes - _matched_vids)
+                    _extra_raw = sorted(_pkg_codes - _matched_vids)
+                    _extra = [_package_label([c], c) for c in _extra_raw if _is_waybill_code(c)]
+                    _unknown_extra = [c for c in _extra_raw if not _is_waybill_code(c)]
                     _package_missing_by_day[_iso] = _missing
                     _package_extra_by_day[_iso] = _extra
+                    _package_unknown_unmatched_by_day[_iso] = _unknown_extra
             except Exception:
-                _package_missing_by_day, _package_extra_by_day = {}, {}
+                _package_missing_by_day, _package_extra_by_day, _package_unknown_unmatched_by_day = {}, {}, {}
 
             # Vid hoàn phải là clip KHỚP đơn hoàn, không phải tổng clip inbound thô.
             # Nếu đếm thô, video quay dư/sai mã/ngày có thể che mất các đơn thật sự chưa quay.
@@ -2114,7 +2141,7 @@ def load_week_summary():
                         parts.append(f"Mã trả: {rc}")
                     if oc:
                         parts.append(f"Mã đơn: {oc}")
-                    return " | ".join(parts) or "Chưa có vận đơn"
+                    return " | ".join(parts) or "VĐ hoàn: | Mã trả: | Mã đơn:"
 
                 _inb = [
                     (_norm(r.get("code")), _cg(r.get("code")), _pdate(r.get("date")))
@@ -2207,7 +2234,7 @@ def load_week_summary():
                 _pkg_extra = _package_extra_by_day.get(iso, [])
                 _return_missing = _return_missing_by_day.get(iso, [])
                 _inbound_extra = _inbound_extra_by_day.get(iso, [])
-                _pkg_unknown = package_unknown_by_day.get(iso, [])
+                _pkg_unknown = _package_unknown_unmatched_by_day.get(iso, [])
                 _pkg_miss_vs_inbound_extra = _cross_matches(_pkg_missing, _inbound_extra)
                 _return_miss_vs_pkg_extra = _cross_matches(_return_missing, _pkg_extra)
                 _add_matrix(iso, _pkg_missing, _pkg_extra, _return_missing, _inbound_extra, _pkg_unknown)
