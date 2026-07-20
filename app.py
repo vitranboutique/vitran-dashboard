@@ -6429,8 +6429,26 @@ def _render_returns():
                 "order_code": row.get("order_code") or "",
                 "return_code": row.get("return_code") or "",
                 "vd_tra": row.get("vd_tra") or "",
+                "vd_di": row.get("vd_di") or "",
                 "updated_at": (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%Y-%m-%d %H:%M:%S"),
             }
+
+        def _upsert_closed_note_aliases(store, row, note_text):
+            item = _note_meta(row, note_text)
+            keys = _closed_return_note_keys(row)
+            if not keys:
+                return 0
+            for key in keys:
+                store[key] = dict(item)
+            return len(keys)
+
+        def _delete_closed_note_aliases(store, row):
+            removed = 0
+            for key in _closed_return_note_keys(row):
+                if key in store:
+                    store.pop(key, None)
+                    removed += 1
+            return removed
 
         def _match_closed_note_keys(text):
             tokens = re.findall(r"[A-Za-z0-9][A-Za-z0-9_\-]{4,}", str(text or ""))
@@ -6483,7 +6501,7 @@ def _render_returns():
                     else:
                         new_notes = dict(notes or {})
                         for key in keys:
-                            new_notes[key] = _note_meta(row_map.get(key) or {}, quick_note)
+                            _upsert_closed_note_aliases(new_notes, row_map.get(key) or {}, quick_note)
                         if _save_closed_return_app_notes(new_notes):
                             msg = f"Đã lưu ghi chú app cho {len(keys)} đơn."
                             if missing:
@@ -6517,7 +6535,7 @@ def _render_returns():
                     else:
                         new_notes = dict(notes or {})
                         for key in keys:
-                            new_notes[key] = _note_meta(row_map.get(key) or {}, bulk_note)
+                            _upsert_closed_note_aliases(new_notes, row_map.get(key) or {}, bulk_note)
                         if _save_closed_return_app_notes(new_notes):
                             msg = f"Đã lưu ghi chú app cho {len(keys)} đơn."
                             if missing:
@@ -6578,9 +6596,9 @@ def _render_returns():
                         invalid.append(_fmt_choice(key))
                         continue
                     if new_note:
-                        new_notes[key] = _note_meta(row_map.get(key) or {}, new_note)
+                        _upsert_closed_note_aliases(new_notes, row_map.get(key) or {}, new_note)
                     else:
-                        new_notes.pop(key, None)
+                        _delete_closed_note_aliases(new_notes, row_map.get(key) or {})
                     changed += 1
                 if invalid:
                     st.error("Có dòng chưa đúng prefix chuẩn, chưa lưu: " + "; ".join(invalid[:6]))
@@ -6625,16 +6643,16 @@ def _render_returns():
             if save_btn or clear_btn:
                 new_notes = dict(notes or {})
                 if clear_btn:
-                    new_notes.pop(selected, None)
+                    _delete_closed_note_aliases(new_notes, row)
                 else:
                     note_text = str(note_text or "").strip()
                     if note_text and not _note_has_result(note_text):
                         st.error("Ghi chú app chưa đúng prefix chuẩn, nên app chưa lưu. Dòng đầu phải có THẮNG / THUA / HẾT HẠN / KHÔNG CẦN KN / CẦN KN.")
                         return
                     if note_text:
-                        new_notes[selected] = _note_meta(row, note_text)
+                        _upsert_closed_note_aliases(new_notes, row, note_text)
                     else:
-                        new_notes.pop(selected, None)
+                        _delete_closed_note_aliases(new_notes, row)
                 if _save_closed_return_app_notes(new_notes):
                     st.success("Đã lưu ghi chú app. Bảng sẽ lọc lại theo ghi chú này.")
                     st.rerun()
