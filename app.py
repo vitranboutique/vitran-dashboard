@@ -1838,7 +1838,7 @@ def load_week_summary():
                 if "Chưa có vận đơn" in raw:
                     return []
                 out = []
-                for part in re.split(r"[^A-Za-z0-9Đđ]+", raw):
+                for part in re.findall(r"[A-Za-z0-9À-ỹĐđ]+", raw):
                     code = _ascii_code(part)
                     if len(code) >= 2:
                         out.append(code)
