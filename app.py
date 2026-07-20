@@ -1579,6 +1579,35 @@ def load_daily_report(date_iso=None):
     return L.get_daily_report(make_fetch_json(build_session()), target_date=td)
 
 
+@st.cache_data(ttl=1800, show_spinner=False)
+def load_daily_return_video_codes(date_iso):
+    """Lấy đúng danh sách mã lệch khui hàng từ logic A4 theo ngày.
+
+    A4 đã có recon_rows sau khi gắn Dohana: has_sapo=True & has_clip=False = thiếu clip;
+    has_clip=True & has_sapo=False = clip khui dư/chưa có đơn nhập kho.
+    """
+    rep = load_daily_report(date_iso)
+    dvr = load_dohana_date(date_iso) if dohana.configured() else None
+    inb = load_dohana_inbound_date(date_iso) if dohana.configured() else None
+    _enrich_daily(rep, dvr, inb)
+
+    def _label(row):
+        return (
+            f"VĐ đi/đóng: {str(row.get('vd_gui') or '').strip()} | "
+            f"VĐ hoàn: {str(row.get('track_return') or row.get('clip_code') or '').strip()} | "
+            f"Mã trả: {str(row.get('return_code') or '').strip()} | "
+            f"Mã đơn: {str(row.get('order_code') or '').strip()}"
+        )
+
+    missing, extra = [], []
+    for row in ((rep.get("nhap_kho") or {}).get("recon_rows") or []):
+        if row.get("has_sapo") and not row.get("has_clip"):
+            missing.append(_label(row))
+        elif row.get("has_clip") and not row.get("has_sapo"):
+            extra.append(_label(row))
+    return {"return_missing": missing, "inbound_extra": extra}
+
+
 def _inject_huy_soan(rep, date_iso):
     """Cắm cờ 'soan' cho từng đơn HỦY: mã (VĐ/đơn) ∈ mã phiếu nhặt đã lưu ngày đó = ĐÃ SOẠN
     (cầm hàng ra kho → cần lấy lại). Không có trong phiếu nhặt = hủy sớm, khỏi lấy.
@@ -2419,6 +2448,14 @@ def load_week_summary():
                 _inbound_extra = _inbound_extra_by_day.get(iso, [])
                 _pkg_unknown = _package_unknown_unmatched_by_day.get(iso, [])
                 _need_ret = _day_video_limits(day).get("return_missing")
+                _need_inb_extra = _day_video_limits(day).get("inbound_extra")
+                if iso and (day.get("vid_hoan_raw") != day.get("vid_hoan") or _need_ret or _need_inb_extra):
+                    try:
+                        _a4_codes = load_daily_return_video_codes(iso)
+                        _return_missing = _uniq(list(_return_missing) + list(_a4_codes.get("return_missing") or []))
+                        _inbound_extra = _uniq(list(_inbound_extra) + list(_a4_codes.get("inbound_extra") or []))
+                    except Exception:
+                        pass
                 if _need_ret and len(_return_missing) < _need_ret:
                     _seen_ret = set(_return_missing)
                     for _cand in _return_all_by_day.get(iso, []):
