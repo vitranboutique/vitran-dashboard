@@ -360,7 +360,15 @@ def _recon_rows(rows, start=0, clip_on=True):
     """Đối chiếu mỗi sự kiện hoàn: cột Clip khui hàng (Dohana) vs cột Đã nhận hàng trả (Sapo).
     Cột nào TRỐNG thì ghi LÝ DO in đỏ ngay dòng đó. start = số thứ tự bắt đầu (phân trang)."""
     body = ""
+    _prev_lt = None    # loại trả dòng trước → chèn TIÊU ĐỀ khi ĐỔI loại (nhìn như 2 bảng)
     for i, r in enumerate(rows, start + 1):
+        _ltn = r.get("loai_tra") or "—"
+        if _ltn != _prev_lt:
+            _df = r.get("loai_tra_code") == "delivery_failed"
+            body += (f'<tr><td colspan="7" style="background:{"#fdece3" if _df else "#e8f0fb"};'
+                     f'color:{"#c2410c" if _df else "#1d4ed8"};font-weight:800;padding:5px 8px">'
+                     f'📦 {_e(str(_ltn))}</td></tr>')
+            _prev_lt = _ltn
         # ── Cột 1: CLIP KHUI HÀNG (Dohana) ──
         if r.get("has_clip"):
             _alt = ' <span style="color:#b45309;font-weight:700">(mã khác)</span>' if r.get("clip_alt") else ""
@@ -420,9 +428,6 @@ def _recon_rows(rows, start=0, clip_on=True):
                 sapo_td = ' style="background:#fef2f2"'
         # ── SKU · Loại trả · Tag ──
         sku = _e(str(r.get("sku") or "—"))
-        lt = r.get("loai_tra") or "—"
-        lt_style = ("color:#c2410c;font-weight:800"
-                    if r.get("loai_tra_code") == "delivery_failed" else "color:#374151")
         tag = _tag_label(r.get("clip_tag"), r.get("clip_tag_id"))
         tag_cell = (f'<span style="color:#6d28d9;font-weight:800;background:#f3e8ff;'
                     f'padding:1px 5px;border-radius:4px">🏷️ {_e(str(tag))}</span>'
@@ -439,7 +444,6 @@ def _recon_rows(rows, start=0, clip_on=True):
                  f'<td class="l">{vdg_cell}</td>'
                  f'<td class="l">{vdt_cell}</td>'
                  f'<td class="l">{sku}</td>'
-                 f'<td class="l" style="{lt_style}">{_e(str(lt))}</td>'
                  f'<td class="l">{tag_cell}</td></tr>')
     return body or '<tr><td colspan="7">Hôm nay không có đơn hoàn / clip khui hàng.</td></tr>'
 
@@ -852,7 +856,7 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
               '<th class="l">📥 Đã nhận hàng trả (Sapo)<br><span style="font-weight:600;font-size:.85em">mã đơn · giờ nhận · NV</span></th>'
               '<th class="l">🚚 Mã VĐ gửi đi<br><span style="font-weight:600;font-size:.85em">(tra Sapo/sàn)</span></th>'
               '<th class="l">🔙 Mã đơn trả<br><span style="font-weight:600;font-size:.85em">(tra trên sàn)</span></th>'
-              '<th class="l">Sản phẩm (SKU × SL)</th><th class="l">Loại trả hàng</th>'
+              '<th class="l">Sản phẩm (SKU × SL)</th>'
               '<th class="l">🏷️ Tag app đóng hàng</th></tr></thead>')
     _legend = ('<div style="font-size:.72em;color:#6b7280;margin:.25em 0 0">🔎 <b>Mã clip</b> = tra trên '
                '<b>app đóng hàng (Dohana)</b>. <b>Mã đơn</b> = tra trên <b>Sapo</b> và <b>sàn TMĐT</b>. '
@@ -862,8 +866,9 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
     _ghichu = ('<div class="sec">B. Ghi chú đơn hoàn / khiếu nại</div>'
                '<div class="note"><span style="color:#9aa3af;font-size:.95em">(Ghi tay: tình trạng hàng hoàn, '
                'đơn cần khiếu nại sàn, thiếu/sai SP…)</span><div class="lines"><div></div></div></div>')
-    # Tờ ĐẦU của Phần 2 có KPI + kết luận nên chứa ÍT đơn hơn; tờ sau nhiều hơn — cân giữa
-    # KHÔNG tràn khổ A4 (mất dòng) và KHÔNG để trống nhiều.
+    # NHÓM 2 LOẠI: giao thất bại TRƯỚC, trả hoàn tiền SAU (render như 2 bảng, có tiêu đề section).
+    recon = sorted(recon, key=lambda r: 0 if r.get("loai_tra_code") == "delivery_failed" else 1)
+    # Số đơn/tờ (auto-fit tự co chữ nên không lo tràn/mất dòng; giữ vừa phải cho chữ dễ đọc).
     _FIRST, _REST = 14, 19
     _chunks, _starts, _i = [], [], 0
     while _i < len(recon):
@@ -882,7 +887,7 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
         _kpi = f'<div class="kpis">{r_kpis_html}</div>{concl_box}{warn_box}' if _first else ''
         _badge = recon_badge if _first else ''
         _tail = (_legend + _ghichu + sign2) if _last else ''
-        page2 += f"""<div class="page page2 fixed"><div class="pfit">
+        page2 += f"""<div class="page page2"><div class="pfit">
   <div class="hd">
     <div><div class="brand">VITRAN BOUTIQUE</div>
       <div class="sub">Báo cáo đơn hàng hoàn trả</div></div>
