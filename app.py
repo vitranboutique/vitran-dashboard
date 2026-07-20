@@ -9082,7 +9082,7 @@ def _render_returns():
                         return f"⏳ Quá hạn {age}n" if age > 0 else "⏳ Hoàn quá hạn"
                     if "DONGTHIEU" in compact:
                         label = "📦 Đóng thiếu"
-                    elif "HUHONG" in compact or "HANGHONG" in compact or "HONG" in compact:
+                    elif "HUHONG" in compact or "HANGHONG" in compact:
                         label = "💥 Hư hỏng"
                     elif "TRATHIEU" in compact or "THIEU" in compact:
                         label = "➖ Trả thiếu"
@@ -9100,6 +9100,8 @@ def _render_returns():
                         label = _age_label()
                     elif ship_code == "returned":
                         label = "📍 Đã giao shop"
+                    elif return_type == "refund" and ship_code == "no_return":
+                        label = "⚠️ Chưa chốt KQ"
                     elif stock_code in ("unstocked", "unrestock", "not_stocked", "not_restocked", "no_stock", "no_restock"):
                         label = "📦 Kho chưa nhận"
                     elif "QUA5NGAY" in compact or "QUA7NGAY" in compact or "DANGHOAN" in compact:
