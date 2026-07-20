@@ -2245,84 +2245,66 @@ def load_week_summary():
                 from collections import defaultdict as _Dd
 
                 def _norm(c):
-                    return str(c or "").strip().upper()
+                    return _ascii_code(c)
 
-                def _cg(code):
-                    s = _norm(code)
-                    if s.startswith("SPXVN"):
-                        return "SPX"
-                    if s.startswith(("VTPVN", "VTP")):
-                        return "VTP"
-                    if s.startswith("GHN"):
-                        return "GHN"
-                    if s[:2] in ("86", "85", "84", "87"):
-                        return "JT"
-                    return s[:3]
+                def _label_field(label, pattern):
+                    m = re.search(pattern, str(label or ""), flags=re.I)
+                    return _codes_from_item(m.group(1)) if m else []
 
-                def _pdate(s):
-                    try:
-                        return date.fromisoformat(str(s or "")[:10])
-                    except Exception:
-                        return None
+                def _label_codes(label):
+                    return _codes_from_item(label)
 
-                def _return_label(c):
-                    vd_tra = str(c.get("vd_tra") or "").strip()
-                    vals = [*(c.get("codes") or []), c.get("return_code"), c.get("order_code")]
-                    all_wbs = [str(v or "").strip() for v in vals if _is_waybill_code(v)]
-                    out_wbs = [v for v in all_wbs if _ascii_code(v) != _ascii_code(vd_tra)]
-                    wb = vd_tra or _prefer_waybill_label(all_wbs, "")
-                    rc = str(c.get("return_code") or "").strip()
-                    oc = str(c.get("order_code") or "").strip()
-                    parts = []
-                    parts.append(f"VĐ đi/đóng: {_short_codes(out_wbs)}")
-                    if wb and wb != "Chưa có vận đơn":
-                        parts.append(f"VĐ hoàn: {wb}")
-                    else:
-                        parts.append("VĐ hoàn:")
-                    if rc:
-                        parts.append(f"Mã trả: {rc}")
-                    else:
-                        parts.append("Mã trả:")
-                    if oc:
-                        parts.append(f"Mã đơn: {oc}")
-                    else:
-                        parts.append("Mã đơn:")
-                    return " | ".join(parts)
+                def _label_order_key(label):
+                    vals = _label_field(label, r"(?:Mã đơn|Ma don)\s*:\s*([^|]+)")
+                    return vals[0] if vals else _norm(label)
 
-                _inb = [
-                    (_norm(r.get("code")), _cg(r.get("code")), _pdate(r.get("date")))
-                    for r in inbound_rows if r.get("code")
-                ]
-                _inbound_codes = {c for c, _cgx, _dx in _inb}
-                _cands = L.get_restocked_returns_range(make_fetch_json(build_session()), days=32, max_pages=30)
+                def _merge_return_labels(labels):
+                    fields = (
+                        ("VĐ đi/đóng", r"(?:VĐ đi/đóng|VD di/dong|VĐ đóng|VD dong|VĐ đi|VD di)\s*:\s*([^|]+)"),
+                        ("VĐ hoàn", r"(?:VĐ hoàn|VD hoan)\s*:\s*([^|]+)"),
+                        ("Mã trả", r"(?:Mã trả|Ma tra)\s*:\s*([^|]+)"),
+                        ("Mã đơn", r"(?:Mã đơn|Ma don)\s*:\s*([^|]+)"),
+                    )
+                    return " | ".join(
+                        f"{name}: {_short_codes([code for label in labels for code in _label_field(label, pattern)])}"
+                        for name, pattern in fields
+                    )
+
+                _inbound_codes = {_norm(r.get("code")) for r in inbound_rows if _norm(r.get("code"))}
+                _inbound_days_by_code = _Dd(set)
+                for r in inbound_rows:
+                    code = _norm(r.get("code"))
+                    if code and r.get("date"):
+                        _inbound_days_by_code[code].add(str(r.get("date")))
+
+                # Dùng đúng danh sách đã tạo ra cột Hoàn (đơn). Nguồn này có đủ cả ngày kho cũ,
+                # không bị giới hạn trang như lượt quét API phụ trước đây.
+                _return_groups_by_day = _Dd(lambda: _Dd(list))
+                for dd, labels in (data.get("restocked_return_labels_by_day") or {}).items():
+                    for label in labels or []:
+                        if str(label or "").strip():
+                            _return_groups_by_day[str(dd)][_label_order_key(label)].append(str(label))
+
                 _return_label_by_code = {}
-                for c in _cands:
-                    _label = _return_label(c)
-                    for z in [c.get("vd_tra"), c.get("return_code"), c.get("order_code"), *(c.get("codes") or [])]:
-                        nz = _norm(z)
-                        if nz:
-                            _return_label_by_code.setdefault(nz, _label)
                 _exact_used = set()
                 _matched_by_day = _Dd(set)
                 _matched_inbound_codes_by_day = _Dd(set)
                 _return_missing_by_day = _Dd(list)
-                for c in _cands:
-                    _hit = next((x for x in (_norm(z) for z in c.get("codes", [])) if x in _inbound_codes), None)
-                    c["_exact"] = _hit
-                    if _hit:
-                        _exact_used.add(_hit)
-                        _matched_by_day[str(c.get("restock_date") or "")].add(str(c.get("order_code") or c.get("return_code") or ""))
-                        _matched_inbound_codes_by_day[str(c.get("restock_date") or "")].add(_hit)
-                for c in sorted(_cands, key=lambda r: str(r.get("restock_date") or "")):
-                    _cday = str(c.get("restock_date") or "")
-                    _clabel = _return_label(c)
-                    if c.get("_exact"):
-                        continue
-                    # Chỉ khớp bằng mã thật ở bước trên. Ghép mềm theo cùng
-                    # hãng vận chuyển/ngày có thể lấy nhầm clip của đơn khác,
-                    # làm mất cả mã thiếu lẫn mã dư cần nhân viên kiểm tra.
-                    if _clabel:
-                        _return_missing_by_day[_cday].append(_clabel)
+                for dd, groups in _return_groups_by_day.items():
+                    for order_key, labels in groups.items():
+                        merged_label = _merge_return_labels(labels)
+                        label_codes = _label_codes(merged_label)
+                        for code in label_codes:
+                            _return_label_by_code.setdefault(_norm(code), merged_label)
+                        hit = next((video for video in sorted(_inbound_codes - _exact_used)
+                                    if any(_code_match(_norm(code), video) for code in label_codes)), None)
+                        if hit:
+                            _exact_used.add(hit)
+                            _matched_by_day[dd].add(order_key)
+                            for video_day in _inbound_days_by_code.get(hit, set()):
+                                _matched_inbound_codes_by_day[video_day].add(hit)
+                        else:
+                            _return_missing_by_day[dd].append(merged_label)
                 _tagged_inbound_by_day = {
                     dd: sum(cnt.values()) for dd, cnt in thoan.items()
                 }
