@@ -603,9 +603,7 @@ def _render_week_video_audit(data):
                     return '<td style="padding:6px 8px;border:1px solid #d6dce6;color:#94a3b8">—</td>'
                 sep = "\n" if "\n" in txt else " · "
                 parts = [_esc(p.strip()) for p in txt.split(sep) if p.strip()]
-                body = "<br>".join(parts[:18])
-                if len(parts) > 18:
-                    body += f"<br><span style='color:#64748b'>...(+{len(parts) - 18})</span>"
+                body = "<br>".join(parts)
                 bg = "#fff7cc" if highlight else "#ffffff"
                 fw = "font-weight:800;" if highlight else ""
                 return f'<td style="padding:6px 8px;border:1px solid #d6dce6;background:{bg};{fw};vertical-align:top">{body}</td>'
@@ -1824,10 +1822,10 @@ def load_week_summary():
                 except Exception:
                     return ""
 
-            def _short_codes(vals, limit=30):
+            def _short_codes(vals, limit=None):
                 vals = [str(v or "").strip() for v in (vals or []) if str(v or "").strip()]
                 vals = list(dict.fromkeys(vals))
-                if len(vals) > limit:
+                if limit is not None and len(vals) > limit:
                     return " · ".join(vals[:limit]) + f" · ...(+{len(vals) - limit})"
                 return " · ".join(vals)
 
@@ -1860,7 +1858,7 @@ def load_week_summary():
                     m = re.search(pattern, raw, flags=re.I)
                     if not m:
                         return ""
-                    return _short_codes(_codes_from_item(m.group(1)), limit=3)
+                    return _short_codes(_codes_from_item(m.group(1)))
                 if prefer == "return":
                     got = _field(r"(?:VĐ hoàn|VD hoan)\s*:\s*([^|]+)")
                     if got:
@@ -1884,7 +1882,7 @@ def load_week_summary():
                 waybills = [v for v in vals if _is_waybill_code(v)]
                 picked = waybills or [str(fallback or "").strip()]
                 picked = list(dict.fromkeys([v for v in picked if v]))
-                return " · ".join(picked[:6]) + (f" · ...(+{len(picked) - 6})" if len(picked) > 6 else "")
+                return " · ".join(picked)
 
             def _is_order_code(code):
                 s = _ascii_code(code)
@@ -2090,7 +2088,7 @@ def load_week_summary():
                 pkg_unknown_rows = [f"Chưa khớp đơn: {x}" for x in pkg_unknown]
                 p1 = _cross_match_pairs(pkg_missing, inbound_extra)      # thiếu đóng ↔ dư khui
                 p2 = _cross_match_pairs(return_missing, pkg_extra + pkg_unknown_rows)  # thiếu khui ↔ dư đóng
-                match_txt = _short_codes([f"{a} ↔ {b}" for a, b in (p1 + p2)], limit=16)
+                match_txt = _short_codes([f"{a} ↔ {b}" for a, b in (p1 + p2)])
                 p1_missing = {a for a, _ in p1}
                 p1_extra = {b for _, b in p1}
                 p2_missing = {a for a, _ in p2}
@@ -2144,7 +2142,7 @@ def load_week_summary():
                     "Hoàn dư SL": rem_inbound_extra,
                     "Hoàn dư": _short_codes(_disp(rem_inbound_extra_rows, "return")),
                     "Khớp lộn mục": _short_codes([f"{_short_display_code(a)} ↔ {_short_display_code(b)}"
-                                                  for a, b in (p1 + p2)], limit=16),
+                                                  for a, b in (p1 + p2)]),
                     "Video chưa khớp đơn": _short_codes(pkg_unknown),
                     "Chốt": chot,
                 })
