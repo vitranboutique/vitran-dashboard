@@ -598,7 +598,8 @@ def _render_week_video_audit(data):
             width="stretch",
             column_config={
                 "Mã cần kiểm": st.column_config.TextColumn("Mã cần kiểm", width="large"),
-                "Video dư cùng ngày": st.column_config.TextColumn("Video dư cùng ngày", width="large"),
+                "Mã dư/thiếu đối diện": st.column_config.TextColumn("Mã dư/thiếu đối diện", width="large"),
+                "Khớp lộn mục": st.column_config.TextColumn("Khớp lộn mục", width="large"),
                 "Gợi ý": st.column_config.TextColumn("Gợi ý", width="large"),
             },
         )
@@ -1729,7 +1730,45 @@ def load_week_summary():
                     return " · ".join(vals[:limit]) + f" · ...(+{len(vals) - limit})"
                 return " · ".join(vals)
 
-            def _add_audit(iso, kind, codes, opposite, hint):
+            def _codes_from_item(item):
+                raw = str(item or "").strip()
+                if not raw:
+                    return []
+                out = []
+                for part in re.split(r"[^A-Za-z0-9Đđ]+", raw):
+                    code = _ascii_code(part)
+                    if len(code) >= 2:
+                        out.append(code)
+                return list(dict.fromkeys(out))
+
+            def _code_match(a, b):
+                if not a or not b:
+                    return False
+                if a == b:
+                    return True
+                if min(len(a), len(b)) >= 8 and (a in b or b in a):
+                    return True
+                if a[0] == b[0] and abs(len(a) - len(b)) <= 5 and min(len(a), len(b)) >= 6:
+                    return _subseq(a, b) or _subseq(b, a)
+                return False
+
+            def _cross_matches(missing, extra, limit=20):
+                pairs = []
+                for miss in missing or []:
+                    mtoks = _codes_from_item(miss)
+                    if not mtoks:
+                        continue
+                    for ex in extra or []:
+                        etoks = _codes_from_item(ex)
+                        if any(_code_match(m, e) for m in mtoks for e in etoks):
+                            pairs.append(f"{miss} ↔ {ex}")
+                            break
+                pairs = list(dict.fromkeys(pairs))
+                if len(pairs) > limit:
+                    return " · ".join(pairs[:limit]) + f" · ...(+{len(pairs) - limit})"
+                return " · ".join(pairs)
+
+            def _add_audit(iso, kind, codes, opposite, hint, matched=""):
                 codes = [str(v or "").strip() for v in (codes or []) if str(v or "").strip()]
                 if not codes:
                     return
@@ -1739,7 +1778,8 @@ def load_week_summary():
                     "Loại lệch": kind,
                     "SL": len(list(dict.fromkeys(codes))),
                     "Mã cần kiểm": _short_codes(codes),
-                    "Video dư cùng ngày": _short_codes(opposite),
+                    "Mã dư/thiếu đối diện": _short_codes(opposite),
+                    "Khớp lộn mục": matched or "",
                     "Gợi ý": hint,
                 })
 
@@ -1844,6 +1884,17 @@ def load_week_summary():
                     except Exception:
                         return None
 
+                def _return_label(c):
+                    vals = [
+                        c.get("order_code"),
+                        c.get("return_code"),
+                        c.get("vd_tra"),
+                        *(c.get("codes") or []),
+                    ]
+                    vals = [str(v or "").strip() for v in vals if str(v or "").strip()]
+                    vals = list(dict.fromkeys(vals))
+                    return " · ".join(vals[:8]) + (f" · ...(+{len(vals) - 8})" if len(vals) > 8 else "")
+
                 _inb = [
                     (_norm(r.get("code")), _cg(r.get("code")), _pdate(r.get("date")))
                     for r in inbound_rows if r.get("code")
@@ -1867,7 +1918,7 @@ def load_week_summary():
                         _leftover[_cgx].append((_dx, _code))
                 for c in sorted(_cands, key=lambda r: str(r.get("restock_date") or "")):
                     _cday = str(c.get("restock_date") or "")
-                    _clabel = str(c.get("order_code") or c.get("return_code") or c.get("vd_tra") or "").strip()
+                    _clabel = _return_label(c)
                     if c.get("_exact"):
                         continue
                     if c.get("loai_tra_code") == "delivery_failed":
@@ -1931,25 +1982,35 @@ def load_week_summary():
                     _old_note = str(day.get("ghi_chu") or "").strip()
                     _extra_note = f"Vid hoàn thô {day.get('vid_hoan_raw')} / khớp đơn {day.get('vid_hoan')}"
                     day["ghi_chu"] = (_old_note + " · " + _extra_note).strip(" ·")
+                _pkg_missing = _package_missing_by_day.get(iso, [])
+                _pkg_extra = _package_extra_by_day.get(iso, [])
+                _return_missing = _return_missing_by_day.get(iso, [])
+                _inbound_extra = _inbound_extra_by_day.get(iso, [])
+                _pkg_miss_vs_inbound_extra = _cross_matches(_pkg_missing, _inbound_extra)
+                _return_miss_vs_pkg_extra = _cross_matches(_return_missing, _pkg_extra)
                 _add_audit(
-                    iso, "Thiếu video đóng hàng", _package_missing_by_day.get(iso, []),
-                    inbound_codes_by_day.get(iso, []),
+                    iso, "Thiếu video đóng hàng", _pkg_missing,
+                    _inbound_extra,
                     "Tìm mã này trong video khui hàng cùng ngày; nếu có thì quay lộn mục khui/đóng.",
+                    _pkg_miss_vs_inbound_extra,
                 )
                 _add_audit(
-                    iso, "Dư video đóng hàng", _package_extra_by_day.get(iso, []),
-                    _return_missing_by_day.get(iso, []),
+                    iso, "Dư video đóng hàng", _pkg_extra,
+                    _return_missing,
                     "Video đóng dư có thể là clip khui hàng quay nhầm bên đóng.",
+                    _return_miss_vs_pkg_extra,
                 )
                 _add_audit(
-                    iso, "Thiếu video khui hàng hoàn", _return_missing_by_day.get(iso, []),
-                    package_codes_by_day.get(iso, []),
+                    iso, "Thiếu video khui hàng hoàn", _return_missing,
+                    _pkg_extra,
                     "Tìm mã này trong video đóng hàng cùng ngày; nếu có thì quay lộn mục đóng/khui.",
+                    _return_miss_vs_pkg_extra,
                 )
                 _add_audit(
-                    iso, "Dư video khui hàng hoàn", _inbound_extra_by_day.get(iso, []),
-                    _package_missing_by_day.get(iso, []),
+                    iso, "Dư video khui hàng hoàn", _inbound_extra,
+                    _pkg_missing,
                     "Video khui dư có thể là clip đóng hàng quay nhầm bên khui, hoặc đơn hoàn chưa nhập kho/tag thiếu.",
+                    _pkg_miss_vs_inbound_extra,
                 )
             if isinstance(data.get("month"), dict):
                 m = data["month"]
