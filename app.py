@@ -1844,14 +1844,26 @@ def load_week_summary():
 
             def _compare_code_line(item):
                 raw = str(item or "")
-                waybills, returns, orders = [], [], []
+                outbound_wbs, return_wbs, returns, orders = [], [], [], []
+                outbound_wbs.extend(re.findall(r"(?:VĐ đi/đóng|VD di/dong|VĐ đóng|VD dong|VĐ đi|VD di)\s*:\s*([^|]+)", raw, flags=re.I))
+                return_wbs.extend(re.findall(r"(?:VĐ hoàn|VD hoan)\s*:\s*([^|]+)", raw, flags=re.I))
                 for token in _codes_from_item(raw):
                     if _is_waybill_code(token):
-                        waybills.append(token)
+                        if return_wbs:
+                            return_wbs.append(token)
+                        elif outbound_wbs:
+                            outbound_wbs.append(token)
+                        else:
+                            outbound_wbs.append(token)
                 returns.extend(re.findall(r"(?:Mã trả|Ma tra)\s*:\s*([A-Za-z0-9_.-]+)", raw, flags=re.I))
                 returns.extend(re.findall(r"\b\d{12,24}-R\d+\b", raw))
                 orders.extend(re.findall(r"(?:Mã đơn|Ma don)\s*:\s*([A-Za-z0-9_.-]+)", raw, flags=re.I))
-                return f"VĐ: {_short_codes(waybills)} | Mã trả: {_short_codes(returns)} | Mã đơn: {_short_codes(orders)}"
+                return (
+                    f"VĐ đi/đóng: {_short_codes(outbound_wbs)} | "
+                    f"VĐ hoàn: {_short_codes(return_wbs)} | "
+                    f"Mã trả: {_short_codes(returns)} | "
+                    f"Mã đơn: {_short_codes(orders)}"
+                )
 
             def _compare_code_lines(*groups, limit=12):
                 items = []
@@ -2033,7 +2045,7 @@ def load_week_summary():
                                 _group = [_code]
                             _label = _prefer_waybill_label(_group, "")
                             _groups.append([c for c in _group if _is_waybill_code(c)])
-                            _labels.append(_label)
+                            _labels.append(f"VĐ đi/đóng: {_label}")
                     if not _groups:
                         continue
                     _pkg_codes = set(package_codes_by_day.get(_iso, []))
@@ -2096,7 +2108,7 @@ def load_week_summary():
                     oc = str(c.get("order_code") or "").strip()
                     parts = []
                     if wb and wb != "Chưa có vận đơn":
-                        parts.append(f"VĐ: {wb}")
+                        parts.append(f"VĐ hoàn: {wb}")
                     if rc:
                         parts.append(f"Mã trả: {rc}")
                     if oc:
