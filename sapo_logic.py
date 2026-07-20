@@ -1552,6 +1552,7 @@ def get_week_summary(fetch_json, days: int = 7) -> dict:
         codes += _TRACK_RE.findall(str(x.get("note") or ""))
         _register_context(codes, label)
     _hoan_day, _hoan_mon = {}, set()   # HOÀN (đơn) đếm theo MÃ ĐƠN distinct (1 đơn nhiều SP/mã trả = 1)
+    restocked_return_labels_by_day = {}
     for x in rrows:
         if x.get("restock_status") != "restocked":
             continue
@@ -1566,6 +1567,14 @@ def get_week_summary(fetch_json, days: int = 7) -> dict:
         thieu = max(0, int(round(x.get("total_quantity") or 0)) - sp_nhap)
         trao = 1 if "tráo" in str(x.get("note") or "").lower() else 0
         _oc = (x.get("order") or {}).get("name") or x.get("name") or ""   # MÃ ĐƠN (cột "Đã nhận hàng trả")
+        si = x.get("shipping_info") or {}
+        _ret_wb = str(si.get("tracking_number") or "").strip()
+        _out_wbs = [str(v).strip() for v in (si.get("fulfillment_tracking_numbers") or []) if str(v).strip()]
+        _ret_code = str(x.get("name") or "").strip()
+        restocked_return_labels_by_day.setdefault(rd.isoformat(), []).append(
+            f"VĐ đi/đóng: {' · '.join(dict.fromkeys(_out_wbs))} | "
+            f"VĐ hoàn: {_ret_wb} | Mã trả: {_ret_code} | Mã đơn: {_oc}"
+        )
         _bump("hoan_sp", rd, sp_nhap)
         _bump("thieu", rd, thieu)
         _bump("trao", rd, trao)
@@ -1594,7 +1603,8 @@ def get_week_summary(fetch_json, days: int = 7) -> dict:
             "is_today": d == today,
         })
     return {"days": out, "month": mon, "month_label": today.strftime("%m/%Y"),
-            "order_context_by_code": order_context_by_code}
+            "order_context_by_code": order_context_by_code,
+            "restocked_return_labels_by_day": restocked_return_labels_by_day}
 
 
 # ── Thống kê MẤT HÀNG (THUA/HẾT HẠN): trích ĐVVC + shipper từ carrier_name/ghi chú ──

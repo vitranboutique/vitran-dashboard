@@ -2305,6 +2305,10 @@ def load_week_summary():
                 _matched_inbound_codes_by_day = _Dd(set)
                 _return_missing_by_day = _Dd(list)
                 _return_all_by_day = _Dd(list)
+                for _dd, _labels in (data.get("restocked_return_labels_by_day") or {}).items():
+                    for _label in _labels or []:
+                        if _label:
+                            _return_all_by_day[str(_dd)].append(str(_label))
                 for c in _cands:
                     _cday0 = str(c.get("restock_date") or "")
                     _clabel0 = _return_label(c)
