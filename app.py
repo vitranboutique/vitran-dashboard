@@ -573,6 +573,37 @@ def _week_table_html(data):
             f'<thead><tr>{head}</tr></thead><tbody>{tots}{body}</tbody></table></div>')
 
 
+def _render_week_video_audit(data):
+    rows = (data or {}).get("video_audit") or []
+    if not rows:
+        return
+    with st.expander(f"🔎 Danh sách mã dư/thiếu video để đối chiếu — {len(rows)} dòng", expanded=False):
+        st.caption(
+            "Dùng bảng này để so mã đơn/mã vận đơn giữa video đóng hàng và video khui hàng hoàn. "
+            "Nếu mã thiếu bên này xuất hiện ở cột video dư bên kia cùng ngày thì khả năng cao nhân viên quay lộn mục."
+        )
+        df = pd.DataFrame(rows)
+        if "Nhóm tuổi" in df.columns:
+            _age_filter = st.radio(
+                "Phạm vi",
+                ["Tất cả", "Còn trong hạn Dohana", "Kho cũ"],
+                horizontal=True,
+                key="week_video_audit_age_filter",
+            )
+            if _age_filter != "Tất cả":
+                df = df[df["Nhóm tuổi"] == _age_filter]
+        st.dataframe(
+            df,
+            hide_index=True,
+            width="stretch",
+            column_config={
+                "Mã cần kiểm": st.column_config.TextColumn("Mã cần kiểm", width="large"),
+                "Video dư cùng ngày": st.column_config.TextColumn("Video dư cùng ngày", width="large"),
+                "Gợi ý": st.column_config.TextColumn("Gợi ý", width="large"),
+            },
+        )
+
+
 def _ascii_code(s):
     """Chuẩn hoá mã để khớp: BỎ DẤU tiếng Việt (do app Dohana lỗi phông biến YX→Ỹ…),
     in HOA, chỉ giữ chữ-số. VD 'GỸQMQTD' -> 'GYQMQTD'."""
@@ -1681,6 +1712,37 @@ def load_week_summary():
     try:
         if picklog.configured():
             from collections import Counter as _Ct
+            _video_audit = []
+
+            def _audit_age(iso):
+                try:
+                    _d = date.fromisoformat(str(iso or "")[:10])
+                    _stale = ((datetime.now(timezone.utc) + timedelta(hours=7)).date() - _d).days > 25
+                    return "Kho cũ" if _stale else "Còn trong hạn Dohana"
+                except Exception:
+                    return ""
+
+            def _short_codes(vals, limit=30):
+                vals = [str(v or "").strip() for v in (vals or []) if str(v or "").strip()]
+                vals = list(dict.fromkeys(vals))
+                if len(vals) > limit:
+                    return " · ".join(vals[:limit]) + f" · ...(+{len(vals) - limit})"
+                return " · ".join(vals)
+
+            def _add_audit(iso, kind, codes, opposite, hint):
+                codes = [str(v or "").strip() for v in (codes or []) if str(v or "").strip()]
+                if not codes:
+                    return
+                _video_audit.append({
+                    "Ngày": iso,
+                    "Nhóm tuổi": _audit_age(iso),
+                    "Loại lệch": kind,
+                    "SL": len(list(dict.fromkeys(codes))),
+                    "Mã cần kiểm": _short_codes(codes),
+                    "Video dư cùng ngày": _short_codes(opposite),
+                    "Gợi ý": hint,
+                })
+
             # TỰ ĐỒNG BỘ ~28 ngày video từ Dohana rồi gộp vào kho TRƯỚC khi đọc — để bảng 30 ngày
             # KHÔNG bị đứng số khi có video mới (Dohana giữ ~25-30 ngày; giữ nhịp _throttle chống 429).
             # Lỗi/429 → bỏ qua, đọc kho cũ (không làm bảng trống).
@@ -1696,22 +1758,53 @@ def load_week_summary():
                 pass
             recs = picklog.read_dohana_videos()
             vdong, vhoan, tdong, thoan = {}, {}, {}, {}   # tag TÁCH theo loại video: đóng vs khui
+            package_codes_by_day, inbound_codes_by_day = {}, {}
             inbound_rows = []
             for r in recs:
                 d, ty = r.get("date"), r.get("type")
                 if not d:
                     continue
+                code = str(r.get("code") or "").strip()
                 tn = _video_tag_label(r) if _video_tag_id(r) else ""
                 if ty == "package":          # đóng hàng → tag đóng (vd đóng thiếu SP)
                     vdong[d] = vdong.get(d, 0) + 1
+                    if code:
+                        package_codes_by_day.setdefault(d, []).append(code)
                     if tn:
                         tdong.setdefault(d, _Ct())[tn] += 1
                 elif ty == "inbound":        # khui hàng → tag hoàn (tráo / mất / hư hỏng / đã dùng)
                     vhoan[d] = vhoan.get(d, 0) + 1
+                    if code:
+                        inbound_codes_by_day.setdefault(d, []).append(code)
                     inbound_rows.append(r)
                     if tn:
                         thoan.setdefault(d, _Ct())[tn] += 1
             _mpref = (data.get("days") or [{}])[0].get("iso", "")[:7]   # 'YYYY-MM' tháng này
+
+            _package_missing_by_day, _package_extra_by_day = {}, {}
+            try:
+                for _iso, _summ in (_psumm if "_psumm" in locals() else {}).items():
+                    _groups, _labels = [], []
+                    for _row in (_summ.get("rows") or []):
+                        _codes = [str(c).strip() for c in (_row.get("codes") or []) if str(c).strip()]
+                        _code_groups = _row.get("code_groups") or [[c] for c in _codes]
+                        for _idx, _code in enumerate(_codes):
+                            _labels.append(_code)
+                            if _idx < len(_code_groups) and _code_groups[_idx]:
+                                _groups.append([str(c).strip() for c in _code_groups[_idx] if str(c).strip()])
+                            else:
+                                _groups.append([_code])
+                    if not _groups:
+                        continue
+                    _pkg_codes = set(package_codes_by_day.get(_iso, []))
+                    _matched, _font = match_packing_videos(_groups, _pkg_codes)
+                    _matched_vids = {str(v[0]).strip() for v in _matched.values() if v and str(v[0]).strip()}
+                    _missing = [_labels[i] for i in range(len(_labels)) if i not in _matched]
+                    _extra = sorted(_pkg_codes - _matched_vids)
+                    _package_missing_by_day[_iso] = _missing
+                    _package_extra_by_day[_iso] = _extra
+            except Exception:
+                _package_missing_by_day, _package_extra_by_day = {}, {}
 
             # Vid hoàn phải là clip KHỚP đơn hoàn, không phải tổng clip inbound thô.
             # Nếu đếm thô, video quay dư/sai mã/ngày có thể che mất các đơn thật sự chưa quay.
@@ -1759,26 +1852,38 @@ def load_week_summary():
                 _cands = L.get_restocked_returns_range(make_fetch_json(build_session()), days=32, max_pages=30)
                 _exact_used = set()
                 _matched_by_day = _Dd(set)
+                _matched_inbound_codes_by_day = _Dd(set)
+                _return_missing_by_day = _Dd(list)
                 for c in _cands:
                     _hit = next((x for x in (_norm(z) for z in c.get("codes", [])) if x in _inbound_codes), None)
                     c["_exact"] = _hit
                     if _hit:
                         _exact_used.add(_hit)
                         _matched_by_day[str(c.get("restock_date") or "")].add(str(c.get("order_code") or c.get("return_code") or ""))
+                        _matched_inbound_codes_by_day[str(c.get("restock_date") or "")].add(_hit)
                 _leftover = _Dd(list)
                 for _code, _cgx, _dx in _inb:
                     if _code not in _exact_used:
                         _leftover[_cgx].append((_dx, _code))
                 for c in sorted(_cands, key=lambda r: str(r.get("restock_date") or "")):
-                    if c.get("_exact") or c.get("loai_tra_code") == "delivery_failed":
+                    _cday = str(c.get("restock_date") or "")
+                    _clabel = str(c.get("order_code") or c.get("return_code") or c.get("vd_tra") or "").strip()
+                    if c.get("_exact"):
+                        continue
+                    if c.get("loai_tra_code") == "delivery_failed":
+                        if _clabel:
+                            _return_missing_by_day[_cday].append(_clabel)
                         continue
                     _lst = _leftover.get(_cgname(c.get("carrier"))) or []
                     _rd = _pdate(c.get("restock_date"))
                     _pick = next((_ix for _ix, (_vd, _vc) in enumerate(_lst)
                                   if _vd is None or _rd is None or abs((_vd - _rd).days) <= 3), None)
                     if _pick is not None:
-                        _lst.pop(_pick)
+                        _vd, _vc = _lst.pop(_pick)
                         _matched_by_day[str(c.get("restock_date") or "")].add(str(c.get("order_code") or c.get("return_code") or ""))
+                        _matched_inbound_codes_by_day[_cday].add(_vc)
+                    elif _clabel:
+                        _return_missing_by_day[_cday].append(_clabel)
                 _tagged_inbound_by_day = {
                     dd: sum(cnt.values()) for dd, cnt in thoan.items()
                 }
@@ -1788,8 +1893,19 @@ def load_week_summary():
                 }
                 for dd, tag_n in _tagged_inbound_by_day.items():
                     _matched_vhoan.setdefault(dd, int(tag_n))
+                _tagged_inbound_codes_by_day = _Dd(set)
+                for r in inbound_rows:
+                    if _video_tag_id(r) and r.get("code"):
+                        _tagged_inbound_codes_by_day[str(r.get("date") or "")].add(_norm(r.get("code")))
+                _inbound_extra_by_day = {}
+                for dd, codes in inbound_codes_by_day.items():
+                    _raw = {_norm(c) for c in codes if _norm(c)}
+                    _used = set(_matched_inbound_codes_by_day.get(dd, set())) | set(_tagged_inbound_codes_by_day.get(dd, set()))
+                    _inbound_extra_by_day[dd] = sorted(_raw - _used)
             except Exception:
                 _matched_vhoan = {}
+                _return_missing_by_day = {}
+                _inbound_extra_by_day = {}
 
             def _tagstr(cnt):
                 return " · ".join(f"{n} ×{c}" for n, c in cnt.items()) if cnt else ""
@@ -1815,6 +1931,26 @@ def load_week_summary():
                     _old_note = str(day.get("ghi_chu") or "").strip()
                     _extra_note = f"Vid hoàn thô {day.get('vid_hoan_raw')} / khớp đơn {day.get('vid_hoan')}"
                     day["ghi_chu"] = (_old_note + " · " + _extra_note).strip(" ·")
+                _add_audit(
+                    iso, "Thiếu video đóng hàng", _package_missing_by_day.get(iso, []),
+                    inbound_codes_by_day.get(iso, []),
+                    "Tìm mã này trong video khui hàng cùng ngày; nếu có thì quay lộn mục khui/đóng.",
+                )
+                _add_audit(
+                    iso, "Dư video đóng hàng", _package_extra_by_day.get(iso, []),
+                    _return_missing_by_day.get(iso, []),
+                    "Video đóng dư có thể là clip khui hàng quay nhầm bên đóng.",
+                )
+                _add_audit(
+                    iso, "Thiếu video khui hàng hoàn", _return_missing_by_day.get(iso, []),
+                    package_codes_by_day.get(iso, []),
+                    "Tìm mã này trong video đóng hàng cùng ngày; nếu có thì quay lộn mục đóng/khui.",
+                )
+                _add_audit(
+                    iso, "Dư video khui hàng hoàn", _inbound_extra_by_day.get(iso, []),
+                    _package_missing_by_day.get(iso, []),
+                    "Video khui dư có thể là clip đóng hàng quay nhầm bên khui, hoặc đơn hoàn chưa nhập kho/tag thiếu.",
+                )
             if isinstance(data.get("month"), dict):
                 m = data["month"]
                 m["vid_dong"] = _msum(vdong)
@@ -1825,6 +1961,7 @@ def load_week_summary():
                     _old_note = str(m.get("ghi_chu") or "").strip()
                     _extra_note = f"Vid hoàn thô {m.get('vid_hoan_raw')} / khớp đơn {m.get('vid_hoan')}"
                     m["ghi_chu"] = (_old_note + " · " + _extra_note).strip(" ·")
+            data["video_audit"] = _video_audit
     except Exception:
         pass
     return data
@@ -6173,6 +6310,7 @@ def _render_daily():
             for _d in _wk.get("days", []):
                 _d["ghi_chu"] = _notes.get(_d.get("iso"), "")
             st.markdown(_week_table_html(_wk), unsafe_allow_html=True)
+            _render_week_video_audit(_wk)
             st.caption('Badge cạnh số — **Đóng gói (video):** 🔴 **▼ thiếu** = đơn đã soạn mà chưa gói/quay video · '
                        '🔵 **▲ dư** = quay dư/lộn.  ·  '
                        '**Vid hoàn:** 🔴 **⚠ chưa quay** (đỏ) = còn đơn hoàn CHƯA quay clip khui — số này ĐÃ CỘNG BÙ '
