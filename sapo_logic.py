@@ -1971,20 +1971,28 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120, canceled_max_pages
             oc["khong_kn"]["money"] += amt
     # CẦN KN (cờ need_kn, dùng cho highlight + đếm). LOẠI đơn đã có ghi chú KẾT QUẢ chuẩn.
     #  • ĐÃ GIAO NGƯỜI BÁN (returned) → MẶC ĐỊNH cần KN (bất kể tuổi).
-    #  • KHÔNG CÓ VĐ TRẢ VỀ → không highlight và không đưa vào CẦN KN.
+    #  • CHỈ HOÀN TIỀN không có VĐ trả về → vẫn CẦN KN tới khi có kết luận chuẩn.
+    #  • Các loại đơn khác không có VĐ trả về → không highlight và không đưa vào CẦN KN.
     #  • ĐANG HOÀN HÀNG (returning) → cần KN nếu QUÁ 7 ngày; chỉ chưa cần khi refund 1 VĐ và chưa quá 7 ngày.
     for d in detail:
         pre = _asc((d.get("note") or "").split("|")[0])
         has_can_kn_note = _is_can_kn(pre)
         has_return_waybill = bool(str(d.get("vd_tra") or "").strip())
-        if not has_return_waybill:
-            d["need_kn"] = False
-        elif _resolved(pre):
+        is_refund_only = (d.get("loai_tra_code") == "refund" and d.get("ship_code") == "no_return")
+        if _resolved(pre):
             d["need_kn"] = False
         elif has_can_kn_note:
             d["need_kn"] = True
             if not str(d.get("reason") or "").strip():
                 d["reason"] = "Ghi chú Sapo: CẦN KN"
+        elif is_refund_only:
+            # Refund-only records have no return waybill. Keep them in CAN KN
+            # until SAPO has a standard final-result note.
+            d["need_kn"] = True
+            if not str(d.get("reason") or "").strip():
+                d["reason"] = "Chỉ hoàn tiền chưa có kết luận chuẩn — cần khiếu nại"
+        elif not has_return_waybill:
+            d["need_kn"] = False
         elif d.get("ship_code") == "returned":
             d["need_kn"] = True
         elif d.get("ship_code") == "no_return":

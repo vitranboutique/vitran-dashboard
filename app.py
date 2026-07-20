@@ -8404,15 +8404,22 @@ def _render_returns():
         def _has_return_waybill(d):
             return bool(str((d or {}).get("vd_tra") or "").strip())
 
+        def _is_refund_only(d):
+            return (str((d or {}).get("loai_tra_code") or "").strip().lower() == "refund"
+                    and str((d or {}).get("ship_code") or "").strip().lower() == "no_return")
+
+        def _is_need_kn_shape(d):
+            return _has_return_waybill(d) or _is_refund_only(d) or bool((d or {}).get("_restock_novideo"))
+
         def _drop_need_kn_without_return_waybill(rows):
             for d in rows or []:
-                if not _has_return_waybill(d):
+                if not _has_return_waybill(d) and not _is_refund_only(d):
                     d["need_kn"] = False
             return rows
 
         _detail_rows = _drop_need_kn_without_return_waybill(_rip.get("detail") or [])
         _khong_can_kn_list = [d for d in _detail_rows if _note_is_khong_can_kn(d)]
-        _ckn_list = [d for d in _detail_rows if d.get("need_kn") and _has_return_waybill(d)]
+        _ckn_list = [d for d in _detail_rows if d.get("need_kn") and _is_need_kn_shape(d)]
         _no_return_list = [d for d in _detail_rows if d.get("ship_code") == "no_return"]
         _khong_can_kn_money = sum(int(d.get("khong_can_kn_money")
                                       if d.get("khong_can_kn_money") is not None
@@ -8957,6 +8964,8 @@ def _render_returns():
                     return "Đã nhận/đã nhập kho"
                 if _note_is_khong_can_kn(d):
                     return "Không cần KN"
+                if d.get("need_kn") and _is_refund_only(d):
+                    return "Cần KN — chỉ hoàn tiền chưa có kết luận"
                 if not _has_return_waybill(d):
                     return "Không có VĐ trả về / không cần KN"
                 if d.get("need_kn"):
@@ -9106,7 +9115,7 @@ def _render_returns():
                     return f"<span class='reason-badge' title='{_safe(full)}'>{_safe(label)}</span>"
                 body = ""
                 for i, d in enumerate(items, _start + 1):
-                    bg = "background:#fff3cd" if d.get("need_kn") and (_has_return_waybill(d) or d.get("_restock_novideo")) else ""
+                    bg = "background:#fff3cd" if d.get("need_kn") and _is_need_kn_shape(d) else ""
                     note = d.get("note") or ""
                     note_display = f"📝 APP · {note}" if d.get("app_note") else note
                     tds = [f"<td class='r'>{i}</td>"]
@@ -9850,14 +9859,14 @@ def _render_returns():
                 pass
             _ckn_render_list = [
                 d for d in _ckn_render_raw_list
-                if (_has_return_waybill(d) or d.get("_restock_novideo")) and not _is_closed_kn_result(d)
+                if _is_need_kn_shape(d) and not _is_closed_kn_result(d)
             ]
             _ckn_render_list.sort(key=lambda d: str(d.get("created_on") or d.get("created") or ""), reverse=True)
             st.subheader("🚨 Đơn cần KN — lấy làm khiếu nại", anchor="don-can-kn")
             _need_kn_info = ("Gồm các đơn chưa chốt THẮNG / THUA / KHÔNG CẦN KN. "
                              "Note CẦN KN vẫn nằm ở bảng này để nhân viên tiếp tục xử lý. "
-                             "Chỉ áp dụng cho đơn có VĐ trả về: đã giao người bán chưa nhập kho, hoặc đang hoàn hơn 5 ngày. "
-                             "Đơn không có VĐ trả về sẽ không tô vàng và không đưa vào Cần KN. "
+                             "Đơn có VĐ trả về: đã giao người bán chưa nhập kho, hoặc đang hoàn hơn 5 ngày. "
+                             "Riêng đơn CHỈ HOÀN TIỀN không có VĐ hoàn vẫn tô vàng và đưa vào Cần KN cho tới khi có kết luận chuẩn. "
                              "Đây chính là các dòng tô vàng — NV lấy làm khiếu nại.")
             if _closed_returns_need_kn_detail:
                 _added_closed = max(0, len(_ckn_with_closed_returns) - len(_ckn_list))
