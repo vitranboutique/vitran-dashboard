@@ -5892,7 +5892,7 @@ def _render_daily():
                 "(Dohana chỉ giữ ~30 ngày; kho Gist lưu bền cả năm). Ngày trước khi bật lưu có thể trống video.")
         _nrep = f"{_disp} (xem lại)"
         _nrec = len((_rep.get("nhap_kho") or {}).get("recon_rows") or [])
-        _h = (1 + max(1, (_nrec + 19) // 20)) * 1140 + 120   # 1 trang 1 + N tờ trang 2 (20 đơn/tờ)
+        _h = (1 + max(1, (_nrec + 14) // 15 + 1)) * 1140 + 120   # 1 trang 1 + N tờ trang 2 (~15 đơn/tờ, tờ đầu 10)
         components.html(daily_report.report_html(_rep, _dvr, _nrep, sign_on=_sign_on), height=_h, scrolling=True)
         return
 
@@ -5918,7 +5918,7 @@ def _render_daily():
     _now_vn = datetime.now(timezone.utc) + timedelta(hours=7)
     _nrep = _now_vn.strftime("%H:%M %d/%m/%Y")
     _nrec = len((_rep.get("nhap_kho") or {}).get("recon_rows") or [])
-    _h = (1 + max(1, (_nrec + 19) // 20)) * 1140 + 120   # 1 trang 1 + N tờ trang 2 (20 đơn/tờ)
+    _h = (1 + max(1, (_nrec + 14) // 15 + 1)) * 1140 + 120   # 1 trang 1 + N tờ trang 2 (~15 đơn/tờ, tờ đầu 10)
     # Còn xót lại LUÔN rút gọn 5 đơn/ĐVVC cho dễ đọc (collapse_xot mặc định True)
     try:
         components.html(daily_report.report_html(_rep, _dvr, _nrep, sign_on=_sign_on),

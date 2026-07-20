@@ -857,8 +857,17 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
     _ghichu = ('<div class="sec">B. Ghi chú đơn hoàn / khiếu nại</div>'
                '<div class="note"><span style="color:#9aa3af;font-size:.95em">(Ghi tay: tình trạng hàng hoàn, '
                'đơn cần khiếu nại sàn, thiếu/sai SP…)</span><div class="lines"><div></div></div></div>')
-    _CHUNK = 20
-    _chunks = [recon[i:i + _CHUNK] for i in range(0, len(recon), _CHUNK)] or [[]]
+    # Tờ ĐẦU của Phần 2 có KPI + kết luận nên chứa ÍT đơn hơn (10); tờ sau 15 đơn —
+    # tránh nhồi quá tràn khổ A4 làm MẤT dòng ở cuối trang.
+    _FIRST, _REST = 10, 15
+    _chunks, _starts, _i = [], [], 0
+    while _i < len(recon):
+        _sz = _FIRST if _i == 0 else _REST
+        _starts.append(_i)
+        _chunks.append(recon[_i:_i + _sz])
+        _i += _sz
+    if not _chunks:
+        _chunks, _starts = [[]], [0]
     _ns = len(_chunks)
     page2 = ""
     for _si, _chunk in enumerate(_chunks):
@@ -879,7 +888,7 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
   <div class="title-sub">Phần 2 — Hàng hoàn nhận về · nhập kho · video khui hàng{_sub}</div>
   {_kpi}
   <div class="sec">A. Đối chiếu Clip khui hàng ↔ Đã nhận hàng trả{_badge}</div>
-  <table>{_thead}<tbody>{_recon_rows(_chunk, start=_si * _CHUNK, clip_on=clip_on)}</tbody></table>
+  <table>{_thead}<tbody>{_recon_rows(_chunk, start=_starts[_si], clip_on=clip_on)}</tbody></table>
   {_tail}
   <div class="foot">VITRAN BOUTIQUE · {_pno} — Đơn hàng hoàn trả · {_e(rep["date"])}</div>
 </div></div>"""
