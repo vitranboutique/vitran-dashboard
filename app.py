@@ -574,13 +574,14 @@ def _week_table_html(data):
 
 
 def _render_week_video_audit(data):
-    rows = (data or {}).get("video_audit") or []
+    matrix_rows = (data or {}).get("video_audit_matrix") or []
+    rows = matrix_rows or (data or {}).get("video_audit") or []
     if not rows:
         return
-    with st.expander(f"🔎 Danh sách mã dư/thiếu video để đối chiếu — {len(rows)} dòng", expanded=False):
+    with st.expander(f"🔎 Đối chiếu mã dư/thiếu video đóng hàng ↔ khui hàng — {len(rows)} dòng", expanded=False):
         st.caption(
-            "Dùng bảng này để so mã đơn/mã vận đơn giữa video đóng hàng và video khui hàng hoàn. "
-            "Nếu mã thiếu bên này xuất hiện ở cột video dư bên kia cùng ngày thì khả năng cao nhân viên quay lộn mục."
+            "Mỗi dòng là 1 ngày. App tự khớp mã thiếu bên này với mã dư bên kia; ô vàng là khả năng cao quay lộn mục. "
+            "Cột Chốt là kết quả sau khi đã bù trừ các mã khớp lộn."
         )
         df = pd.DataFrame(rows)
         if "Nhóm tuổi" in df.columns:
@@ -592,6 +593,83 @@ def _render_week_video_audit(data):
             )
             if _age_filter != "Tất cả":
                 df = df[df["Nhóm tuổi"] == _age_filter]
+        if df.empty:
+            st.info("Không có dòng trong phạm vi đã chọn.")
+            return
+        if matrix_rows:
+            def _fmt_cell(v, highlight=False):
+                txt = str(v or "").strip()
+                if not txt:
+                    return '<td style="padding:6px 8px;border:1px solid #d6dce6;color:#94a3b8">—</td>'
+                parts = [_esc(p.strip()) for p in txt.split(" · ") if p.strip()]
+                body = "<br>".join(parts[:18])
+                if len(parts) > 18:
+                    body += f"<br><span style='color:#64748b'>...(+{len(parts) - 18})</span>"
+                bg = "#fff7cc" if highlight else "#ffffff"
+                fw = "font-weight:800;" if highlight else ""
+                return f'<td style="padding:6px 8px;border:1px solid #d6dce6;background:{bg};{fw};vertical-align:top">{body}</td>'
+
+            def _num(v):
+                try:
+                    return int(v or 0)
+                except Exception:
+                    return 0
+
+            body = []
+            for _, r in df.iterrows():
+                has_match = bool(str(r.get("Khớp lộn mục") or "").strip())
+                chot = str(r.get("Chốt") or "")
+                chot_bg = "#dcfce7" if chot.startswith("Đủ") else "#fee2e2"
+                cells = [
+                    "<tr>",
+                    f'<td style="padding:6px 8px;border:1px solid #d6dce6;white-space:nowrap">{_esc(str(r.get("Ngày") or ""))}</td>',
+                    f'<td style="padding:6px 8px;border:1px solid #d6dce6;white-space:nowrap">{_esc(str(r.get("Nhóm tuổi") or ""))}</td>',
+                    f'<td style="padding:6px 8px;border:1px solid #d6dce6;text-align:right;font-weight:800">{_num(r.get("Đóng thiếu SL"))}</td>',
+                    _fmt_cell(r.get("Đóng thiếu")),
+                    f'<td style="padding:6px 8px;border:1px solid #d6dce6;text-align:right;font-weight:800">{_num(r.get("Đóng dư SL"))}</td>',
+                    _fmt_cell(r.get("Đóng dư")),
+                    f'<td style="padding:6px 8px;border:1px solid #d6dce6;text-align:right;font-weight:800">{_num(r.get("Hoàn thiếu SL"))}</td>',
+                    _fmt_cell(r.get("Hoàn thiếu")),
+                    f'<td style="padding:6px 8px;border:1px solid #d6dce6;text-align:right;font-weight:800">{_num(r.get("Hoàn dư SL"))}</td>',
+                    _fmt_cell(r.get("Hoàn dư")),
+                    _fmt_cell(r.get("Khớp lộn mục"), has_match),
+                    f'<td style="padding:6px 8px;border:1px solid #d6dce6;background:{chot_bg};font-weight:800;vertical-align:top">{_esc(chot)}</td>',
+                    "</tr>",
+                ]
+                body.append("".join(cells))
+            st.markdown(
+                """
+<div style="max-height:520px;overflow:auto;border:1px solid #d6dce6;border-radius:8px">
+<table style="width:100%;border-collapse:collapse;font-size:12px;background:white">
+  <thead>
+    <tr>
+      <th rowspan="2" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#e2e8f0">Ngày</th>
+      <th rowspan="2" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#e2e8f0">Nhóm tuổi</th>
+      <th colspan="4" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#dbeafe">Đóng hàng</th>
+      <th colspan="4" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#ffedd5">Nhập hàng hoàn</th>
+      <th rowspan="2" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#fef3c7;min-width:220px">Khớp lộn mục</th>
+      <th rowspan="2" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#f1f5f9;min-width:160px">Chốt</th>
+    </tr>
+    <tr>
+      <th style="position:sticky;top:31px;z-index:3;padding:6px 8px;border:1px solid #cbd5e1;background:#dbeafe">Thiếu SL</th>
+      <th style="position:sticky;top:31px;z-index:3;padding:6px 8px;border:1px solid #cbd5e1;background:#dbeafe;min-width:190px">Thiếu mã</th>
+      <th style="position:sticky;top:31px;z-index:3;padding:6px 8px;border:1px solid #cbd5e1;background:#dbeafe">Dư SL</th>
+      <th style="position:sticky;top:31px;z-index:3;padding:6px 8px;border:1px solid #cbd5e1;background:#dbeafe;min-width:190px">Dư mã</th>
+      <th style="position:sticky;top:31px;z-index:3;padding:6px 8px;border:1px solid #cbd5e1;background:#ffedd5">Thiếu SL</th>
+      <th style="position:sticky;top:31px;z-index:3;padding:6px 8px;border:1px solid #cbd5e1;background:#ffedd5;min-width:190px">Thiếu mã</th>
+      <th style="position:sticky;top:31px;z-index:3;padding:6px 8px;border:1px solid #cbd5e1;background:#ffedd5">Dư SL</th>
+      <th style="position:sticky;top:31px;z-index:3;padding:6px 8px;border:1px solid #cbd5e1;background:#ffedd5;min-width:190px">Dư mã</th>
+    </tr>
+  </thead>
+  <tbody>
+""" + "".join(body) + """
+  </tbody>
+</table>
+</div>
+""",
+                unsafe_allow_html=True,
+            )
+            return
         st.dataframe(
             df,
             hide_index=True,
@@ -1714,6 +1792,7 @@ def load_week_summary():
         if picklog.configured():
             from collections import Counter as _Ct
             _video_audit = []
+            _video_matrix = []
 
             def _audit_age(iso):
                 try:
@@ -1767,6 +1846,68 @@ def load_week_summary():
                 if len(pairs) > limit:
                     return " · ".join(pairs[:limit]) + f" · ...(+{len(pairs) - limit})"
                 return " · ".join(pairs)
+
+            def _cross_match_pairs(missing, extra):
+                pairs, used_extra = [], set()
+                for miss in missing or []:
+                    mtoks = _codes_from_item(miss)
+                    if not mtoks:
+                        continue
+                    for ex in extra or []:
+                        ex_key = str(ex or "").strip()
+                        if not ex_key or ex_key in used_extra:
+                            continue
+                        etoks = _codes_from_item(ex_key)
+                        if any(_code_match(m, e) for m in mtoks for e in etoks):
+                            pairs.append((str(miss).strip(), ex_key))
+                            used_extra.add(ex_key)
+                            break
+                return pairs
+
+            def _uniq(vals):
+                return list(dict.fromkeys([str(v or "").strip() for v in (vals or []) if str(v or "").strip()]))
+
+            def _add_matrix(iso, pkg_missing, pkg_extra, return_missing, inbound_extra):
+                pkg_missing = _uniq(pkg_missing)
+                pkg_extra = _uniq(pkg_extra)
+                return_missing = _uniq(return_missing)
+                inbound_extra = _uniq(inbound_extra)
+                p1 = _cross_match_pairs(pkg_missing, inbound_extra)      # thiếu đóng ↔ dư khui
+                p2 = _cross_match_pairs(return_missing, pkg_extra)       # thiếu khui ↔ dư đóng
+                match_txt = _short_codes([f"{a} ↔ {b}" for a, b in (p1 + p2)], limit=16)
+                rem_pkg_missing = max(0, len(pkg_missing) - len(p1))
+                rem_inbound_extra = max(0, len(inbound_extra) - len(p1))
+                rem_return_missing = max(0, len(return_missing) - len(p2))
+                rem_pkg_extra = max(0, len(pkg_extra) - len(p2))
+                parts = []
+                if rem_pkg_missing:
+                    parts.append(f"Thiếu video đóng: {rem_pkg_missing}")
+                if rem_return_missing:
+                    parts.append(f"Thiếu video khui hoàn: {rem_return_missing}")
+                if rem_pkg_extra:
+                    parts.append(f"Dư video đóng: {rem_pkg_extra}")
+                if rem_inbound_extra:
+                    parts.append(f"Dư video khui hoàn: {rem_inbound_extra}")
+                if not parts and (pkg_missing or pkg_extra or return_missing or inbound_extra):
+                    chot = "Đủ sau khi chuyển lộn mục"
+                elif parts:
+                    chot = "Còn lệch: " + "; ".join(parts)
+                else:
+                    return
+                _video_matrix.append({
+                    "Ngày": iso,
+                    "Nhóm tuổi": _audit_age(iso),
+                    "Đóng thiếu SL": len(pkg_missing),
+                    "Đóng thiếu": _short_codes(pkg_missing),
+                    "Đóng dư SL": len(pkg_extra),
+                    "Đóng dư": _short_codes(pkg_extra),
+                    "Hoàn thiếu SL": len(return_missing),
+                    "Hoàn thiếu": _short_codes(return_missing),
+                    "Hoàn dư SL": len(inbound_extra),
+                    "Hoàn dư": _short_codes(inbound_extra),
+                    "Khớp lộn mục": match_txt,
+                    "Chốt": chot,
+                })
 
             def _add_audit(iso, kind, codes, opposite, hint, matched=""):
                 codes = [str(v or "").strip() for v in (codes or []) if str(v or "").strip()]
@@ -1988,6 +2129,7 @@ def load_week_summary():
                 _inbound_extra = _inbound_extra_by_day.get(iso, [])
                 _pkg_miss_vs_inbound_extra = _cross_matches(_pkg_missing, _inbound_extra)
                 _return_miss_vs_pkg_extra = _cross_matches(_return_missing, _pkg_extra)
+                _add_matrix(iso, _pkg_missing, _pkg_extra, _return_missing, _inbound_extra)
                 _add_audit(
                     iso, "Thiếu video đóng hàng", _pkg_missing,
                     _inbound_extra,
@@ -2022,6 +2164,7 @@ def load_week_summary():
                     _old_note = str(m.get("ghi_chu") or "").strip()
                     _extra_note = f"Vid hoàn thô {m.get('vid_hoan_raw')} / khớp đơn {m.get('vid_hoan')}"
                     m["ghi_chu"] = (_old_note + " · " + _extra_note).strip(" ·")
+            data["video_audit_matrix"] = _video_matrix
             data["video_audit"] = _video_audit
     except Exception:
         pass
