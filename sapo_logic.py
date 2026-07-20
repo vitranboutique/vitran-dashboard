@@ -1511,6 +1511,7 @@ def get_week_summary(fetch_json, days: int = 7) -> dict:
         last = _vn_date_of(chunk[-1].get("created_on"))
         if last and last < rcut:
             break
+    _hoan_day, _hoan_mon = {}, set()   # HOÀN (đơn) đếm theo MÃ ĐƠN distinct (1 đơn nhiều SP/mã trả = 1)
     for x in rrows:
         if x.get("restock_status") != "restocked":
             continue
@@ -1524,10 +1525,17 @@ def get_week_summary(fetch_json, days: int = 7) -> dict:
         sp_nhap = int(round(sum((li.get("stocked_quantity") or 0) for li in lis)))
         thieu = max(0, int(round(x.get("total_quantity") or 0)) - sp_nhap)
         trao = 1 if "tráo" in str(x.get("note") or "").lower() else 0
-        _bump("hoan_don", rd)
+        _oc = (x.get("order") or {}).get("name") or x.get("name") or ""   # MÃ ĐƠN (cột "Đã nhận hàng trả")
         _bump("hoan_sp", rd, sp_nhap)
         _bump("thieu", rd, thieu)
         _bump("trao", rd, trao)
+        if _oc:
+            _hoan_day.setdefault(rd, set()).add(_oc)
+            if month_start <= rd <= today:
+                _hoan_mon.add(_oc)
+    for _d in day_set:
+        agg[_d]["hoan_don"] = len(_hoan_day.get(_d, set()))
+    mon["hoan_don"] = len(_hoan_mon)
 
     _wd = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"]
     out = []

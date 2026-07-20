@@ -784,6 +784,8 @@ def _enrich_daily(rep, dvr, inb):
         if len(_g.get("_skus") or []) > 1:
             _g["sku"] = " · ".join(_g["_skus"])
     nk["detail"] = _merged
+    # HOÀN NHẬP KHO đếm theo MÃ ĐƠN (distinct) — 1 đơn nhiều SP/mã trả = 1 (khớp cột "Đã nhận hàng trả")
+    nk["so_phieu"] = len({str(_d.get("order_code") or "") for _d in _merged if _d.get("order_code")})
     if nk.get("clip_available"):
         nk["clip_co"] = sum(1 for _d in _merged if _d.get("clip"))
     # BẢNG ĐỐI CHIẾU: DỰNG LUÔN LUÔN (kể cả khi Dohana lỗi/429) → đơn trả hàng KHÔNG biến mất;
