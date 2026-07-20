@@ -9792,6 +9792,45 @@ def _render_returns():
                     _return_info("Nhóm này không tính vào KPI đang xử lý, nhưng vẫn hiện khi tìm mã đơn/mã trả để kiểm tra trên sàn.")
                     _sub_table(_canceled_returns_detail, 260, show_type=True, show_reason=True, show_location=True, pg_key="sapo_cancelled")
 
+            # ── 🔍 KIỂM TRA MÃ TRẢ TRÙNG trong từng bảng (đếm mã trả xuất hiện >1 lần) ──
+            st.divider()
+            with st.expander("🔍 Kiểm tra Mã trả hàng TRÙNG trong từng bảng", expanded=True):
+                from collections import Counter as _Cnt
+
+                def _dup_madon(rows):
+                    _cs = [str(_display_return_code(d) or "").strip() for d in (rows or [])]
+                    _cs = [c for c in _cs if c]
+                    _cnt = _Cnt(_cs)
+                    _dd = {k: v for k, v in _cnt.items() if v > 1}
+                    return len(rows or []), len(_cnt), sum(v - 1 for v in _dd.values()), _dd
+                _dup_tables = [
+                    ("🚨 Cần KN", _ckn_render_list),
+                    ("⛔ Không cần KN", _khong_can_kn_list),
+                    ("🏷️ Dohana tag KHUI", _dtag_kn),
+                    ("🏷️ Dohana tag ĐÓNG", _dtag_nokn),
+                    ("🚫 Nhập kho không video", _restock_novideo_rows()),
+                    ("📋 Chi tiết (đang xử lý)", _rip.get("detail") or []),
+                ]
+                if _closed_returns_with_waybill_detail:
+                    _dup_tables.append(("🧭 Đơn bị đóng có VĐ", _closed_returns_with_waybill_detail))
+                if _canceled_returns_detail:
+                    _dup_tables.append(("🗂️ Phiếu đã hủy", _canceled_returns_detail))
+                _dup_out, _tot_dup = [], 0
+                for _nm, _rws in _dup_tables:
+                    _t, _dist, _ndup, _dd = _dup_madon(_rws)
+                    _tot_dup += _ndup
+                    _dup_out.append({
+                        "Bảng": _nm, "Số dòng": _t, "Mã trả (khác nhau)": _dist,
+                        "⚠️ Mã TRÙNG (dòng dư)": _ndup,
+                        "Ví dụ (mã × số lần)": ", ".join(f"{k} ×{v}" for k, v in list(_dd.items())[:6]) or "—",
+                    })
+                st.dataframe(pd.DataFrame(_dup_out), hide_index=True, use_container_width=True,
+                             column_config={"Ví dụ (mã × số lần)": st.column_config.TextColumn(width="large")})
+                if _tot_dup:
+                    st.warning(f"⚠️ Tổng **{_tot_dup}** dòng mã trả bị trùng — bảng nào cột **⚠️ Mã TRÙNG** > 0 là có.")
+                else:
+                    st.success("✅ Không bảng nào có mã trả trùng.")
+
         with _tabs[2]:
             # ── 🎥 KHO VIDEO DOHANA (lưu CẢ NĂM, vượt hạn 30 ngày của Dohana) — tra cứu metadata ──
             st.divider()
