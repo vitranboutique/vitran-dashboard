@@ -49,6 +49,14 @@ for _m in (L, daily_report):
         _importlib.reload(_m)
     except Exception as _e:            # lỗi hiếm; giữ bản đang chạy, ghi lại để hiện cảnh báo
         _RELOAD_ERR += f"{getattr(_m, '__name__', '?')}: {_e}\n"
+# picklog: reload để có hàm MỚI ngay (khỏi Reboot), nhưng GIỮ _GID_CACHE để khỏi list lại gist mỗi rerun.
+try:
+    _gid_keep = getattr(picklog, "_GID_CACHE", None)
+    _importlib.reload(picklog)
+    if _gid_keep and not getattr(picklog, "_GID_CACHE", None):
+        picklog._GID_CACHE = _gid_keep
+except Exception as _e:
+    _RELOAD_ERR += f"picklog: {_e}\n"
 
 # ───────────────────────── Cấu hình trang ─────────────────────────
 st.set_page_config(
@@ -1809,6 +1817,76 @@ def load_returns_inprogress():
 def load_closed_returns_full_year():
     _cache_ver = 1
     return L.get_returns_in_progress(make_fetch_json(build_session()), max_pages=0, canceled_max_pages=500)
+
+
+@st.cache_data(ttl=600, show_spinner="Đang dò đơn nhập kho thiếu video khui…")
+def load_restock_novideo(days: int = 30):
+    """Đối chiếu đơn ĐÃ nhập kho (Sapo, ~days ngày) với KHO VIDEO KHUI đã lưu (Gist, vĩnh viễn).
+    Đơn không khớp clip khui nào → ghi vào SỔ vĩnh viễn (tích luỹ, KHÔNG mất khi Dohana xoá video);
+    video hiện sau → tự chuyển 'resolved'. Trả {active, resolved, dismissed, total_scanned}."""
+    cands = L.get_restocked_returns_range(make_fetch_json(build_session()), days=days)
+
+    def _norm(c):                       # chuẩn hoá để khớp chịu lỗi hoa/thường/space
+        return str(c or "").strip().upper()
+    inbound_codes = set()               # mã video KHUI HÀNG (inbound) đã lưu bền
+    if picklog.configured():
+        for r in picklog.read_dohana_videos():
+            if r.get("type") == "inbound" and r.get("code"):
+                inbound_codes.add(_norm(r.get("code")))
+    _today = (datetime.now(timezone.utc) + timedelta(hours=7)).date().isoformat()
+    ledger = picklog.read_restock_novideo() if picklog.configured() else {"items": {}}
+    items = ledger.get("items", {})
+    changed = False
+    _DISPLAY = ("order_code", "vd_di", "vd_tra", "ngay_tao", "restock_date", "recv_time",
+                "nhan_vien", "sku", "sp", "sp_nhap", "ly_do", "loai_tra", "loai_tra_code", "gian_hang")
+    # AN TOÀN: kho video rỗng (Dohana 429 / chưa sync) → KHÔNG dò (tránh gắn oan cả loạt vào sổ vĩnh
+    # viễn). Chỉ giữ nguyên sổ cũ. UI sẽ báo "kho video trống".
+    if not inbound_codes:
+        _vals0 = list(items.values())
+        return {"active": sorted([v for v in _vals0 if v.get("status") == "active"],
+                                 key=lambda r: r.get("restock_date", ""), reverse=True),
+                "resolved": [v for v in _vals0 if v.get("status") == "resolved"],
+                "dismissed": [v for v in _vals0 if v.get("status") == "dismissed"],
+                "total_scanned": len(cands), "video_store": 0}
+    for c in cands:
+        key = c.get("return_code") or c.get("order_code")
+        if not key:
+            continue
+        has_vid = any(_norm(code) in inbound_codes for code in c.get("codes", []))
+        if has_vid:
+            it = items.get(key)
+            if it and it.get("status") == "active":       # trước thiếu, nay có video → tự gỡ
+                it["status"] = "resolved"
+                it["resolved_reason"] = "video xuất hiện sau"
+                it["resolved_at"] = _today
+                changed = True
+            continue
+        it = items.get(key)                                # KHÔNG khớp video khui nào
+        if it is None:
+            rec = {k: c.get(k) for k in _DISPLAY}
+            rec.update({"return_code": key, "status": "active",
+                        "first_detected": _today, "last_checked": _today})
+            items[key] = rec
+            changed = True
+        else:
+            if it.get("status") == "resolved" and it.get("resolved_reason") == "video xuất hiện sau":
+                it["status"] = "active"                    # video từng có rồi lại mất (hiếm) → báo lại
+                changed = True
+            if it.get("status") != "dismissed":
+                for k in _DISPLAY:                         # cập nhật hiển thị phòng Sapo đổi
+                    if c.get(k) not in (None, "") and it.get(k) != c.get(k):
+                        it[k] = c.get(k)
+                        changed = True
+            it["last_checked"] = _today
+    if changed and picklog.configured():
+        picklog.write_restock_novideo({"items": items})
+    _vals = list(items.values())
+    active = sorted([v for v in _vals if v.get("status") == "active"],
+                    key=lambda r: r.get("restock_date", ""), reverse=True)
+    resolved = [v for v in _vals if v.get("status") == "resolved"]
+    dismissed = [v for v in _vals if v.get("status") == "dismissed"]
+    return {"active": active, "resolved": resolved, "dismissed": dismissed,
+            "total_scanned": len(cands), "video_store": len(inbound_codes)}
 
 
 @st.cache_data(ttl=900, show_spinner="Đang lấy danh mục sản phẩm + tồn kho từ Sapo…")
@@ -6034,6 +6112,74 @@ def _render_daily():
 # ═════════════ HÀM RENDER: ĐƠN TRẢ HÀNG ĐANG XỬ LÝ (dùng trong tab Vận hành) ═════════════
 def _render_returns():
     st.title("📦 Đơn trả hàng đang xử lý (chưa nhập kho)")
+
+    # ══════════ ĐƠN ĐÃ NHẬP KHO NHƯNG KHÔNG CÓ VIDEO KHUI — lưu VĨNH VIỄN ══════════
+    st.markdown("### 🚫 Đơn nhập kho nhưng KHÔNG có video khui")
+    st.caption("Đơn đã nhập LẠI kho (Sapo) nhưng KHÔNG có video khui hàng nào khớp mã trong **kho video "
+               "đã lưu** → nghi NV nhập kho nhầm / quên quay clip khui. Danh sách **lưu VĨNH VIỄN** (file "
+               "Gist riêng), KHÔNG mất khi Dohana xoá video. Video xuất hiện sau → tự gỡ. "
+               "Tick **Bỏ qua** nếu đã kiểm tra là ổn.")
+    try:
+        _nv = load_restock_novideo(days=30)
+        _act = _nv.get("active", [])
+        _cm = st.columns(3)
+        _cm[0].metric("⚠️ Đang thiếu video", len(_act))
+        _cm[1].metric("Đã quét (30 ngày)", _nv.get("total_scanned", 0))
+        _cm[2].metric("Kho video khui đã lưu", _nv.get("video_store", 0))
+        if _nv.get("video_store", 0) == 0:
+            st.warning("Kho video khui đang trống (Dohana chưa đồng bộ được) → tạm thời chưa kết luận "
+                       "được đơn nào thiếu video. Mở bảng Tổng hợp 30 ngày để đồng bộ kho video trước.")
+        elif not _act:
+            st.success("✅ Không có đơn nhập kho nào thiếu video khui trong 30 ngày qua.")
+        else:
+            st.error(f"⚠️ Có **{len(_act)}** đơn ĐÃ nhập kho nhưng KHÔNG tìm thấy video khui — cần truy.")
+            _rows = [{
+                "Bỏ qua": False,
+                "Ngày nhập kho": r.get("restock_date", ""),
+                "Ngày tạo": r.get("ngay_tao", ""),
+                "Mã đơn": r.get("order_code", ""),
+                "Mã trả hàng": r.get("return_code", ""),
+                "VĐ đi": r.get("vd_di", ""),
+                "VĐ trả về": r.get("vd_tra", ""),
+                "NV nhận": r.get("nhan_vien", ""),
+                "SL": r.get("sp", 0),
+                "Nhập kho": r.get("sp_nhap", 0),
+                "SKU": r.get("sku", ""),
+                "Lý do": r.get("ly_do", ""),
+                "Loại trả": r.get("loai_tra", ""),
+                "Gian hàng": r.get("gian_hang", ""),
+                "_key": r.get("return_code") or r.get("order_code"),
+            } for r in _act]
+            _df_nv = pd.DataFrame(_rows)
+            _ed_nv = st.data_editor(
+                _df_nv, hide_index=True, use_container_width=True, key="nv_editor",
+                disabled=[c for c in _df_nv.columns if c != "Bỏ qua"],
+                column_config={"_key": None,
+                               "Bỏ qua": st.column_config.CheckboxColumn("Bỏ qua", width="small")})
+            _pick = [row["_key"] for _, row in _ed_nv.iterrows() if row.get("Bỏ qua")]
+            if _pick and st.button(f"✔️ Bỏ qua {len(_pick)} đơn đã tick (đã kiểm tra là ổn)", key="nv_dismiss"):
+                picklog.dismiss_restock_novideo(_pick)
+                load_restock_novideo.clear()
+                st.rerun()
+        _res, _dis = _nv.get("resolved", []), _nv.get("dismissed", [])
+        if _res or _dis:
+            with st.expander(f"📜 Lịch sử: {len(_res)} tự khớp lại video sau · {len(_dis)} đã bỏ qua"):
+                if _dis:
+                    st.markdown("**Đã bỏ qua (admin xác nhận ổn):**")
+                    st.dataframe(pd.DataFrame([{
+                        "Mã trả hàng": v.get("return_code", ""), "Mã đơn": v.get("order_code", ""),
+                        "Ngày nhập kho": v.get("restock_date", ""), "NV nhận": v.get("nhan_vien", ""),
+                        "Lý do bỏ qua": v.get("resolved_reason", ""),
+                    } for v in _dis]), hide_index=True, use_container_width=True)
+                if _res:
+                    st.markdown("**Tự khớp lại video sau đó (hết cảnh báo):**")
+                    st.dataframe(pd.DataFrame([{
+                        "Mã trả hàng": v.get("return_code", ""), "Mã đơn": v.get("order_code", ""),
+                        "Ngày nhập kho": v.get("restock_date", ""),
+                    } for v in _res]), hide_index=True, use_container_width=True)
+    except Exception as _e_nv:
+        st.warning(f"Chưa dò được đơn nhập kho thiếu video: `{_e_nv}`")
+    st.markdown("---")
 
     def _blank_value(value):
         if value is None:

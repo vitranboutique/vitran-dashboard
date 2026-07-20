@@ -2186,6 +2186,98 @@ def get_returns_received_today(fetch_json, scan_days: int = 60, max_pages: int =
     }
 
 
+def get_restocked_returns_range(fetch_json, days: int = 30, max_pages: int = 24) -> list:
+    """DANH SÁCH đơn hoàn ĐÃ NHẬP KHO (restock_status='restocked') có mốc nhập kho trong
+    [hôm nay − days, hôm nay]. Kèm 'codes' = mọi mã ứng viên (VĐ hoàn về / VĐ giao đi / mã đơn /
+    mã trong ghi chú) để đối chiếu video khui hàng. Dùng cho bảng 'nhập kho nhưng KHÔNG có video'."""
+    now_vn = _now_utc() + timedelta(hours=7)
+    today = now_vn.date()
+    lo = today - timedelta(days=days)
+    cutoff = today - timedelta(days=days + 30)   # đệm: phiếu tạo trước nhưng nhập kho sau
+
+    rows = []
+    for p in range(1, max_pages + 1):
+        chunk = fetch_json("/admin/order_returns.json", limit=250, page=p).get("order_returns", [])
+        if not chunk:
+            break
+        rows += chunk
+        last = _vn_date_of(chunk[-1].get("created_on"))
+        if last and last < cutoff:
+            break
+
+    def _uname(u):
+        nm = " ".join(s for s in [(u.get("last_name") or "").strip(),
+                                   (u.get("first_name") or "").strip()] if s)
+        return nm or (u.get("email") or "").split("@")[0]
+    try:
+        _users = {u.get("id"): _uname(u)
+                  for u in (fetch_json("/admin/users.json").get("users", []) or [])}
+    except Exception:
+        _users = {}
+
+    _reason_vn = {
+        "unwanted": "Không còn nhu cầu", "delivery_failed": "Giao thất bại",
+        "defective": "Lỗi/hư hỏng", "wrong_item": "Giao sai hàng",
+        "not_as_described": "Khác mô tả", "damaged": "Hư hỏng",
+        "size": "Không vừa size", "change_of_mind": "Đổi ý",
+        "wrong_size": "Sai size", "quality": "Chất lượng", "other": "Khác",
+    }
+    _type_vn = {
+        "return_and_refund": "Trả hàng hoàn tiền",
+        "delivery_failed": "Giao hàng thất bại",
+        "refund": "Hoàn tiền (không trả hàng)",
+    }
+
+    out = []
+    for x in rows:
+        if x.get("restock_status") != "restocked":
+            continue
+        ons = x.get("restocked_ons") or []
+        if isinstance(ons, str):
+            ons = [ons]
+        rdate = next((_vn_date_of(o) for o in ons if _vn_date_of(o)), None)
+        if not rdate or not (lo <= rdate <= today):
+            continue
+        si = x.get("shipping_info") or {}
+        track = si.get("tracking_number")                 # VĐ HOÀN VỀ
+        fft = si.get("fulfillment_tracking_numbers") or []
+        out_track = fft[0] if fft else None               # VĐ GIAO ĐI
+        order_name = (x.get("order") or {}).get("name")
+        codes = set()
+        for c in (track, out_track, order_name, x.get("name")):
+            if c:
+                codes.add(str(c))
+        for t in fft:
+            codes.add(str(t))
+        codes.update(_TRACK_RE.findall(str(x.get("note") or "")))
+        lis = x.get("line_items") or []
+        sku = "; ".join(f"{(li.get('sku') or 'N/A')}×{int(round(li.get('quantity') or 0))}" for li in lis)
+        rsn = lis[0].get("return_reason") if lis else None
+        _recv_uid = next((u for u in (x.get("restocked_user_ids") or []) if u), None) or x.get("user_id")
+        _recv_on = next((o for o in ons if _vn_date_of(o) == rdate), ons[0] if ons else None)
+        _ct = _vn_date_of(x.get("created_on"))
+        out.append({
+            "return_code": x.get("name") or "",
+            "order_code": order_name or x.get("name") or "?",
+            "vd_di": out_track or "",
+            "vd_tra": track or "",
+            "ngay_tao": _ct.strftime("%d/%m/%Y") if _ct else "",
+            "restock_date": rdate.isoformat(),
+            "recv_time": _vn_hm(_recv_on),
+            "nhan_vien": _users.get(_recv_uid) or "",
+            "sku": sku,
+            "sp": int(round(x.get("total_quantity") or 0)),
+            "sp_nhap": int(round(sum((li.get("stocked_quantity") or 0) for li in lis))),
+            "ly_do": _reason_vn.get(rsn, rsn or "—"),
+            "loai_tra": _type_vn.get(x.get("return_type"), x.get("return_type") or "—"),
+            "loai_tra_code": x.get("return_type") or "",
+            "gian_hang": x.get("order_source") or "—",
+            "codes": sorted(codes),
+        })
+    out.sort(key=lambda r: r.get("restock_date", ""), reverse=True)   # mới nhập kho lên đầu
+    return out
+
+
 def get_daily_report(fetch_json, target_date=None) -> dict:
     """Tổng hợp BÁO CÁO CUỐI NGÀY: số đơn theo ĐVVC (đóng gói/hủy/shipper nhận/còn lại),
     các đợt soạn hàng, tổng nhập–xuất. target_date=None → hôm nay; truyền ngày cũ để

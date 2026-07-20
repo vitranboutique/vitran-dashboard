@@ -592,3 +592,44 @@ def merge_dohana_videos(new_list) -> list:
         except Exception:
             pass
     return cur
+
+
+# ───── ĐƠN NHẬP KHO NHƯNG KHÔNG CÓ VIDEO KHUI — lưu VĨNH VIỄN, KHÔNG mất khi Dohana xoá video ─────
+# Đơn hoàn đã restock (Sapo) mà không khớp video khui (inbound) nào trong kho video đã lưu → nghi
+# NV nhập kho nhầm / không quay clip. Sổ này TÍCH LUỸ, không tự xoá; video xuất hiện sau → tự đánh
+# dấu resolved; admin có thể 'dismiss' (đã kiểm tra là ổn). Vì lưu riêng ở Gist nên Dohana purge
+# video gốc cũng không làm mất bằng chứng.
+_RESTOCK_NOVIDEO_FILE = "vitran_restock_novideo.json"
+
+
+def read_restock_novideo() -> dict:
+    """Sổ đơn đã nhập kho thiếu video khui. {items: {key: {...các field hiển thị + status...}}}.
+    status: active (đang thiếu) · resolved (video hiện sau) · dismissed (admin bỏ qua)."""
+    d = _read_gist_file(_RESTOCK_NOVIDEO_FILE)
+    if isinstance(d, dict) and isinstance(d.get("items"), dict):
+        return d
+    return {"items": {}}
+
+
+def write_restock_novideo(data) -> bool:
+    if not isinstance(data, dict):
+        data = {"items": {}}
+    data.setdefault("items", {})
+    return _write_gist_file(_RESTOCK_NOVIDEO_FILE, data)
+
+
+def dismiss_restock_novideo(keys, reason="admin đã kiểm tra là ổn") -> bool:
+    """Đánh dấu 1/nhiều đơn 'đã bỏ qua' → hết cảnh báo nhưng vẫn giữ trong sổ (audit)."""
+    if isinstance(keys, str):
+        keys = [keys]
+    d = read_restock_novideo()
+    items = d.get("items", {})
+    today = _today_vn()
+    hit = False
+    for k in keys:
+        if k in items:
+            items[k]["status"] = "dismissed"
+            items[k]["resolved_reason"] = reason
+            items[k]["resolved_at"] = today
+            hit = True
+    return _write_gist_file(_RESTOCK_NOVIDEO_FILE, d) if hit else False
