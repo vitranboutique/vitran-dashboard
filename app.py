@@ -624,6 +624,7 @@ def _render_week_video_audit(data):
                 cells = [
                     "<tr>",
                     f'<td style="padding:6px 8px;border:1px solid #d6dce6;white-space:nowrap">{_esc(str(r.get("Ngày") or ""))}</td>',
+                    _fmt_cell(r.get("Khớp lộn mục"), has_match),
                     f'<td style="padding:6px 8px;border:1px solid #d6dce6;text-align:right;font-weight:800">{_num(r.get("Đóng thiếu SL"))}</td>',
                     _fmt_cell(r.get("Đóng thiếu")),
                     f'<td style="padding:6px 8px;border:1px solid #d6dce6;text-align:right;font-weight:800">{_num(r.get("Đóng dư SL"))}</td>',
@@ -632,7 +633,6 @@ def _render_week_video_audit(data):
                     _fmt_cell(r.get("Hoàn thiếu")),
                     f'<td style="padding:6px 8px;border:1px solid #d6dce6;text-align:right;font-weight:800">{_num(r.get("Hoàn dư SL"))}</td>',
                     _fmt_cell(r.get("Hoàn dư")),
-                    _fmt_cell(r.get("Khớp lộn mục"), has_match),
                     f'<td style="padding:6px 8px;border:1px solid #d6dce6;background:{chot_bg};font-weight:800;vertical-align:top">{_esc(chot)}</td>',
                     "</tr>",
                 ]
@@ -644,9 +644,9 @@ def _render_week_video_audit(data):
   <thead>
     <tr>
       <th rowspan="2" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#e2e8f0">Ngày</th>
+      <th rowspan="2" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#fef3c7;min-width:220px">Khớp lộn mục</th>
       <th colspan="4" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#dbeafe">Đóng hàng</th>
       <th colspan="4" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#ffedd5">Nhập hàng hoàn</th>
-      <th rowspan="2" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#fef3c7;min-width:220px">Khớp lộn mục</th>
       <th rowspan="2" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#f1f5f9;min-width:160px">Chốt</th>
     </tr>
     <tr>
@@ -2073,6 +2073,13 @@ def load_week_summary():
                     rows += [f"{pad_label} #{i}" for i in range(len(rows) + 1, n + 1)]
                 return rows
 
+            def _pad_min_rows(rows, minimum, pad_label=""):
+                rows = list(rows or [])
+                n = max(0, int(minimum or 0))
+                if pad_label and len(rows) < n:
+                    rows += [f"{pad_label} #{i}" for i in range(len(rows) + 1, n + 1)]
+                return rows
+
             def _add_matrix(iso, pkg_missing, pkg_extra, return_missing, inbound_extra, pkg_unknown=None, day=None):
                 pkg_missing = _uniq(pkg_missing)
                 pkg_extra = [str(v or "").strip() for v in (pkg_extra or []) if str(v or "").strip()]
@@ -2080,8 +2087,9 @@ def load_week_summary():
                 inbound_extra = [str(v or "").strip() for v in (inbound_extra or []) if str(v or "").strip()]
                 pkg_unknown = [str(v or "").strip() for v in (pkg_unknown or []) if str(v or "").strip()]
                 limits = _day_video_limits(day)
+                pkg_unknown_rows = [f"Chưa khớp đơn: {x}" for x in pkg_unknown]
                 p1 = _cross_match_pairs(pkg_missing, inbound_extra)      # thiếu đóng ↔ dư khui
-                p2 = _cross_match_pairs(return_missing, pkg_extra)       # thiếu khui ↔ dư đóng
+                p2 = _cross_match_pairs(return_missing, pkg_extra + pkg_unknown_rows)  # thiếu khui ↔ dư đóng
                 match_txt = _short_codes([f"{a} ↔ {b}" for a, b in (p1 + p2)], limit=16)
                 p1_missing = {a for a, _ in p1}
                 p1_extra = {b for _, b in p1}
@@ -2091,14 +2099,17 @@ def load_week_summary():
                 rem_inbound_extra_rows = [x for x in inbound_extra if x not in p1_extra]
                 rem_return_missing_rows = [x for x in return_missing if x not in p2_missing]
                 rem_pkg_extra_rows = [x for x in pkg_extra if x not in p2_extra]
-                pkg_unknown_rows = [f"Chưa khớp đơn: {x}" for x in pkg_unknown]
-                display_pkg_extra_rows = rem_pkg_extra_rows + pkg_unknown_rows
+                rem_pkg_unknown_rows = [x for x in pkg_unknown_rows if x not in p2_extra]
+                display_pkg_extra_rows = rem_pkg_extra_rows + rem_pkg_unknown_rows
                 rem_pkg_missing_rows = _limit_rows(rem_pkg_missing_rows, limits.get("pkg_missing"),
                                                    "Chưa lấy được mã đóng thiếu")
-                rem_inbound_extra_rows = _limit_rows(rem_inbound_extra_rows, limits.get("inbound_extra"),
-                                                     "Chưa lấy được mã video hoàn dư")
-                rem_return_missing_rows = _limit_rows(rem_return_missing_rows, limits.get("return_missing"),
-                                                      "Chưa lấy được mã hoàn thiếu")
+                # Clip khui hàng dư/thiếu đã có sẵn trong báo cáo A4 theo từng ngày.
+                # Không cắt theo lệch ròng, vì clip dư có thể đồng thời tồn tại với đơn hoàn thiếu clip.
+                # Nếu cắt về 0 thì bảng dưới trống dù A4 đã báo rõ mã cần kiểm.
+                rem_inbound_extra_rows = _pad_min_rows(rem_inbound_extra_rows, limits.get("inbound_extra"),
+                                                       "Chưa lấy được mã video hoàn dư")
+                rem_return_missing_rows = _pad_min_rows(rem_return_missing_rows, limits.get("return_missing"),
+                                                        "Chưa lấy được mã hoàn thiếu")
                 display_pkg_extra_rows = _limit_rows(display_pkg_extra_rows, limits.get("pkg_extra"),
                                                      "Chưa lấy được mã video đóng dư")
                 rem_pkg_missing = len(rem_pkg_missing_rows)
