@@ -37,6 +37,19 @@ from sapo_client import (
 )
 from picking_render import picking_html
 
+# ───────── Tự nạp lại module logic mỗi lần chạy → sửa code là CÓ NGAY, khỏi Reboot ─────────
+# app.py hot-reload khi push, nhưng module (sapo_logic, daily_report) thì Streamlit giữ bản cũ
+# trong RAM tới khi Reboot. Reload tại đây để 2 module đó luôn chạy code mới nhất mà không cần
+# Reboot. Chỉ reload 2 module THUẦN hàm/hằng (không giữ state, không gọi API ở cấp module) nên
+# an toàn & nhẹ; KHÔNG reload dohana/picklog (giữ throttle/cache, tránh 429).
+import importlib as _importlib
+_RELOAD_ERR = ""
+for _m in (L, daily_report):
+    try:
+        _importlib.reload(_m)
+    except Exception as _e:            # lỗi hiếm; giữ bản đang chạy, ghi lại để hiện cảnh báo
+        _RELOAD_ERR += f"{getattr(_m, '__name__', '?')}: {_e}\n"
+
 # ───────────────────────── Cấu hình trang ─────────────────────────
 st.set_page_config(
     page_title="VITRAN BOUTIQUE",
@@ -5885,6 +5898,11 @@ def _render_daily():
     with st.expander("📅 Tổng hợp 30 ngày (1 tháng) — đóng gói & đơn hoàn", expanded=False):
         try:
             _wk = load_week_summary()
+            _bld = getattr(L, "WEEK_SUMMARY_BUILD", "⚠️ CHƯA nạp code mới — cần Reboot")
+            st.caption(f"🔧 Bản dữ liệu: `{_bld}` · cột **Hoàn (đơn)** đếm theo MÃ ĐƠN "
+                       "(nhiều kiện/1 đơn chỉ tính 1) — khớp với 'Đã nhận hàng trả' ở báo cáo A4.")
+            if _RELOAD_ERR:
+                st.warning("Không nạp lại được module (đang chạy bản cũ):\n" + _RELOAD_ERR)
             _NOTE_FILE = "vitran_ghichu_ngay.json"
             _notes = {}
             if picklog.configured():

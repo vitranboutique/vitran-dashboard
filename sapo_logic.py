@@ -1413,6 +1413,9 @@ def get_alerts(fetch_json) -> dict:
             "cancel_retrieve_express": cancel_retrieve_express}
 
 
+WEEK_SUMMARY_BUILD = "hoan-theo-madon-20jul"   # đổi mỗi lần sửa module → biết app đã reboot chưa
+
+
 def get_week_summary(fetch_json, days: int = 7) -> dict:
     """Tổng hợp NHIỀU NGÀY (mặc định 7) + TỔNG THÁNG này — mỗi ngày: đóng gói / hủy đã gói /
     soạn / shipper nhận / giao khách + ĐƠN HOÀN nhập kho (đơn · SP thực · thiếu · tráo).
