@@ -436,6 +436,11 @@ def _week_table_html(data):
     _DOHANA_RETENTION = 25   # Dohana chỉ giữ ~25 ngày video → ngày cũ hơn KHÔNG đồng bộ lại được
     _today_vn = (datetime.now(timezone.utc) + timedelta(hours=7)).date()
 
+    def _gap_badge(sym, fg, bgc, word, n, tip):
+        return (f' <span title="{tip}" style="color:{fg};background:{bgc};font-size:9px;'
+                f'font-weight:800;white-space:nowrap;padding:1px 4px;border-radius:4px;'
+                f'margin-left:3px">{sym}{n} {word}</span>')
+
     def _lech_badge(d):
         """Trả badge lệch cho từng cột cần đối chiếu (▼ thiếu · ▲ dư):
         Vid đóng vs Đóng gói · Vid hoàn vs Hoàn đơn · Shipper nhận: Soạn = Hủy+Shipper (ngày đã qua).
@@ -454,11 +459,6 @@ def _week_table_html(data):
         # kho là ĐÚNG QUY TRÌNH → giải thích phần "dư" của Vid hoàn (không tính lỗi).
         _dispute = sum(int(x) for x in re.findall(r"×\s*(\d+)", str(d.get("tag_hoan") or "")))
 
-        def _badge(sym, fg, bgc, word, n, tip):
-            return (f' <span title="{tip}" style="color:{fg};background:{bgc};font-size:9px;'
-                    f'font-weight:800;white-space:nowrap;padding:1px 4px;border-radius:4px;'
-                    f'margin-left:3px">{sym}{n} {word}</span>')
-
         out = {}
         for k, lech, tip in (
             ("vid_dong", _n("soan") - _n("vid_dong"), "Soạn − Đóng gói(video): đơn đã nhặt mà chưa gói/quay video"),
@@ -470,14 +470,14 @@ def _week_table_html(data):
                 continue
             _is_vid = k in ("vid_dong", "vid_hoan")
             if _is_vid and _stale and lech > 0:   # ngoài hạn Dohana → xám, không đổ lỗi NV
-                out[k] = _badge("▽", "#64748b", "#f1f5f9", "kho cũ", abs(lech),
+                out[k] = _gap_badge("▽", "#64748b", "#f1f5f9", "kho cũ", abs(lech),
                                 "Ngày đã quá hạn Dohana (~25 ngày) — không đồng bộ lại được. "
                                 "Số video có thể thiếu do kho lưu lúc đó chưa đầy, KHÔNG chắc NV quên quay")
                 continue
             if lech > 0:      # THIẾU (đỏ) — bên này thiếu video, cần quay bù / chuyển tới
-                out[k] = _badge("▼", "#b91c1c", "#fee2e2", "thiếu", abs(lech), tip)
+                out[k] = _gap_badge("▼", "#b91c1c", "#fee2e2", "thiếu", abs(lech), tip)
             else:             # DƯ (xanh) — bên này dư video, có thể quay lộn sang → chuyển đi
-                out[k] = _badge("▲", "#1d4ed8", "#dbeafe", "dư", abs(lech), tip)
+                out[k] = _gap_badge("▲", "#1d4ed8", "#dbeafe", "dư", abs(lech), tip)
 
         # ── VID HOÀN: đo "THIẾU CLIP KHUI" (đơn hoàn CHƯA quay) TRỰC TIẾP, không bị triệt tiêu ──
         # Đơn tráo/đã dùng/hư (tag_hoan) CÓ quay clip nhưng KHÔNG nhập kho → làm Vid hoàn "dư" hơn
@@ -486,19 +486,65 @@ def _week_table_html(data):
         _tc = _dispute + _n("hoan_don") - _n("vid_hoan")
         if _tc > 0:
             if _stale:        # ngoài hạn Dohana → kho video lúc đó có thể chưa đầy, KHÔNG đổ lỗi NV
-                out["vid_hoan"] = _badge("▽", "#64748b", "#f1f5f9", "kho cũ", _tc,
+                out["vid_hoan"] = _gap_badge("▽", "#64748b", "#f1f5f9", "kho cũ", _tc,
                     "Ngày quá hạn Dohana (~25 ngày) — kho video lúc đó có thể chưa đầy, "
                     "KHÔNG chắc NV quên quay.")
             else:
-                out["vid_hoan"] = _badge("⚠", "#b91c1c", "#fee2e2", "chưa quay", _tc,
+                out["vid_hoan"] = _gap_badge("⚠", "#b91c1c", "#fee2e2", "chưa quay", _tc,
                     "THIẾU CLIP KHUI = (tag tráo/đã dùng/hư) + Hoàn nhập kho − Vid hoàn. >0 = còn đơn "
                     "hoàn CHƯA quay clip khui (đã bù phần tráo/đã dùng vốn CÓ quay mà không nhập kho). "
                     "Mở báo cáo A4 ngày này để biết ĐƠN nào chưa quay.")
         elif _tc < 0:
-            out["vid_hoan"] = _badge("▲", "#1d4ed8", "#dbeafe", "video lẻ", -_tc,
+            out["vid_hoan"] = _gap_badge("▲", "#1d4ed8", "#dbeafe", "video lẻ", -_tc,
                 "Video khui DƯ hơn cả đơn hoàn lẫn tag tráo/đã dùng — có thể NV quay LỘN bên đóng "
                 "hàng, quay dư, hoặc quên gắn tag. Mở A4 để đối chiếu.")
         return out
+
+    def _total_video_badges(rows):
+        """Cộng lệch từng ngày; không để ngày dư và ngày thiếu triệt tiêu nhau."""
+        totals = {
+            "pkg_missing": 0, "pkg_extra": 0, "pkg_old": 0,
+            "ret_missing": 0, "ret_extra": 0, "ret_old": 0,
+        }
+        for row in rows or []:
+            try:
+                stale = (_today_vn - date.fromisoformat(str(row.get("iso") or ""))).days > _DOHANA_RETENTION
+            except Exception:
+                stale = False
+            pkg_gap = int(round(float(row.get("soan") or 0))) - int(round(float(row.get("vid_dong") or 0)))
+            dispute = sum(int(x) for x in re.findall(r"×\s*(\d+)", str(row.get("tag_hoan") or "")))
+            ret_gap = dispute + int(round(float(row.get("hoan_don") or 0))) - int(round(float(row.get("vid_hoan") or 0)))
+            if pkg_gap > 0:
+                totals["pkg_old" if stale else "pkg_missing"] += pkg_gap
+            elif pkg_gap < 0:
+                totals["pkg_extra"] += -pkg_gap
+            if ret_gap > 0:
+                totals["ret_old" if stale else "ret_missing"] += ret_gap
+            elif ret_gap < 0:
+                totals["ret_extra"] += -ret_gap
+
+        pkg = ""
+        if totals["pkg_missing"]:
+            pkg += _gap_badge("▼", "#b91c1c", "#fee2e2", "thiếu", totals["pkg_missing"],
+                              "Tổng số video đóng thiếu, cộng riêng theo từng ngày.")
+        if totals["pkg_extra"]:
+            pkg += _gap_badge("▲", "#1d4ed8", "#dbeafe", "dư", totals["pkg_extra"],
+                              "Tổng số video đóng dư, cộng riêng theo từng ngày.")
+        if totals["pkg_old"]:
+            pkg += _gap_badge("▽", "#64748b", "#f1f5f9", "kho cũ", totals["pkg_old"],
+                              "Tổng chênh thiếu thuộc các ngày đã quá hạn lưu video Dohana.")
+
+        ret = ""
+        if totals["ret_missing"]:
+            ret += _gap_badge("⚠", "#b91c1c", "#fee2e2", "chưa quay", totals["ret_missing"],
+                              "Tổng số video khui hoàn thiếu, cộng riêng theo từng ngày.")
+        if totals["ret_extra"]:
+            ret += _gap_badge("▲", "#1d4ed8", "#dbeafe", "video lẻ", totals["ret_extra"],
+                              "Tổng số video khui hoàn dư, cộng riêng theo từng ngày.")
+        if totals["ret_old"]:
+            ret += _gap_badge("▽", "#64748b", "#f1f5f9", "kho cũ", totals["ret_old"],
+                              "Tổng chênh thiếu thuộc các ngày đã quá hạn lưu video Dohana.")
+        return {"vid_dong": pkg, "vid_hoan": ret}
 
     head = "".join(
         f'<th style="position:sticky;top:0;z-index:3;text-align:{"left" if k in _txt else "right"};'
@@ -542,9 +588,11 @@ def _week_table_html(data):
                       f'{v}{_nay}{_badges.get(k, "")}</td>')
         body += f'<tr>{cells}</tr>'
 
-    def _tot_row(label, src, label_bg):
+    def _tot_row(label, src, label_bg, rows=None):
         cells = f'<td colspan="2" style="text-align:left;padding:6px 8px;{_bd}background:{label_bg}">{label}</td>'
         _tbadge = _lech_badge(src)
+        if rows is not None:
+            _tbadge.update(_total_video_badges(rows))
         for k, _ in cols[2:]:
             if k == "ghi_chu":
                 cells += f'<td style="padding:6px 8px;{_bd}background:#ffffff"></td>'
@@ -564,9 +612,11 @@ def _week_table_html(data):
         return f'<tr style="font-weight:800;color:#16233f">{cells}</tr>'
 
     tot_all = {k: sum(r.get(k, 0) for r in wk) for k in _numkeys}
-    tots = _tot_row(f"TỔNG {len(wk)} ngày qua", tot_all, "#eef1f6")
+    tots = _tot_row(f"TỔNG {len(wk)} ngày qua", tot_all, "#eef1f6", wk)
     if month:
-        tots += _tot_row(f"TỔNG tháng {mlabel}", month, "#e0e7ff")
+        _month_prefix = _today_vn.strftime("%Y-%m")
+        _month_rows = [r for r in wk if str(r.get("iso") or "").startswith(_month_prefix)]
+        tots += _tot_row(f"TỔNG tháng {mlabel}", month, "#e0e7ff", _month_rows)
     # Tổng ĐEM LÊN ĐẦU (ngay dưới tiêu đề); tiêu đề STICKY (position:sticky) → trượt không mất.
     return (f'<div style="max-height:540px;overflow:auto;border:1px solid #aab2c2;border-radius:6px">'
             f'<table style="width:100%;border-collapse:collapse;font-size:11.5px">'
