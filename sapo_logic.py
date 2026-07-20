@@ -1463,6 +1463,28 @@ def get_week_summary(fetch_json, days: int = 7) -> dict:
         if last and last < (today - timedelta(days=back)):
             break
 
+    order_context_by_code = {}
+
+    def _register_context(codes, label):
+        if not label:
+            return
+        for code in codes or []:
+            key = _norm_key(code)
+            if key:
+                order_context_by_code.setdefault(key, label)
+
+    def _order_context_label(o):
+        f = f0(o)
+        tracks = []
+        for val in (f.get("tracking_number"), *(f.get("tracking_numbers") or [])):
+            if val and str(val).strip() not in tracks:
+                tracks.append(str(val).strip())
+        oc = o.get("source_identifier") or o.get("name") or o.get("code") or o.get("id") or ""
+        return f"VĐ đi/đóng: {' · '.join(tracks)} | VĐ hoàn: | Mã trả: | Mã đơn: {oc}"
+
+    for o in orders:
+        _register_context(_order_codes(o), _order_context_label(o))
+
     for o in orders:
         f = f0(o)
         # SOẠN = đơn được IN PHIẾU GIAO/NHẶT (vào soạn) trong ngày — mốc shipment_created_on
@@ -1482,6 +1504,8 @@ def get_week_summary(fetch_json, days: int = 7) -> dict:
     huy_packed_codes_day = {}  # iso -> [mã VĐ/đơn hủy đã đóng gói rồi hủy] khớp popup cảnh báo hôm nay
     try:
         canc = get_cancelled(fetch_json, days=max(days, days_this_month))
+        for o in (canc.get("packed", []) + canc.get("not_packed", [])):
+            _register_context(_order_codes(o), _order_context_label(o))
         # Đếm CẢ packed + not_packed (khớp "Hủy hôm nay" ở báo cáo cuối ngày). Đơn not_packed
         # (hủy rất sớm) chắc chắn TRƯỚC soạn; đơn packed cần đối chiếu mã phiếu nhặt để biết.
         for o in canc.get("packed", []):
@@ -1514,6 +1538,19 @@ def get_week_summary(fetch_json, days: int = 7) -> dict:
         last = _vn_date_of(chunk[-1].get("created_on"))
         if last and last < rcut:
             break
+    for x in rrows:
+        si = x.get("shipping_info") or {}
+        return_wb = si.get("tracking_number") or ""
+        outbound_wbs = [str(v).strip() for v in (si.get("fulfillment_tracking_numbers") or []) if str(v).strip()]
+        order_code = (x.get("order") or {}).get("name") or (x.get("order") or {}).get("source_identifier") or ""
+        return_code = x.get("name") or ""
+        label = (
+            f"VĐ đi/đóng: {' · '.join(dict.fromkeys(outbound_wbs))} | "
+            f"VĐ hoàn: {return_wb} | Mã trả: {return_code} | Mã đơn: {order_code}"
+        )
+        codes = [return_wb, return_code, order_code, *outbound_wbs]
+        codes += _TRACK_RE.findall(str(x.get("note") or ""))
+        _register_context(codes, label)
     _hoan_day, _hoan_mon = {}, set()   # HOÀN (đơn) đếm theo MÃ ĐƠN distinct (1 đơn nhiều SP/mã trả = 1)
     for x in rrows:
         if x.get("restock_status") != "restocked":
@@ -1556,7 +1593,8 @@ def get_week_summary(fetch_json, days: int = 7) -> dict:
             "thieu": a["thieu"], "trao": a["trao"],
             "is_today": d == today,
         })
-    return {"days": out, "month": mon, "month_label": today.strftime("%m/%Y")}
+    return {"days": out, "month": mon, "month_label": today.strftime("%m/%Y"),
+            "order_context_by_code": order_context_by_code}
 
 
 # ── Thống kê MẤT HÀNG (THUA/HẾT HẠN): trích ĐVVC + shipper từ carrier_name/ghi chú ──

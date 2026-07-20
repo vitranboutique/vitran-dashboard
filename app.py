@@ -1798,6 +1798,7 @@ def load_week_summary():
             from collections import Counter as _Ct
             _video_audit = []
             _video_matrix = []
+            _order_context_by_code = data.get("order_context_by_code") or {}
 
             def _audit_age(iso):
                 try:
@@ -1867,6 +1868,17 @@ def load_week_summary():
                 if not oc and _is_order_code(video_code):
                     oc = str(video_code).strip()
                 return f"VĐ đi/đóng: {wb} | VĐ hoàn: | Mã trả: | Mã đơn: {oc}"
+
+            def _order_context_label(code):
+                key = _ascii_code(code)
+                return _order_context_by_code.get(key) or ""
+
+            def _package_context_label(group, video_code=""):
+                for code in [video_code, *(group or [])]:
+                    lbl = _order_context_label(code)
+                    if lbl:
+                        return lbl
+                return _package_label(group, video_code)
 
             def _compare_code_line(item):
                 raw = str(item or "")
@@ -2070,7 +2082,7 @@ def load_week_summary():
                             else:
                                 _group = [_code]
                             _groups.append(_group)
-                            _labels.append(_package_label(_group, _code))
+                            _labels.append(_package_context_label(_group, _code))
                     if not _groups:
                         continue
                     _pkg_codes = set(package_codes_by_day.get(_iso, [])) | set(package_unknown_by_day.get(_iso, []))
@@ -2078,8 +2090,10 @@ def load_week_summary():
                     _matched_vids = {str(v[0]).strip() for v in _matched.values() if v and str(v[0]).strip()}
                     _missing = [_labels[i] for i in range(len(_labels)) if i not in _matched]
                     _extra_raw = sorted(_pkg_codes - _matched_vids)
-                    _extra = [_package_label([c], c) for c in _extra_raw if _is_waybill_code(c)]
-                    _unknown_extra = [c for c in _extra_raw if not _is_waybill_code(c)]
+                    _extra = [_package_context_label([c], c) for c in _extra_raw
+                              if _is_waybill_code(c) or _order_context_label(c) or _is_order_code(c)]
+                    _unknown_extra = [c for c in _extra_raw
+                                      if not (_is_waybill_code(c) or _order_context_label(c) or _is_order_code(c))]
                     _package_missing_by_day[_iso] = _missing
                     _package_extra_by_day[_iso] = _extra
                     _package_unknown_unmatched_by_day[_iso] = _unknown_extra
