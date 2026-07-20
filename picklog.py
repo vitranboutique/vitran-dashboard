@@ -19,6 +19,7 @@ import streamlit as st
 _API = "https://api.github.com"
 _FILE = "vitran_picklog.json"      # tên file trong gist (dùng để tự tìm gist)
 _GID_CACHE = None                  # nhớ gist_id trong phiên để khỏi list lại mỗi lần
+_FROZEN_SUMMARIES_KEY = "frozen_daily_summaries"
 
 
 def _token():
@@ -41,6 +42,10 @@ def configured() -> bool:
 
 def _today_vn() -> str:
     return (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%Y-%m-%d")
+
+
+def _now_vn():
+    return datetime.now(timezone.utc) + timedelta(hours=7)
 
 
 def _explicit_gid():
@@ -217,6 +222,59 @@ def summarize_logs(rows):
     }
 
 
+def _write_all(data) -> bool:
+    gid = _resolve_gid()
+    if not gid:
+        return False
+    try:
+        body = {"files": {_FILE: {"content": json.dumps(data, ensure_ascii=False)}}}
+        r = requests.patch(f"{_API}/gists/{gid}", headers=_hdr(), data=json.dumps(body), timeout=20)
+        return r.status_code == 200
+    except Exception:
+        return False
+
+
+def _apply_frozen_counts(summary, frozen):
+    out = dict(summary or {})
+    if isinstance(frozen, dict):
+        out["so_don"] = _intv(frozen, "so_don")
+        out["so_sp"] = _intv(frozen, "so_sp")
+        out["counts_frozen"] = True
+        out["frozen_at"] = frozen.get("frozen_at") or ""
+    return out
+
+
+def _freeze_closed_summaries(data, summaries):
+    """Khóa số A4 từ 23:59 mỗi ngày; các ngày trước luôn giữ số đã khóa."""
+    if not isinstance(data, dict):
+        return summaries
+    frozen = data.setdefault(_FROZEN_SUMMARIES_KEY, {})
+    if not isinstance(frozen, dict):
+        frozen = {}
+        data[_FROZEN_SUMMARIES_KEY] = frozen
+    now_vn = _now_vn()
+    today = now_vn.strftime("%Y-%m-%d")
+    reached_daily_cutoff = (now_vn.hour, now_vn.minute) >= (23, 59)
+    changed = False
+    for day, summary in (summaries or {}).items():
+        day_key = str(day or "")
+        is_closed = day_key < today or (day_key == today and reached_daily_cutoff)
+        if not is_closed or day in frozen:
+            continue
+        frozen[day] = {
+            "so_don": _intv(summary, "so_don"),
+            "so_sp": _intv(summary, "so_sp"),
+            "frozen_at": today,
+        }
+        changed = True
+    if changed:
+        _write_all(data)
+    return {
+        day: _apply_frozen_counts(summary, frozen.get(day))
+        for day, summary in (summaries or {}).items()
+    }
+
+
 def summaries_by_date():
     data = _read_all()
     groups = {}
@@ -224,7 +282,8 @@ def summaries_by_date():
         day = row.get("ngay")
         if day:
             groups.setdefault(day, []).append(row)
-    return {day: summarize_logs(rows) for day, rows in groups.items()}
+    summaries = {day: summarize_logs(rows) for day, rows in groups.items()}
+    return _freeze_closed_summaries(data, summaries)
 
 
 def log_batch(payload: dict):
@@ -372,7 +431,8 @@ def read_date_summary(day_iso: str) -> dict:
     if not data:
         return {"rows": [], "so_don": 0, "so_sp": 0, "dup_orders": 0}
     rows = [r for r in data.get("logs", []) if r.get("ngay") == day_iso]
-    return summarize_logs(rows)
+    summaries = _freeze_closed_summaries(data, {day_iso: summarize_logs(rows)})
+    return summaries.get(day_iso) or {"rows": [], "so_don": 0, "so_sp": 0, "dup_orders": 0}
 
 
 # ─── LỊCH SỬ LƯU TTKH (mỗi lần ghi Sapo) — LƯU BỀN ĐỂ THỐNG KÊ THEO NGÀY ───
