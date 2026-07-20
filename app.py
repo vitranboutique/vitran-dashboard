@@ -9557,9 +9557,20 @@ def _render_returns():
             _dohana_yellow_ckn = _dohana_yellow_need_kn_rows(_dtag_kn + _dtag_nokn)
             _ckn_with_closed_returns = _merge_need_kn_rows(_ckn_list, _closed_returns_need_kn_detail)
             _ckn_render_raw_list = _merge_need_kn_rows(_ckn_with_closed_returns, _dohana_yellow_ckn)
+            # + Đơn ĐÃ NHẬP KHO thiếu video khui mà CHƯA có ghi chú chuẩn → cũng đưa vào Cần KN (tới khi
+            #   có ghi chú chuẩn thì tự rớt khỏi đây & mất màu vàng). Dùng chung _nv_row_restock cho đồng nhất.
+            _nv_ckn_added = 0
+            try:
+                _nv_ckn = [_nv_row_restock(_it) for _it in (load_restock_novideo(days=30).get("active") or [])
+                           if not _note_is_standard(_it.get("ghi_chu", ""))]
+                if _nv_ckn:
+                    _nv_ckn_added = len(_nv_ckn)
+                    _ckn_render_raw_list = _merge_need_kn_rows(_ckn_render_raw_list, _nv_ckn)
+            except Exception:
+                pass
             _ckn_render_list = [
                 d for d in _ckn_render_raw_list
-                if _has_return_waybill(d) and not _is_closed_kn_result(d)
+                if (_has_return_waybill(d) or d.get("_restock_novideo")) and not _is_closed_kn_result(d)
             ]
             _ckn_render_list.sort(key=lambda d: str(d.get("created_on") or d.get("created") or ""), reverse=True)
             st.subheader("🚨 Đơn cần KN — lấy làm khiếu nại", anchor="don-can-kn")
@@ -9576,6 +9587,9 @@ def _render_returns():
                 _added = max(0, len(_ckn_render_list) - len(_ckn_with_closed_returns))
                 _need_kn_info += (f"\nDohana có {len(_dohana_yellow_ckn)} dòng đang tô vàng vì chưa có ghi chú chuẩn "
                                   f"(thêm mới {_added} dòng, dòng trùng thì ghép vào Cần KN sẵn có).")
+            if _nv_ckn_added:
+                _need_kn_info += (f"\nCó {_nv_ckn_added} đơn ĐÃ nhập kho nhưng THIẾU video khui (nghi NV nhập kho "
+                                  "sai) — đưa vào đây tới khi có ghi chú chuẩn thì tự rớt.")
             _return_info(_need_kn_info)
             if '_missing_codes' in locals() and _missing_codes and not st.session_state.get("returns_dohana_deep_lookup"):
                 st.caption(f"Dohana còn {len(set(_missing_codes))} mã thiếu thông tin Sapo. Mặc định không quét sâu để trang mở nhanh.")
