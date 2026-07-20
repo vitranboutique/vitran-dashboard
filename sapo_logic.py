@@ -2259,6 +2259,8 @@ def get_restocked_returns_range(fetch_json, days: int = 30, max_pages: int = 24)
         out.append({
             "return_code": x.get("name") or "",
             "order_code": order_name or x.get("name") or "?",
+            "return_id": x.get("id") or "",                       # → link Sapo /admin/order_returns/{id}
+            "order_id": (x.get("order") or {}).get("id") or "",   # → link Sapo /admin/orders/{id}
             "vd_di": out_track or "",
             "vd_tra": track or "",
             "ngay_tao": _ct.strftime("%d/%m/%Y") if _ct else "",

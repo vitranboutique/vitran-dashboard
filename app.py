@@ -1148,6 +1148,14 @@ def _standard_result_note_text(note: str) -> str:
     return "\n".join(lines).strip()
 
 
+def _note_is_standard(note: str) -> bool:
+    """Ghi chú CHUẨN = dòng đầu có nhãn kết quả KN (KHÔNG CẦN KN / HẾT HẠN / THẮNG / THUA / HỦY / CẦN KN)."""
+    first = (str(note or "").strip().splitlines() or [""])[0]
+    compact = "".join(ch for ch in _ascii_code(first) if ch.isalnum())
+    return any(t in compact for t in
+               ("KHONGCANKN", "KHONGCANKHIEUNAI", "HETHAN", "THANG", "THUA", "HUY", "CANKN"))
+
+
 def _return_row_from_sapo_api(row: dict, detail: dict | None = None) -> dict:
     detail = detail or row or {}
     row = row or {}
@@ -1837,8 +1845,9 @@ def load_restock_novideo(days: int = 30):
     ledger = picklog.read_restock_novideo() if picklog.configured() else {"items": {}}
     items = ledger.get("items", {})
     changed = False
-    _DISPLAY = ("order_code", "vd_di", "vd_tra", "ngay_tao", "restock_date", "recv_time",
-                "nhan_vien", "sku", "sp", "sp_nhap", "ly_do", "loai_tra", "loai_tra_code", "gian_hang")
+    _DISPLAY = ("order_code", "return_id", "order_id", "vd_di", "vd_tra", "ngay_tao", "restock_date",
+                "recv_time", "nhan_vien", "sku", "sp", "sp_nhap", "ly_do", "loai_tra", "loai_tra_code",
+                "gian_hang", "ghi_chu")
     # AN TOÀN: kho video rỗng (Dohana 429 / chưa sync) → KHÔNG dò (tránh gắn oan cả loạt vào sổ vĩnh
     # viễn). Chỉ giữ nguyên sổ cũ. UI sẽ báo "kho video trống".
     if not inbound_codes:
@@ -1848,10 +1857,29 @@ def load_restock_novideo(days: int = 30):
                 "resolved": [v for v in _vals0 if v.get("status") == "resolved"],
                 "dismissed": [v for v in _vals0 if v.get("status") == "dismissed"],
                 "total_scanned": len(cands), "video_store": 0}
+    # GHI CHÚ: lấy từ KHO GHI CHÚ RIÊNG của trang đơn trả (vitran_closed_return_notes.json) — KHÔNG
+    # dùng note Sapo (thiếu). Khớp theo return_code/order_code/vd_tra/vd_di (giống trang trả hàng ép).
+    _notemap = {}
+    if picklog.configured():
+        _rawn = picklog._read_gist_file("vitran_closed_return_notes.json") or {}
+        _nn = _rawn.get("notes") if isinstance(_rawn, dict) else None
+        if isinstance(_nn, dict):
+            for _k, _rec in _nn.items():
+                _t = (_rec.get("note") if isinstance(_rec, dict) else _rec) or ""
+                if str(_t).strip():
+                    _notemap[str(_k)] = str(_t).strip()
+
+    def _lookup_note(cc):
+        for _f in ("return_code", "order_code", "vd_tra", "vd_di"):
+            _v = str(cc.get(_f) or "").strip()
+            if _v and f"{_f}:{_v}" in _notemap:
+                return _notemap[f"{_f}:{_v}"]
+        return ""
     for c in cands:
         key = c.get("return_code") or c.get("order_code")
         if not key:
             continue
+        c["ghi_chu"] = _lookup_note(c)      # ghi chú RIÊNG của trang (không phải Sapo)
         has_vid = any(_norm(code) in inbound_codes for code in c.get("codes", []))
         if has_vid:
             it = items.get(key)
@@ -6118,7 +6146,8 @@ def _render_returns():
     st.caption("Đơn đã nhập LẠI kho (Sapo) nhưng KHÔNG có video khui hàng nào khớp mã trong **kho video "
                "đã lưu** → nghi NV nhập kho nhầm / quên quay clip khui. Danh sách **lưu VĨNH VIỄN** (file "
                "Gist riêng), KHÔNG mất khi Dohana xoá video. Video xuất hiện sau → tự gỡ. "
-               "Tick **Bỏ qua** nếu đã kiểm tra là ổn.")
+               "🟡 Đơn **chưa có ghi chú chuẩn** (nhãn kết quả KN) được **tô vàng & đưa lên đầu** để xử lý trước. "
+               "Đã kiểm tra ổn thì chọn ở ô **Bỏ qua** cuối mục.")
     try:
         _nv = load_restock_novideo(days=30)
         _act = _nv.get("active", [])
@@ -6132,33 +6161,57 @@ def _render_returns():
         elif not _act:
             st.success("✅ Không có đơn nhập kho nào thiếu video khui trong 30 ngày qua.")
         else:
+            for _r in _act:                          # chuẩn hoá cờ ghi-chú-chuẩn
+                _r["_std"] = _note_is_standard(_r.get("ghi_chu", ""))
+            _need_n = sum(1 for r in _act if not r.get("_std"))
+            _n_note = sum(1 for r in _act if str(r.get("ghi_chu") or "").strip())
             st.error(f"⚠️ Có **{len(_act)}** đơn ĐÃ nhập kho nhưng KHÔNG tìm thấy video khui — cần truy.")
-            _rows = [{
-                "Bỏ qua": False,
-                "Ngày nhập kho": r.get("restock_date", ""),
-                "Ngày tạo": r.get("ngay_tao", ""),
-                "Mã đơn": r.get("order_code", ""),
-                "Mã trả hàng": r.get("return_code", ""),
-                "VĐ đi": r.get("vd_di", ""),
-                "VĐ trả về": r.get("vd_tra", ""),
-                "NV nhận": r.get("nhan_vien", ""),
-                "SL": r.get("sp", 0),
-                "Nhập kho": r.get("sp_nhap", 0),
-                "SKU": r.get("sku", ""),
-                "Lý do": r.get("ly_do", ""),
-                "Loại trả": r.get("loai_tra", ""),
-                "Gian hàng": r.get("gian_hang", ""),
-                "_key": r.get("return_code") or r.get("order_code"),
-            } for r in _act]
-            _df_nv = pd.DataFrame(_rows)
-            _ed_nv = st.data_editor(
-                _df_nv, hide_index=True, use_container_width=True, key="nv_editor",
-                disabled=[c for c in _df_nv.columns if c != "Bỏ qua"],
-                column_config={"_key": None,
-                               "Bỏ qua": st.column_config.CheckboxColumn("Bỏ qua", width="small")})
-            _pick = [row["_key"] for _, row in _ed_nv.iterrows() if row.get("Bỏ qua")]
-            if _pick and st.button(f"✔️ Bỏ qua {len(_pick)} đơn đã tick (đã kiểm tra là ổn)", key="nv_dismiss"):
-                picklog.dismiss_restock_novideo(_pick)
+            if _need_n:
+                st.warning(f"🟡 **{_need_n}** đơn CHƯA có ghi chú chuẩn (nhãn kết quả KN) → đã **tô vàng và "
+                           f"đưa lên đầu**, cần ghi chú / khiếu nại. ({_n_note}/{len(_act)} đơn đã có ghi chú.)")
+            # Xếp: chưa có ghi chú chuẩn LÊN ĐẦU; trong mỗi nhóm mới nhập kho trước.
+            _act2 = sorted(_act, key=lambda r: r.get("restock_date", ""), reverse=True)
+            _act2 = sorted(_act2, key=lambda r: 0 if not r.get("_std") else 1)
+            _SAPO = "https://vitranboutiquehcm.mysapo.net/admin"
+
+            def _lnk(val, url):
+                v = _esc(str(val or ""))
+                return f"<a href='{_esc(url)}' target='_blank' rel='noopener'>{v}</a>" if (val and url) else (v or "—")
+            _ths = ["STT", "Cần KN", "Ngày nhập", "Ngày tạo", "Mã đơn", "Mã trả", "VĐ đi", "VĐ trả về",
+                    "NV nhận", "SL", "Nhập", "SKU", "Lý do", "Loại trả", "Gian hàng", "Ghi chú"]
+            _thh = "".join(f"<th style='position:sticky;top:0;background:#e5e7eb;border:1px solid #cbd5e1;"
+                           f"padding:5px 7px;text-align:left;white-space:nowrap'>{h}</th>" for h in _ths)
+            _body = ""
+            for _i, _r in enumerate(_act2, 1):
+                _need = not _r.get("_std")
+                _bg = "#fff6bf" if _need else "#ffffff"       # 🟡 tô vàng nếu chưa có ghi chú chuẩn
+                _rid, _oid = _r.get("return_id"), _r.get("order_id")
+                _rurl = f"{_SAPO}/order_returns/{_rid}" if _rid else ""
+                _ourl = f"{_SAPO}/orders/{_oid}" if _oid else ""
+                _gc = _esc(_r.get("ghi_chu", "") or "—").replace("\n", "<br>")
+                _cells = [str(_i), ("🟡 CẦN KN" if _need else "✓"),
+                          _esc(_r.get("restock_date", "")), _esc(_r.get("ngay_tao", "")),
+                          _lnk(_r.get("order_code"), _ourl), _lnk(_r.get("return_code"), _rurl),
+                          _esc(_r.get("vd_di", "") or "—"), _lnk(_r.get("vd_tra"), _rurl),
+                          _esc(_r.get("nhan_vien", "") or "—"), str(_r.get("sp", 0)), str(_r.get("sp_nhap", 0)),
+                          _esc(_r.get("sku", "") or "—"), _esc(_r.get("ly_do", "") or "—"),
+                          _esc(_r.get("loai_tra", "") or "—"), _esc(_r.get("gian_hang", "") or "—"), _gc]
+                _tds = "".join(
+                    f"<td style='border:1px solid #dbe0e6;padding:3px 7px;vertical-align:top;"
+                    f"{'font-weight:800;color:#b45309;white-space:nowrap;' if (_ci == 1 and _need) else ''}"
+                    f"{'min-width:220px' if _ci == 15 else ''}'>{c}</td>" for _ci, c in enumerate(_cells))
+                _body += f"<tr style='background:{_bg}'>{_tds}</tr>"
+            st.markdown(f"<div style='overflow-x:auto;max-height:640px;overflow-y:auto'>"
+                        f"<table style='border-collapse:collapse;font-size:12px;width:100%'>"
+                        f"<thead><tr>{_thh}</tr></thead><tbody>{_body}</tbody></table></div>",
+                        unsafe_allow_html=True)
+            st.caption("🔗 Mã đơn → trang đơn Sapo · Mã trả / VĐ trả về → trang phiếu trả Sapo. "
+                       "Ghi chú lấy từ kho ghi chú riêng của trang trả hàng (không phải note Sapo).")
+            _opts = [r.get("return_code") or r.get("order_code") for r in _act]
+            _sel = st.multiselect("✔️ Bỏ qua đơn đã kiểm tra là ổn (ẩn khỏi cảnh báo, vẫn giữ trong sổ):",
+                                  _opts, key="nv_dismiss_sel")
+            if _sel and st.button(f"Bỏ qua {len(_sel)} đơn đã chọn", key="nv_dismiss_btn"):
+                picklog.dismiss_restock_novideo(_sel)
                 load_restock_novideo.clear()
                 st.rerun()
         _res, _dis = _nv.get("resolved", []), _nv.get("dismissed", [])
