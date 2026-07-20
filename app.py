@@ -1579,57 +1579,6 @@ def load_daily_report(date_iso=None):
     return L.get_daily_report(make_fetch_json(build_session()), target_date=td)
 
 
-@st.cache_data(ttl=1800, show_spinner=False)
-def load_daily_return_video_codes(date_iso):
-    """Lấy đúng danh sách mã lệch khui hàng từ logic A4 theo ngày.
-
-    A4 đã có recon_rows sau khi gắn Dohana: has_sapo=True & has_clip=False = thiếu clip;
-    has_clip=True & has_sapo=False = clip khui dư/chưa có đơn nhập kho.
-    """
-    rep = load_daily_report(date_iso)
-    dvr = load_dohana_date(date_iso) if dohana.configured() else None
-    inb = load_dohana_inbound_date(date_iso) if dohana.configured() else None
-    _enrich_daily(rep, dvr, inb)
-
-    def _label(row):
-        return (
-            f"VĐ đi/đóng: {str(row.get('vd_gui') or '').strip()} | "
-            f"VĐ hoàn: {str(row.get('track_return') or row.get('clip_code') or '').strip()} | "
-            f"Mã trả: {str(row.get('return_code') or '').strip()} | "
-            f"Mã đơn: {str(row.get('order_code') or '').strip()}"
-        )
-
-    missing, extra = [], []
-    for row in ((rep.get("nhap_kho") or {}).get("recon_rows") or []):
-        if row.get("has_sapo") and not row.get("has_clip"):
-            missing.append(_label(row))
-        elif row.get("has_clip") and not row.get("has_sapo"):
-            extra.append(_label(row))
-    # Fallback đọc thẳng từ 2 nguồn A4 gốc để không mất mã nếu recon_rows chưa dựng đủ.
-    nk = rep.get("nhap_kho") or {}
-    for row in nk.get("detail") or []:
-        if not row.get("clip"):
-            missing.append(
-                f"VĐ đi/đóng: {str(row.get('tracking') or '').strip()} | "
-                f"VĐ hoàn: {str(row.get('track_return') or '').strip()} | "
-                f"Mã trả: {str(row.get('return_code') or '').strip()} | "
-                f"Mã đơn: {str(row.get('order_code') or '').strip()}"
-            )
-    abc = nk.get("all_by_code") or {}
-    for row in nk.get("clip_unmatched_detail") or []:
-        code = str(row.get("code") or "").strip()
-        info = abc.get(code) or {}
-        extra.append(
-            f"VĐ đi/đóng: {str(info.get('vd_gui') or '').strip()} | "
-            f"VĐ hoàn: {code} | "
-            f"Mã trả: {str(info.get('return_code') or '').strip()} | "
-            f"Mã đơn: {str(info.get('order_code') or '').strip()}"
-        )
-    missing = list(dict.fromkeys([x for x in missing if str(x or "").strip()]))
-    extra = list(dict.fromkeys([x for x in extra if str(x or "").strip()]))
-    return {"return_missing": missing, "inbound_extra": extra}
-
-
 def _inject_huy_soan(rep, date_iso):
     """Cắm cờ 'soan' cho từng đơn HỦY: mã (VĐ/đơn) ∈ mã phiếu nhặt đã lưu ngày đó = ĐÃ SOẠN
     (cầm hàng ra kho → cần lấy lại). Không có trong phiếu nhặt = hủy sớm, khỏi lấy.
@@ -2154,13 +2103,10 @@ def load_week_summary():
                 display_pkg_extra_rows = rem_pkg_extra_rows + rem_pkg_unknown_rows
                 rem_pkg_missing_rows = _limit_rows(rem_pkg_missing_rows, limits.get("pkg_missing"),
                                                    "Chưa lấy được mã đóng thiếu")
-                # Clip khui hàng dư/thiếu đã có sẵn trong báo cáo A4 theo từng ngày.
-                # Không cắt theo lệch ròng, vì clip dư có thể đồng thời tồn tại với đơn hoàn thiếu clip.
-                # Nếu cắt về 0 thì bảng dưới trống dù A4 đã báo rõ mã cần kiểm.
-                rem_inbound_extra_rows = _pad_min_rows(rem_inbound_extra_rows, limits.get("inbound_extra"),
-                                                       "Chưa lấy được mã video hoàn dư")
-                rem_return_missing_rows = _pad_min_rows(rem_return_missing_rows, limits.get("return_missing"),
-                                                        "Chưa lấy được mã hoàn thiếu")
+                # Hai danh sách khui hàng phải chỉ hiện mã thật. Không chèn
+                # placeholder theo chênh lệch tổng, vì placeholder không thể dùng để đối chiếu.
+                rem_inbound_extra_rows = list(rem_inbound_extra_rows)
+                rem_return_missing_rows = list(rem_return_missing_rows)
                 display_pkg_extra_rows = _limit_rows(display_pkg_extra_rows, limits.get("pkg_extra"),
                                                      "Chưa lấy được mã video đóng dư")
                 rem_pkg_missing = len(rem_pkg_missing_rows)
@@ -2315,18 +2261,6 @@ def load_week_summary():
                         return "JT"
                     return s[:3]
 
-                def _cgname(n):
-                    n = str(n or "").lower()
-                    if "spx" in n:
-                        return "SPX"
-                    if "viettel" in n or "vtp" in n:
-                        return "VTP"
-                    if "ghn" in n or "giao hàng nhanh" in n:
-                        return "GHN"
-                    if "j&t" in n or "jt" in n:
-                        return "JT"
-                    return n[:3]
-
                 def _pdate(s):
                     try:
                         return date.fromisoformat(str(s or "")[:10])
@@ -2374,44 +2308,22 @@ def load_week_summary():
                 _matched_by_day = _Dd(set)
                 _matched_inbound_codes_by_day = _Dd(set)
                 _return_missing_by_day = _Dd(list)
-                _return_all_by_day = _Dd(list)
-                for _dd, _labels in (data.get("restocked_return_labels_by_day") or {}).items():
-                    for _label in _labels or []:
-                        if _label:
-                            _return_all_by_day[str(_dd)].append(str(_label))
                 for c in _cands:
-                    _cday0 = str(c.get("restock_date") or "")
-                    _clabel0 = _return_label(c)
-                    if _cday0 and _clabel0:
-                        _return_all_by_day[_cday0].append(_clabel0)
                     _hit = next((x for x in (_norm(z) for z in c.get("codes", [])) if x in _inbound_codes), None)
                     c["_exact"] = _hit
                     if _hit:
                         _exact_used.add(_hit)
                         _matched_by_day[str(c.get("restock_date") or "")].add(str(c.get("order_code") or c.get("return_code") or ""))
                         _matched_inbound_codes_by_day[str(c.get("restock_date") or "")].add(_hit)
-                _leftover = _Dd(list)
-                for _code, _cgx, _dx in _inb:
-                    if _code not in _exact_used:
-                        _leftover[_cgx].append((_dx, _code))
                 for c in sorted(_cands, key=lambda r: str(r.get("restock_date") or "")):
                     _cday = str(c.get("restock_date") or "")
                     _clabel = _return_label(c)
                     if c.get("_exact"):
                         continue
-                    if c.get("loai_tra_code") == "delivery_failed":
-                        if _clabel:
-                            _return_missing_by_day[_cday].append(_clabel)
-                        continue
-                    _lst = _leftover.get(_cgname(c.get("carrier"))) or []
-                    _rd = _pdate(c.get("restock_date"))
-                    _pick = next((_ix for _ix, (_vd, _vc) in enumerate(_lst)
-                                  if _vd is None or _rd is None or abs((_vd - _rd).days) <= 3), None)
-                    if _pick is not None:
-                        _vd, _vc = _lst.pop(_pick)
-                        _matched_by_day[str(c.get("restock_date") or "")].add(str(c.get("order_code") or c.get("return_code") or ""))
-                        _matched_inbound_codes_by_day[_cday].add(_vc)
-                    elif _clabel:
+                    # Chỉ khớp bằng mã thật ở bước trên. Ghép mềm theo cùng
+                    # hãng vận chuyển/ngày có thể lấy nhầm clip của đơn khác,
+                    # làm mất cả mã thiếu lẫn mã dư cần nhân viên kiểm tra.
+                    if _clabel:
                         _return_missing_by_day[_cday].append(_clabel)
                 _tagged_inbound_by_day = {
                     dd: sum(cnt.values()) for dd, cnt in thoan.items()
@@ -2438,7 +2350,6 @@ def load_week_summary():
                 _matched_vhoan = {}
                 _return_missing_by_day = {}
                 _inbound_extra_by_day = {}
-                _return_all_by_day = {}
 
             def _tagstr(cnt):
                 return " · ".join(f"{n} ×{c}" for n, c in cnt.items()) if cnt else ""
@@ -2469,26 +2380,6 @@ def load_week_summary():
                 _return_missing = _return_missing_by_day.get(iso, [])
                 _inbound_extra = _inbound_extra_by_day.get(iso, [])
                 _pkg_unknown = _package_unknown_unmatched_by_day.get(iso, [])
-                _need_ret = _day_video_limits(day).get("return_missing")
-                _need_inb_extra = _day_video_limits(day).get("inbound_extra")
-                if iso and (day.get("vid_hoan_raw") != day.get("vid_hoan") or _need_ret or _need_inb_extra):
-                    try:
-                        _a4_codes = load_daily_return_video_codes(iso)
-                        _return_missing = _uniq(list(_return_missing) + list(_a4_codes.get("return_missing") or []))
-                        _inbound_extra = _uniq(list(_inbound_extra) + list(_a4_codes.get("inbound_extra") or []))
-                    except Exception as _a4e:
-                        if _need_ret:
-                            _return_missing = _uniq(list(_return_missing) + [f"Lỗi lấy mã A4 {iso}: {type(_a4e).__name__}"])
-                        if _need_inb_extra:
-                            _inbound_extra = _uniq(list(_inbound_extra) + [f"Lỗi lấy mã A4 {iso}: {type(_a4e).__name__}"])
-                if _need_ret and len(_return_missing) < _need_ret:
-                    _seen_ret = set(_return_missing)
-                    for _cand in _return_all_by_day.get(iso, []):
-                        if _cand not in _seen_ret:
-                            _return_missing.append(_cand)
-                            _seen_ret.add(_cand)
-                        if len(_return_missing) >= _need_ret:
-                            break
                 _pkg_miss_vs_inbound_extra = _cross_matches(_pkg_missing, _inbound_extra)
                 _return_miss_vs_pkg_extra = _cross_matches(_return_missing, _pkg_extra)
                 _add_matrix(iso, _pkg_missing, _pkg_extra, _return_missing, _inbound_extra, _pkg_unknown, day)
