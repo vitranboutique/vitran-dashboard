@@ -9101,7 +9101,7 @@ def _render_returns():
                     elif ship_code == "returned":
                         label = "📍 Đã giao shop"
                     elif return_type == "refund" and ship_code == "no_return":
-                        label = "⚠️ Chưa chốt KQ"
+                        label = "💸 Chỉ hoàn tiền"
                     elif stock_code in ("unstocked", "unrestock", "not_stocked", "not_restocked", "no_stock", "no_restock"):
                         label = "📦 Kho chưa nhận"
                     elif "QUA5NGAY" in compact or "QUA7NGAY" in compact or "DANGHOAN" in compact:
