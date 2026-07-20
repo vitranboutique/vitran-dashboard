@@ -9871,13 +9871,17 @@ def _render_returns():
             if _nv_ckn_added:
                 _need_kn_info += (f"\nCó {_nv_ckn_added} đơn ĐÃ nhập kho nhưng THIẾU video khui (nghi NV nhập kho "
                                   "sai) — đưa vào đây tới khi có ghi chú chuẩn thì tự rớt.")
+            _need_kn_info += ("\nVới đơn TikTok, bấm Xem / tạo trong cột Phiếu yêu cầu để mở thẳng tab Tất cả "
+                              "với ID đơn hàng đã điền sẵn. Nếu chưa có phiếu thì tạo ngay; nếu có nhiều phiếu "
+                              "TikTok sẽ hiện đầy đủ.")
             _return_info(_need_kn_info)
             if '_missing_codes' in locals() and _missing_codes and not st.session_state.get("returns_dohana_deep_lookup"):
                 st.caption(f"Dohana còn {len(set(_missing_codes))} mã thiếu thông tin Sapo. Mặc định không quét sâu để trang mở nhanh.")
                 if st.button("🔎 Đối chiếu sâu Dohana/Sapo cho các mã thiếu", key="returns_dohana_deep_lookup_btn"):
                     st.session_state["returns_dohana_deep_lookup"] = True
                     st.rerun()
-            _sub_table(_ckn_render_list, 520, show_reason=True, show_location=True, pg_key="ckn", per_page=50)
+            _sub_table(_ckn_render_list, 520, show_reason=True, show_location=True,
+                       pg_key="ckn", per_page=50, show_ticket=True)
             st.subheader("⛔ Đơn không cần KN — đã có kết luận", anchor="don-khong-can-kn")
             _return_info("Các đơn trong bảng detail đã có ghi chú KHÔNG CẦN KN: đã nhận hàng, đã nhận/được đền tiền, hoặc shop đóng thiếu thật. Nhóm này không trộn vào danh sách CẦN KN.")
             _sub_table(_khong_can_kn_list, 300, show_reason=True, pg_key="khong_can_kn")
@@ -9895,9 +9899,7 @@ def _render_returns():
             # ── 🚫 Đơn ĐÃ NHẬP KHO nhưng KHÔNG có video khui (đơn đã nhập kho — render bằng _sub_table cho đồng nhất) ──
             _nvhelp = ("Danh sách lấy trực tiếp từ cột Vid hoàn của Báo cáo vận hành cuối ngày: gồm toàn bộ "
                        "đơn đang báo chưa quay và kho cũ. SAPO chỉ bổ sung thông tin mã đơn/mã trả/vận đơn. "
-                       "Tô vàng = đơn chưa có ghi chú chuẩn (cần KN). Với đơn TikTok, bấm Xem / tạo để mở thẳng "
-                       "tab Tất cả với ID đơn hàng đã điền sẵn. Nếu không có kết quả thì tạo phiếu ngay; nếu có nhiều "
-                       "phiếu thì TikTok sẽ hiện đầy đủ.")
+                       "Tô vàng = đơn chưa có ghi chú chuẩn (cần KN).")
             st.markdown('**🚫 + Đơn ĐÃ NHẬP KHO nhưng KHÔNG có video khui** '
                         f'<abbr title="{_esc(_nvhelp)}" style="cursor:help;color:#2563eb;text-decoration:none">ⓘ</abbr>',
                         unsafe_allow_html=True)
@@ -9913,8 +9915,7 @@ def _render_returns():
                                + (f" · 🟡 **{_nvneed}** chưa có ghi chú chuẩn (tô vàng, cần KN)" if _nvneed else ""))
 
                     _sub_table(_nvrows, 520, show_reason=True, show_type=True,
-                               show_location=True, pg_key="restock_novideo", per_page=50,
-                               show_ticket=True)
+                               show_location=True, pg_key="restock_novideo", per_page=50)
             except Exception as _env:
                 st.caption(f"Chưa dò được đơn nhập kho thiếu video: {_env}")
             _type_block("💸 Trả hàng hoàn tiền", "return_and_refund")
