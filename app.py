@@ -500,11 +500,12 @@ def _week_table_html(data):
                 "hàng, quay dư, hoặc quên gắn tag. Mở A4 để đối chiếu.")
         return out
 
-    def _total_video_badges(rows):
+    def _total_gap_badges(rows):
         """Cộng lệch từng ngày; không để ngày dư và ngày thiếu triệt tiêu nhau."""
         totals = {
             "pkg_missing": 0, "pkg_extra": 0, "pkg_old": 0,
             "ret_missing": 0, "ret_extra": 0, "ret_old": 0,
+            "ship_missing": 0, "ship_extra": 0,
         }
         for row in rows or []:
             try:
@@ -522,6 +523,15 @@ def _week_table_html(data):
                 totals["ret_old" if stale else "ret_missing"] += ret_gap
             elif ret_gap < 0:
                 totals["ret_extra"] += -ret_gap
+            # Hôm nay đơn còn tiếp tục bàn giao nên không kết luận thiếu shipper.
+            if not row.get("is_today"):
+                ship_gap = (int(round(float(row.get("soan") or 0)))
+                            - int(round(float(row.get("huy_sau") or 0)))
+                            - int(round(float(row.get("shipper_nhan") or 0))))
+                if ship_gap > 0:
+                    totals["ship_missing"] += ship_gap
+                elif ship_gap < 0:
+                    totals["ship_extra"] += -ship_gap
 
         pkg = ""
         if totals["pkg_missing"]:
@@ -544,7 +554,14 @@ def _week_table_html(data):
         if totals["ret_old"]:
             ret += _gap_badge("▽", "#64748b", "#f1f5f9", "kho cũ", totals["ret_old"],
                               "Tổng chênh thiếu thuộc các ngày đã quá hạn lưu video Dohana.")
-        return {"vid_dong": pkg, "vid_hoan": ret}
+        ship = ""
+        if totals["ship_missing"]:
+            ship += _gap_badge("▼", "#b91c1c", "#fee2e2", "thiếu", totals["ship_missing"],
+                               "Tổng đơn chưa bàn giao shipper, cộng riêng theo từng ngày đã chốt.")
+        if totals["ship_extra"]:
+            ship += _gap_badge("▲", "#1d4ed8", "#dbeafe", "dư", totals["ship_extra"],
+                               "Tổng số shipper nhận dư, cộng riêng theo từng ngày đã chốt.")
+        return {"vid_dong": pkg, "vid_hoan": ret, "shipper_nhan": ship}
 
     head = "".join(
         f'<th style="position:sticky;top:0;z-index:3;text-align:{"left" if k in _txt else "right"};'
@@ -592,7 +609,7 @@ def _week_table_html(data):
         cells = f'<td colspan="2" style="text-align:left;padding:6px 8px;{_bd}background:{label_bg}">{label}</td>'
         _tbadge = _lech_badge(src)
         if rows is not None:
-            _tbadge.update(_total_video_badges(rows))
+            _tbadge.update(_total_gap_badges(rows))
         for k, _ in cols[2:]:
             if k == "ghi_chu":
                 cells += f'<td style="padding:6px 8px;{_bd}background:#ffffff"></td>'
