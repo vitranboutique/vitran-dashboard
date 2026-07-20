@@ -2142,31 +2142,30 @@ def load_week_summary():
                 pkg_unknown_rows = [f"Chưa khớp đơn: {x}" for x in pkg_unknown]
                 # Các cột thiếu/dư hiển thị danh sách BAN ĐẦU đúng với badge bảng trên.
                 # Mã đã khớp lộn mục vẫn hiện ở ô vàng; chỉ phần Chốt dùng số còn lệch.
-                raw_pkg_missing_rows = list(pkg_missing)
-                raw_pkg_extra_rows = list(pkg_extra) + list(pkg_unknown_rows)
-                raw_return_missing_rows = list(return_missing)
-                raw_inbound_extra_rows = list(inbound_extra)
-                p1 = _cross_match_pairs(pkg_missing, inbound_extra, "package", "return")
-                p2 = _cross_match_pairs(return_missing, pkg_extra + pkg_unknown_rows, "return", "package")
+                # Nguồn mã ngày cũ có thể chứa toàn bộ video vì đã mất danh sách
+                # phiếu để ghép. Chỉ lấy đúng số chênh đang báo ở bảng tổng hợp
+                # (ví dụ 161 video - 152 đơn = 9 mã dư, không phải 161).
+                raw_pkg_missing_rows = _limit_rows(pkg_missing, limits.get("pkg_missing"))
+                raw_pkg_extra_rows = _limit_rows(
+                    list(pkg_extra) + list(pkg_unknown_rows), limits.get("pkg_extra")
+                )
+                raw_return_missing_rows = _limit_rows(return_missing, limits.get("return_missing"))
+                raw_inbound_extra_rows = _limit_rows(inbound_extra, limits.get("inbound_extra"))
+                p1 = _cross_match_pairs(raw_pkg_missing_rows, raw_inbound_extra_rows, "package", "return")
+                p2 = _cross_match_pairs(raw_return_missing_rows, raw_pkg_extra_rows, "return", "package")
                 match_txt = _short_codes([f"{a} ↔ {b}" for a, b in (p1 + p2)])
                 p1_missing = {a for a, _ in p1}
                 p1_extra = {b for _, b in p1}
                 p2_missing = {a for a, _ in p2}
                 p2_extra = {b for _, b in p2}
-                rem_pkg_missing_rows = [x for x in pkg_missing if x not in p1_missing]
-                rem_inbound_extra_rows = [x for x in inbound_extra if x not in p1_extra]
-                rem_return_missing_rows = [x for x in return_missing if x not in p2_missing]
-                rem_pkg_extra_rows = [x for x in pkg_extra if x not in p2_extra]
-                rem_pkg_unknown_rows = [x for x in pkg_unknown_rows if x not in p2_extra]
-                display_pkg_extra_rows = rem_pkg_extra_rows + rem_pkg_unknown_rows
-                rem_pkg_missing_rows = _limit_rows(rem_pkg_missing_rows, limits.get("pkg_missing"),
-                                                   "Chưa lấy được mã đóng thiếu")
+                rem_pkg_missing_rows = [x for x in raw_pkg_missing_rows if x not in p1_missing]
+                rem_inbound_extra_rows = [x for x in raw_inbound_extra_rows if x not in p1_extra]
+                rem_return_missing_rows = [x for x in raw_return_missing_rows if x not in p2_missing]
+                display_pkg_extra_rows = [x for x in raw_pkg_extra_rows if x not in p2_extra]
                 # Hai danh sách khui hàng phải chỉ hiện mã thật. Không chèn
                 # placeholder theo chênh lệch tổng, vì placeholder không thể dùng để đối chiếu.
                 rem_inbound_extra_rows = list(rem_inbound_extra_rows)
                 rem_return_missing_rows = list(rem_return_missing_rows)
-                display_pkg_extra_rows = _limit_rows(display_pkg_extra_rows, limits.get("pkg_extra"),
-                                                     "Chưa lấy được mã video đóng dư")
                 rem_pkg_missing = len(rem_pkg_missing_rows)
                 rem_inbound_extra = len(rem_inbound_extra_rows)
                 rem_return_missing = len(rem_return_missing_rows)
@@ -2201,7 +2200,7 @@ def load_week_summary():
                     "Ngày": iso,
                     "Nhóm tuổi": _audit_age(iso),
                     "Mã đối chiếu": _compare_code_lines(rem_return_missing_rows, rem_pkg_missing_rows,
-                                                        rem_pkg_extra_rows, rem_inbound_extra_rows),
+                                                        display_pkg_extra_rows, rem_inbound_extra_rows),
                     "Đóng thiếu SL": len(raw_pkg_missing_rows),
                     "Đóng thiếu": _short_codes(_disp(raw_pkg_missing_rows, "package")),
                     "Đóng dư SL": len(raw_pkg_extra_rows),
