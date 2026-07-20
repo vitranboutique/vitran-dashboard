@@ -1696,6 +1696,7 @@ def load_week_summary():
                 pass
             recs = picklog.read_dohana_videos()
             vdong, vhoan, tdong, thoan = {}, {}, {}, {}   # tag TÁCH theo loại video: đóng vs khui
+            inbound_rows = []
             for r in recs:
                 d, ty = r.get("date"), r.get("type")
                 if not d:
@@ -1707,9 +1708,88 @@ def load_week_summary():
                         tdong.setdefault(d, _Ct())[tn] += 1
                 elif ty == "inbound":        # khui hàng → tag hoàn (tráo / mất / hư hỏng / đã dùng)
                     vhoan[d] = vhoan.get(d, 0) + 1
+                    inbound_rows.append(r)
                     if tn:
                         thoan.setdefault(d, _Ct())[tn] += 1
             _mpref = (data.get("days") or [{}])[0].get("iso", "")[:7]   # 'YYYY-MM' tháng này
+
+            # Vid hoàn phải là clip KHỚP đơn hoàn, không phải tổng clip inbound thô.
+            # Nếu đếm thô, video quay dư/sai mã/ngày có thể che mất các đơn thật sự chưa quay.
+            try:
+                from collections import defaultdict as _Dd
+
+                def _norm(c):
+                    return str(c or "").strip().upper()
+
+                def _cg(code):
+                    s = _norm(code)
+                    if s.startswith("SPXVN"):
+                        return "SPX"
+                    if s.startswith(("VTPVN", "VTP")):
+                        return "VTP"
+                    if s.startswith("GHN"):
+                        return "GHN"
+                    if s[:2] in ("86", "85", "84", "87"):
+                        return "JT"
+                    return s[:3]
+
+                def _cgname(n):
+                    n = str(n or "").lower()
+                    if "spx" in n:
+                        return "SPX"
+                    if "viettel" in n or "vtp" in n:
+                        return "VTP"
+                    if "ghn" in n or "giao hàng nhanh" in n:
+                        return "GHN"
+                    if "j&t" in n or "jt" in n:
+                        return "JT"
+                    return n[:3]
+
+                def _pdate(s):
+                    try:
+                        return date.fromisoformat(str(s or "")[:10])
+                    except Exception:
+                        return None
+
+                _inb = [
+                    (_norm(r.get("code")), _cg(r.get("code")), _pdate(r.get("date")))
+                    for r in inbound_rows if r.get("code")
+                ]
+                _inbound_codes = {c for c, _cgx, _dx in _inb}
+                _cands = L.get_restocked_returns_range(make_fetch_json(build_session()), days=32, max_pages=30)
+                _exact_used = set()
+                _matched_by_day = _Dd(set)
+                for c in _cands:
+                    _hit = next((x for x in (_norm(z) for z in c.get("codes", [])) if x in _inbound_codes), None)
+                    c["_exact"] = _hit
+                    if _hit:
+                        _exact_used.add(_hit)
+                        _matched_by_day[str(c.get("restock_date") or "")].add(str(c.get("order_code") or c.get("return_code") or ""))
+                _leftover = _Dd(list)
+                for _code, _cgx, _dx in _inb:
+                    if _code not in _exact_used:
+                        _leftover[_cgx].append((_dx, _code))
+                for c in sorted(_cands, key=lambda r: str(r.get("restock_date") or "")):
+                    if c.get("_exact") or c.get("loai_tra_code") == "delivery_failed":
+                        continue
+                    _lst = _leftover.get(_cgname(c.get("carrier"))) or []
+                    _rd = _pdate(c.get("restock_date"))
+                    _pick = next((_ix for _ix, (_vd, _vc) in enumerate(_lst)
+                                  if _vd is None or _rd is None or abs((_vd - _rd).days) <= 3), None)
+                    if _pick is not None:
+                        _lst.pop(_pick)
+                        _matched_by_day[str(c.get("restock_date") or "")].add(str(c.get("order_code") or c.get("return_code") or ""))
+                _tagged_inbound_by_day = {
+                    dd: sum(cnt.values()) for dd, cnt in thoan.items()
+                }
+                _matched_vhoan = {
+                    dd: len(vals) + int(_tagged_inbound_by_day.get(dd, 0))
+                    for dd, vals in _matched_by_day.items()
+                }
+                for dd, tag_n in _tagged_inbound_by_day.items():
+                    _matched_vhoan.setdefault(dd, int(tag_n))
+            except Exception:
+                _matched_vhoan = {}
 
             def _tagstr(cnt):
                 return " · ".join(f"{n} ×{c}" for n, c in cnt.items()) if cnt else ""
@@ -1727,13 +1807,24 @@ def load_week_summary():
             for day in data.get("days", []):
                 iso = day.get("iso")
                 day["vid_dong"] = vdong.get(iso, 0)
-                day["vid_hoan"] = vhoan.get(iso, 0)
+                day["vid_hoan_raw"] = vhoan.get(iso, 0)
+                day["vid_hoan"] = _matched_vhoan.get(iso, vhoan.get(iso, 0))
                 day["tag_dong"] = _tagstr(tdong.get(iso))
                 day["tag_hoan"] = _tagstr(thoan.get(iso))
+                if day.get("vid_hoan_raw") != day.get("vid_hoan"):
+                    _old_note = str(day.get("ghi_chu") or "").strip()
+                    _extra_note = f"Vid hoàn thô {day.get('vid_hoan_raw')} / khớp đơn {day.get('vid_hoan')}"
+                    day["ghi_chu"] = (_old_note + " · " + _extra_note).strip(" ·")
             if isinstance(data.get("month"), dict):
                 m = data["month"]
-                m["vid_dong"], m["vid_hoan"] = _msum(vdong), _msum(vhoan)
+                m["vid_dong"] = _msum(vdong)
+                m["vid_hoan_raw"] = _msum(vhoan)
+                m["vid_hoan"] = _msum(_matched_vhoan) if _matched_vhoan else _msum(vhoan)
                 m["tag_dong"], m["tag_hoan"] = _mtag(tdong), _mtag(thoan)
+                if m.get("vid_hoan_raw") != m.get("vid_hoan"):
+                    _old_note = str(m.get("ghi_chu") or "").strip()
+                    _extra_note = f"Vid hoàn thô {m.get('vid_hoan_raw')} / khớp đơn {m.get('vid_hoan')}"
+                    m["ghi_chu"] = (_old_note + " · " + _extra_note).strip(" ·")
     except Exception:
         pass
     return data
@@ -1836,11 +1927,42 @@ def load_restock_novideo(days: int = 30):
 
     def _norm(c):                       # chuẩn hoá để khớp chịu lỗi hoa/thường/space
         return str(c or "").strip().upper()
-    inbound_codes = set()               # mã video KHUI HÀNG (inbound) đã lưu bền
+
+    def _cg(code):                      # NHÓM ĐVVC từ MÃ VĐ (giống A4)
+        s = str(code or "").upper()
+        if s.startswith("SPXVN"):
+            return "SPX"
+        if s.startswith(("VTPVN", "VTP")):
+            return "VTP"
+        if s.startswith("GHN"):
+            return "GHN"
+        if s[:2] in ("86", "85", "84", "87"):
+            return "JT"
+        return s[:3]
+
+    def _cgname(n):                     # NHÓM ĐVVC từ TÊN đơn vị (đáng tin hơn mã)
+        n = str(n or "").lower()
+        if "spx" in n:
+            return "SPX"
+        if "viettel" in n or "vtp" in n:
+            return "VTP"
+        if "ghn" in n or "giao hàng nhanh" in n:
+            return "GHN"
+        if "j&t" in n or "jt" in n:
+            return "JT"
+        return n[:3]
+
+    def _pdate(s):
+        try:
+            return date.fromisoformat(str(s or "")[:10])
+        except Exception:
+            return None
+    _inb = []                           # (code, nhóm ĐVVC, ngày) của video KHUI (inbound) đã lưu bền
     if picklog.configured():
         for r in picklog.read_dohana_videos():
             if r.get("type") == "inbound" and r.get("code"):
-                inbound_codes.add(_norm(r.get("code")))
+                _inb.append((_norm(r.get("code")), _cg(r.get("code")), _pdate(r.get("date"))))
+    inbound_codes = {c for c, _cgx, _dx in _inb}
     _today = (datetime.now(timezone.utc) + timedelta(hours=7)).date().isoformat()
     ledger = picklog.read_restock_novideo() if picklog.configured() else {"items": {}}
     items = ledger.get("items", {})
@@ -1875,12 +1997,42 @@ def load_restock_novideo(days: int = 30):
             if _v and f"{_f}:{_v}" in _notemap:
                 return _notemap[f"{_f}:{_v}"]
         return ""
+    # ── KHỚP VIDEO: (1) mã CHÍNH XÁC; (2) GHÉP MỀM theo ĐVVC + ngày (±3) như A4 — đơn SPX có VĐ hoàn
+    #    về chỉ NV quét trên Dohana, KHÔNG nằm trong Sapo → khớp mã trượt, cần ghép mềm để khỏi báo oan.
+    from collections import defaultdict as _dd
+    _exact_consumed = set()
+    for c in cands:
+        _hit = next((x for x in (_norm(z) for z in c.get("codes", [])) if x in inbound_codes), None)
+        c["_exact"] = _hit
+        if _hit:
+            _exact_consumed.add(_hit)
+    _leftover = _dd(list)               # nhóm ĐVVC -> [(ngày, code)] clip khui CHƯA khớp chính xác
+    for _code, _cgx, _dx in _inb:
+        if _code not in _exact_consumed:
+            _leftover[_cgx].append((_dx, _code))
+    for c in sorted(cands, key=lambda r: str(r.get("restock_date") or "")):
+        if c.get("_exact"):
+            c["_has_vid"] = True
+            continue
+        if c.get("loai_tra_code") == "delivery_failed":
+            c["_has_vid"] = False       # giao thất bại: VĐ về = VĐ đi (có trong Sapo) → KHÔNG ghép mềm
+            continue
+        _lst = _leftover.get(_cgname(c.get("carrier"))) or []
+        _rd = _pdate(c.get("restock_date"))
+        _pick = next((_ix for _ix, (_vd, _vc) in enumerate(_lst)
+                      if _vd is None or _rd is None or abs((_vd - _rd).days) <= 3), None)
+        if _pick is not None:
+            _lst.pop(_pick)
+            c["_has_vid"] = True
+            c["_soft"] = True
+        else:
+            c["_has_vid"] = False
     for c in cands:
         key = c.get("return_code") or c.get("order_code")
         if not key:
             continue
         c["ghi_chu"] = _lookup_note(c)      # ghi chú RIÊNG của trang (không phải Sapo)
-        has_vid = any(_norm(code) in inbound_codes for code in c.get("codes", []))
+        has_vid = bool(c.get("_has_vid"))
         if has_vid:
             it = items.get(key)
             if it and it.get("status") == "active":       # trước thiếu, nay có video → tự gỡ
