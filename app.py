@@ -624,6 +624,8 @@ def _render_week_video_audit(data):
                     "<tr>",
                     f'<td style="padding:6px 8px;border:1px solid #d6dce6;white-space:nowrap">{_esc(str(r.get("Ngày") or ""))}</td>',
                     f'<td style="padding:6px 8px;border:1px solid #d6dce6;white-space:nowrap">{_esc(str(r.get("Nhóm tuổi") or ""))}</td>',
+                    _fmt_cell(r.get("Mã vận đơn")),
+                    _fmt_cell(r.get("Mã trả hàng")),
                     f'<td style="padding:6px 8px;border:1px solid #d6dce6;text-align:right;font-weight:800">{_num(r.get("Đóng thiếu SL"))}</td>',
                     _fmt_cell(r.get("Đóng thiếu")),
                     f'<td style="padding:6px 8px;border:1px solid #d6dce6;text-align:right;font-weight:800">{_num(r.get("Đóng dư SL"))}</td>',
@@ -646,6 +648,8 @@ def _render_week_video_audit(data):
     <tr>
       <th rowspan="2" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#e2e8f0">Ngày</th>
       <th rowspan="2" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#e2e8f0">Nhóm tuổi</th>
+      <th rowspan="2" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#e2e8f0;min-width:180px">Mã vận đơn</th>
+      <th rowspan="2" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#e2e8f0;min-width:150px">Mã trả hàng</th>
       <th colspan="4" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#dbeafe">Đóng hàng</th>
       <th colspan="4" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#ffedd5">Nhập hàng hoàn</th>
       <th rowspan="2" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#fef3c7;min-width:220px">Khớp lộn mục</th>
@@ -1839,6 +1843,22 @@ def load_week_summary():
                 picked = list(dict.fromkeys([v for v in picked if v]))
                 return " · ".join(picked[:6]) + (f" · ...(+{len(picked) - 6})" if len(picked) > 6 else "")
 
+            def _waybills_from_items(items):
+                out = []
+                for item in items or []:
+                    for token in _codes_from_item(item):
+                        if _is_waybill_code(token):
+                            out.append(token)
+                return _short_codes(out)
+
+            def _return_codes_from_items(items):
+                out = []
+                for item in items or []:
+                    raw = str(item or "")
+                    out.extend(re.findall(r"(?:Mã trả|Ma tra)\s*:\s*([A-Za-z0-9_.-]+)", raw, flags=re.I))
+                    out.extend(re.findall(r"\b\d{12,24}-R\d+\b", raw))
+                return _short_codes(out)
+
             def _code_match(a, b):
                 if not a or not b:
                     return False
@@ -1925,6 +1945,8 @@ def load_week_summary():
                 _video_matrix.append({
                     "Ngày": iso,
                     "Nhóm tuổi": _audit_age(iso),
+                    "Mã vận đơn": _waybills_from_items(pkg_missing + pkg_extra + return_missing + inbound_extra),
+                    "Mã trả hàng": _return_codes_from_items(return_missing),
                     "Đóng thiếu SL": len(pkg_missing),
                     "Đóng thiếu": _short_codes(pkg_missing),
                     "Đóng dư SL": len(pkg_extra),
@@ -2066,7 +2088,17 @@ def load_week_summary():
                         c.get("return_code"),
                         c.get("order_code"),
                     ]
-                    return _prefer_waybill_label(vals, c.get("order_code") or c.get("return_code") or "")
+                    wb = _prefer_waybill_label(vals, "")
+                    rc = str(c.get("return_code") or "").strip()
+                    oc = str(c.get("order_code") or "").strip()
+                    parts = []
+                    if wb and wb != "Chưa có vận đơn":
+                        parts.append(f"VĐ: {wb}")
+                    if rc:
+                        parts.append(f"Mã trả: {rc}")
+                    if oc:
+                        parts.append(f"Mã đơn: {oc}")
+                    return " | ".join(parts) or "Chưa có vận đơn"
 
                 _inb = [
                     (_norm(r.get("code")), _cg(r.get("code")), _pdate(r.get("date")))
