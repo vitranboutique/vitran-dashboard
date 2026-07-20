@@ -1869,6 +1869,23 @@ def load_week_summary():
                 got = _field(r"(?:Mã đơn|Ma don|Mã trả|Ma tra)\s*:\s*([^|]+)")
                 return got or raw
 
+            def _waybill_display(item, prefer):
+                """Chỉ hiện mã vận đơn đúng phía, không kèm mã đơn/mã trả."""
+                raw = _display_code_raw(item)
+                if not raw:
+                    return ""
+                if "|" not in raw and ":" not in raw:
+                    return raw
+                outbound_pattern = r"(?:VĐ đi/đóng|VD di/dong|VĐ đóng|VD dong|VĐ đi|VD di)\s*:\s*([^|]+)"
+                patterns = ([r"(?:VĐ hoàn|VD hoan)\s*:\s*([^|]+)", outbound_pattern]
+                            if prefer == "return" else [outbound_pattern])
+                for pattern in patterns:
+                    match = re.search(pattern, raw, flags=re.I)
+                    shown = _short_codes(_identifier_tokens(match.group(1))) if match else ""
+                    if shown:
+                        return shown
+                return ""
+
             def _is_waybill_code(code):
                 s = _ascii_code(code)
                 if not s:
@@ -1973,20 +1990,56 @@ def load_week_summary():
                     return False
                 if a == b:
                     return True
-                if min(len(a), len(b)) >= 8 and (a in b or b in a):
-                    return True
-                if a[0] == b[0] and abs(len(a) - len(b)) <= 5 and min(len(a), len(b)) >= 6:
-                    return _subseq(a, b) or _subseq(b, a)
-                return False
+                # Mã số vận đơn phải trùng tuyệt đối; các chuỗi số dài rất dễ bị
+                # ghép oan nếu dùng subsequence. Mã chữ-số chỉ chịu sai tối đa
+                # một ký tự do lỗi font/OCR (ví dụ ký tự có dấu hoặc X bị mất).
+                if a.isdigit() or b.isdigit() or min(len(a), len(b)) < 6:
+                    return False
+                if abs(len(a) - len(b)) > 1:
+                    return False
+                if len(a) == len(b):
+                    return sum(x != y for x, y in zip(a, b)) <= 1
+                shorter, longer = (a, b) if len(a) < len(b) else (b, a)
+                i = j = edits = 0
+                while i < len(shorter) and j < len(longer):
+                    if shorter[i] == longer[j]:
+                        i += 1
+                        j += 1
+                    else:
+                        edits += 1
+                        j += 1
+                        if edits > 1:
+                            return False
+                return True
+
+            def _preferred_tokens(item, prefer):
+                shown = _waybill_display(item, prefer)
+                return _identifier_tokens(shown)
+
+            def _identifier_tokens(item):
+                # Chỉ giữ mã nghiệp vụ thật. Các nhãn chung như "VĐ", "Mã",
+                # "đơn" từng làm hai dòng không liên quan vẫn bị ghép với nhau.
+                return [
+                    code for code in _codes_from_item(_display_code_raw(item))
+                    if len(code) >= 6 and any(ch.isdigit() for ch in code)
+                ]
+
+            def _exact_context_match(a_item, b_item):
+                return bool(set(_identifier_tokens(a_item)) & set(_identifier_tokens(b_item)))
+
+            def _preferred_match(a_item, b_item, a_prefer, b_prefer):
+                atoks = _preferred_tokens(a_item, a_prefer)
+                btoks = _preferred_tokens(b_item, b_prefer)
+                return any(_code_match(a, b) for a in atoks for b in btoks)
 
             def _match_tokens(a_item, b_item):
-                atoks = _codes_from_item(_display_code_raw(a_item))
-                btoks = _codes_from_item(_display_code_raw(b_item))
+                atoks = _identifier_tokens(a_item)
+                btoks = _identifier_tokens(b_item)
+                if set(atoks) & set(btoks):
+                    return True
                 awb = [x for x in atoks if _is_waybill_code(x)]
                 bwb = [x for x in btoks if _is_waybill_code(x)]
-                if awb and bwb and any(_code_match(a, b) for a in awb for b in bwb):
-                    return True
-                return any(_code_match(a, b) for a in atoks for b in btoks)
+                return bool(awb and bwb and any(_code_match(a, b) for a in awb for b in bwb))
 
             def _group_matches_video(group, video_code):
                 gtoks = []
@@ -2024,17 +2077,18 @@ def load_week_summary():
                     return " · ".join(pairs[:limit]) + f" · ...(+{len(pairs) - limit})"
                 return " · ".join(pairs)
 
-            def _cross_match_pairs(missing, extra):
+            def _cross_match_pairs(missing, extra, missing_prefer, extra_prefer):
                 pairs, used_extra = [], set()
                 for miss in missing or []:
-                    mtoks = _codes_from_item(miss)
-                    if not mtoks:
-                        continue
                     for ex_idx, ex in enumerate(extra or []):
                         ex_key = str(ex or "").strip()
                         if not ex_key or ex_idx in used_extra:
                             continue
-                        if _match_tokens(miss, ex_key):
+                        # Cùng mã đơn/mã trả/vận đơn chính xác là cùng hồ sơ. Nếu
+                        # không có mã chung, chỉ chịu lỗi font ở đúng loại vận đơn
+                        # đang đối chiếu, tuyệt đối không so gần đúng toàn bộ dòng.
+                        if (_exact_context_match(miss, ex_key)
+                                or _preferred_match(miss, ex_key, missing_prefer, extra_prefer)):
                             pairs.append((str(miss).strip(), ex_key))
                             used_extra.add(ex_idx)
                             break
@@ -2086,8 +2140,14 @@ def load_week_summary():
                 pkg_unknown = [str(v or "").strip() for v in (pkg_unknown or []) if str(v or "").strip()]
                 limits = _day_video_limits(day)
                 pkg_unknown_rows = [f"Chưa khớp đơn: {x}" for x in pkg_unknown]
-                p1 = _cross_match_pairs(pkg_missing, inbound_extra)      # thiếu đóng ↔ dư khui
-                p2 = _cross_match_pairs(return_missing, pkg_extra + pkg_unknown_rows)  # thiếu khui ↔ dư đóng
+                # Các cột thiếu/dư hiển thị danh sách BAN ĐẦU đúng với badge bảng trên.
+                # Mã đã khớp lộn mục vẫn hiện ở ô vàng; chỉ phần Chốt dùng số còn lệch.
+                raw_pkg_missing_rows = list(pkg_missing)
+                raw_pkg_extra_rows = list(pkg_extra) + list(pkg_unknown_rows)
+                raw_return_missing_rows = list(return_missing)
+                raw_inbound_extra_rows = list(inbound_extra)
+                p1 = _cross_match_pairs(pkg_missing, inbound_extra, "package", "return")
+                p2 = _cross_match_pairs(return_missing, pkg_extra + pkg_unknown_rows, "return", "package")
                 match_txt = _short_codes([f"{a} ↔ {b}" for a, b in (p1 + p2)])
                 p1_missing = {a for a, _ in p1}
                 p1_extra = {b for _, b in p1}
@@ -2127,22 +2187,30 @@ def load_week_summary():
                 else:
                     return
                 def _disp(vals, prefer=""):
-                    return [_short_display_code(v, prefer) for v in vals if _short_display_code(v, prefer)]
+                    return [_waybill_display(v, prefer) for v in vals if _waybill_display(v, prefer)]
+                def _matched_waybills(a, b, a_prefer, b_prefer):
+                    left = _waybill_display(a, a_prefer)
+                    right = _waybill_display(b, b_prefer)
+                    return f"{left} ↔ {right}" if left and right else (left or right)
+                matched_rows = [
+                    _matched_waybills(a, b, "package", "return") for a, b in p1
+                ] + [
+                    _matched_waybills(a, b, "return", "package") for a, b in p2
+                ]
                 _video_matrix.append({
                     "Ngày": iso,
                     "Nhóm tuổi": _audit_age(iso),
                     "Mã đối chiếu": _compare_code_lines(rem_return_missing_rows, rem_pkg_missing_rows,
                                                         rem_pkg_extra_rows, rem_inbound_extra_rows),
-                    "Đóng thiếu SL": rem_pkg_missing,
-                    "Đóng thiếu": _short_codes(_disp(rem_pkg_missing_rows, "package")),
-                    "Đóng dư SL": rem_pkg_extra,
-                    "Đóng dư": _short_codes(_disp(display_pkg_extra_rows, "package")),
-                    "Hoàn thiếu SL": rem_return_missing,
-                    "Hoàn thiếu": _short_codes(_disp(rem_return_missing_rows, "return")),
-                    "Hoàn dư SL": rem_inbound_extra,
-                    "Hoàn dư": _short_codes(_disp(rem_inbound_extra_rows, "return")),
-                    "Khớp lộn mục": _short_codes([f"{_short_display_code(a)} ↔ {_short_display_code(b)}"
-                                                  for a, b in (p1 + p2)]),
+                    "Đóng thiếu SL": len(raw_pkg_missing_rows),
+                    "Đóng thiếu": _short_codes(_disp(raw_pkg_missing_rows, "package")),
+                    "Đóng dư SL": len(raw_pkg_extra_rows),
+                    "Đóng dư": _short_codes(_disp(raw_pkg_extra_rows, "package")),
+                    "Hoàn thiếu SL": len(raw_return_missing_rows),
+                    "Hoàn thiếu": _short_codes(_disp(raw_return_missing_rows, "return")),
+                    "Hoàn dư SL": len(raw_inbound_extra_rows),
+                    "Hoàn dư": _short_codes(_disp(raw_inbound_extra_rows, "return")),
+                    "Khớp lộn mục": _short_codes(matched_rows),
                     "Video chưa khớp đơn": _short_codes(pkg_unknown),
                     "Chốt": chot,
                 })
