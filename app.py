@@ -633,6 +633,7 @@ def _render_week_video_audit(data):
                     f'<td style="padding:6px 8px;border:1px solid #d6dce6;text-align:right;font-weight:800">{_num(r.get("Hoàn dư SL"))}</td>',
                     _fmt_cell(r.get("Hoàn dư")),
                     _fmt_cell(r.get("Khớp lộn mục"), has_match),
+                    _fmt_cell(r.get("Video chưa đọc VĐ")),
                     f'<td style="padding:6px 8px;border:1px solid #d6dce6;background:{chot_bg};font-weight:800;vertical-align:top">{_esc(chot)}</td>',
                     "</tr>",
                 ]
@@ -648,6 +649,7 @@ def _render_week_video_audit(data):
       <th colspan="4" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#dbeafe">Đóng hàng</th>
       <th colspan="4" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#ffedd5">Nhập hàng hoàn</th>
       <th rowspan="2" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#fef3c7;min-width:220px">Khớp lộn mục</th>
+      <th rowspan="2" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#f8fafc;min-width:190px">Video chưa đọc VĐ</th>
       <th rowspan="2" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#f1f5f9;min-width:160px">Chốt</th>
     </tr>
     <tr>
@@ -1890,11 +1892,12 @@ def load_week_summary():
             def _uniq(vals):
                 return list(dict.fromkeys([str(v or "").strip() for v in (vals or []) if str(v or "").strip()]))
 
-            def _add_matrix(iso, pkg_missing, pkg_extra, return_missing, inbound_extra):
+            def _add_matrix(iso, pkg_missing, pkg_extra, return_missing, inbound_extra, pkg_unknown=None):
                 pkg_missing = _uniq(pkg_missing)
                 pkg_extra = _uniq(pkg_extra)
                 return_missing = _uniq(return_missing)
                 inbound_extra = _uniq(inbound_extra)
+                pkg_unknown = _uniq(pkg_unknown)
                 p1 = _cross_match_pairs(pkg_missing, inbound_extra)      # thiếu đóng ↔ dư khui
                 p2 = _cross_match_pairs(return_missing, pkg_extra)       # thiếu khui ↔ dư đóng
                 match_txt = _short_codes([f"{a} ↔ {b}" for a, b in (p1 + p2)], limit=16)
@@ -1911,6 +1914,8 @@ def load_week_summary():
                     parts.append(f"Dư video đóng: {rem_pkg_extra}")
                 if rem_inbound_extra:
                     parts.append(f"Dư video khui hoàn: {rem_inbound_extra}")
+                if pkg_unknown:
+                    parts.append(f"Video đóng chưa đọc VĐ: {len(pkg_unknown)}")
                 if not parts and (pkg_missing or pkg_extra or return_missing or inbound_extra):
                     chot = "Đủ sau khi chuyển lộn mục"
                 elif parts:
@@ -1929,6 +1934,7 @@ def load_week_summary():
                     "Hoàn dư SL": len(inbound_extra),
                     "Hoàn dư": _short_codes(inbound_extra),
                     "Khớp lộn mục": match_txt,
+                    "Video chưa đọc VĐ": _short_codes(pkg_unknown),
                     "Chốt": chot,
                 })
 
@@ -1962,7 +1968,7 @@ def load_week_summary():
                 pass
             recs = picklog.read_dohana_videos()
             vdong, vhoan, tdong, thoan = {}, {}, {}, {}   # tag TÁCH theo loại video: đóng vs khui
-            package_codes_by_day, inbound_codes_by_day = {}, {}
+            package_codes_by_day, package_unknown_by_day, inbound_codes_by_day = {}, {}, {}
             inbound_rows = []
             for r in recs:
                 d, ty = r.get("date"), r.get("type")
@@ -1973,7 +1979,10 @@ def load_week_summary():
                 if ty == "package":          # đóng hàng → tag đóng (vd đóng thiếu SP)
                     vdong[d] = vdong.get(d, 0) + 1
                     if code:
-                        package_codes_by_day.setdefault(d, []).append(code)
+                        if _is_waybill_code(code):
+                            package_codes_by_day.setdefault(d, []).append(code)
+                        else:
+                            package_unknown_by_day.setdefault(d, []).append(code)
                     if tn:
                         tdong.setdefault(d, _Ct())[tn] += 1
                 elif ty == "inbound":        # khui hàng → tag hoàn (tráo / mất / hư hỏng / đã dùng)
@@ -2150,9 +2159,10 @@ def load_week_summary():
                 _pkg_extra = _package_extra_by_day.get(iso, [])
                 _return_missing = _return_missing_by_day.get(iso, [])
                 _inbound_extra = _inbound_extra_by_day.get(iso, [])
+                _pkg_unknown = package_unknown_by_day.get(iso, [])
                 _pkg_miss_vs_inbound_extra = _cross_matches(_pkg_missing, _inbound_extra)
                 _return_miss_vs_pkg_extra = _cross_matches(_return_missing, _pkg_extra)
-                _add_matrix(iso, _pkg_missing, _pkg_extra, _return_missing, _inbound_extra)
+                _add_matrix(iso, _pkg_missing, _pkg_extra, _return_missing, _inbound_extra, _pkg_unknown)
                 _add_audit(
                     iso, "Thiếu video đóng hàng", _pkg_missing,
                     _inbound_extra,
