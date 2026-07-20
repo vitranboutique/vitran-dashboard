@@ -2110,7 +2110,11 @@ def load_week_summary():
 
             _package_missing_by_day, _package_extra_by_day, _package_unknown_unmatched_by_day = {}, {}, {}
             try:
-                for _iso, _summ in (_psumm if "_psumm" in locals() else {}).items():
+                _package_days = set(package_codes_by_day) | set(package_unknown_by_day)
+                if "_psumm" in locals():
+                    _package_days |= set((_psumm or {}).keys())
+                for _iso in sorted(_package_days):
+                    _summ = (_psumm if "_psumm" in locals() else {}).get(_iso) or {}
                     _groups, _labels = [], []
                     for _row in (_summ.get("rows") or []):
                         _codes = [str(c).strip() for c in (_row.get("codes") or []) if str(c).strip()]
@@ -2122,10 +2126,8 @@ def load_week_summary():
                                 _group = [_code]
                             _groups.append(_match_codes_from_group(_group, _code))
                             _labels.append(_package_context_label(_group, _code))
-                    if not _groups:
-                        continue
                     _pkg_codes = set(package_codes_by_day.get(_iso, [])) | set(package_unknown_by_day.get(_iso, []))
-                    _matched, _font = match_packing_videos(_groups, _pkg_codes)
+                    _matched, _font = match_packing_videos(_groups, _pkg_codes) if _groups else ({}, [])
                     _matched_vids = {str(v[0]).strip() for v in _matched.values() if v and str(v[0]).strip()}
                     _missing = [_labels[i] for i in range(len(_labels)) if i not in _matched]
                     _extra_raw = sorted(_pkg_codes - _matched_vids)
