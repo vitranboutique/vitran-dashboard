@@ -1844,6 +1844,12 @@ def load_week_summary():
                         out.append(code)
                 return list(dict.fromkeys(out))
 
+            def _display_code_raw(item):
+                raw = str(item or "").strip()
+                if raw.lower().startswith("chưa khớp đơn:"):
+                    raw = raw.split(":", 1)[1].strip()
+                return raw
+
             def _is_waybill_code(code):
                 s = _ascii_code(code)
                 if not s:
@@ -1955,8 +1961,8 @@ def load_week_summary():
                 return False
 
             def _match_tokens(a_item, b_item):
-                atoks = _codes_from_item(a_item)
-                btoks = _codes_from_item(b_item)
+                atoks = _codes_from_item(_display_code_raw(a_item))
+                btoks = _codes_from_item(_display_code_raw(b_item))
                 awb = [x for x in atoks if _is_waybill_code(x)]
                 bwb = [x for x in btoks if _is_waybill_code(x)]
                 if awb and bwb and any(_code_match(a, b) for a in awb for b in bwb):
