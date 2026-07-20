@@ -1879,6 +1879,7 @@ def load_week_summary():
             from collections import Counter as _Ct
             _video_audit = []
             _video_matrix = []
+            _report_return_missing = []
             _order_context_by_code = data.get("order_context_by_code") or {}
 
             def _audit_age(iso):
@@ -2218,6 +2219,9 @@ def load_week_summary():
                 )
                 raw_return_missing_rows = _limit_rows(return_missing, limits.get("return_missing"))
                 raw_inbound_extra_rows = _limit_rows(inbound_extra, limits.get("inbound_extra"))
+                _age = _audit_age(iso)
+                _report_return_missing.extend({"date": iso, "age": _age, "label": row}
+                                              for row in raw_return_missing_rows)
                 p1 = _cross_match_pairs(raw_pkg_missing_rows, raw_inbound_extra_rows, "package", "return")
                 p2 = _cross_match_pairs(raw_return_missing_rows, raw_pkg_extra_rows, "return", "package")
                 match_txt = _short_codes([f"{a} ↔ {b}" for a, b in (p1 + p2)])
@@ -2533,6 +2537,7 @@ def load_week_summary():
                     m["ghi_chu"] = (_old_note + " · " + _extra_note).strip(" ·")
             data["video_audit_matrix"] = _video_matrix
             data["video_audit"] = _video_audit
+            data["report_return_video_missing"] = _report_return_missing
     except Exception:
         pass
     return data
@@ -2686,7 +2691,7 @@ def load_restock_novideo(days: int = 30):
                                  key=lambda r: r.get("restock_date", ""), reverse=True),
                 "resolved": [v for v in _vals0 if v.get("status") == "resolved"],
                 "dismissed": [v for v in _vals0 if v.get("status") == "dismissed"],
-                "total_scanned": len(cands), "video_store": 0}
+                "total_scanned": len(cands), "video_store": 0, "candidates": cands}
     # GHI CHÚ: lấy từ KHO GHI CHÚ RIÊNG của trang đơn trả (vitran_closed_return_notes.json) — KHÔNG
     # dùng note Sapo (thiếu). Khớp theo return_code/order_code/vd_tra/vd_di (giống trang trả hàng ép).
     _notemap = {}
@@ -2774,7 +2779,7 @@ def load_restock_novideo(days: int = 30):
     resolved = [v for v in _vals if v.get("status") == "resolved"]
     dismissed = [v for v in _vals if v.get("status") == "dismissed"]
     return {"active": active, "resolved": resolved, "dismissed": dismissed,
-            "total_scanned": len(cands), "video_store": len(inbound_codes)}
+            "total_scanned": len(cands), "video_store": len(inbound_codes), "candidates": cands}
 
 
 @st.cache_data(ttl=900, show_spinner="Đang lấy danh mục sản phẩm + tồn kho từ Sapo…")
@@ -8494,17 +8499,69 @@ def _render_returns():
             _apply_closed_return_app_notes(_canceled_returns_detail, _closed_return_app_notes)
 
             def _restock_novideo_rows():
-                # Đơn 'ĐÃ nhập kho nhưng thiếu video khui' → gắn ghi chú Y HỆT các bảng khác (khớp theo
-                # MÃ TRẢ/mã đơn/VĐ + chuẩn hoá qua _apply_closed_return_app_notes) → need_kn đúng:
-                # có ghi chú CHUẨN thì hết vàng & tự rớt khỏi Cần KN.
+                # NGUỒN DUY NHẤT: đúng danh sách đứng sau badge Vid hoàn của Báo cáo vận hành cuối ngày.
+                # API/Sapo chỉ dùng để bổ sung metadata, không tự quyết định đơn nào vào bảng này.
+                if hasattr(_restock_novideo_rows, "_cache"):
+                    return [dict(r) for r in _restock_novideo_rows._cache]
                 try:
-                    _items = load_restock_novideo(days=30).get("active") or []
+                    _report = load_week_summary()
+                    _missing = _report.get("report_return_video_missing") or []
+                    _candidates = load_restock_novideo(days=30).get("candidates") or []
                 except Exception:
                     return []
-                _rows = [_nv_row_restock(_it) for _it in _items]
+
+                def _ids(value):
+                    out = []
+                    for token in re.findall(r"[A-Za-z0-9À-ỹĐđ]+", str(value or "")):
+                        code = _ascii_code(token)
+                        if len(code) >= 6 and any(ch.isdigit() for ch in code):
+                            out.append(code)
+                    return list(dict.fromkeys(out))
+
+                _candidate_by_code = {}
+                for _candidate in _candidates:
+                    _codes = list(_candidate.get("codes") or [])
+                    _codes += [_candidate.get(k) for k in ("order_code", "return_code", "vd_di", "vd_tra")]
+                    for _code in _ids(" ".join(str(v or "") for v in _codes)):
+                        _candidate_by_code.setdefault(_code, []).append(_candidate)
+
+                def _label_field(label, pattern):
+                    match = re.search(pattern, str(label or ""), flags=re.I)
+                    if not match:
+                        return ""
+                    return " · ".join(_ids(match.group(1)))
+
+                _rows, _used_candidates = [], set()
+                for _entry in _missing:
+                    _label = str(_entry.get("label") or "")
+                    _candidate = None
+                    for _code in _ids(_label):
+                        _candidate = next((c for c in _candidate_by_code.get(_code, [])
+                                           if id(c) not in _used_candidates), None)
+                        if _candidate:
+                            break
+                    if _candidate:
+                        _used_candidates.add(id(_candidate))
+                        _row = _nv_row_restock(_candidate)
+                    else:
+                        _row = _nv_row_restock({
+                            "order_code": _label_field(_label, r"(?:Mã đơn|Ma don)\s*:\s*([^|]+)"),
+                            "return_code": _label_field(_label, r"(?:Mã trả|Ma tra)\s*:\s*([^|]+)"),
+                            "vd_di": _label_field(_label, r"(?:VĐ đi/đóng|VD di/dong|VĐ đi|VD di)\s*:\s*([^|]+)"),
+                            "vd_tra": _label_field(_label, r"(?:VĐ hoàn|VD hoan)\s*:\s*([^|]+)"),
+                            "ngay_tao": _entry.get("date") or "",
+                            "restock_date": _entry.get("date") or "",
+                        })
+                    _is_old = _entry.get("age") == "Kho cũ"
+                    _row["_reason_label"] = ("🕒 Kho cũ thiếu video" if _is_old
+                                                   else "⚠️ Chưa quay video khui")
+                    _row["_report_video_age"] = _entry.get("age") or ""
+                    _row["_report_video_missing"] = True
+                    _rows.append(_row)
                 _apply_closed_return_app_notes(_rows, _closed_return_app_notes)
                 for _d in _rows:
                     _d["need_kn"] = not _note_is_standard(_d.get("note", ""))
+                _restock_novideo_rows._cache = [dict(r) for r in _rows]
                 return _rows
             _closed_returns_with_waybill_detail = [
                 d for d in _canceled_returns_detail
@@ -9812,18 +9869,15 @@ def _render_returns():
                         unsafe_allow_html=True)
             _dohana_tag_tbl(_dtag_kn)
             # ── 🚫 Đơn ĐÃ NHẬP KHO nhưng KHÔNG có video khui (đơn đã nhập kho — render bằng _sub_table cho đồng nhất) ──
-            _nvhelp = ("Đơn đã nhập LẠI kho (Sapo) nhưng KHÔNG khớp video khui nào (kể cả ghép mềm ĐVVC + "
-                       "ngày như A4) → nghi nhập kho nhầm / quên quay. Lưu VĨNH VIỄN (Gist), video hiện sau "
-                       "tự gỡ. Tô vàng = đơn chưa có ghi chú chuẩn (cần KN). Bỏ qua đơn đã kiểm tra ở ô dưới.")
+            _nvhelp = ("Danh sách lấy trực tiếp từ cột Vid hoàn của Báo cáo vận hành cuối ngày: gồm toàn bộ "
+                       "đơn đang báo chưa quay và kho cũ. SAPO chỉ bổ sung thông tin mã đơn/mã trả/vận đơn. "
+                       "Tô vàng = đơn chưa có ghi chú chuẩn (cần KN).")
             st.markdown('**🚫 + Đơn ĐÃ NHẬP KHO nhưng KHÔNG có video khui** '
                         f'<abbr title="{_esc(_nvhelp)}" style="cursor:help;color:#2563eb;text-decoration:none">ⓘ</abbr>',
                         unsafe_allow_html=True)
             try:
-                _nv = load_restock_novideo(days=30)
-                _nvrows = _restock_novideo_rows()      # đã gắn ghi chú CHUẨN (khớp mã trả) + need_kn
-                if _nv.get("video_store", 0) == 0:
-                    st.caption("Kho video khui đang trống → tạm chưa kết luận. Mở bảng Tổng hợp 30 ngày để đồng bộ.")
-                elif not _nvrows:
+                _nvrows = _restock_novideo_rows()      # đúng danh sách badge báo cáo + metadata SAPO
+                if not _nvrows:
                     st.caption("✅ Không có đơn nhập kho nào thiếu video khui trong 30 ngày.")
                 else:
                     _nvrows = sorted(_nvrows, key=lambda r: str(r.get("created_on") or ""), reverse=True)
@@ -9834,16 +9888,6 @@ def _render_returns():
 
                     _sub_table(_nvrows, 520, show_reason=True, show_type=True,
                                show_location=True, pg_key="restock_novideo", per_page=50)
-                    _nvopts = [r.get("return_code") or r.get("order_code") for r in _nvrows]
-                    _nvsel = st.multiselect("✔️ Bỏ qua đơn đã kiểm tra ổn (ẩn cảnh báo, vẫn giữ trong sổ):",
-                                            _nvopts, key="nv_dismiss_sel")
-                    if _nvsel and st.button(f"Bỏ qua {len(_nvsel)} đơn", key="nv_dismiss_btn"):
-                        picklog.dismiss_restock_novideo(_nvsel)
-                        load_restock_novideo.clear()
-                        st.rerun()
-                if _nv.get("resolved") or _nv.get("dismissed"):
-                    st.caption(f"📜 {len(_nv.get('resolved', []))} tự khớp lại video · "
-                               f"{len(_nv.get('dismissed', []))} đã bỏ qua (lưu trong sổ).")
             except Exception as _env:
                 st.caption(f"Chưa dò được đơn nhập kho thiếu video: {_env}")
             _type_block("💸 Trả hàng hoàn tiền", "return_and_refund")
