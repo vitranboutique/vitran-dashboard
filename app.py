@@ -5805,6 +5805,42 @@ def _render_daily():
                         for _t, _c in _tc.most_common()]), hide_index=True, use_container_width=True)
                     st.caption("Tra 'Mã mẫu' trên Dohana để biết tên tag → nhắn Claude map giúp, hoặc tự thêm vào "
                                "Secrets `[dohana.tags]`  \"tag_id\" = \"Tên tag\".")
+        st.divider()
+        _lvq = st.text_input("🔍 Tra 1 mã video trên Dohana (LIVE) — xem LOẠI (type) thật của clip",
+                             key="dohana_lookup_code", placeholder="VD: VTPVN9046037201")
+        if _lvq and _lvq.strip():
+            import requests as _rq2
+            try:
+                _dk2 = st.secrets["dohana"]["x_api_key"]
+            except Exception:
+                _dk2 = None
+            if not _dk2:
+                st.error("Chưa có key Dohana.")
+            else:
+                try:
+                    _pr2 = _rq2.get("https://backend.dhn.io.vn/dpm/v1/partner/video/search",
+                                    params={"page": 0, "limit": 20, "orderCode": _lvq.strip()},
+                                    headers={"x-api-key": _dk2}, timeout=20)
+                    if _pr2.status_code == 200:
+                        _dd = (_pr2.json() or {}).get("data") or []
+                        if _dd:
+                            st.dataframe(pd.DataFrame([{
+                                "orderCode": v.get("orderCode"), "type": v.get("type"),
+                                "Ngày quay (VN)": dohana._vn_dt(v.get("createdAt")),
+                                "thời lượng(s)": v.get("duration"), "status": v.get("status"),
+                                "tagId": v.get("tagId")} for v in _dd]),
+                                hide_index=True, use_container_width=True)
+                            _types = ", ".join(sorted({str(v.get("type")) for v in _dd}))
+                            st.info(f"Loại (type) Dohana trả cho mã này: **{_types}**")
+                            st.caption("Nếu **type=package** mà đây là clip KHUI HÀNG (nhập hàng hoàn) → NV quay ở "
+                                       "chế độ/tài khoản 'ĐÓNG HÀNG'. Báo cáo hoàn chỉ đọc type=**inbound** nên KHÔNG thấy "
+                                       "→ cần công cụ ĐỔI LOẠI (Part 4) để clip lên đúng mục hoàn.")
+                        else:
+                            st.warning(f"Dohana KHÔNG có video mã '{_lvq.strip()}' (kiểm tra lại mã, hoặc ngoài 25 ngày).")
+                    else:
+                        st.warning(f"Dohana trả mã {_pr2.status_code}: {_pr2.text[:120]}")
+                except Exception as _e2:
+                    st.error(f"Lỗi tra: {_e2}")
     if not credential_present():
         st.warning("⚠️ Cần kết nối Sapo (API LIVE).")
         return
