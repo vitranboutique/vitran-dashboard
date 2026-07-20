@@ -753,6 +753,39 @@ def _enrich_daily(rep, dvr, inb):
             d["clip"] = False
         nk["clip_co"], nk["clip_total"] = 0, 0
         nk["clip_unmatched"], nk["clip_unmatched_detail"] = [], []
+    # GỘP đơn hoàn CÙNG KIỆN: cùng mã đơn + cùng VĐ gửi đi (khách trả NHIỀU SP của 1 đơn về
+    # trong 1 kiện, NV quay 1 clip) → gộp thành 1 DÒNG (nối mã đơn trả + SKU, cộng SP), tránh
+    # lặp clip nhiều dòng nhìn "trùng/sai". clip_co đếm lại theo KIỆN.
+    _kien, _korder = {}, []
+    for _d in nk.get("detail", []):
+        _kk = (str(_d.get("order_code") or ""), str(_d.get("tracking") or ""))
+        _g = _kien.get(_kk)
+        if _g is None:
+            _g = dict(_d)
+            _g["_ret_codes"] = [str(_d["return_code"])] if _d.get("return_code") else []
+            _g["_skus"] = [str(_d["sku"])] if _d.get("sku") else []
+            _kien[_kk] = _g
+            _korder.append(_kk)
+        else:
+            if _d.get("return_code"):
+                _g["_ret_codes"].append(str(_d["return_code"]))
+            if _d.get("sku"):
+                _g["_skus"].append(str(_d["sku"]))
+            _g["sp"] = (_g.get("sp") or 0) + (_d.get("sp") or 0)
+            _g["sp_nhap"] = (_g.get("sp_nhap") or 0) + (_d.get("sp_nhap") or 0)
+            if not _g.get("clip") and _d.get("clip"):   # 1 dòng trong kiện có clip → cả kiện có
+                for _ck in ("clip", "clip_code", "clip_time", "clip_dur", "clip_tag",
+                            "clip_tag_id", "clip_altcode", "clip_link", "clip_staff"):
+                    _g[_ck] = _d.get(_ck)
+    _merged = [_kien[_kk] for _kk in _korder]
+    for _g in _merged:
+        if len(_g.get("_ret_codes") or []) > 1:
+            _g["return_code"] = " · ".join(_g["_ret_codes"])
+        if len(_g.get("_skus") or []) > 1:
+            _g["sku"] = " · ".join(_g["_skus"])
+    nk["detail"] = _merged
+    if nk.get("clip_available"):
+        nk["clip_co"] = sum(1 for _d in _merged if _d.get("clip"))
     # BẢNG ĐỐI CHIẾU: DỰNG LUÔN LUÔN (kể cả khi Dohana lỗi/429) → đơn trả hàng KHÔNG biến mất;
     # không lấy được clip thì cột clip để trống. Đơn ĐÃ nhập kho (Sapo) + clip DƯ (chưa nhập kho).
     recon = []
