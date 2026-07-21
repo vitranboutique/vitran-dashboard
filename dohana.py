@@ -9,6 +9,7 @@ Key đặt trong Streamlit secrets:  [dohana]\n  x_api_key = "..."
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 import time
+import unicodedata
 
 import requests
 import streamlit as st
@@ -226,6 +227,15 @@ def _records_from(vids, typ):
     return out
 
 
+def _active_video(v):
+    s = str((v or {}).get("status") or "").strip().lower()
+    if not s:
+        return True
+    compact = "".join(ch for ch in unicodedata.normalize("NFKD", s) if not unicodedata.combining(ch))
+    compact = "".join(ch for ch in compact.upper() if ch.isalnum())
+    return not any(token in compact for token in ("DELETED", "REMOVED", "DAXOA", "XOA"))
+
+
 # tagId (UUID) -> TÊN TAG trên app đóng hàng. Partner API CHỈ trả tagId, KHÔNG trả tên tag,
 # nên phải map thủ công. Bổ sung/sửa tên trong Streamlit secrets (không cần đổi code):
 #   [dohana.tags]
@@ -327,9 +337,10 @@ def inbound_videos(days_match: int = 3, max_pages: int = 25, target_date=None):
     vids = _fetch_videos("inbound", cutoff, max_pages)
     if vids is None:
         return None
-    win = [v for v in vids if _in_window(v, cutoff, tdate)]
+    active_vids = [v for v in vids if _active_video(v)]
+    win = [v for v in active_vids if _in_window(v, cutoff, tdate)]
     cnt = Counter(v.get("orderCode") for v in win if v.get("orderCode"))
-    today_codes = {v.get("orderCode") for v in vids
+    today_codes = {v.get("orderCode") for v in active_vids
                    if v.get("orderCode") and _vnd(v.get("createdAt")) == tdate}
     # meta theo mã đơn: thời lượng clip, giờ quay (createdAt), tag app đóng hàng.
     # Giữ video MỚI NHẤT cho mỗi mã (sort createdAt giảm dần → lần gặp đầu = mới nhất).
@@ -349,7 +360,7 @@ def inbound_videos(days_match: int = 3, max_pages: int = 25, target_date=None):
             "staff": ((v.get("user") or {}).get("firstName") or "").strip(),   # NV quay clip
         }
     return {
-        "total": sum(1 for v in vids if _vnd(v.get("createdAt")) == tdate),
+        "total": sum(1 for v in active_vids if _vnd(v.get("createdAt")) == tdate),
         "count": dict(cnt),
         "match": set(cnt),
         "today_codes": today_codes,
@@ -370,13 +381,14 @@ def today_package_videos(days_match: int = 3, max_pages: int = 25, target_date=N
     vids = _fetch_videos("package", cutoff, max_pages)
     if vids is None:
         return None
-    day_vids = [v for v in vids if _vnd(v.get("createdAt")) == tdate]
+    active_vids = [v for v in vids if _active_video(v)]
+    day_vids = [v for v in active_vids if _vnd(v.get("createdAt")) == tdate]
     codes = Counter(v.get("orderCode") for v in day_vids if v.get("orderCode"))
     return {
         "total": len(day_vids),
         "codes": dict(codes),
         "dup": {k: v for k, v in codes.items() if v >= 2},
-        "match": {v.get("orderCode") for v in vids
+        "match": {v.get("orderCode") for v in active_vids
                   if v.get("orderCode") and _in_window(v, cutoff, tdate)},
         # METADATA MỌI video đóng hàng (lưu cả năm): trạng thái·ngày·giờ·thời lượng·tag.
         # Đơn CÓ tag (đóng thiếu SP) → mục KHÔNG CẦN KN.

@@ -1816,7 +1816,8 @@ def _dohana_merge(live):
 def _dohana_pkg_from_store(date_iso, days_match=3):
     """Dựng lại dict video ĐÓNG GÓI (package) từ kho khi Dohana tạm không lấy được."""
     from datetime import date as _date, timedelta as _td
-    recs = [r for r in picklog.read_dohana_videos() if r.get("type") == "package"]
+    recs = [r for r in picklog.read_dohana_videos()
+            if r.get("type") == "package" and _dohana_video_active(r)]
     lo = (_date.fromisoformat(date_iso) - _td(days=days_match - 1)).isoformat()
     day = [r for r in recs if r.get("date") == date_iso]
     codes = {}
@@ -1833,7 +1834,8 @@ def _dohana_pkg_from_store(date_iso, days_match=3):
 def _dohana_inb_from_store(date_iso, days_match=3):
     """Dựng lại dict CLIP KHUI HÀNG (inbound) từ kho khi Dohana tạm không lấy được."""
     from datetime import date as _date, timedelta as _td
-    recs = [r for r in picklog.read_dohana_videos() if r.get("type") == "inbound"]
+    recs = [r for r in picklog.read_dohana_videos()
+            if r.get("type") == "inbound" and _dohana_video_active(r)]
     lo = (_date.fromisoformat(date_iso) - _td(days=days_match - 1)).isoformat()
     day = [r for r in recs if r.get("date") == date_iso]
     win = [r for r in recs if r.get("code") and r.get("date") and lo <= r["date"] <= date_iso]
@@ -1856,6 +1858,11 @@ def _dohana_inb_from_store(date_iso, days_match=3):
 
 def _today_iso_vn():
     return (datetime.now(timezone.utc) + timedelta(hours=7)).date().isoformat()
+
+
+def _dohana_video_active(row):
+    status = _ascii_code((row or {}).get("status") or "")
+    return not any(token in status for token in ("DELETED", "REMOVED", "DAXOA", "XOA"))
 
 
 @st.cache_data(ttl=3600, show_spinner=False)   # 1 GIỜ: gọi Dohana thật thưa để khỏi bị phạt 429
@@ -2673,6 +2680,8 @@ def load_week_summary():
             package_codes_by_day, package_unknown_by_day, inbound_codes_by_day = {}, {}, {}
             inbound_rows = []
             for r in recs:
+                if not _dohana_video_active(r):
+                    continue
                 d, ty = r.get("date"), r.get("type")
                 if not d:
                     continue

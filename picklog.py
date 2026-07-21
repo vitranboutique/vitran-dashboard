@@ -639,6 +639,9 @@ def merge_dohana_videos(new_list) -> list:
         else:
             if _lock_dohana_tag(old, tag_id, tag_name, today):
                 changed = True
+            if r.get("status") and old.get("status") != r.get("status"):
+                old["status"] = r.get("status")
+                changed = True
             for key in ("status", "date", "time", "dur", "staff", "slug", "link"):
                 if _fill_missing_dohana_field(old, r, key):
                     changed = True
