@@ -2196,6 +2196,40 @@ def get_returns_received_today(fetch_json, scan_days: int = 60, max_pages: int =
         "refund": "Hoàn tiền (không trả hàng)",
     }
 
+    def _money(value):
+        try:
+            return int(round(float(value or 0)))
+        except Exception:
+            return 0
+
+    def _return_item_label(li):
+        qty = int(round(li.get("quantity") or 0))
+        sku = li.get("sku") or "N/A"
+        unit = _money(
+            li.get("discounted_price")
+            or li.get("final_price")
+            or li.get("sale_price")
+            or li.get("price_after_discount")
+        )
+        line_total = _money(
+            li.get("line_price")
+            or li.get("total_price")
+            or li.get("total")
+            or li.get("subtotal_price")
+        )
+        if not unit and line_total and qty:
+            unit = int(round(line_total / qty))
+        if not unit:
+            original = _money(li.get("original_price") or li.get("base_price") or li.get("price"))
+            discount = max(
+                (_money(li.get(k)) for k in
+                 ("total_discount", "discount_amount", "total_discount_amount", "discount")),
+                default=0,
+            )
+            unit = int(round(max(0, original * max(qty, 1) - discount) / max(qty, 1)))
+        price_text = f" · {unit:,.0f}đ".replace(",", ".") if unit else ""
+        return f"{sku}×{qty}{price_text}"
+
     recv = [x for x in rows if _restocked_today(x)]
     by_source, so_sp, detail = {}, 0, []
     for x in recv:
@@ -2227,8 +2261,7 @@ def get_returns_received_today(fetch_json, scan_days: int = 60, max_pages: int =
         # (NV quét clip theo đúng mã hoàn-về này) → khỏi phải đoán theo ĐVVC.
         codes.update(_TRACK_RE.findall(str(x.get("note") or "")))
         lis = x.get("line_items") or []
-        sku = "; ".join(f"{(li.get('sku') or 'N/A')}×{int(round(li.get('quantity') or 0))}"
-                        for li in lis)
+        sku = "; ".join(_return_item_label(li) for li in lis)
         rsn = lis[0].get("return_reason") if lis else None
         rtype = x.get("return_type")
         # Mốc NHẬN hàng trả (restock) rơi vào ngày báo cáo + NV NHẬN HÀNG.
@@ -2287,8 +2320,7 @@ def get_returns_received_today(fetch_json, scan_days: int = 60, max_pages: int =
             "track_return": si.get("tracking_number") or "",
             "carrier": _return_dvvc(x),
             "gian_hang": " - ".join(v for v in (_branch, _source_label) if v),
-            "sku": "; ".join(f"{(li.get('sku') or 'N/A')}×{int(round(li.get('quantity') or 0))}"
-                             for li in lis),
+            "sku": "; ".join(_return_item_label(li) for li in lis),
             "loai_tra": _type_vn.get(x.get("return_type"), x.get("return_type") or "—"),
             "loai_tra_code": x.get("return_type"),
         }

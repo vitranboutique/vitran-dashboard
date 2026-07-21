@@ -412,6 +412,17 @@ def _short_store_label(value):
     return brand
 
 
+def _return_sort_key(row):
+    carrier = _return_carrier_label(row)
+    type_order = {"delivery_failed": 0, "return_and_refund": 1, "refund": 2}
+    return (
+        carrier != "Chưa xác định",
+        carrier.lower(),
+        type_order.get(str(row.get("loai_tra_code") or ""), 9),
+        str(row.get("order_code") or row.get("clip_code") or ""),
+    )
+
+
 def _recon_rows(rows, start=0, clip_on=True):
     """Đối chiếu mỗi sự kiện hoàn, nhóm ĐVVC trước rồi đến loại trả hàng."""
     body = ""
@@ -965,16 +976,7 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
                '<div class="note"><span style="color:#9aa3af;font-size:.95em">(Ghi tay: tình trạng hàng hoàn, '
                'đơn cần khiếu nại sàn, thiếu/sai SP…)</span><div class="lines"><div></div></div></div>')
     # Nhóm ĐVVC trước; trong từng ĐVVC mới chia loại trả hàng.
-    _type_order = {"delivery_failed": 0, "return_and_refund": 1, "refund": 2}
-    recon = sorted(
-        recon,
-        key=lambda r: (
-            _return_carrier_label(r) == "Chưa xác định",
-            _return_carrier_label(r).lower(),
-            _type_order.get(str(r.get("loai_tra_code") or ""), 9),
-            str(r.get("order_code") or r.get("clip_code") or ""),
-        ),
-    )
+    recon = sorted(recon, key=_return_sort_key)
     # Số đơn/tờ (auto-fit tự co chữ nên không lo tràn/mất dòng; giữ vừa phải cho chữ dễ đọc).
     _FIRST, _REST = 11, 15
     _chunks, _starts, _i = [], [], 0
@@ -1021,7 +1023,7 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
         # trang .fixed (font cố định, phân trang 30 đơn) → KHÔNG auto-fit
         "if((' '+pg.className+' ').indexOf(' fixed ')>=0)continue;"
         "var ft=pg.querySelector('.pfit');if(!ft)continue;"
-        "var t=pg.clientHeight,lo=8,hi=24,b=lo;"
+        "var t=pg.clientHeight,lo=8,hi=((' '+pg.className+' ').indexOf(' page2 ')>=0?13.5:24),b=lo;"
         "for(var k=0;k<18;k++){var m=(lo+hi)/2;ft.style.fontSize=m+'px';"
         "if(ft.scrollHeight<=t){b=m;lo=m;}else{hi=m;}}"
         "ft.style.fontSize=b.toFixed(2)+'px';}}"
