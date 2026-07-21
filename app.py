@@ -2760,6 +2760,43 @@ def load_week_summary():
                     _old_note = str(m.get("ghi_chu") or "").strip()
                     _extra_note = f"Vid hoàn thô {m.get('vid_hoan_raw')} / khớp đơn {m.get('vid_hoan')}"
                     m["ghi_chu"] = (_old_note + " · " + _extra_note).strip(" ·")
+            # Keep the detailed audit table aligned with A4 when today's package
+            # video count is overridden by A4's matched/missing-code recon.
+            try:
+                _day_by_iso = {
+                    str(_d.get("iso") or ""): _d
+                    for _d in (data.get("days") or [])
+                    if isinstance(_d, dict)
+                }
+                for _dd, _rec in (_a4_package_recon_by_day or {}).items():
+                    _dd = str(_dd or "")
+                    _missing = [
+                        str(_c or "").strip()
+                        for _c in ((_rec or {}).get("missing") or [])
+                        if str(_c or "").strip()
+                    ]
+                    if not _dd or not _missing:
+                        continue
+                    _video_matrix = [
+                        _r for _r in _video_matrix
+                        if not (isinstance(_r, dict) and str(_r.get("Ngày") or "") == _dd)
+                    ]
+                    _add_matrix(
+                        _dd,
+                        _missing,
+                        [],
+                        _return_missing_by_day.get(_dd, []),
+                        _inbound_extra_by_day.get(_dd, []),
+                        [],
+                        _day_by_iso.get(_dd),
+                    )
+                _day_order = {k: i for i, k in enumerate(_day_by_iso)}
+                _video_matrix.sort(
+                    key=lambda _r: _day_order.get(str(_r.get("Ngày") or ""), len(_day_order))
+                    if isinstance(_r, dict) else len(_day_order)
+                )
+            except Exception:
+                pass
             data["video_audit_matrix"] = _video_matrix
             data["video_audit"] = _video_audit
             data["report_return_video_missing"] = _report_return_missing
