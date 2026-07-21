@@ -2315,25 +2315,21 @@ def load_week_summary():
                 pkg_unknown = [str(v or "").strip() for v in (pkg_unknown or []) if str(v or "").strip()]
                 limits = _day_video_limits(day)
                 pkg_unknown_rows = [f"Chưa khớp đơn: {x}" for x in pkg_unknown]
-                # Các cột thiếu/dư hiển thị danh sách BAN ĐẦU đúng với badge bảng trên.
-                # Mã đã khớp lộn mục vẫn hiện ở ô vàng; chỉ phần Chốt dùng số còn lệch.
-                # Nguồn mã ngày cũ có thể chứa toàn bộ video vì đã mất danh sách
-                # phiếu để ghép. Chỉ lấy đúng số chênh đang báo ở bảng tổng hợp
-                # (ví dụ 161 video - 152 đơn = 9 mã dư, không phải 161).
-                # Ngày CÓ phiếu soạn → đã ghép TỪNG video, danh sách thiếu/dư là mã THẬT chưa khớp
-                # → hiện ĐẦY ĐỦ, KHÔNG cắt theo số chênh ròng. Cắt ròng sẽ nuốt mất mã hoàn quay
-                # nhầm thành video đóng khi ngày đó cũng có đơn chưa quay (vd 2 thiếu + 1 dư → gộp còn 1 thiếu, mất mã dư).
-                # Ngày MẤT phiếu (kho cũ, chưa từng in phiếu) → không ghép được → vẫn cắt theo số chênh để tránh nổ toàn bộ video thành "dư".
-                _real_day = iso in _real_match_days
-                raw_pkg_missing_rows = _limit_rows(pkg_missing, None if _real_day else limits.get("pkg_missing"))
-                raw_pkg_extra_rows = _limit_rows(
-                    list(pkg_extra) + list(pkg_unknown_rows), None if _real_day else limits.get("pkg_extra")
-                )
+                # Chi tiết thiếu/dư ĐÓNG hiện đúng SỐ LỆCH RÒNG (soạn − vid_dong) để KHỚP bảng 30 ngày:
+                # ngày soạn = vid_dong (vd 137 = 137) → 0 thiếu, 0 dư — KHÔNG báo oan mấy clip quay bằng mã lạ.
+                # NGOẠI LỆ: mã đóng nào trùng 1 mã đang "Hoàn thiếu" = clip khui quay NHẦM sang đóng (lộn mục)
+                # → LUÔN hiện ở "Đóng dư" dù ròng = 0 (vd 861877934768). Mã lạ (không phải vận đơn) KHÔNG tính là dư.
+                _ret_miss_codes = set()
+                for _rm in (return_missing or []):
+                    _ret_miss_codes |= {_ascii_code(t) for t in _codes_from_item(_rm) if _ascii_code(t)}
+                _lon_muc_extra = [c for c in pkg_extra
+                                  if {_ascii_code(t) for t in _codes_from_item(c)} & _ret_miss_codes]
+                _rest_extra = [c for c in pkg_extra if c not in _lon_muc_extra]
+                raw_pkg_extra_rows = _lon_muc_extra + _limit_rows(_rest_extra, limits.get("pkg_extra"))
+                raw_pkg_missing_rows = _limit_rows(pkg_missing, limits.get("pkg_missing"))
                 raw_return_missing_rows = _limit_rows(return_missing, limits.get("return_missing"))
                 raw_inbound_extra_rows = _limit_rows(inbound_extra, limits.get("inbound_extra"))
                 _age = _audit_age(iso)
-                _report_return_missing.extend({"date": iso, "age": _age, "label": row}
-                                              for row in raw_return_missing_rows)
                 p1 = _cross_match_pairs(raw_pkg_missing_rows, raw_inbound_extra_rows, "package", "return")
                 p2 = _cross_match_pairs(raw_return_missing_rows, raw_pkg_extra_rows, "return", "package")
                 match_txt = _short_codes([f"{a} ↔ {b}" for a, b in (p1 + p2)])
@@ -2349,6 +2345,8 @@ def load_week_summary():
                 # placeholder theo chênh lệch tổng, vì placeholder không thể dùng để đối chiếu.
                 rem_inbound_extra_rows = list(rem_inbound_extra_rows)
                 rem_return_missing_rows = list(rem_return_missing_rows)
+                _report_return_missing.extend({"date": iso, "age": _age, "label": row}
+                                              for row in rem_return_missing_rows)
                 rem_pkg_missing = len(rem_pkg_missing_rows)
                 rem_inbound_extra = len(rem_inbound_extra_rows)
                 rem_return_missing = len(rem_return_missing_rows)
@@ -2388,14 +2386,14 @@ def load_week_summary():
                     "Nhóm tuổi": _audit_age(iso),
                     "Mã đối chiếu": _compare_code_lines(rem_return_missing_rows, rem_pkg_missing_rows,
                                                         display_pkg_extra_rows, rem_inbound_extra_rows),
-                    "Đóng thiếu SL": len(raw_pkg_missing_rows),
-                    "Đóng thiếu": _short_codes(_disp(raw_pkg_missing_rows, "package")),
-                    "Đóng dư SL": len(raw_pkg_extra_rows),
-                    "Đóng dư": _short_codes(_disp(raw_pkg_extra_rows, "package")),
-                    "Hoàn thiếu SL": len(raw_return_missing_rows),
-                    "Hoàn thiếu": _short_codes(_disp(raw_return_missing_rows, "return")),
-                    "Hoàn dư SL": len(raw_inbound_extra_rows),
-                    "Hoàn dư": _short_codes(_disp(raw_inbound_extra_rows, "return")),
+                    "Đóng thiếu SL": len(rem_pkg_missing_rows),
+                    "Đóng thiếu": _short_codes(_disp(rem_pkg_missing_rows, "package")),
+                    "Đóng dư SL": len(display_pkg_extra_rows),
+                    "Đóng dư": _short_codes(_disp(display_pkg_extra_rows, "package")),
+                    "Hoàn thiếu SL": len(rem_return_missing_rows),
+                    "Hoàn thiếu": _short_codes(_disp(rem_return_missing_rows, "return")),
+                    "Hoàn dư SL": len(rem_inbound_extra_rows),
+                    "Hoàn dư": _short_codes(_disp(rem_inbound_extra_rows, "return")),
                     "Khớp lộn mục": _short_codes(matched_rows),
                     "Video chưa khớp đơn": _short_codes(pkg_unknown),
                     "Chốt": chot,
@@ -8655,7 +8653,7 @@ def _render_returns():
             _apply_closed_return_app_notes(_canceled_returns_detail, _closed_return_app_notes)
 
             def _restock_novideo_rows():
-                # NGUỒN DUY NHẤT: đúng danh sách đứng sau badge Vid hoàn của Báo cáo vận hành cuối ngày.
+                # NGUỒN DUY NHẤT: đúng danh sách còn lại sau cột Chốt video của Báo cáo vận hành cuối ngày.
                 # API/Sapo chỉ dùng để bổ sung metadata, không tự quyết định đơn nào vào bảng này.
                 if hasattr(_restock_novideo_rows, "_cache"):
                     return [dict(r) for r in _restock_novideo_rows._cache]
@@ -10110,8 +10108,8 @@ def _render_returns():
                         unsafe_allow_html=True)
             _dohana_tag_tbl(_dtag_kn)
             # ── 🚫 Đơn ĐÃ NHẬP KHO nhưng KHÔNG có video khui (đơn đã nhập kho — render bằng _sub_table cho đồng nhất) ──
-            _nvhelp = ("Danh sách lấy trực tiếp từ cột Vid hoàn của Báo cáo vận hành cuối ngày: gồm toàn bộ "
-                       "đơn đang báo chưa quay và kho cũ. SAPO chỉ bổ sung thông tin mã đơn/mã trả/vận đơn. "
+            _nvhelp = ("Danh sách lấy trực tiếp từ cột Chốt video của Báo cáo vận hành cuối ngày: chỉ gồm các "
+                       "dòng còn thiếu video khui hoàn sau khi đã trừ mã quay lộn mục. SAPO chỉ bổ sung thông tin mã đơn/mã trả/vận đơn. "
                        "Tô vàng = đơn chưa có ghi chú chuẩn (cần KN).")
             st.markdown('**🚫 + Đơn ĐÃ NHẬP KHO nhưng KHÔNG có video khui** '
                         f'<abbr title="{_esc(_nvhelp)}" style="cursor:help;color:#2563eb;text-decoration:none">ⓘ</abbr>',
