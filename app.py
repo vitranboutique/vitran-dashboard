@@ -9036,6 +9036,9 @@ def _render_returns():
                     st.caption("— Không có —")
                     return
                 show_clip = True
+                if show_type:   # NHÓM theo LOẠI TRẢ cho dễ nhìn (giữ thứ tự sẵn có trong mỗi nhóm)
+                    _lt_ord = {"return_and_refund": 0, "delivery_failed": 1, "refund": 2}
+                    items = sorted(items, key=lambda d: _lt_ord.get(str((d or {}).get("loai_tra_code") or ""), 9))
                 _PER = int(per_page or 14)                  # tối đa N đơn/trang, còn lại qua trang sau
                 _start = 0
                 if pg_key and len(items) > _PER:
@@ -9133,7 +9136,14 @@ def _render_returns():
                         label = label[:19].rstrip() + "…"
                     return f"<span class='reason-badge' title='{_safe(full)}'>{_safe(label)}</span>"
                 body = ""
+                _prev_lt = None
                 for i, d in enumerate(items, _start + 1):
+                    _lt = str(d.get("loai_tra_code") or "")
+                    if show_type and _lt != _prev_lt:      # GẠCH NGANG ĐẬM + tên loại khi ĐỔI loại trả
+                        body += (f"<tr><td colspan='{len(cols)}' style='border-top:3px solid #334155;"
+                                 f"background:#e5e7eb;font-weight:800;color:#111827;padding:5px 8px'>"
+                                 f"▸ {_safe(d.get('loai_tra') or _lt or '—')}</td></tr>")
+                        _prev_lt = _lt
                     bg = "background:#fff3cd" if d.get("need_kn") and _is_need_kn_shape(d) else ""
                     note = d.get("note") or ""
                     note_display = f"📝 APP · {note}" if d.get("app_note") else note
