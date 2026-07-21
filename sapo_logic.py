@@ -2615,6 +2615,15 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
         "huy": tot["huy"],
         "con_xot": len(con_xot_packed) + len(con_xot_unpacked),  # xác nhận nhưng chưa giao shipper
     }
+    _order_alias_rows = []
+    _seen_alias_rows = set()
+    for _o in (open_orders + huy_goi_orders):
+        _key = str(_o.get("id") or _o.get("name") or f0(_o).get("tracking_number") or "")
+        if not _key or _key in _seen_alias_rows:
+            continue
+        _seen_alias_rows.add(_key)
+        _order_alias_rows.append(_code_diag(_o))
+
     return {
         "date": today.strftime("%d/%m/%Y"),
         "by_carrier": rows,
@@ -2633,6 +2642,7 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
         "huy_goi_codes": huy_goi_codes,
         "dong_goi_order_codes": dong_goi_order_codes,
         "confirmed_today_order_codes": confirmed_today_order_codes,
+        "order_code_aliases": _order_alias_rows,
     }
 
 

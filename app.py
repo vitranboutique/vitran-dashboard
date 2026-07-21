@@ -1972,6 +1972,32 @@ def _apply_picklog_soan_to_daily(rep, rows, dvr=None, dup_orders=0):
         for _key in ("tracking", "track", "name"):
             _vals.append(_item.get(_key))
         _add_alias_group(_vals)
+    for _item in rep.get("order_code_aliases") or []:
+        _vals = list(_item.get("codes") or [])
+        for _key in ("tracking", "track", "name"):
+            _vals.append(_item.get(_key))
+        _add_alias_group(_vals)
+
+    def _prefer_video_lookup_code(codes):
+        vals = [str(c or "").strip() for c in (codes or []) if str(c or "").strip()]
+        vals = list(dict.fromkeys(vals))
+        if not vals:
+            return ""
+
+        def _score(code):
+            raw = str(code or "").strip()
+            n = _ascii_code(raw)
+            if not n:
+                return (9, raw)
+            if n.startswith(("SPXVN", "VTPVN", "GYX", "GHN", "GHTK", "JNT", "JT")):
+                return (0, raw)
+            if re.fullmatch(r"\d{9,14}", n):
+                return (1, raw)
+            if "_" in raw:
+                return (5, raw)
+            return (3, raw)
+
+        return sorted(vals, key=_score)[0]
 
     def _expand_group(group):
         out = {str(c).strip() for c in (group or []) if str(c).strip()}
@@ -2008,7 +2034,7 @@ def _apply_picklog_soan_to_daily(rep, rows, dvr=None, dup_orders=0):
             row_groups = row_groups[:don]
         for group in row_groups:
             code_groups.append(group)
-            code_labels.append(next((c for c in group if c), ""))
+            code_labels.append(_prefer_video_lookup_code(group))
         batches.append({
             "dot": idx,
             "gio": str(r.get("gio") or "—"),
