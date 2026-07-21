@@ -3033,11 +3033,17 @@ def load_week_summary():
                             _return_label_by_code.setdefault(_norm(code), merged_label)
                         hit = next((video for video in sorted(_inbound_codes - _exact_used)
                                     if any(_code_match(_norm(code), video) for code in label_codes)), None)
+                        # 1 clip khui có thể dùng chung cho NHIỀU đơn hoàn gộp kiện (nhiều SP trả 1 kiện, quay 1 clip).
+                        # Occurrence-match cũ (trừ _exact_used) khiến đơn thứ 2 báo THIẾU OAN dù clip CÓ THẬT.
+                        # → hết clip chưa dùng thì vẫn nhận clip ĐÃ dùng khớp mã, KHÔNG báo thiếu (chỉ không dùng lại).
+                        shared = hit or next((video for video in sorted(_inbound_codes)
+                                              if any(_code_match(_norm(code), video) for code in label_codes)), None)
                         if hit:
                             _exact_used.add(hit)
+                        if shared:
                             _matched_by_day[dd].add(order_key)
-                            for video_day in _inbound_days_by_code.get(hit, set()):
-                                _matched_inbound_codes_by_day[video_day].add(hit)
+                            for video_day in _inbound_days_by_code.get(shared, set()):
+                                _matched_inbound_codes_by_day[video_day].add(shared)
                         else:
                             _return_missing_by_day[dd].append(merged_label)
                 _tagged_inbound_by_day = {
