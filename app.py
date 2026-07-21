@@ -755,7 +755,7 @@ def _week_table_html(data):
                 else:
                     bg, _chotc = "#dcfce7", "color:#166534;font-weight:700;"
             cells += (f'<td style="text-align:{al};padding:5px 8px;{_bd}{_lsep(k)}{wtop}{mw}background:{bg};{wt}{_red(k, v)}{_tagclr}{_chotc}">'
-                      f'{v}{_stock_pending_badge(r) if k == "tag_hoan" else ""}{_nay}{_badges.get(k, "")}</td>')
+                      f'{v}{_stock_pending_badge(r) if k == "hoan_don" else ""}{_nay}{_badges.get(k, "")}</td>')
         body += f'<tr>{cells}</tr>'
 
     def _tot_row(label, src, label_bg, rows=None):
@@ -775,8 +775,6 @@ def _week_table_html(data):
                 continue
             if k in _tagcols:
                 tv = str(src.get(k, "") or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                if k == "tag_hoan":
-                    tv += _stock_pending_badge(rows=rows or [])
                 _tc = ("color:#b91c1c;font-weight:800;" if (k == "tag_dong" and tv)
                        else ("color:#7c3aed;" if tv else ""))
                 cells += (f'<td style="text-align:left;padding:6px 8px;{_bd}{_lsep(k)}background:{_bg(k, "tot")};'
@@ -786,7 +784,8 @@ def _week_table_html(data):
             if k in ("huy_sau", "huy_truoc") and not src.get("huy_split_known"):
                 v = "—"
             cells += (f'<td style="text-align:right;padding:6px 8px;{_bd}{_lsep(k)}background:{_bg(k, "tot")};'
-                      f'{_red(k, v)}">{v}{_tbadge.get(k, "")}</td>')
+                      f'{_red(k, v)}">{v}{_stock_pending_badge(rows=rows or []) if k == "hoan_don" else ""}'
+                      f'{_tbadge.get(k, "")}</td>')
         return f'<tr style="font-weight:800;color:#16233f">{cells}</tr>'
 
     tot_all = {k: sum(r.get(k, 0) for r in wk) for k in _numkeys}
@@ -3301,7 +3300,10 @@ def load_week_summary():
                     except Exception:
                         pass
                 day["vid_hoan_raw"] = vhoan.get(iso, 0)
-                day["vid_hoan"] = _matched_vhoan.get(iso, vhoan.get(iso, 0))
+                day["vid_hoan_matched"] = _matched_vhoan.get(iso, day["vid_hoan_raw"])
+                # Cột Vid hoàn là số clip khui thực tế trên Dohana. Số clip khớp đơn
+                # được giữ riêng để bảng đối chiếu xác định clip dư/thiếu.
+                day["vid_hoan"] = day["vid_hoan_raw"]
                 day["tag_dong"] = _tagstr(tdong.get(iso))
                 day["tag_hoan"] = _tagstr(thoan.get(iso))
                 # Cùng cảnh báo với A4: clip khui còn dư sau khi đã loại clip khớp đơn
@@ -3309,10 +3311,6 @@ def load_week_summary():
                 # Giữ thành trường số riêng, không ghép vào tag_hoan để không làm sai
                 # công thức đếm tag tranh chấp trong phần đối chiếu video.
                 day["chua_nhap_kho_video"] = len(_inbound_extra_by_day.get(iso, []))
-                if day.get("vid_hoan_raw") != day.get("vid_hoan"):
-                    _old_note = str(day.get("ghi_chu") or "").strip()
-                    _extra_note = f"Vid hoàn thô {day.get('vid_hoan_raw')} / khớp đơn {day.get('vid_hoan')}"
-                    day["ghi_chu"] = (_old_note + " · " + _extra_note).strip(" ·")
                 if _a4_pkg_recon:
                     _pkg_missing = list(_a4_pkg_recon.get("missing") or [])
                     _pkg_missing_count = int(_a4_pkg_recon.get("missing_count") or len(_pkg_missing))
@@ -3369,12 +3367,9 @@ def load_week_summary():
                     if str(_dd).startswith(_mpref):
                         m["vid_dong"] += int(_rec.get("matched") or 0) - int(vdong.get(_dd, 0) or 0)
                 m["vid_hoan_raw"] = _msum(vhoan)
-                m["vid_hoan"] = _msum(_matched_vhoan) if _matched_vhoan else _msum(vhoan)
+                m["vid_hoan_matched"] = _msum(_matched_vhoan) if _matched_vhoan else m["vid_hoan_raw"]
+                m["vid_hoan"] = m["vid_hoan_raw"]
                 m["tag_dong"], m["tag_hoan"] = _mtag(tdong), _mtag(thoan)
-                if m.get("vid_hoan_raw") != m.get("vid_hoan"):
-                    _old_note = str(m.get("ghi_chu") or "").strip()
-                    _extra_note = f"Vid hoàn thô {m.get('vid_hoan_raw')} / khớp đơn {m.get('vid_hoan')}"
-                    m["ghi_chu"] = (_old_note + " · " + _extra_note).strip(" ·")
             # Keep the detailed audit table aligned with A4 when today's package
             # video count is overridden by A4's matched/missing-code recon.
             try:
