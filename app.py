@@ -663,6 +663,40 @@ def _week_table_html(data):
         if isinstance(row, dict)
     }
 
+    def _total_chot_video(rows):
+        totals = {"pkg_miss": 0, "pkg_extra": 0, "ret_miss": 0, "ret_extra": 0, "pending": 0}
+        for row in rows or []:
+            if not isinstance(row, dict):
+                continue
+            audit_row = _audit_by_day.get(str(row.get("iso") or ""))
+            if isinstance(audit_row, dict):
+                totals["pkg_miss"] += _audit_count(audit_row, "Đóng thiếu SL")
+                totals["pkg_extra"] += _audit_count(audit_row, "Đóng dư SL")
+                totals["ret_miss"] += _audit_count(audit_row, "Hoàn thiếu SL")
+                totals["ret_extra"] += _audit_count(audit_row, "Hoàn dư SL")
+                continue
+            chot = str(row.get("chot_video") or "")
+            norm = "".join(ch for ch in unicodedata.normalize("NFKD", chot).upper()
+                           if not unicodedata.combining(ch))
+            if "TAM LOI" in norm or "CHUA CHOT" in norm:
+                totals["pending"] += 1
+
+        def chip(label, n, fg, bgc, tip):
+            if n <= 0:
+                return ""
+            return (f'<span title="{_esc(tip)}" style="display:inline-flex;align-items:center;gap:3px;'
+                    f'margin:2px 3px 2px 0;padding:2px 6px;border-radius:999px;background:{bgc};'
+                    f'color:{fg};font-weight:900;white-space:nowrap">{_esc(label)} <b>{n}</b></span>')
+
+        html = (
+            chip("🎥📦-", totals["pkg_miss"], "#b91c1c", "#fee2e2", "Tổng thiếu video đóng hàng đã chốt.")
+            + chip("🎥📦+", totals["pkg_extra"], "#1d4ed8", "#dbeafe", "Tổng dư video đóng hàng đã chốt.")
+            + chip("🎥↩-", totals["ret_miss"], "#b91c1c", "#fee2e2", "Tổng thiếu video khui hoàn đã chốt.")
+            + chip("🎥↩+", totals["ret_extra"], "#1d4ed8", "#dbeafe", "Tổng dư video khui hoàn đã chốt.")
+            + chip("⏳", totals["pending"], "#92400e", "#fef3c7", "Số ngày chưa chốt được do Dohana/API tạm lỗi.")
+        )
+        return html or "✅"
+
     body = ""
     prev_wk = None
     for r in wk:
@@ -716,8 +750,14 @@ def _week_table_html(data):
         if rows is not None:
             _tbadge.update(_total_gap_badges(rows))
         for k, _ in cols[2:]:
-            if k in ("ghi_chu", "chot_video"):
+            if k == "ghi_chu":
                 cells += f'<td style="padding:6px 8px;{_bd}background:#ffffff"></td>'
+                continue
+            if k == "chot_video":
+                _chot_html = _total_chot_video(rows or [])
+                _chot_bg = "#dcfce7" if _chot_html == "✅" else "#fff7ed"
+                cells += (f'<td style="text-align:left;padding:6px 8px;{_bd}min-width:150px;'
+                          f'background:{_chot_bg};font-weight:900">{_chot_html}</td>')
                 continue
             if k in _tagcols:
                 tv = str(src.get(k, "") or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
