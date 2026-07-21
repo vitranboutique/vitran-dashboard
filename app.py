@@ -1284,12 +1284,13 @@ def _enrich_daily(rep, dvr, inb):
                         _u["tag_id"], _u["tag"] = _hit
     except Exception:
         pass
-    # GỘP đơn hoàn CÙNG KIỆN: cùng mã đơn + cùng VĐ gửi đi (khách trả NHIỀU SP của 1 đơn về
-    # trong 1 kiện, NV quay 1 clip) → gộp thành 1 DÒNG (nối mã đơn trả + SKU, cộng SP), tránh
-    # lặp clip nhiều dòng nhìn "trùng/sai". clip_co đếm lại theo KIỆN.
+    # GỘP các dòng của CÙNG PHIẾU/CÙNG KIỆN. Không dùng riêng mã đơn + VĐ gửi đi:
+    # một đơn có thể phát sinh nhiều phiếu hoàn, mỗi phiếu dùng ĐVVC hoàn khác nhau.
     _kien, _korder = {}, []
     for _d in nk.get("detail", []):
-        _kk = (str(_d.get("order_code") or ""), str(_d.get("tracking") or ""))
+        _return_identity = str(_d.get("track_return") or _d.get("return_code") or "")
+        _kk = (str(_d.get("order_code") or ""), _return_identity,
+               str(_d.get("tracking") or ""))
         _g = _kien.get(_kk)
         if _g is None:
             _g = dict(_d)

@@ -1631,6 +1631,40 @@ def _norm_dvvc(s):
     return ""
 
 
+def _return_dvvc(x):
+    """ĐVVC của KIỆN HOÀN, không lấy hãng giao đi của đơn gốc.
+
+    Ghi chú chuẩn ``Shipper hoàn: ...`` là bằng chứng đã được đối chiếu thực tế.
+    Nếu chưa có ghi chú, dùng trường vận chuyển trên chính phiếu trả Sapo; chỉ
+    suy ra từ mã vận đơn khi tiền tố xác định rõ hãng.
+    """
+    if str(x.get("return_type") or "").lower() == "refund":
+        return "Không có ĐVVC hoàn"
+
+    note = str(x.get("note") or "")
+    m = re.search(r"shipper\s*ho[aà]n\s*:\s*([^|\n\r]+)", note, flags=re.I)
+    if m:
+        carrier = _norm_dvvc(m.group(1))
+        if carrier:
+            return carrier
+
+    si = x.get("shipping_info") or {}
+    for key in ("return_carrier_name", "return_shipping_carrier_name",
+                "return_tracking_company", "carrier_name"):
+        raw = str(si.get(key) or "").strip()
+        if raw:
+            return _norm_dvvc(raw) or raw
+
+    track = str(si.get("tracking_number") or "").strip().upper()
+    if track.startswith("SPXVN"):
+        return "SPX (Shopee)"
+    if track.startswith(("VTPVN", "VTP")):
+        return "Viettel Post"
+    if track.startswith("GHN"):
+        return "GHN"
+    return "Chưa xác định"
+
+
 def _lost_dvvc(x):
     return (_norm_dvvc((x.get("shipping_info") or {}).get("carrier_name"))
             or _norm_dvvc(x.get("note")) or "(không rõ)")
@@ -2212,7 +2246,7 @@ def get_returns_received_today(fetch_json, scan_days: int = 60, max_pages: int =
             "return_code": x.get("name") or "",     # MÃ ĐƠN TRẢ (tra trên sàn, vd 585...-R1)
             "tracking": out_track or order_name or track or "?",
             "track_return": track,                  # mã VĐ HOÀN VỀ (giao thất bại = VĐ đi)
-            "carrier": si.get("carrier_name") or "?",
+            "carrier": _return_dvvc(x),
             "gian_hang": _gian_hang,
             "order_name": order_name,
             "sku": sku,
@@ -2251,7 +2285,7 @@ def get_returns_received_today(fetch_json, scan_days: int = 60, max_pages: int =
             "vd_gui": (fft[0] if fft else None),
             "return_code": x.get("name") or "",
             "track_return": si.get("tracking_number") or "",
-            "carrier": si.get("carrier_name") or "?",
+            "carrier": _return_dvvc(x),
             "gian_hang": " - ".join(v for v in (_branch, _source_label) if v),
             "sku": "; ".join(f"{(li.get('sku') or 'N/A')}×{int(round(li.get('quantity') or 0))}"
                              for li in lis),
