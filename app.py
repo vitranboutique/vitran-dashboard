@@ -9039,8 +9039,8 @@ def _render_returns():
                     st.caption("— Không có —")
                     return
                 show_clip = True
-                if show_type:   # NHÓM theo LOẠI TRẢ cho dễ nhìn (giữ thứ tự sẵn có trong mỗi nhóm)
-                    _lt_ord = {"return_and_refund": 0, "delivery_failed": 1, "refund": 2}
+                if show_type:   # NHÓM theo LOẠI TRẢ (Chỉ hoàn tiền → Giao thất bại → Trả hàng hoàn tiền)
+                    _lt_ord = {"refund": 0, "delivery_failed": 1, "return_and_refund": 2}
                     items = sorted(items, key=lambda d: _lt_ord.get(str((d or {}).get("loai_tra_code") or ""), 9))
                 _PER = int(per_page or 14)                  # tối đa N đơn/trang, còn lại qua trang sau
                 _start = 0
