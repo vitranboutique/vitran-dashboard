@@ -393,6 +393,47 @@ st.markdown(
 )
 
 
+def _video_audit_anchor(day, kind):
+    base = re.sub(r"[^A-Za-z0-9_-]+", "-", str(day or "unknown")).strip("-").lower()
+    return f"audit-{base or 'unknown'}-{kind}"
+
+
+def _video_audit_num(value):
+    try:
+        return int(value or 0)
+    except Exception:
+        return 0
+
+
+def _video_audit_chip(icon, n, day, kind, fg, bgc, tip):
+    n = _video_audit_num(n)
+    if n <= 0:
+        return ""
+    anchor_id = _video_audit_anchor(day, kind)
+    return (
+        f'<span title="{_esc(tip)}" style="display:inline-flex;align-items:center;gap:3px;'
+        f'margin:2px 3px 2px 0;padding:2px 6px;border-radius:999px;background:{bgc};'
+        f'color:{fg};font-weight:900;white-space:nowrap">{icon}'
+        f'<a href="#{anchor_id}" style="color:{fg};text-decoration:underline;text-underline-offset:2px">{n}</a></span>'
+    )
+
+
+def _video_audit_chot_html(row=None, chot="", day=""):
+    row = row or {}
+    day = day or row.get("Ngày") or row.get("Ngay") or row.get("iso")
+    chips = "".join([
+        _video_audit_chip("📦↓", row.get("Đóng thiếu SL"), day, "pkg-miss", "#b91c1c", "#fee2e2", "Thiếu video đóng hàng"),
+        _video_audit_chip("📦↑", row.get("Đóng dư SL"), day, "pkg-extra", "#1d4ed8", "#dbeafe", "Dư video đóng hàng"),
+        _video_audit_chip("↩↓", row.get("Hoàn thiếu SL"), day, "ret-miss", "#b91c1c", "#fee2e2", "Thiếu video khui hoàn"),
+        _video_audit_chip("↩↑", row.get("Hoàn dư SL"), day, "ret-extra", "#1d4ed8", "#dbeafe", "Dư video khui hoàn"),
+    ])
+    if chips:
+        return chips
+    norm = "".join(ch for ch in unicodedata.normalize("NFKD", str(chot or "")).upper()
+                   if not unicodedata.combining(ch))
+    return "🔁" if "LON MUC" in norm else "✅"
+
+
 def _week_table_html(data):
     """Bảng tổng hợp N ngày + TỔNG tháng. NHÓM MÀU: cột ĐÓNG (kèm Vid đóng) = XANH, cột HOÀN
     (kèm Vid hoàn + Tag) = CAM. Gạch ĐẬM giữa tuần; cột Tag liệt kê tag video (Khách tráo/Đã dùng…);
@@ -573,6 +614,11 @@ def _week_table_html(data):
         f'color:{"#b91c1c" if k == "tag_dong" else "#16233f"}'
         f'{";min-width:130px" if k == "ghi_chu" else ";min-width:150px" if k == "chot_video" else ""}">{lbl}</th>'
         for k, lbl in cols)
+    _audit_by_day = {
+        str(row.get("Ngày") or row.get("Ngay") or ""): row
+        for row in ((data.get("video_audit_matrix") if isinstance(data, dict) else None) or [])
+        if isinstance(row, dict)
+    }
 
     body = ""
     prev_wk = None
@@ -588,8 +634,10 @@ def _week_table_html(data):
         _badges = _lech_badge(r)
         for k, _ in cols:
             al = "left" if k in _txt else "right"
-            if k in ("ghi_chu", "chot_video") or k in _tagcols:
+            if k in ("ghi_chu",) or k in _tagcols:
                 v = str(r.get(k, "") or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            elif k == "chot_video":
+                v = str(r.get(k, "") or "")
             elif k in ("huy_sau", "huy_truoc") and not r.get("huy_split_known"):
                 v = "—"      # hôm nay số còn chạy → chưa suy được sau/trước soạn
             else:
@@ -607,10 +655,14 @@ def _week_table_html(data):
             bg = "#fff2e0" if hot else _bg(k, "cell")     # hôm nay: nền cam nhạt cả dòng
             _chotc = ""
             if k == "chot_video" and v:                    # xanh = đủ/khớp · đỏ = còn lệch
-                if v.startswith("Đủ"):
+                _audit_row = _audit_by_day.get(str(r.get("iso") or ""))
+                v = _video_audit_chot_html(_audit_row, v, str(r.get("iso") or ""))
+                if not _audit_row and str(r.get(k, "") or "").startswith("Đủ"):
                     bg, _chotc = "#dcfce7", "color:#166534;font-weight:700;"
-                elif v.startswith("Còn lệch"):
-                    bg, _chotc = "#fee2e2", "color:#b91c1c;font-weight:800;"
+                elif _audit_row:
+                    bg, _chotc = "#fff7ed", ""
+                else:
+                    bg, _chotc = "#dcfce7", "color:#166534;font-weight:700;"
             cells += (f'<td style="text-align:{al};padding:5px 8px;{_bd}{_lsep(k)}{wtop}{mw}background:{bg};{wt}{_red(k, v)}{_tagclr}{_chotc}">'
                       f'{v}{_nay}{_badges.get(k, "")}</td>')
         body += f'<tr>{cells}</tr>'
@@ -754,67 +806,37 @@ def _render_week_video_audit(data):
                 fw = "font-weight:800;" if highlight else ""
                 return f'<td{anchor} style="padding:6px 8px;border:1px solid #d6dce6;background:{bg};{fw};vertical-align:top">{body}</td>'
 
-            def _num(v):
-                try:
-                    return int(v or 0)
-                except Exception:
-                    return 0
-
-            def _chot_chip(icon, n, anchor_id, fg, bgc, tip):
-                n = _num(n)
-                if n <= 0:
-                    return ""
-                return (
-                    f'<span title="{_esc(tip)}" style="display:inline-flex;align-items:center;gap:3px;'
-                    f'margin:2px 3px 2px 0;padding:2px 6px;border-radius:999px;background:{bgc};'
-                    f'color:{fg};font-weight:900;white-space:nowrap">{icon}'
-                    f'<a href="#{anchor_id}" style="color:{fg};text-decoration:underline;text-underline-offset:2px">{n}</a></span>'
-                )
-
-            def _chot_cell(r, idx):
+            def _chot_cell(r):
                 chot = str(r.get("Chốt") or "").strip()
-                anchors = {
-                    "pkg_miss": f"audit-{idx}-pkg-miss",
-                    "pkg_extra": f"audit-{idx}-pkg-extra",
-                    "ret_miss": f"audit-{idx}-ret-miss",
-                    "ret_extra": f"audit-{idx}-ret-extra",
-                }
-                chips = "".join([
-                    _chot_chip("📦↓", r.get("Đóng thiếu SL"), anchors["pkg_miss"], "#b91c1c", "#fee2e2", "Thiếu video đóng hàng"),
-                    _chot_chip("📦↑", r.get("Đóng dư SL"), anchors["pkg_extra"], "#1d4ed8", "#dbeafe", "Dư video đóng hàng"),
-                    _chot_chip("↩↓", r.get("Hoàn thiếu SL"), anchors["ret_miss"], "#b91c1c", "#fee2e2", "Thiếu video khui hoàn"),
-                    _chot_chip("↩↑", r.get("Hoàn dư SL"), anchors["ret_extra"], "#1d4ed8", "#dbeafe", "Dư video khui hoàn"),
-                ])
-                if chips:
-                    return (f'<td title="{_esc(chot)}" style="padding:6px 8px;border:1px solid #d6dce6;'
-                            f'background:#fff7ed;vertical-align:top">{chips}</td>')
-                label = "🔁" if "lộn mục" in chot else "✅"
+                content = _video_audit_chot_html(r, chot, str(r.get("Ngày") or ""))
                 tip = chot or "Đủ"
+                bg = "#fff7ed" if "<a " in content else "#dcfce7"
                 return (f'<td title="{_esc(tip)}" style="padding:6px 8px;border:1px solid #d6dce6;'
-                        f'background:#dcfce7;text-align:center;font-weight:900;vertical-align:top">{label}</td>')
+                        f'background:{bg};text-align:center;font-weight:900;vertical-align:top">{content}</td>')
 
             body = []
-            for idx, (_, r) in enumerate(df.iterrows()):
+            for _, r in df.iterrows():
                 has_match = bool(str(r.get("Khớp lộn mục") or "").strip())
+                day_key = str(r.get("Ngày") or "")
                 anchors = {
-                    "pkg_miss": f"audit-{idx}-pkg-miss",
-                    "pkg_extra": f"audit-{idx}-pkg-extra",
-                    "ret_miss": f"audit-{idx}-ret-miss",
-                    "ret_extra": f"audit-{idx}-ret-extra",
+                    "pkg_miss": _video_audit_anchor(day_key, "pkg-miss"),
+                    "pkg_extra": _video_audit_anchor(day_key, "pkg-extra"),
+                    "ret_miss": _video_audit_anchor(day_key, "ret-miss"),
+                    "ret_extra": _video_audit_anchor(day_key, "ret-extra"),
                 }
                 cells = [
                     "<tr>",
                     f'<td style="padding:6px 8px;border:1px solid #d6dce6;white-space:nowrap">{_esc(str(r.get("Ngày") or ""))}</td>',
                     _fmt_cell(r.get("Khớp lộn mục"), has_match),
-                    f'<td style="padding:6px 8px;border:1px solid #d6dce6;text-align:right;font-weight:800">{_num(r.get("Đóng thiếu SL"))}</td>',
+                    f'<td style="padding:6px 8px;border:1px solid #d6dce6;text-align:right;font-weight:800">{_video_audit_num(r.get("Đóng thiếu SL"))}</td>',
                     _fmt_cell(r.get("Đóng thiếu"), anchor_id=anchors["pkg_miss"]),
-                    f'<td style="padding:6px 8px;border:1px solid #d6dce6;text-align:right;font-weight:800">{_num(r.get("Đóng dư SL"))}</td>',
+                    f'<td style="padding:6px 8px;border:1px solid #d6dce6;text-align:right;font-weight:800">{_video_audit_num(r.get("Đóng dư SL"))}</td>',
                     _fmt_cell(r.get("Đóng dư"), anchor_id=anchors["pkg_extra"]),
-                    f'<td style="padding:6px 8px;border:1px solid #d6dce6;text-align:right;font-weight:800">{_num(r.get("Hoàn thiếu SL"))}</td>',
+                    f'<td style="padding:6px 8px;border:1px solid #d6dce6;text-align:right;font-weight:800">{_video_audit_num(r.get("Hoàn thiếu SL"))}</td>',
                     _fmt_cell(r.get("Hoàn thiếu"), anchor_id=anchors["ret_miss"]),
-                    f'<td style="padding:6px 8px;border:1px solid #d6dce6;text-align:right;font-weight:800">{_num(r.get("Hoàn dư SL"))}</td>',
+                    f'<td style="padding:6px 8px;border:1px solid #d6dce6;text-align:right;font-weight:800">{_video_audit_num(r.get("Hoàn dư SL"))}</td>',
                     _fmt_cell(r.get("Hoàn dư"), anchor_id=anchors["ret_extra"]),
-                    _chot_cell(r, idx),
+                    _chot_cell(r),
                     "</tr>",
                 ]
                 body.append("".join(cells))
