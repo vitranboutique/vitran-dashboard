@@ -742,16 +742,17 @@ def _render_week_video_audit(data):
             st.info("Không có dòng trong phạm vi đã chọn.")
             return
         if matrix_rows:
-            def _fmt_cell(v, highlight=False):
+            def _fmt_cell(v, highlight=False, anchor_id=""):
                 txt = str(v or "").strip()
+                anchor = f' id="{anchor_id}" class="audit-target"' if anchor_id else ""
                 if not txt:
-                    return '<td style="padding:6px 8px;border:1px solid #d6dce6;color:#94a3b8">—</td>'
+                    return f'<td{anchor} style="padding:6px 8px;border:1px solid #d6dce6;color:#94a3b8">—</td>'
                 sep = "\n" if "\n" in txt else " · "
                 parts = [_esc(p.strip()) for p in txt.split(sep) if p.strip()]
                 body = "<br>".join(parts)
                 bg = "#fff7cc" if highlight else "#ffffff"
                 fw = "font-weight:800;" if highlight else ""
-                return f'<td style="padding:6px 8px;border:1px solid #d6dce6;background:{bg};{fw};vertical-align:top">{body}</td>'
+                return f'<td{anchor} style="padding:6px 8px;border:1px solid #d6dce6;background:{bg};{fw};vertical-align:top">{body}</td>'
 
             def _num(v):
                 try:
@@ -759,29 +760,73 @@ def _render_week_video_audit(data):
                 except Exception:
                     return 0
 
+            def _chot_chip(icon, n, anchor_id, fg, bgc, tip):
+                n = _num(n)
+                if n <= 0:
+                    return ""
+                return (
+                    f'<span title="{_esc(tip)}" style="display:inline-flex;align-items:center;gap:3px;'
+                    f'margin:2px 3px 2px 0;padding:2px 6px;border-radius:999px;background:{bgc};'
+                    f'color:{fg};font-weight:900;white-space:nowrap">{icon}'
+                    f'<a href="#{anchor_id}" style="color:{fg};text-decoration:underline;text-underline-offset:2px">{n}</a></span>'
+                )
+
+            def _chot_cell(r, idx):
+                chot = str(r.get("Chốt") or "").strip()
+                anchors = {
+                    "pkg_miss": f"audit-{idx}-pkg-miss",
+                    "pkg_extra": f"audit-{idx}-pkg-extra",
+                    "ret_miss": f"audit-{idx}-ret-miss",
+                    "ret_extra": f"audit-{idx}-ret-extra",
+                }
+                chips = "".join([
+                    _chot_chip("📦↓", r.get("Đóng thiếu SL"), anchors["pkg_miss"], "#b91c1c", "#fee2e2", "Thiếu video đóng hàng"),
+                    _chot_chip("📦↑", r.get("Đóng dư SL"), anchors["pkg_extra"], "#1d4ed8", "#dbeafe", "Dư video đóng hàng"),
+                    _chot_chip("↩↓", r.get("Hoàn thiếu SL"), anchors["ret_miss"], "#b91c1c", "#fee2e2", "Thiếu video khui hoàn"),
+                    _chot_chip("↩↑", r.get("Hoàn dư SL"), anchors["ret_extra"], "#1d4ed8", "#dbeafe", "Dư video khui hoàn"),
+                ])
+                if chips:
+                    return (f'<td title="{_esc(chot)}" style="padding:6px 8px;border:1px solid #d6dce6;'
+                            f'background:#fff7ed;vertical-align:top">{chips}</td>')
+                label = "🔁" if "lộn mục" in chot else "✅"
+                tip = chot or "Đủ"
+                return (f'<td title="{_esc(tip)}" style="padding:6px 8px;border:1px solid #d6dce6;'
+                        f'background:#dcfce7;text-align:center;font-weight:900;vertical-align:top">{label}</td>')
+
             body = []
-            for _, r in df.iterrows():
+            for idx, (_, r) in enumerate(df.iterrows()):
                 has_match = bool(str(r.get("Khớp lộn mục") or "").strip())
-                chot = str(r.get("Chốt") or "")
-                chot_bg = "#dcfce7" if chot.startswith("Đủ") else "#fee2e2"
+                anchors = {
+                    "pkg_miss": f"audit-{idx}-pkg-miss",
+                    "pkg_extra": f"audit-{idx}-pkg-extra",
+                    "ret_miss": f"audit-{idx}-ret-miss",
+                    "ret_extra": f"audit-{idx}-ret-extra",
+                }
                 cells = [
                     "<tr>",
                     f'<td style="padding:6px 8px;border:1px solid #d6dce6;white-space:nowrap">{_esc(str(r.get("Ngày") or ""))}</td>',
                     _fmt_cell(r.get("Khớp lộn mục"), has_match),
                     f'<td style="padding:6px 8px;border:1px solid #d6dce6;text-align:right;font-weight:800">{_num(r.get("Đóng thiếu SL"))}</td>',
-                    _fmt_cell(r.get("Đóng thiếu")),
+                    _fmt_cell(r.get("Đóng thiếu"), anchor_id=anchors["pkg_miss"]),
                     f'<td style="padding:6px 8px;border:1px solid #d6dce6;text-align:right;font-weight:800">{_num(r.get("Đóng dư SL"))}</td>',
-                    _fmt_cell(r.get("Đóng dư")),
+                    _fmt_cell(r.get("Đóng dư"), anchor_id=anchors["pkg_extra"]),
                     f'<td style="padding:6px 8px;border:1px solid #d6dce6;text-align:right;font-weight:800">{_num(r.get("Hoàn thiếu SL"))}</td>',
-                    _fmt_cell(r.get("Hoàn thiếu")),
+                    _fmt_cell(r.get("Hoàn thiếu"), anchor_id=anchors["ret_miss"]),
                     f'<td style="padding:6px 8px;border:1px solid #d6dce6;text-align:right;font-weight:800">{_num(r.get("Hoàn dư SL"))}</td>',
-                    _fmt_cell(r.get("Hoàn dư")),
-                    f'<td style="padding:6px 8px;border:1px solid #d6dce6;background:{chot_bg};font-weight:800;vertical-align:top">{_esc(chot)}</td>',
+                    _fmt_cell(r.get("Hoàn dư"), anchor_id=anchors["ret_extra"]),
+                    _chot_cell(r, idx),
                     "</tr>",
                 ]
                 body.append("".join(cells))
             st.markdown(
                 """
+<style>
+td.audit-target:target {
+  outline: 3px solid #f59e0b;
+  outline-offset: -3px;
+  background: #fffbeb !important;
+}
+</style>
 <div style="max-height:520px;overflow:auto;border:1px solid #d6dce6;border-radius:8px">
 <table style="width:100%;border-collapse:collapse;font-size:12px;background:white">
   <thead>
