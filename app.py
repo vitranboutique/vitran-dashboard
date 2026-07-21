@@ -2453,38 +2453,41 @@ def load_week_summary():
                     _package_days |= set((_psumm or {}).keys())
                 for _iso in sorted(_package_days):
                     _summ = (_psumm if "_psumm" in locals() else {}).get(_iso) or {}
-                    _groups, _labels = [], []
+                    _has_soan = bool(_summ.get("rows"))
+                    # ── Mã vận đơn ĐÃ SOẠN trong ngày (lấy từ phiếu nhặt), chỉ giữ mã vận đơn ──
+                    _soan_set = set()
                     for _row in (_summ.get("rows") or []):
-                        _codes = [str(c).strip() for c in (_row.get("codes") or []) if str(c).strip()]
-                        _code_groups = _row.get("code_groups") or [[c] for c in _codes]
-                        for _idx, _code in enumerate(_codes):
-                            if _idx < len(_code_groups) and _code_groups[_idx]:
-                                _group = [str(c).strip() for c in _code_groups[_idx] if str(c).strip()]
-                            else:
-                                _group = [_code]
-                            _groups.append(_match_codes_from_group(_group, _code))
-                            _labels.append(_package_context_label(_group, _code))
-                    if _groups:
-                        _real_match_days.add(_iso)   # có phiếu → thiếu/dư sau đây là mã THẬT chưa khớp
-                    _pkg_codes = list(package_codes_by_day.get(_iso, [])) + list(package_unknown_by_day.get(_iso, []))
-                    _matched, _matched_vid_idxs = _match_video_occurrences(_groups, _pkg_codes) if _groups else ({}, set())
-                    _missing = [_labels[i] for i in range(len(_labels)) if i not in _matched]
-                    _extra_raw = [c for i, c in enumerate(_pkg_codes) if i not in _matched_vid_idxs]
+                        _cands = list(_row.get("codes") or [])
+                        for _grp in (_row.get("code_groups") or []):
+                            _cands += list(_grp or [])
+                        for _c in _cands:
+                            _cc = _ascii_code(_c)
+                            if _cc and _is_waybill_code(_cc):
+                                _soan_set.add(_cc)
+                    if _has_soan:
+                        _real_match_days.add(_iso)
+                    # ── Mã vận đơn của VIDEO ĐÓNG trong ngày (giữ thứ tự, bỏ trùng) ──
+                    _pkg_wb = list(dict.fromkeys(
+                        _ascii_code(c) for c in package_codes_by_day.get(_iso, []) if _ascii_code(c)))
+                    _pkg_unknown = list(dict.fromkeys(
+                        _ascii_code(c) for c in package_unknown_by_day.get(_iso, []) if _ascii_code(c)))
+                    _pkg_set = set(_pkg_wb)
+                    # ── ĐỐI CHIẾU ĐƠN GIẢN: so mã soạn ↔ mã video đóng ──
+                    # Thiếu = đã soạn nhưng KHÔNG có video đóng. Dư = có video đóng nhưng KHÔNG nằm trong soạn.
+                    # Ngày MẤT phiếu (kho cũ) → không đủ dữ liệu → để trống, tránh nổ toàn bộ video thành "dư".
+                    if _has_soan:
+                        _missing = [c for c in sorted(_soan_set) if c not in _pkg_set]
+                        _extra = [c for c in _pkg_wb if c not in _soan_set]
+                        _unknown_extra = list(_pkg_unknown)
+                    else:
+                        _missing, _extra, _unknown_extra = [], [], []
                     _video_trace_by_day[_iso] = {
-                        "soan": sorted({str(t) for g in _groups for t in (g or [])}),
-                        "pkg_video": [str(c) for c in _pkg_codes],
-                        "pkg_matched": [str(_pkg_codes[vi]) for (vi, _vc) in _matched.values()],
-                        "pkg_extra": [str(c) for c in _extra_raw],
-                        "has_soan_list": bool(_groups),
+                        "soan": sorted(_soan_set),
+                        "pkg_video": list(_pkg_wb),
+                        "pkg_matched": [c for c in _pkg_wb if c in _soan_set],
+                        "pkg_extra": list(_extra),
+                        "has_soan_list": _has_soan,
                     }
-                    _extra = [_extra_package_label(c) for c in _extra_raw
-                              if _is_waybill_code(c) or _order_context_label(c) or _is_order_code(c)]
-                    _unknown_extra = [c for c in _extra_raw
-                                      if not (_is_waybill_code(c) or _order_context_label(c) or _is_order_code(c))]
-                    _overlap = set(_missing) & set(_extra)
-                    if _overlap:
-                        _missing = [x for x in _missing if x not in _overlap]
-                        _extra = [x for x in _extra if x not in _overlap]
                     _package_missing_by_day[_iso] = _missing
                     _package_extra_by_day[_iso] = _extra
                     _package_unknown_unmatched_by_day[_iso] = _unknown_extra
