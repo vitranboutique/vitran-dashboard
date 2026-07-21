@@ -1333,6 +1333,8 @@ def _enrich_daily(rep, dvr, inb):
             "vd_gui": d.get("tracking"),   # mã VĐ GIAO ĐI (tra Sapo/sàn được)
             "return_code": d.get("return_code") or "",     # MÃ ĐƠN TRẢ (tra trên sàn, vd 585...-R1)
             "track_return": d.get("track_return") or "",   # VĐ HOÀN VỀ (giao thất bại = trùng mã đi = mã Dohana)
+            "carrier": d.get("carrier") or "Chưa xác định",
+            "gian_hang": d.get("gian_hang") or "Chưa xác định",
             # Cột "Đã nhận hàng trả (Sapo)" → CHỉ lấy NV nhận hàng từ Sapo,
             # KHÔNG fallback sang NV quay clip (Dohana) để tránh hiển thị sai người.
             "nhan_vien": d.get("nhan_vien") or "",
@@ -1352,6 +1354,8 @@ def _enrich_daily(rep, dvr, inb):
             "order_code": info.get("order_code") or "", "recv_time": "", "vd_gui": info.get("vd_gui") or "",
             "return_code": info.get("return_code") or "",
             "track_return": info.get("track_return") or u.get("code") or "",   # clip dư: mã clip chính là VĐ hoàn về
+            "carrier": info.get("carrier") or "Chưa xác định",
+            "gian_hang": info.get("gian_hang") or "Chưa xác định",
             "nhan_vien": u.get("staff") or "",
             "sku": info.get("sku") or "", "loai_tra": info.get("loai_tra") or "",
             "loai_tra_code": info.get("loai_tra_code") or "", "has_sapo": False,

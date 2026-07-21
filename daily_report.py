@@ -356,18 +356,41 @@ def _returns_clip_rows(detail):
     return body or '<tr><td colspan="7">Hôm nay không có đơn hoàn nhập kho.</td></tr>'
 
 
+def _return_carrier_label(row):
+    raw = str((row or {}).get("carrier") or "").strip()
+    key = raw.lower()
+    if not raw or raw in ("?", "—"):
+        return "Chưa xác định"
+    if "j&t" in key or key == "jt":
+        return "J&T Express"
+    if "spx" in key:
+        return "SPX Express"
+    if "viettel" in key or key == "vtp":
+        return "Viettel Post"
+    if "giao hàng nhanh" in key or key == "ghn":
+        return "Giao Hàng Nhanh"
+    return raw
+
+
 def _recon_rows(rows, start=0, clip_on=True):
-    """Đối chiếu mỗi sự kiện hoàn: cột Clip khui hàng (Dohana) vs cột Đã nhận hàng trả (Sapo).
-    Cột nào TRỐNG thì ghi LÝ DO in đỏ ngay dòng đó. start = số thứ tự bắt đầu (phân trang)."""
+    """Đối chiếu mỗi sự kiện hoàn, nhóm ĐVVC trước rồi đến loại trả hàng."""
     body = ""
-    _prev_lt = None    # loại trả dòng trước → chèn TIÊU ĐỀ khi ĐỔI loại (nhìn như 2 bảng)
+    _prev_carrier = None
+    _prev_lt = None
     for i, r in enumerate(rows, start + 1):
+        _carrier = _return_carrier_label(r)
+        if _carrier != _prev_carrier:
+            body += (f'<tr><td colspan="8" style="background:#dbeafe;color:#1e3a8a;'
+                     f'font-weight:900;padding:6px 8px;text-transform:uppercase">'
+                     f'🚚 ĐVVC: {_e(_carrier)}</td></tr>')
+            _prev_carrier = _carrier
+            _prev_lt = None
         _ltn = r.get("loai_tra") or "—"
         if _ltn != _prev_lt:
             _df = r.get("loai_tra_code") == "delivery_failed"
-            body += (f'<tr><td colspan="7" style="background:{"#fdece3" if _df else "#e8f0fb"};'
-                     f'color:{"#c2410c" if _df else "#1d4ed8"};font-weight:800;padding:5px 8px">'
-                     f'📦 {_e(str(_ltn))}</td></tr>')
+            body += (f'<tr><td colspan="8" style="background:{"#fdece3" if _df else "#eef6ea"};'
+                     f'color:{"#c2410c" if _df else "#166534"};font-weight:800;padding:5px 8px">'
+                     f'↳ 📦 Loại trả: {_e(str(_ltn))}</td></tr>')
             _prev_lt = _ltn
         # ── Cột 1: CLIP KHUI HÀNG (Dohana) ──
         if r.get("has_clip"):
@@ -441,11 +464,12 @@ def _recon_rows(rows, start=0, clip_on=True):
         body += (f'<tr><td>{i}</td>'
                  f'<td class="l"{clip_td}>{clip_cell}</td>'
                  f'<td class="l"{sapo_td}>{sapo_cell}</td>'
+                 f'<td class="l">{_e(str(r.get("gian_hang") or "Chưa xác định"))}</td>'
                  f'<td class="l">{vdg_cell}</td>'
                  f'<td class="l">{vdt_cell}</td>'
                  f'<td class="l">{sku}</td>'
                  f'<td class="l">{tag_cell}</td></tr>')
-    return body or '<tr><td colspan="7">Hôm nay không có đơn hoàn / clip khui hàng.</td></tr>'
+    return body or '<tr><td colspan="8">Hôm nay không có đơn hoàn / clip khui hàng.</td></tr>'
 
 
 def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
@@ -600,6 +624,16 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
     unmatched_plain = [u for u in unmatched_detail if not _tag_label(u.get("tag"), u.get("tag_id"))]
     clip_on = nk.get("clip_available", False)
     n_ret = len(nk_detail)
+    _shop_orders = OrderedDict()
+    for _d in nk_detail:
+        _shop = str(_d.get("gian_hang") or "Chưa xác định")
+        _order = str(_d.get("order_code") or _d.get("return_code") or id(_d))
+        _shop_orders.setdefault(_shop, set()).add(_order)
+    _shop_counts = sorted(
+        ((_shop, len(_orders)) for _shop, _orders in _shop_orders.items()),
+        key=lambda item: (-item[1], item[0].lower()),
+    )
+    _shop_summary = " · ".join(f"{_e(_shop)} {_count}" for _shop, _count in _shop_counts) or "Chưa có đơn"
     _sp_exp = sum(int(d.get("sp", 0) or 0) for d in nk_detail)         # Σ SP kỳ vọng phải trả về
     _sp_nhap = sum(int(d.get("sp_nhap", 0) or 0) for d in nk_detail)   # Σ SP thực nhập kho
     _sp_thieu = max(0, _sp_exp - _sp_nhap)                             # SP khách trả THIẾU
@@ -694,6 +728,9 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
         f'<div class="l">📹 Clip khui hàng hôm nay</div>'
         f'<div class="v">{clip_kpi_v}</div>'
         f'<div class="l" style="margin-top:3px;font-weight:700">{clip_kpi_sub}</div></div>'
+        f'<div class="kpi"><div class="l">🏪 Đơn hoàn theo gian hàng</div>'
+        f'<div class="v">{sum(_count for _, _count in _shop_counts)}</div>'
+        f'<div class="l" style="margin-top:3px;font-weight:700">{_shop_summary}</div></div>'
     )
     # ── KẾT LUẬN sai lệch (Phần 2) + lý do có thể ──
     _concl = []
@@ -857,7 +894,8 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
     # ===== TRANG 2: FONT CỐ ĐỊNH, tối đa 30 đơn/trang (phân trang nếu nhiều hơn) =====
     _thead = ('<thead><tr><th>#</th>'
               '<th class="l">🎥 Clip khui hàng (Dohana)<br><span style="font-weight:600;font-size:.85em">mã · thời lượng · giờ quay</span></th>'
-              '<th class="l">📥 Đã nhận hàng trả (Sapo)<br><span style="font-weight:600;font-size:.85em">mã đơn · giờ nhận · NV</span></th>'
+              '<th class="l">📥 Mã đơn hàng<br><span style="font-weight:600;font-size:.85em">giờ nhận · NV nhập kho</span></th>'
+              '<th class="l">🏪 Gian hàng</th>'
               '<th class="l">🚚 Mã VĐ gửi đi<br><span style="font-weight:600;font-size:.85em">(tra Sapo/sàn)</span></th>'
               '<th class="l">🔙 Mã đơn trả<br><span style="font-weight:600;font-size:.85em">(tra trên sàn)</span></th>'
               '<th class="l">Sản phẩm (SKU × SL)</th>'
@@ -870,8 +908,17 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
     _ghichu = ('<div class="sec">B. Ghi chú đơn hoàn / khiếu nại</div>'
                '<div class="note"><span style="color:#9aa3af;font-size:.95em">(Ghi tay: tình trạng hàng hoàn, '
                'đơn cần khiếu nại sàn, thiếu/sai SP…)</span><div class="lines"><div></div></div></div>')
-    # NHÓM 2 LOẠI: giao thất bại TRƯỚC, trả hoàn tiền SAU (render như 2 bảng, có tiêu đề section).
-    recon = sorted(recon, key=lambda r: 0 if r.get("loai_tra_code") == "delivery_failed" else 1)
+    # Nhóm ĐVVC trước; trong từng ĐVVC mới chia loại trả hàng.
+    _type_order = {"delivery_failed": 0, "return_and_refund": 1, "refund": 2}
+    recon = sorted(
+        recon,
+        key=lambda r: (
+            _return_carrier_label(r) == "Chưa xác định",
+            _return_carrier_label(r).lower(),
+            _type_order.get(str(r.get("loai_tra_code") or ""), 9),
+            str(r.get("order_code") or r.get("clip_code") or ""),
+        ),
+    )
     # Số đơn/tờ (auto-fit tự co chữ nên không lo tràn/mất dòng; giữ vừa phải cho chữ dễ đọc).
     _FIRST, _REST = 14, 19
     _chunks, _starts, _i = [], [], 0
@@ -888,7 +935,7 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
         _first, _last = _si == 0, _si == _ns - 1
         _sub = f" (tờ {_si + 1}/{_ns})" if _ns > 1 else ""
         _pno = f"Trang 2.{_si + 1}/{_ns}" if _ns > 1 else "Trang 2/2"
-        _kpi = f'<div class="kpis">{r_kpis_html}</div>{concl_box}{warn_box}' if _first else ''
+        _kpi = f'<div class="kpis kf5">{r_kpis_html}</div>{concl_box}{warn_box}' if _first else ''
         _badge = recon_badge if _first else ''
         _tail = (_legend + _ghichu + sign2) if _last else ''
         page2 += f"""<div class="page page2"><div class="pfit">
@@ -902,7 +949,7 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
   <div class="title-sub">Phần 2 — Hàng hoàn nhận về · nhập kho · video khui hàng{_sub}</div>
   {_kpi}
   <div class="sec">A. Đối chiếu Clip khui hàng ↔ Đã nhận hàng trả{_badge}</div>
-  <table style="table-layout:fixed;overflow-wrap:anywhere"><colgroup><col style="width:4%"><col style="width:15%"><col style="width:21%"><col style="width:12%"><col style="width:16%"><col style="width:15%"><col style="width:17%"></colgroup>{_thead}<tbody>{_recon_rows(_chunk, start=_starts[_si], clip_on=clip_on)}</tbody></table>
+  <table style="table-layout:fixed;overflow-wrap:anywhere"><colgroup><col style="width:3%"><col style="width:13%"><col style="width:17%"><col style="width:12%"><col style="width:11%"><col style="width:13%"><col style="width:15%"><col style="width:16%"></colgroup>{_thead}<tbody>{_recon_rows(_chunk, start=_starts[_si], clip_on=clip_on)}</tbody></table>
   {_tail}
   <div class="foot">VITRAN BOUTIQUE · {_pno} — Đơn hàng hoàn trả · {_e(rep["date"])}</div>
 </div></div>"""

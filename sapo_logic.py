@@ -2173,6 +2173,14 @@ def get_returns_received_today(fetch_json, scan_days: int = 60, max_pages: int =
         fft = si.get("fulfillment_tracking_numbers") or []
         out_track = (fft[0] if fft else None)       # mã vận đơn GIAO ĐI (nằm trên đơn → TRA ĐƯỢC)
         order_name = (x.get("order") or {}).get("name")   # mã đơn (sàn) → TRA ĐƯỢC ở Sapo
+        _channel = ((x.get("order") or {}).get("channel_definition")
+                    or x.get("channel_definition") or {})
+        _source_label = {
+            "tiktokshop": "Tiktokshop", "tiktok": "Tiktokshop",
+            "shopee": "Shopee", "shopee2": "Shopee",
+        }.get(str(s).lower(), str(s).title())
+        _branch = _channel.get("branch_name") or _channel.get("main_name") or "VITRAN BOUTIQUE"
+        _gian_hang = " - ".join(v for v in (_branch, _source_label) if v)
         # Mã ứng viên để khớp video khui hàng (NV có thể quét VĐ hoàn-về, VĐ giao-đi, hoặc mã đơn)
         codes = set()
         for c in (track, out_track, order_name, x.get("name")):
@@ -2205,6 +2213,7 @@ def get_returns_received_today(fetch_json, scan_days: int = 60, max_pages: int =
             "tracking": out_track or order_name or track or "?",
             "track_return": track,                  # mã VĐ HOÀN VỀ (giao thất bại = VĐ đi)
             "carrier": si.get("carrier_name") or "?",
+            "gian_hang": _gian_hang,
             "order_name": order_name,
             "sku": sku,
             "sp": int(round(x.get("total_quantity") or 0)),
@@ -2229,9 +2238,21 @@ def get_returns_received_today(fetch_json, scan_days: int = 60, max_pages: int =
         fft = si.get("fulfillment_tracking_numbers") or []
         on = (x.get("order") or {}).get("name")
         lis = x.get("line_items") or []
+        _source = x.get("order_source") or "Khác"
+        _channel = ((x.get("order") or {}).get("channel_definition")
+                    or x.get("channel_definition") or {})
+        _source_label = {
+            "tiktokshop": "Tiktokshop", "tiktok": "Tiktokshop",
+            "shopee": "Shopee", "shopee2": "Shopee",
+        }.get(str(_source).lower(), str(_source).title())
+        _branch = _channel.get("branch_name") or _channel.get("main_name") or "VITRAN BOUTIQUE"
         info = {
             "order_code": on or x.get("name"),
             "vd_gui": (fft[0] if fft else None),
+            "return_code": x.get("name") or "",
+            "track_return": si.get("tracking_number") or "",
+            "carrier": si.get("carrier_name") or "?",
+            "gian_hang": " - ".join(v for v in (_branch, _source_label) if v),
             "sku": "; ".join(f"{(li.get('sku') or 'N/A')}×{int(round(li.get('quantity') or 0))}"
                              for li in lis),
             "loai_tra": _type_vn.get(x.get("return_type"), x.get("return_type") or "—"),
