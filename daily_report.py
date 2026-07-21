@@ -74,6 +74,9 @@ _CSS = """
   .return-table th,.return-table td{padding:.22em .36em;}
   .return-table th:first-child,.return-table td:first-child{white-space:nowrap;padding-left:.15em;padding-right:.15em;}
   .mono-code{white-space:nowrap;word-break:normal;overflow-wrap:normal;font-size:.9em;letter-spacing:0;font-variant-numeric:tabular-nums;}
+  .clip-code{font-size:1.25em;}                                 /* mã clip khui TO hơn cho dễ đọc, đỡ trống cột */
+  .return-table td.vct{line-height:1.05;vertical-align:top;}    /* cột Mã vận chuyển: gom SÁT các dòng lại */
+  .return-table td.vct div{margin:0;}
   .kpis.k3{grid-template-columns:repeat(3,1fr);}
   .kpis.kf4{grid-template-columns:repeat(4,1fr);gap:.38em;margin:.3em 0 .4em;}
   .kpis.kf3{grid-template-columns:repeat(3,1fr);gap:.38em;margin:.3em 0 .4em;}
@@ -452,7 +455,7 @@ def _recon_rows(rows, start=0, clip_on=True):
                 _cs.append(f'{r["clip_dur"]}s')
             if r.get("clip_time"):
                 _cs.append(str(r["clip_time"]))
-            clip_cell = (f'<b style="color:#6d28d9">🎥 <span class="mono-code">'
+            clip_cell = (f'<b style="color:#6d28d9">🎥 <span class="mono-code clip-code">'
                          f'{_e(str(r.get("clip_code") or "?"))}</span></b>{_alt}'
                          + (f'<div style="font-size:.82em;color:#6b7280">⏱ {_e(" · ".join(_cs))}</div>'
                             if _cs else ''))
@@ -534,7 +537,7 @@ def _recon_rows(rows, start=0, clip_on=True):
         body += (f'<tr><td>{i}</td>'
                  f'<td class="l"{clip_td}>{clip_cell}</td>'
                  f'<td class="l"{sapo_td}>{sapo_cell}</td>'
-                 f'<td class="l">{transport_cell}</td>'
+                 f'<td class="l vct">{transport_cell}</td>'
                  f'<td class="l">{sku}</td></tr>')
     return body or f'<tr><td colspan="{_cols}">Hôm nay không có đơn hoàn / clip khui hàng.</td></tr>'
 
