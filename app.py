@@ -9870,10 +9870,14 @@ def _render_returns():
             #   có ghi chú chuẩn thì tự rớt khỏi đây & mất màu vàng). Dùng chung _nv_row_restock cho đồng nhất.
             _nv_ckn_added = 0
             try:
-                _nv_ckn = [d for d in _restock_novideo_rows() if d.get("need_kn")]
+                # APPEND thẳng (KHÔNG merge) → KHÔNG trộn ghi chú/lý do với đơn Cần KN khác. Bỏ đơn đã
+                # có sẵn trong Cần KN (theo mã trả/mã đơn/VĐ) để không lặp.
+                _ckn_keys = {_dohana_row_key(d) for d in _ckn_render_raw_list if _dohana_row_key(d)}
+                _nv_ckn = [d for d in _restock_novideo_rows()
+                           if d.get("need_kn") and _dohana_row_key(d) not in _ckn_keys]
                 if _nv_ckn:
                     _nv_ckn_added = len(_nv_ckn)
-                    _ckn_render_raw_list = _merge_need_kn_rows(_ckn_render_raw_list, _nv_ckn)
+                    _ckn_render_raw_list = _ckn_render_raw_list + _nv_ckn
             except Exception:
                 pass
             _ckn_render_list = [
@@ -9983,16 +9987,12 @@ def _render_returns():
 
             # ── 🔍 KIỂM TRA MÃ TRẢ TRÙNG trong từng bảng (đếm mã trả xuất hiện >1 lần) ──
             st.divider()
-            with st.expander("🔍 Kiểm tra Mã trả hàng TRÙNG trong từng bảng", expanded=True):
+            with st.expander("🔍 Kiểm tra đơn TRÙNG (① trong 1 bảng · ② chéo giữa các bảng)", expanded=True):
                 from collections import Counter as _Cnt
 
-                def _dup_madon(rows):
-                    _all = [str(_display_return_code(d) or "").strip() for d in (rows or [])]
-                    _cs = [c for c in _all if c]
-                    _empty = len(_all) - len(_cs)          # dòng mã trả để TRỐNG (mã trả trùng mã đơn)
-                    _cnt = _Cnt(_cs)
-                    _dd = {k: v for k, v in _cnt.items() if v > 1}
-                    return len(rows or []), len(_cnt), sum(v - 1 for v in _dd.values()), _empty, _dd
+                def _row_id(d):   # danh tính đơn = mã trả / mã đơn / VĐ (CÙNG key với lúc gộp Cần KN)
+                    k = _dohana_row_key(d)
+                    return k.split(":", 1)[-1] if k else ""
                 _dup_tables = [
                     ("🚨 Cần KN", _ckn_render_list),
                     ("⛔ Không cần KN", _khong_can_kn_list),
@@ -10005,25 +10005,43 @@ def _render_returns():
                     _dup_tables.append(("🧭 Đơn bị đóng có VĐ", _closed_returns_with_waybill_detail))
                 if _canceled_returns_detail:
                     _dup_tables.append(("🗂️ Phiếu đã hủy", _canceled_returns_detail))
-                _dup_out, _tot_dup = [], 0
+                # ① TRÙNG TRONG TỪNG BẢNG (cùng 1 đơn > 1 dòng trong CÙNG bảng)
+                _dup_out, _tot_dup, _table_ids = [], 0, {}
                 for _nm, _rws in _dup_tables:
-                    _t, _dist, _ndup, _empty, _dd = _dup_madon(_rws)
+                    _ids = [i for i in (_row_id(d) for d in (_rws or [])) if i]
+                    _cnt = _Cnt(_ids)
+                    _dd = {k: v for k, v in _cnt.items() if v > 1}
+                    _ndup = sum(v - 1 for v in _dd.values())
                     _tot_dup += _ndup
-                    _dup_out.append({
-                        "Bảng": _nm, "Số dòng": _t, "Mã trả (khác nhau)": _dist,
-                        "Trống mã trả": _empty,          # = mã trả trùng mã đơn (cột Mã trả để trống)
-                        "⚠️ Mã TRÙNG (dòng dư)": _ndup,
-                        "Ví dụ (mã × số lần)": ", ".join(f"{k} ×{v}" for k, v in list(_dd.items())[:6]) or "—",
-                    })
+                    _table_ids[_nm] = set(_cnt)
+                    _dup_out.append({"Bảng": _nm, "Số dòng": len(_rws or []), "Đơn khác nhau": len(_cnt),
+                                     "⚠️ TRÙNG trong bảng": _ndup,
+                                     "Ví dụ": ", ".join(f"{k}×{v}" for k, v in list(_dd.items())[:5]) or "—"})
+                st.markdown("**① Trùng TRONG từng bảng** (1 đơn hiện >1 dòng trong CÙNG bảng — đây mới là lỗi thật):")
                 st.dataframe(pd.DataFrame(_dup_out), hide_index=True, use_container_width=True,
-                             column_config={"Ví dụ (mã × số lần)": st.column_config.TextColumn(width="large")})
-                st.caption("**Số dòng = Mã trả (khác nhau) + Trống mã trả + Mã TRÙNG (dòng dư).** "
-                           "'Trống mã trả' = đơn có mã trả TRÙNG mã đơn (Shopee/TikTok để mã trả = mã đơn) → "
-                           "cột Mã trả để trống, KHÔNG phải lỗi. Chỉ **⚠️ Mã TRÙNG > 0** mới là trùng thật.")
+                             column_config={"Ví dụ": st.column_config.TextColumn(width="large")})
                 if _tot_dup:
-                    st.warning(f"⚠️ Tổng **{_tot_dup}** dòng mã trả bị trùng — bảng nào cột **⚠️ Mã TRÙNG** > 0 là có.")
+                    st.warning(f"⚠️ Có **{_tot_dup}** dòng TRÙNG trong bảng (cột ⚠️ > 0) — cần xử lý.")
                 else:
-                    st.success("✅ Không bảng nào có mã trả trùng.")
+                    st.success("✅ Không bảng nào bị trùng dòng bên trong.")
+                # ② TRÙNG CHÉO giữa các bảng (cùng 1 đơn nằm ở NHIỀU bảng)
+                _cross, _where = _Cnt(), {}
+                for _nm, _ids in _table_ids.items():
+                    for _i in _ids:
+                        _cross[_i] += 1
+                        _where.setdefault(_i, []).append(_nm)
+                _cross_dups = sorted([(i, _where[i]) for i, c in _cross.items() if c > 1],
+                                     key=lambda x: -len(x[1]))
+                st.markdown(f"**② Trùng CHÉO giữa các bảng** — {len(_cross_dups)} đơn nằm ở >1 bảng:")
+                if _cross_dups:
+                    st.dataframe(pd.DataFrame([{"Đơn (mã)": i, "Số bảng": len(w), "Các bảng": " · ".join(w)}
+                                              for i, w in _cross_dups[:50]]),
+                                 hide_index=True, use_container_width=True,
+                                 column_config={"Các bảng": st.column_config.TextColumn(width="large")})
+                    st.caption("Trùng CHÉO thường KHÔNG phải lỗi: bảng **Cần KN** GOM đơn cần khiếu nại từ các "
+                               "bảng khác, nên 1 đơn vừa ở bảng gốc vừa ở Cần KN. Chỉ lo mục ① (trùng trong 1 bảng).")
+                else:
+                    st.caption("Không có đơn nào nằm ở nhiều bảng.")
 
         with _tabs[2]:
             # ── 🎥 KHO VIDEO DOHANA (lưu CẢ NĂM, vượt hạn 30 ngày của Dohana) — tra cứu metadata ──
