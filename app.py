@@ -1331,6 +1331,15 @@ def _note_is_standard(note: str) -> bool:
                ("KHONGCANKN", "KHONGCANKHIEUNAI", "HETHAN", "THANG", "THUA", "HUY", "CANKN"))
 
 
+def _note_is_concluded(note: str) -> bool:
+    """Ghi chú ĐÃ KẾT LUẬN (hết cần KN): THẮNG / THUA / KHÔNG CẦN KN / HẾT HẠN / HỦY.
+    ⚠️ 'CẦN KN' KHÔNG tính kết luận (vẫn phải khiếu nại → giữ tô vàng + nằm trong bảng Cần KN)."""
+    first = (str(note or "").strip().splitlines() or [""])[0]
+    compact = "".join(ch for ch in _ascii_code(first) if ch.isalnum())
+    return any(t in compact for t in
+               ("KHONGCANKN", "KHONGCANKHIEUNAI", "HETHAN", "THANG", "THUA", "HUY"))
+
+
 def _nv_row_restock(it):
     """Đổi 1 đơn 'ĐÃ nhập kho nhưng thiếu video khui' (đã enrich) → row cho _sub_table.
     Lý do KN = 'NV nhập kho sai' cho CẢ bảng; tô vàng (need_kn) đến khi có ghi chú CHUẨN thì thôi
@@ -8591,20 +8600,27 @@ def _render_returns():
                 _pool_note = {}
                 for _pd in (_return_match_detail or []):
                     _pn = str(_pd.get("note") or "").strip()
-                    if _pn and _note_is_standard(_pn):
-                        for _pf in ("return_code", "order_code", "vd_tra", "vd_di"):
-                            _pv = _search_norm(_pd.get(_pf))
-                            if _pv:
-                                _pool_note.setdefault(_pv, _pn)
+                    if not (_pn and _note_is_standard(_pn)):
+                        continue
+                    _concl = _note_is_concluded(_pn)
+                    for _pf in ("return_code", "order_code", "vd_tra", "vd_di"):
+                        _pv = _search_norm(_pd.get(_pf))
+                        if not _pv:
+                            continue
+                        _old = _pool_note.get(_pv)
+                        if _old is None or (_concl and not _note_is_concluded(_old)):
+                            _pool_note[_pv] = _pn          # ưu tiên ghi chú ĐÃ KẾT LUẬN
                 for _d in _rows:
-                    if not _note_is_standard(_d.get("note", "")):
-                        for _pf in ("return_code", "order_code", "vd_tra", "vd_di"):
-                            _pv = _search_norm(_d.get(_pf))
-                            if _pv and _pv in _pool_note:
-                                _d["note"] = _pool_note[_pv]
-                                break
+                    if _note_is_concluded(_d.get("note", "")):
+                        continue                          # đã kết luận rồi → khỏi kéo
+                    for _pf in ("return_code", "order_code", "vd_tra", "vd_di"):
+                        _pv = _search_norm(_d.get(_pf))
+                        if _pv and _pv in _pool_note:
+                            _d["note"] = _pool_note[_pv]   # kéo ghi chú (kết luận nếu có; không thì "CẦN KN")
+                            break
                 for _d in _rows:
-                    _d["need_kn"] = not _note_is_standard(_d.get("note", ""))
+                    # HẾT tô vàng / rớt Cần KN CHỈ khi ĐÃ KẾT LUẬN. Note "CẦN KN" = vẫn cần KN → GIỮ vàng.
+                    _d["need_kn"] = not _note_is_concluded(_d.get("note", ""))
                 _restock_novideo_rows._cache = [dict(r) for r in _rows]
                 return _rows
             _closed_returns_with_waybill_detail = [
