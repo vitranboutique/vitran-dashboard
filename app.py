@@ -2098,6 +2098,7 @@ def _apply_picklog_soan_to_daily(rep, rows, dvr=None, dup_orders=0):
         rep["funnel"]["base"] = total_orders or rep["funnel"].get("base")
     if dvr is not None and code_groups:
         vset = set((dvr.get("codes") or {}).keys())
+        video_total = int(dvr.get("total") or 0)
         matched, font_fixed = match_packing_videos(code_groups, vset)
         used_video_codes = {str(v[0]) for v in matched.values() if v and v[0]}
 
@@ -2170,12 +2171,16 @@ def _apply_picklog_soan_to_daily(rep, rows, dvr=None, dup_orders=0):
                     used_video_codes.add(rec["code"])
         except Exception:
             pass
+        remaining_idx = [i for i in range(len(code_groups)) if i not in matched]
+        unassigned_video_count = max(0, video_total - len(matched))
+        if remaining_idx and unassigned_video_count >= len(remaining_idx):
+            for i in remaining_idx:
+                matched[i] = ("__count_only__", "count")
         missing = [code_labels[i] for i in range(len(code_groups)) if i not in matched]
         unknown = max(0, total_orders - len(code_groups))
         if unknown:
             missing += [f"{unknown} đơn phiếu nhặt chưa lưu mã đối chiếu"]
         missing_count = len(missing)
-        video_total = int(dvr.get("total") or 0)
         unique_video = len(vset)
         rep["video_recon"] = {
             "available": True,
