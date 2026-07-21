@@ -63,14 +63,14 @@ _CSS = """
   .page2 .title-sub{margin-bottom:.2em;}
   .page2 .kpis.kf5{grid-template-columns:repeat(3,1fr);gap:.28em;margin:.24em 0 .3em;}
   .page2 .kf5 .kpi{padding:.18em .34em;}
-  .page2 .kf5 .kpi .l{font-size:.9em;line-height:1.22;}
-  .page2 .kf5 .kpi .v{font-size:1.62em;}
+  .page2 .kf5 .kpi .l{font-size:1.05em;line-height:1.24;}
+  .page2 .kf5 .kpi .v{font-size:1.74em;}
   .page2 .warn{padding:.28em .55em;margin:.28em 0 .34em;}
   .page2 .warn .wh{font-size:1em;}
   .page2 .warn .wb{font-size:.88em;line-height:1.32;}
   .page2 .warn .wc{font-size:.94em;}
   .page2 .sec{margin:.32em 0 .16em;padding:.18em .5em;}
-  .return-table{font-size:1.08em;line-height:1.22;}
+  .return-table{font-size:1.18em;line-height:1.18;}
   .return-table th,.return-table td{padding:.22em .36em;}
   .return-table th:first-child,.return-table td:first-child{white-space:nowrap;padding-left:.15em;padding-right:.15em;}
   .mono-code{white-space:nowrap;word-break:normal;overflow-wrap:normal;font-size:.9em;letter-spacing:0;font-variant-numeric:tabular-nums;}
@@ -89,8 +89,8 @@ _CSS = """
   .kf5 .kpi .l{font-size:.69em;line-height:1.2;}
   .kf5 .kpi .v{font-size:1.31em;}
   .kpi.bad{border-color:#dc2626;background:#fdeeee;}
-  .kpi .lech{font-size:.65em;color:#dc2626;font-weight:800;margin-top:1px;}
-  .kpi .tick{font-size:.62em;color:#6b7280;margin-top:.23em;border-top:1px dashed #c0c8d4;padding-top:.15em;}
+  .kpi .lech{font-size:.8em;color:#dc2626;font-weight:800;margin-top:1px;}
+  .kpi .tick{font-size:.76em;color:#6b7280;margin-top:.23em;border-top:1px dashed #c0c8d4;padding-top:.15em;}
   .kpi .cbox{display:inline-block;width:.8em;height:.8em;border:1.2px solid #6b7280;vertical-align:-1px;margin-right:2px;border-radius:2px;}
   .warn{border:1px solid #e0a155;border-left:5px solid #d97706;background:#fff8ec;border-radius:6px;padding:.46em .77em;margin:.6em 0 .7em;}
   .warn .wh{font-size:.88em;font-weight:900;color:#b45309;}
@@ -858,7 +858,7 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
             classes.append(tone)
         if lech and lech > 0:
             classes, mark = ["kpi", "bad"], f'<div class="lech">▼ {lech_txt} {lech}</div>'
-        sb = (f'<div style="font-size:.72em;color:#5b6878;font-weight:800;margin-top:1px">{sub}</div>'
+        sb = (f'<div style="font-size:.88em;color:#5b6878;font-weight:800;margin-top:1px">{sub}</div>'
               if sub else '')
         tk = '<div class="tick"><span class="cbox"></span> đã nhận</div>' if tick else ''
         return (f'<div class="{" ".join(classes)}"><div class="l">{icon} {label}</div>'
