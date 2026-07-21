@@ -487,6 +487,32 @@ def _week_table_html(data):
                 f'font-weight:800;white-space:nowrap;padding:1px 4px;border-radius:4px;'
                 f'margin-left:3px">{sym}{n} {word}</span>')
 
+    def _audit_count(row, key):
+        return _video_audit_num(row.get(key)) if isinstance(row, dict) else 0
+
+    def _apply_audit_video_badges(out, d):
+        audit_row = _audit_by_day.get(str((d or {}).get("iso") or ""))
+        if not isinstance(audit_row, dict):
+            return
+        out.pop("vid_dong", None)
+        out.pop("vid_hoan", None)
+        pkg_missing = _audit_count(audit_row, "Đóng thiếu SL")
+        pkg_extra = _audit_count(audit_row, "Đóng dư SL")
+        ret_missing = _audit_count(audit_row, "Hoàn thiếu SL")
+        ret_extra = _audit_count(audit_row, "Hoàn dư SL")
+        if pkg_missing:
+            out["vid_dong"] = _gap_badge("▼", "#b91c1c", "#fee2e2", "thiếu", pkg_missing,
+                                         "Số thiếu đã chốt từ bảng khớp mã, không dùng chênh lệch thô Soạn - Video.")
+        elif pkg_extra:
+            out["vid_dong"] = _gap_badge("▲", "#1d4ed8", "#dbeafe", "dư", pkg_extra,
+                                         "Số dư đã chốt từ bảng khớp mã, không dùng chênh lệch thô Soạn - Video.")
+        if ret_missing:
+            out["vid_hoan"] = _gap_badge("⚠", "#b91c1c", "#fee2e2", "chưa quay", ret_missing,
+                                         "Số thiếu đã chốt từ bảng khớp mã.")
+        elif ret_extra:
+            out["vid_hoan"] = _gap_badge("▲", "#1d4ed8", "#dbeafe", "video lẻ", ret_extra,
+                                         "Số dư đã chốt từ bảng khớp mã.")
+
     def _lech_badge(d):
         """Trả badge lệch cho từng cột cần đối chiếu (▼ thiếu · ▲ dư):
         Vid đóng vs Đóng gói · Vid hoàn vs Hoàn đơn · Shipper nhận: Soạn = Hủy+Shipper (ngày đã qua).
@@ -544,6 +570,7 @@ def _week_table_html(data):
             out["vid_hoan"] = _gap_badge("▲", "#1d4ed8", "#dbeafe", "video lẻ", -_tc,
                 "Video khui DƯ hơn cả đơn hoàn lẫn tag tráo/đã dùng — có thể NV quay LỘN bên đóng "
                 "hàng, quay dư, hoặc quên gắn tag. Mở A4 để đối chiếu.")
+        _apply_audit_video_badges(out, d)
         return out
 
     def _total_gap_badges(rows):
@@ -558,17 +585,32 @@ def _week_table_html(data):
                 stale = (_today_vn - date.fromisoformat(str(row.get("iso") or ""))).days > _DOHANA_RETENTION
             except Exception:
                 stale = False
-            pkg_gap = int(round(float(row.get("soan") or 0))) - int(round(float(row.get("vid_dong") or 0)))
-            dispute = sum(int(x) for x in re.findall(r"×\s*(\d+)", str(row.get("tag_hoan") or "")))
-            ret_gap = dispute + int(round(float(row.get("hoan_don") or 0))) - int(round(float(row.get("vid_hoan") or 0)))
-            if pkg_gap > 0:
-                totals["pkg_old" if stale else "pkg_missing"] += pkg_gap
-            elif pkg_gap < 0:
-                totals["pkg_extra"] += -pkg_gap
-            if ret_gap > 0:
-                totals["ret_old" if stale else "ret_missing"] += ret_gap
-            elif ret_gap < 0:
-                totals["ret_extra"] += -ret_gap
+            audit_row = _audit_by_day.get(str((row or {}).get("iso") or ""))
+            if isinstance(audit_row, dict):
+                pkg_missing = _audit_count(audit_row, "Đóng thiếu SL")
+                pkg_extra = _audit_count(audit_row, "Đóng dư SL")
+                ret_missing = _audit_count(audit_row, "Hoàn thiếu SL")
+                ret_extra = _audit_count(audit_row, "Hoàn dư SL")
+                if pkg_missing:
+                    totals["pkg_old" if stale else "pkg_missing"] += pkg_missing
+                if pkg_extra:
+                    totals["pkg_extra"] += pkg_extra
+                if ret_missing:
+                    totals["ret_old" if stale else "ret_missing"] += ret_missing
+                if ret_extra:
+                    totals["ret_extra"] += ret_extra
+            else:
+                pkg_gap = int(round(float(row.get("soan") or 0))) - int(round(float(row.get("vid_dong") or 0)))
+                dispute = sum(int(x) for x in re.findall(r"×\s*(\d+)", str(row.get("tag_hoan") or "")))
+                ret_gap = dispute + int(round(float(row.get("hoan_don") or 0))) - int(round(float(row.get("vid_hoan") or 0)))
+                if pkg_gap > 0:
+                    totals["pkg_old" if stale else "pkg_missing"] += pkg_gap
+                elif pkg_gap < 0:
+                    totals["pkg_extra"] += -pkg_gap
+                if ret_gap > 0:
+                    totals["ret_old" if stale else "ret_missing"] += ret_gap
+                elif ret_gap < 0:
+                    totals["ret_extra"] += -ret_gap
             # Hôm nay đơn còn tiếp tục bàn giao nên không kết luận thiếu shipper.
             if not row.get("is_today"):
                 ship_gap = (int(round(float(row.get("soan") or 0)))
@@ -1910,17 +1952,26 @@ def _apply_picklog_soan_to_daily(rep, rows, dvr=None, dup_orders=0):
     from collections import Counter
     carrier_counts = Counter()
     alias_raw, alias_norm = {}, {}
-    for _item in rep.get("dong_goi_order_codes") or []:
-        _codes = {str(c).strip() for c in (_item.get("codes") or []) if str(c).strip()}
-        if _item.get("track"):
-            _codes.add(str(_item.get("track")).strip())
+
+    def _add_alias_group(values):
+        _codes = {str(c).strip() for c in (values or []) if str(c).strip()}
         if not _codes:
-            continue
+            return
         for _c in _codes:
             alias_raw.setdefault(_c, set()).update(_codes)
             _nc = _ascii_code(_c)
             if _nc:
                 alias_norm.setdefault(_nc, set()).update(_codes)
+
+    for _item in rep.get("dong_goi_order_codes") or []:
+        _vals = list(_item.get("codes") or [])
+        _vals.append(_item.get("track"))
+        _add_alias_group(_vals)
+    for _item in rep.get("confirmed_today_order_codes") or []:
+        _vals = list(_item.get("codes") or [])
+        for _key in ("tracking", "track", "name"):
+            _vals.append(_item.get(_key))
+        _add_alias_group(_vals)
 
     def _expand_group(group):
         out = {str(c).strip() for c in (group or []) if str(c).strip()}
@@ -1929,6 +1980,10 @@ def _apply_picklog_soan_to_daily(rep, rows, dvr=None, dup_orders=0):
             nc = _ascii_code(c)
             if nc:
                 out.update(alias_norm.get(nc, set()))
+                for alias_nc, alias_vals in list(alias_norm.items()):
+                    if (alias_nc and alias_nc != nc and len(alias_nc) >= 8 and len(nc) >= 8
+                            and (alias_nc in nc or nc in alias_nc)):
+                        out.update(alias_vals)
         return sorted(out)
 
     for idx, r in enumerate(rows, 1):
