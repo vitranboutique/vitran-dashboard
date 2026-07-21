@@ -490,6 +490,20 @@ def _week_table_html(data):
     def _audit_count(row, key):
         return _video_audit_num(row.get(key)) if isinstance(row, dict) else 0
 
+    def _stock_pending_badge(row=None, rows=None):
+        if rows is not None:
+            count = sum(_video_audit_num(r.get("chua_nhap_kho_video"))
+                        for r in rows if isinstance(r, dict))
+        else:
+            count = _video_audit_num((row or {}).get("chua_nhap_kho_video"))
+        if count <= 0:
+            return ""
+        return _gap_badge(
+            "⚠", "#b91c1c", "#fee2e2", "chưa nhập kho", count,
+            "Báo cáo A4 có clip khui hàng hoàn nhưng chưa khớp phiếu nhập kho SAPO "
+            "và chưa có tag giữ xử lý. Cần kiểm tra nhân viên chưa bấm nhập kho, quay nhầm mục hoặc quay trùng.",
+        )
+
     def _apply_audit_video_badges(out, d):
         audit_row = _audit_by_day.get(str((d or {}).get("iso") or ""))
         if not isinstance(audit_row, dict):
@@ -741,7 +755,7 @@ def _week_table_html(data):
                 else:
                     bg, _chotc = "#dcfce7", "color:#166534;font-weight:700;"
             cells += (f'<td style="text-align:{al};padding:5px 8px;{_bd}{_lsep(k)}{wtop}{mw}background:{bg};{wt}{_red(k, v)}{_tagclr}{_chotc}">'
-                      f'{v}{_nay}{_badges.get(k, "")}</td>')
+                      f'{v}{_stock_pending_badge(r) if k == "tag_hoan" else ""}{_nay}{_badges.get(k, "")}</td>')
         body += f'<tr>{cells}</tr>'
 
     def _tot_row(label, src, label_bg, rows=None):
@@ -761,6 +775,8 @@ def _week_table_html(data):
                 continue
             if k in _tagcols:
                 tv = str(src.get(k, "") or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                if k == "tag_hoan":
+                    tv += _stock_pending_badge(rows=rows or [])
                 _tc = ("color:#b91c1c;font-weight:800;" if (k == "tag_dong" and tv)
                        else ("color:#7c3aed;" if tv else ""))
                 cells += (f'<td style="text-align:left;padding:6px 8px;{_bd}{_lsep(k)}background:{_bg(k, "tot")};'
@@ -3181,6 +3197,11 @@ def load_week_summary():
                 day["vid_hoan"] = _matched_vhoan.get(iso, vhoan.get(iso, 0))
                 day["tag_dong"] = _tagstr(tdong.get(iso))
                 day["tag_hoan"] = _tagstr(thoan.get(iso))
+                # Cùng cảnh báo với A4: clip khui còn dư sau khi đã loại clip khớp đơn
+                # và clip có tag giữ xử lý = có video nhưng chưa có phiếu nhập kho SAPO.
+                # Giữ thành trường số riêng, không ghép vào tag_hoan để không làm sai
+                # công thức đếm tag tranh chấp trong phần đối chiếu video.
+                day["chua_nhap_kho_video"] = len(_inbound_extra_by_day.get(iso, []))
                 if day.get("vid_hoan_raw") != day.get("vid_hoan"):
                     _old_note = str(day.get("ghi_chu") or "").strip()
                     _extra_note = f"Vid hoàn thô {day.get('vid_hoan_raw')} / khớp đơn {day.get('vid_hoan')}"
