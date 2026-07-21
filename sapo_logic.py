@@ -1355,6 +1355,7 @@ def _order_codes(o) -> set:
         if not isinstance(src, dict):
             continue
         for key in (
+            "id", "order_id", "fulfillment_id", "shipment_id",
             "name", "code", "order_code", "order_name", "order_number",
             "reference", "reference_code", "source_identifier", "source_order_id",
             "ecommerce_order_code", "channel_order_code", "tracking_number",
@@ -1421,7 +1422,7 @@ def get_alerts(fetch_json) -> dict:
             "cancel_retrieve_express": cancel_retrieve_express}
 
 
-WEEK_SUMMARY_BUILD = "a4-video-today-alias-only-21jul"   # đổi mỗi lần sửa module → biết app đã reboot chưa
+WEEK_SUMMARY_BUILD = "a4-video-include-sapo-ids-21jul"   # đổi mỗi lần sửa module → biết app đã reboot chưa
 
 
 def get_week_summary(fetch_json, days: int = 7) -> dict:
