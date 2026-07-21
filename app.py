@@ -2745,7 +2745,10 @@ def load_week_summary():
                 _rest_extra = [c for c in pkg_extra if c not in _lon_muc_extra]
                 raw_pkg_extra_rows = _lon_muc_extra + _limit_rows(_rest_extra, limits.get("pkg_extra"))
                 raw_pkg_missing_rows = _limit_rows(pkg_missing, limits.get("pkg_missing"))
-                raw_return_missing_rows = _limit_rows(return_missing, limits.get("return_missing"))
+                # A4 already reconciles missing return clips by exact order identifiers.
+                # Do not truncate this list using aggregate gaps: a tagged clip can make
+                # the total gap zero but cannot replace another restocked order's clip.
+                raw_return_missing_rows = list(return_missing)
                 raw_inbound_extra_rows = _limit_rows(inbound_extra, limits.get("inbound_extra"))
                 _age = _audit_age(iso)
                 p1 = _cross_match_pairs(raw_pkg_missing_rows, raw_inbound_extra_rows, "package", "return")
