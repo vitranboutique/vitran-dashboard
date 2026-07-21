@@ -765,8 +765,13 @@ def _render_week_video_audit(data):
                 return ""
 
         def _join(vals):
+            from collections import Counter as _Counter
             vals = [str(v or "").strip() for v in (vals or []) if str(v or "").strip()]
-            return " · ".join(list(dict.fromkeys(vals)))
+            cnt = _Counter(vals)
+            return " · ".join(
+                f"{v} ×{cnt[v]}" if cnt[v] > 1 else v
+                for v in dict.fromkeys(vals)
+            )
 
         out = []
         a4_by_day = src.get("a4_package_recon_by_day") or {}
@@ -2533,8 +2538,10 @@ def load_week_summary():
                     rows += [f"{pad_label} #{i}" for i in range(len(rows) + 1, n + 1)]
                 return rows
 
-            def _add_matrix(iso, pkg_missing, pkg_extra, return_missing, inbound_extra, pkg_unknown=None, day=None):
-                pkg_missing = _uniq(pkg_missing)
+            def _add_matrix(iso, pkg_missing, pkg_extra, return_missing, inbound_extra, pkg_unknown=None, day=None,
+                            pkg_missing_count=None):
+                pkg_missing_raw = [str(v or "").strip() for v in (pkg_missing or []) if str(v or "").strip()]
+                pkg_missing = _uniq(pkg_missing_raw)
                 pkg_extra = [str(v or "").strip() for v in (pkg_extra or []) if str(v or "").strip()]
                 return_missing = _uniq(return_missing)
                 inbound_extra = [str(v or "").strip() for v in (inbound_extra or []) if str(v or "").strip()]
@@ -2574,6 +2581,11 @@ def load_week_summary():
                 _report_return_missing.extend({"date": iso, "age": _age, "label": row}
                                               for row in rem_return_missing_rows)
                 rem_pkg_missing = len(rem_pkg_missing_rows)
+                try:
+                    if pkg_missing_count is not None:
+                        rem_pkg_missing = max(rem_pkg_missing, int(pkg_missing_count or 0))
+                except Exception:
+                    pass
                 rem_inbound_extra = len(rem_inbound_extra_rows)
                 rem_return_missing = len(rem_return_missing_rows)
                 rem_pkg_extra = len(display_pkg_extra_rows)
@@ -2598,6 +2610,11 @@ def load_week_summary():
                     day["chot_video"] = chot           # đưa kết quả chốt lên bảng 30 ngày
                 def _disp(vals, prefer=""):
                     return [_waybill_display(v, prefer) for v in vals if _waybill_display(v, prefer)]
+                def _disp_counted(vals, prefer="", raw_vals=None):
+                    base = _disp(vals, prefer)
+                    raw_disp = [_waybill_display(v, prefer) for v in (raw_vals or vals) if _waybill_display(v, prefer)]
+                    cnt = _Ct(raw_disp)
+                    return [f"{v} ×{cnt[v]}" if cnt.get(v, 0) > 1 else v for v in base]
                 def _matched_waybills(a, b, a_prefer, b_prefer):
                     left = _waybill_display(a, a_prefer)
                     right = _waybill_display(b, b_prefer)
@@ -2612,8 +2629,8 @@ def load_week_summary():
                     "Nhóm tuổi": _audit_age(iso),
                     "Mã đối chiếu": _compare_code_lines(rem_return_missing_rows, rem_pkg_missing_rows,
                                                         display_pkg_extra_rows, rem_inbound_extra_rows),
-                    "Đóng thiếu SL": len(rem_pkg_missing_rows),
-                    "Đóng thiếu": _short_codes(_disp(rem_pkg_missing_rows, "package")),
+                    "Đóng thiếu SL": rem_pkg_missing,
+                    "Đóng thiếu": _short_codes(_disp_counted(rem_pkg_missing_rows, "package", pkg_missing_raw)),
                     "Đóng dư SL": len(display_pkg_extra_rows),
                     "Đóng dư": _short_codes(_disp(display_pkg_extra_rows, "package")),
                     "Hoàn thiếu SL": len(rem_return_missing_rows),
@@ -2690,9 +2707,14 @@ def load_week_summary():
                 _apply_picklog_soan_to_daily(_a4_rep, _ps.get("rows") or [], _a4_dvr, _ps.get("dup_orders") or 0)
                 _vr = (_a4_rep.get("video_recon") or {}) if isinstance(_a4_rep, dict) else {}
                 if _vr.get("available"):
+                    _missing_codes = [
+                        str(c or "").strip() for c in (_vr.get("missing_codes") or [])
+                        if str(c or "").strip()
+                    ]
                     _a4_package_recon_by_day[_today_iso] = {
                         "matched": int(_vr.get("open_with_video") or 0),
-                        "missing": [str(c or "").strip() for c in (_vr.get("missing_codes") or []) if str(c or "").strip()],
+                        "missing": _missing_codes,
+                        "missing_count": int(_vr.get("missing_video") or len(_missing_codes)),
                         "dup": dict(_vr.get("dup") or {}),
                     }
             except Exception:
@@ -2872,17 +2894,22 @@ def load_week_summary():
                     day["ghi_chu"] = (_old_note + " · " + _extra_note).strip(" ·")
                 if _a4_pkg_recon:
                     _pkg_missing = list(_a4_pkg_recon.get("missing") or [])
+                    _pkg_missing_count = int(_a4_pkg_recon.get("missing_count") or len(_pkg_missing))
                     _pkg_extra = []
                     _pkg_unknown = []
                 else:
                     _pkg_missing = _package_missing_by_day.get(iso, [])
+                    _pkg_missing_count = None
                     _pkg_extra = _package_extra_by_day.get(iso, [])
                     _pkg_unknown = _package_unknown_unmatched_by_day.get(iso, [])
                 _return_missing = _return_missing_by_day.get(iso, [])
                 _inbound_extra = _inbound_extra_by_day.get(iso, [])
                 _pkg_miss_vs_inbound_extra = _cross_matches(_pkg_missing, _inbound_extra)
                 _return_miss_vs_pkg_extra = _cross_matches(_return_missing, _pkg_extra)
-                _add_matrix(iso, _pkg_missing, _pkg_extra, _return_missing, _inbound_extra, _pkg_unknown, day)
+                _add_matrix(
+                    iso, _pkg_missing, _pkg_extra, _return_missing, _inbound_extra,
+                    _pkg_unknown, day, pkg_missing_count=_pkg_missing_count,
+                )
                 _add_audit(
                     iso, "Thiếu video đóng hàng", _pkg_missing,
                     _inbound_extra,
@@ -2949,6 +2976,7 @@ def load_week_summary():
                         _inbound_extra_by_day.get(_dd, []),
                         [],
                         _day_by_iso.get(_dd),
+                        pkg_missing_count=int((_rec or {}).get("missing_count") or len(_missing)),
                     )
                 _day_order = {k: i for i, k in enumerate(_day_by_iso)}
                 _video_matrix.sort(
