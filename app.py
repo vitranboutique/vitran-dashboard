@@ -9915,7 +9915,7 @@ def _render_returns():
                        show_type=True, pg_key="ckn", per_page=50, show_ticket=True)
             st.subheader("⛔ Đơn không cần KN — đã có kết luận", anchor="don-khong-can-kn")
             _return_info("Các đơn trong bảng detail đã có ghi chú KHÔNG CẦN KN: đã nhận hàng, đã nhận/được đền tiền, hoặc shop đóng thiếu thật. Nhóm này không trộn vào danh sách CẦN KN.")
-            _sub_table(_khong_can_kn_list, 300, show_reason=True, pg_key="khong_can_kn")
+            _sub_table(_khong_can_kn_list, 300, show_reason=True, show_type=True, pg_key="khong_can_kn")
             st.markdown(f"**🏷️ + Đơn Dohana gắn tag ĐÓNG HÀNG (đóng thiếu SP) — {len(_dtag_nokn)} đơn** "
                         f"<span style='color:#6b7280'>(trong đó {len(_dtag_nokn_only)} chưa khớp bảng chi tiết)</span>",
                         unsafe_allow_html=True)
@@ -9957,7 +9957,7 @@ def _render_returns():
                       and d["ship_code"] != "no_return"]
             if _other:
                 st.markdown(f"### Khác — {len(_other)} đơn")
-                _sub_table(_other, 200, show_reason=True, pg_key="other")
+                _sub_table(_other, 200, show_reason=True, show_type=True, pg_key="other")
             if _closed_returns_with_waybill_detail:
                 st.markdown(f"### 🧭 Đơn trả hàng bị đóng có VĐ trả về — {len(_closed_returns_with_waybill_detail)} đơn")
                 if _closed_returns_loaded_full_year:
