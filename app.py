@@ -1945,6 +1945,12 @@ def _dohana_merge(live):
     if picklog.configured() and isinstance(live, dict) and live.get("records"):
         try:
             picklog.merge_dohana_videos(live["records"])
+            # Bản kho có thể đang cache record cũ chưa có tag. Xóa ngay sau khi
+            # merge để báo cáo A4 đọc lại tag vừa đồng bộ, không chờ hết TTL.
+            try:
+                load_dohana_video_store.clear()
+            except Exception:
+                pass
         except Exception:
             pass
     return live
@@ -2002,7 +2008,7 @@ def _dohana_video_active(row):
     return not any(token in status for token in ("DELETED", "REMOVED", "DAXOA", "XOA"))
 
 
-@st.cache_data(ttl=3600, show_spinner=False)   # 1 GIỜ: gọi Dohana thật thưa để khỏi bị phạt 429
+@st.cache_data(ttl=300, show_spinner=False)   # 5 phút: Dohana cho 10 req/s; client vẫn throttle ~3 req/s
 def load_dohana():
     live = dohana.today_package_videos()
     if live is not None:
@@ -2010,7 +2016,7 @@ def load_dohana():
     return _dohana_pkg_from_store(_today_iso_vn()) if picklog.configured() else None
 
 
-@st.cache_data(ttl=3600, show_spinner=False)   # 1 GIỜ: gọi Dohana thật thưa để khỏi bị phạt 429
+@st.cache_data(ttl=300, show_spinner=False)   # 5 phút để clip/tag mới lên A4 đúng như chú thích giao diện
 def load_dohana_inbound():
     live = dohana.inbound_videos()
     if live is not None:
@@ -2932,6 +2938,11 @@ def load_week_summary():
                     _fresh += _inb_live["records"]
                 if _fresh:
                     picklog.merge_dohana_videos(_fresh)
+                    # Kho tag vừa thay đổi; không dùng tiếp bản cache 15 phút cũ.
+                    try:
+                        load_dohana_video_store.clear()
+                    except Exception:
+                        pass
             except Exception:
                 _package_live_ok = False
                 _inbound_live_ok = False
