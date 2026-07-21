@@ -2139,6 +2139,22 @@ def _apply_picklog_soan_to_daily(rep, rows, dvr=None, dup_orders=0):
     if dvr is not None and code_groups:
         vset = set((dvr.get("codes") or {}).keys())
         video_total = int(dvr.get("total") or 0)
+        # load_dohana() cache 1 GIỜ (chống 429) → clip vừa quay có thể CHƯA vào dvr → báo "thiếu video" oan.
+        # Bù thêm mã video ĐÓNG cùng ngày từ KHO LƯU (Gist, sync ~5' nên thường mới hơn) để khớp CHÍNH XÁC.
+        try:
+            _s = str(rep.get("date") or "").strip()
+            _m = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})$", _s)
+            _riso = (f"{int(_m.group(3)):04d}-{int(_m.group(2)):02d}-{int(_m.group(1)):02d}"
+                     if _m else _today_iso_vn())
+            for _rec in (load_dohana_video_store() or []):
+                if (str(_rec.get("type") or "package") == "package"
+                        and str(_rec.get("date") or "") == _riso
+                        and _dohana_video_active(_rec)):
+                    _vc = str(_rec.get("code") or "").strip()
+                    if _vc:
+                        vset.add(_vc)
+        except Exception:
+            pass
         matched, font_fixed = match_packing_videos(code_groups, vset)
         used_video_codes = {str(v[0]) for v in matched.values() if v and v[0]}
 
@@ -2216,7 +2232,14 @@ def _apply_picklog_soan_to_daily(rep, rows, dvr=None, dup_orders=0):
         if remaining_idx and unassigned_video_count >= len(remaining_idx):
             for i in remaining_idx:
                 matched[i] = ("__count_only__", "count")
-        missing = [code_labels[i] for i in range(len(code_groups)) if i not in matched]
+        _vset_norm = {_ascii_code(v) for v in vset if _ascii_code(v)}
+        def _missing_label(i):
+            _grp = code_groups[i] if i < len(code_groups) else []
+            # Hiện mã THỰC SỰ chưa có video (không nằm trong vset) để tra Dohana khớp đúng thực tế —
+            # tránh gán nhãn 1 mã aliased vốn ĐÃ có clip (khiến tưởng "báo sai" như ca SPXVN060117232017).
+            _absent = [c for c in _grp if _ascii_code(c) and _ascii_code(c) not in _vset_norm]
+            return _prefer_video_lookup_code(_absent) if _absent else code_labels[i]
+        missing = [_missing_label(i) for i in range(len(code_groups)) if i not in matched]
         unknown = max(0, total_orders - len(code_groups))
         if unknown:
             missing += [f"{unknown} đơn phiếu nhặt chưa lưu mã đối chiếu"]
