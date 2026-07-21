@@ -55,13 +55,13 @@ _CSS = """
   .sign .hint{color:#9aa3af;font-size:.86em;}
   .sign .space{height:3.2em;}
   .foot{margin-top:.36em;text-align:center;font-size:.73em;color:#9aa3af;border-top:1px solid var(--line);padding-top:.2em;}
-  .page2{page-break-before:always;page:return-landscape;width:297mm;height:210mm;}
-  .page2 .pfit{padding:5mm 6mm 4mm;}
+  .page2{page-break-before:always;page:return-portrait;width:210mm;height:297mm;}
+  .page2 .pfit{padding:7mm 7mm 5mm;}
   .page2 .hd{padding-bottom:.2em;border-bottom-width:2px;}
   .page2 .hd .brand{font-size:1.22em;}
   .page2 .title{margin:.24em 0 .04em;font-size:1.08em;}
   .page2 .title-sub{margin-bottom:.2em;}
-  .page2 .kpis.kf5{gap:.22em;margin:.2em 0 .22em;}
+  .page2 .kpis.kf5{grid-template-columns:repeat(3,1fr);gap:.28em;margin:.24em 0 .3em;}
   .page2 .kf5 .kpi{padding:.18em .34em;}
   .page2 .kf5 .kpi .l{font-size:.9em;line-height:1.22;}
   .page2 .kf5 .kpi .v{font-size:1.62em;}
@@ -70,7 +70,7 @@ _CSS = """
   .page2 .warn .wb{font-size:.88em;line-height:1.32;}
   .page2 .warn .wc{font-size:.94em;}
   .page2 .sec{margin:.32em 0 .16em;padding:.18em .5em;}
-  .return-table{font-size:1.24em;line-height:1.2;}
+  .return-table{font-size:1.08em;line-height:1.22;}
   .return-table th,.return-table td{padding:.22em .36em;}
   .return-table th:first-child,.return-table td:first-child{white-space:nowrap;padding-left:.15em;padding-right:.15em;}
   .mono-code{white-space:nowrap;word-break:normal;overflow-wrap:normal;font-size:.9em;letter-spacing:0;font-variant-numeric:tabular-nums;}
@@ -108,7 +108,7 @@ _CSS = """
   .itip:hover .ipop{display:block;}
   .sign.s2{grid-template-columns:repeat(2,1fr);max-width:70%;margin-left:auto;margin-right:auto;}
   @page{size:A4 portrait;margin:0;}
-  @page return-landscape{size:A4 landscape;margin:0;}
+  @page return-portrait{size:A4 portrait;margin:0;}
   @media print{
     body{background:#fff;} .toolbar{display:none;}
     .page{box-shadow:none;margin:0;}
@@ -412,12 +412,12 @@ def _short_store_label(value):
     return brand
 
 
-def _recon_rows(rows, start=0, clip_on=True, show_tag=True):
+def _recon_rows(rows, start=0, clip_on=True):
     """Đối chiếu mỗi sự kiện hoàn, nhóm ĐVVC trước rồi đến loại trả hàng."""
     body = ""
     _prev_carrier = None
     _prev_lt = None
-    _cols = 6 if show_tag else 5
+    _cols = 5
     for i, r in enumerate(rows, start + 1):
         _carrier = _return_carrier_label(r)
         if _carrier != _prev_carrier:
@@ -452,6 +452,11 @@ def _recon_rows(rows, start=0, clip_on=True, show_tag=True):
         else:   # Dohana 429/lỗi: KHÔNG kết luận "chưa quay" — chỉ là tạm không lấy được clip
             clip_cell = '<span style="color:#9ca3af">— Dohana tạm không lấy được clip</span>'
             clip_td = ''
+        _row_tag = _tag_label(r.get("clip_tag"), r.get("clip_tag_id"))
+        if _row_tag:
+            clip_cell += (f'<div style="margin-top:2px"><span style="color:#6d28d9;font-weight:800;'
+                          f'background:#f3e8ff;padding:1px 5px;border-radius:4px">'
+                          f'🏷️ {_e(str(_row_tag))}</span></div>')
         # ── Cột 2: ĐÃ NHẬN HÀNG TRẢ (Sapo) ──
         if r.get("has_sapo"):
             _ss = []
@@ -494,12 +499,8 @@ def _recon_rows(rows, start=0, clip_on=True, show_tag=True):
                              f'🏪 {_e(_short_store_label(r.get("gian_hang")))}</div>'
                              f'<span style="color:#dc2626;font-weight:800">{_rsn}</span>')
                 sapo_td = ' style="background:#fef2f2"'
-        # ── SKU · Loại trả · Tag ──
+        # ── SKU · Loại trả ──
         sku = _e(str(r.get("sku") or "—"))
-        tag = _tag_label(r.get("clip_tag"), r.get("clip_tag_id"))
-        tag_cell = (f'<span style="color:#6d28d9;font-weight:800;background:#f3e8ff;'
-                    f'padding:1px 5px;border-radius:4px">🏷️ {_e(str(tag))}</span>'
-                    if tag else '<span style="color:#cbd5e1">—</span>')
         _vdg = str(r.get("vd_gui") or "")
         vdg_cell = (f'<span class="mono-code">{_e(_vdg)}</span>' if _vdg and _vdg != r.get("order_code")
                     else '<span style="color:#cbd5e1">—</span>')
@@ -523,9 +524,7 @@ def _recon_rows(rows, start=0, clip_on=True, show_tag=True):
                  f'<td class="l"{clip_td}>{clip_cell}</td>'
                  f'<td class="l"{sapo_td}>{sapo_cell}</td>'
                  f'<td class="l">{transport_cell}</td>'
-                 f'<td class="l">{sku}</td>'
-                 + (f'<td class="l">{tag_cell}</td>' if show_tag else '')
-                 + '</tr>')
+                 f'<td class="l">{sku}</td></tr>')
     return body or f'<tr><td colspan="{_cols}">Hôm nay không có đơn hoàn / clip khui hàng.</td></tr>'
 
 
@@ -950,14 +949,12 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
   <div class="foot">VITRAN BOUTIQUE · Trang 1/2 — Vận hành đơn giao đi{_p1note} · {_e(rep["date"])}</div>
 </div></div>"""
 
-    # ===== TRANG 2: bảng 6 cột, chia ít đơn mỗi tờ để chữ đọc rõ khi in A4 =====
-    _show_tag = any(_tag_label(r.get("clip_tag"), r.get("clip_tag_id")) for r in recon)
+    # ===== TRANG 2: bảng 5 cột; tag (nếu có) nằm ngay trong cột clip =====
     _thead = ('<thead><tr><th>#</th>'
               '<th class="l">🎥 Clip khui hàng (Dohana)<br><span style="font-weight:600;font-size:.85em">mã · thời lượng · giờ quay</span></th>'
               '<th class="l">📥 Đơn hàng · gian hàng<br><span style="font-weight:600;font-size:.85em">giờ nhận · NV nhập kho</span></th>'
               '<th class="l">🚚 Mã vận chuyển<br><span style="font-weight:600;font-size:.85em">VĐ đi · VĐ hoàn · mã trả</span></th>'
               '<th class="l">Sản phẩm (SKU × SL)</th>'
-              + ('<th class="l">🏷️ Tag app đóng hàng</th>' if _show_tag else '')
               + '</tr></thead>')
     _legend = ('<div style="font-size:.72em;color:#6b7280;margin:.25em 0 0">🔎 <b>Mã clip</b> = tra trên '
                '<b>app đóng hàng (Dohana)</b>. <b>Mã đơn</b> = tra trên <b>Sapo</b> và <b>sàn TMĐT</b>. '
@@ -979,7 +976,7 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
         ),
     )
     # Số đơn/tờ (auto-fit tự co chữ nên không lo tràn/mất dòng; giữ vừa phải cho chữ dễ đọc).
-    _FIRST, _REST = 9, 12
+    _FIRST, _REST = 11, 15
     _chunks, _starts, _i = [], [], 0
     while _i < len(recon):
         _sz = _FIRST if _i == 0 else _REST
@@ -1008,7 +1005,7 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
   <div class="title-sub">Phần 2 — Hàng hoàn nhận về · nhập kho · video khui hàng{_sub}</div>
   {_kpi}
   <div class="sec">A. Đối chiếu Clip khui hàng ↔ Đã nhận hàng trả{_badge}</div>
-  <table class="return-table" style="table-layout:fixed;overflow-wrap:anywhere"><colgroup>{'<col style="width:3%"><col style="width:20%"><col style="width:29%"><col style="width:29%"><col style="width:19%">' if not _show_tag else '<col style="width:3%"><col style="width:17%"><col style="width:27%"><col style="width:27%"><col style="width:16%"><col style="width:10%">'}</colgroup>{_thead}<tbody>{_recon_rows(_chunk, start=_starts[_si], clip_on=clip_on, show_tag=_show_tag)}</tbody></table>
+  <table class="return-table" style="table-layout:fixed;overflow-wrap:anywhere"><colgroup><col style="width:4%"><col style="width:23%"><col style="width:28%"><col style="width:30%"><col style="width:15%"></colgroup>{_thead}<tbody>{_recon_rows(_chunk, start=_starts[_si], clip_on=clip_on)}</tbody></table>
   {_tail}
   <div class="foot">VITRAN BOUTIQUE · {_pno} — Đơn hàng hoàn trả · {_e(rep["date"])}</div>
 </div></div>"""
