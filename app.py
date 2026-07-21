@@ -808,11 +808,10 @@ def _render_week_video_audit(data):
 
             def _chot_cell(r):
                 chot = str(r.get("Chốt") or "").strip()
-                content = _video_audit_chot_html(r, chot, str(r.get("Ngày") or ""))
                 tip = chot or "Đủ"
-                bg = "#fff7ed" if "<a " in content else "#dcfce7"
+                bg = "#dcfce7" if chot.startswith("Đủ") else "#fee2e2"
                 return (f'<td title="{_esc(tip)}" style="padding:6px 8px;border:1px solid #d6dce6;'
-                        f'background:{bg};text-align:center;font-weight:900;vertical-align:top">{content}</td>')
+                        f'background:{bg};font-weight:800;vertical-align:top">{_esc(chot)}</td>')
 
             body = []
             for _, r in df.iterrows():
