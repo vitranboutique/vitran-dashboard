@@ -2259,9 +2259,14 @@ def load_week_summary():
                 # Nguồn mã ngày cũ có thể chứa toàn bộ video vì đã mất danh sách
                 # phiếu để ghép. Chỉ lấy đúng số chênh đang báo ở bảng tổng hợp
                 # (ví dụ 161 video - 152 đơn = 9 mã dư, không phải 161).
-                raw_pkg_missing_rows = _limit_rows(pkg_missing, limits.get("pkg_missing"))
+                # Ngày CÓ phiếu soạn → đã ghép TỪNG video, danh sách thiếu/dư là mã THẬT chưa khớp
+                # → hiện ĐẦY ĐỦ, KHÔNG cắt theo số chênh ròng. Cắt ròng sẽ nuốt mất mã hoàn quay
+                # nhầm thành video đóng khi ngày đó cũng có đơn chưa quay (vd 2 thiếu + 1 dư → gộp còn 1 thiếu, mất mã dư).
+                # Ngày MẤT phiếu (kho cũ, chưa từng in phiếu) → không ghép được → vẫn cắt theo số chênh để tránh nổ toàn bộ video thành "dư".
+                _real_day = iso in _real_match_days
+                raw_pkg_missing_rows = _limit_rows(pkg_missing, None if _real_day else limits.get("pkg_missing"))
                 raw_pkg_extra_rows = _limit_rows(
-                    list(pkg_extra) + list(pkg_unknown_rows), limits.get("pkg_extra")
+                    list(pkg_extra) + list(pkg_unknown_rows), None if _real_day else limits.get("pkg_extra")
                 )
                 raw_return_missing_rows = _limit_rows(return_missing, limits.get("return_missing"))
                 raw_inbound_extra_rows = _limit_rows(inbound_extra, limits.get("inbound_extra"))
@@ -2388,6 +2393,7 @@ def load_week_summary():
             _mpref = (data.get("days") or [{}])[0].get("iso", "")[:7]   # 'YYYY-MM' tháng này
 
             _package_missing_by_day, _package_extra_by_day, _package_unknown_unmatched_by_day = {}, {}, {}
+            _real_match_days = set()   # ngày CÓ danh sách phiếu soạn để ghép TỪNG video (ghép thật, không suy ra từ số chênh ròng)
             try:
                 _package_days = set(package_codes_by_day) | set(package_unknown_by_day)
                 if "_psumm" in locals():
@@ -2405,6 +2411,8 @@ def load_week_summary():
                                 _group = [_code]
                             _groups.append(_match_codes_from_group(_group, _code))
                             _labels.append(_package_context_label(_group, _code))
+                    if _groups:
+                        _real_match_days.add(_iso)   # có phiếu → thiếu/dư sau đây là mã THẬT chưa khớp
                     _pkg_codes = list(package_codes_by_day.get(_iso, [])) + list(package_unknown_by_day.get(_iso, []))
                     _matched, _matched_vid_idxs = _match_video_occurrences(_groups, _pkg_codes) if _groups else ({}, set())
                     _missing = [_labels[i] for i in range(len(_labels)) if i not in _matched]
@@ -2422,6 +2430,7 @@ def load_week_summary():
                     _package_unknown_unmatched_by_day[_iso] = _unknown_extra
             except Exception:
                 _package_missing_by_day, _package_extra_by_day, _package_unknown_unmatched_by_day = {}, {}, {}
+                _real_match_days = set()
 
             # Vid hoàn phải là clip KHỚP đơn hoàn, không phải tổng clip inbound thô.
             # Nếu đếm thô, video quay dư/sai mã/ngày có thể che mất các đơn thật sự chưa quay.
