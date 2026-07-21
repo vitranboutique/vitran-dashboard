@@ -683,6 +683,42 @@ def _render_week_video_audit(data):
                         _phits.append(f"{_rday} → **{_col}**")
             st.markdown("**Đang nằm ở:** " + (" · ".join(_phits[:15]) if _phits
                         else "_không thấy ở cột thiếu/dư nào trong bảng dưới_"))
+            # ── DẤU VẾT ĐỐI CHIẾU BÊN ĐÓNG: vì sao vào (hay KHÔNG vào) cột "Đóng dư" ──
+            _trace = (data or {}).get("video_trace_by_day") or {}
+            _trace_rows = []
+            for _td, _tv in _trace.items():
+                if not isinstance(_tv, dict):
+                    continue
+                _in = lambda lst: any(_pn and _pn in _ascii_code(x) for x in (lst or []))
+                _is_soan = _in(_tv.get("soan"))
+                _is_video = _in(_tv.get("pkg_video"))
+                _is_matched = _in(_tv.get("pkg_matched"))
+                _is_extra = _in(_tv.get("pkg_extra"))
+                if not (_is_soan or _is_video):
+                    continue
+                if _is_matched:
+                    _kl = "✅ KHỚP soạn → không tính dư (đúng: có soạn mã này)"
+                elif _is_extra:
+                    _kl = "🟦 Video đóng KHÔNG khớp soạn → PHẢI vào 'Đóng dư'"
+                elif _is_video and not _tv.get("has_soan_list"):
+                    _kl = "⚠️ Có video nhưng NGÀY MẤT phiếu soạn → không ghép được"
+                else:
+                    _kl = "—"
+                _trace_rows.append({
+                    "Ngày": _td,
+                    "Có trong SOẠN?": "có" if _is_soan else "không",
+                    "Là video ĐÓNG?": "có" if _is_video else "không",
+                    "Đã khớp soạn?": "có" if _is_matched else "không",
+                    "Xếp vào Đóng dư?": "có" if _is_extra else "không",
+                    "Kết luận": _kl,
+                })
+            if _trace_rows:
+                st.markdown("**Dấu vết bên ĐÓNG (vì sao vào/không vào cột Đóng dư):**")
+                st.dataframe(pd.DataFrame(_trace_rows), hide_index=True, use_container_width=True)
+                _ctx = (data or {}).get("order_context_by_code") or {}
+                _ctx_lbl = _ctx.get(_pn) or _ctx.get(_probe)
+                if _ctx_lbl:
+                    st.caption(f"Nhãn ngữ cảnh của mã này: `{_ctx_lbl}`")
         df = pd.DataFrame(rows)
         if "Nhóm tuổi" in df.columns:
             _age_filter = st.radio(
@@ -1998,6 +2034,12 @@ def load_week_summary():
                     shown = _short_codes(_identifier_tokens(match.group(1))) if match else ""
                     if shown:
                         return shown
+                # Mã đóng DƯ thực chất là 1 VĐ hoàn quay nhầm bên đóng → nhãn không có ô "VĐ đi/đóng".
+                # Vẫn phải hiện mã ở cột "Đóng dư", nếu không cả dòng bị lọc mất (đúng ca 861877934768).
+                if prefer != "return":
+                    _wbs = [t for t in _identifier_tokens(raw) if _is_waybill_code(t)]
+                    if _wbs:
+                        return _short_codes(_wbs)
                 return ""
 
             def _is_waybill_code(code):
@@ -2065,6 +2107,16 @@ def load_week_summary():
                     if lbl:
                         return lbl
                 return _package_label(group, video_code)
+
+            def _extra_package_label(code):
+                # Nhãn cho video đóng DƯ: BẮT BUỘC chứa chính mã video này — để (1) hiện được ở cột
+                # "Đóng dư" và (2) bắt cặp lộn-mục với dòng "Hoàn thiếu" cùng mã. Nếu context-label
+                # dựng từ mã đơn/mã trả KHÁC (không chứa mã video) → coi mã video là VĐ đóng.
+                key = _ascii_code(code)
+                lbl = _order_context_label(code)
+                if lbl and key and key in {_ascii_code(t) for t in _codes_from_item(lbl)}:
+                    return lbl
+                return _package_label([code], code)
 
             def _compare_code_line(item):
                 raw = str(item or "")
@@ -2394,6 +2446,7 @@ def load_week_summary():
 
             _package_missing_by_day, _package_extra_by_day, _package_unknown_unmatched_by_day = {}, {}, {}
             _real_match_days = set()   # ngày CÓ danh sách phiếu soạn để ghép TỪNG video (ghép thật, không suy ra từ số chênh ròng)
+            _video_trace_by_day = {}   # dấu vết soi 1 mã: soạn / video đóng / đã khớp / xếp dư — để chẩn đoán vì sao vào cột nào
             try:
                 _package_days = set(package_codes_by_day) | set(package_unknown_by_day)
                 if "_psumm" in locals():
@@ -2417,7 +2470,14 @@ def load_week_summary():
                     _matched, _matched_vid_idxs = _match_video_occurrences(_groups, _pkg_codes) if _groups else ({}, set())
                     _missing = [_labels[i] for i in range(len(_labels)) if i not in _matched]
                     _extra_raw = [c for i, c in enumerate(_pkg_codes) if i not in _matched_vid_idxs]
-                    _extra = [_package_context_label([c], c) for c in _extra_raw
+                    _video_trace_by_day[_iso] = {
+                        "soan": sorted({str(t) for g in _groups for t in (g or [])}),
+                        "pkg_video": [str(c) for c in _pkg_codes],
+                        "pkg_matched": [str(_pkg_codes[vi]) for (vi, _vc) in _matched.values()],
+                        "pkg_extra": [str(c) for c in _extra_raw],
+                        "has_soan_list": bool(_groups),
+                    }
+                    _extra = [_extra_package_label(c) for c in _extra_raw
                               if _is_waybill_code(c) or _order_context_label(c) or _is_order_code(c)]
                     _unknown_extra = [c for c in _extra_raw
                                       if not (_is_waybill_code(c) or _order_context_label(c) or _is_order_code(c))]
@@ -2593,6 +2653,7 @@ def load_week_summary():
             data["video_audit_matrix"] = _video_matrix
             data["video_audit"] = _video_audit
             data["report_return_video_missing"] = _report_return_missing
+            data["video_trace_by_day"] = _video_trace_by_day
     except Exception:
         pass
     return data
