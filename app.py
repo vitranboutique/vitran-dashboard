@@ -419,7 +419,8 @@ def _video_audit_chip(icon, n, day, kind, fg, bgc, tip):
 
 
 def _video_audit_chot_html(row=None, chot="", day=""):
-    row = row or {}
+    if row is None:
+        row = {}
     day = day or row.get("Ngày") or row.get("Ngay") or row.get("iso")
     chips = "".join([
         _video_audit_chip("🎥📦-", row.get("Đóng thiếu SL"), day, "pkg-miss", "#b91c1c", "#fee2e2", "Thiếu video đóng hàng"),
