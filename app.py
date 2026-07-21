@@ -707,7 +707,7 @@ def _render_week_video_audit(data):
     rows = matrix_rows or (data or {}).get("video_audit") or []
     if not rows:
         return
-    with st.expander(f"🔎 Đối chiếu mã dư/thiếu video đóng hàng ↔ khui hàng — {len(rows)} dòng", expanded=False):
+    with st.expander(f"🔎 Đối chiếu mã dư/thiếu video đóng hàng ↔ khui hàng — {len(rows)} dòng", expanded=True):
         st.caption(
             "Mỗi dòng là 1 ngày. App tự khớp mã thiếu bên này với mã dư bên kia; ô vàng là khả năng cao quay lộn mục. "
             "Cột Chốt là kết quả sau khi đã bù trừ các mã khớp lộn."
@@ -2520,6 +2520,24 @@ def load_week_summary():
                     inbound_rows.append(r)
                     if tn:
                         thoan.setdefault(d, _Ct())[tn] += 1
+            # Ngày hiện tại phải dùng đúng recon của báo cáo A4. A4 tính "video đóng" theo số
+            # đơn trong phiếu nhặt đã KHỚP video, không phải tổng clip thô trong Dohana.
+            _a4_package_recon_by_day = {}
+            try:
+                _today_iso = _today_iso_vn()
+                _a4_rep = L.get_daily_report(make_fetch_json(build_session()), target_date=date.fromisoformat(_today_iso))
+                _a4_dvr = load_dohana()
+                _ps = picklog.read_date_summary(_today_iso)
+                _apply_picklog_soan_to_daily(_a4_rep, _ps.get("rows") or [], _a4_dvr, _ps.get("dup_orders") or 0)
+                _vr = (_a4_rep.get("video_recon") or {}) if isinstance(_a4_rep, dict) else {}
+                if _vr.get("available"):
+                    _a4_package_recon_by_day[_today_iso] = {
+                        "matched": int(_vr.get("open_with_video") or 0),
+                        "missing": [str(c or "").strip() for c in (_vr.get("missing_codes") or []) if str(c or "").strip()],
+                        "dup": dict(_vr.get("dup") or {}),
+                    }
+            except Exception:
+                _a4_package_recon_by_day = {}
             _mpref = (data.get("days") or [{}])[0].get("iso", "")[:7]   # 'YYYY-MM' tháng này
 
             _package_missing_by_day, _package_extra_by_day, _package_unknown_unmatched_by_day = {}, {}, {}
@@ -2681,6 +2699,9 @@ def load_week_summary():
             for day in data.get("days", []):
                 iso = day.get("iso")
                 day["vid_dong"] = vdong.get(iso, 0)
+                _a4_pkg_recon = _a4_package_recon_by_day.get(str(iso or ""))
+                if _a4_pkg_recon:
+                    day["vid_dong"] = int(_a4_pkg_recon.get("matched") or 0)
                 day["vid_hoan_raw"] = vhoan.get(iso, 0)
                 day["vid_hoan"] = _matched_vhoan.get(iso, vhoan.get(iso, 0))
                 day["tag_dong"] = _tagstr(tdong.get(iso))
@@ -2689,11 +2710,16 @@ def load_week_summary():
                     _old_note = str(day.get("ghi_chu") or "").strip()
                     _extra_note = f"Vid hoàn thô {day.get('vid_hoan_raw')} / khớp đơn {day.get('vid_hoan')}"
                     day["ghi_chu"] = (_old_note + " · " + _extra_note).strip(" ·")
-                _pkg_missing = _package_missing_by_day.get(iso, [])
-                _pkg_extra = _package_extra_by_day.get(iso, [])
+                if _a4_pkg_recon:
+                    _pkg_missing = list(_a4_pkg_recon.get("missing") or [])
+                    _pkg_extra = []
+                    _pkg_unknown = []
+                else:
+                    _pkg_missing = _package_missing_by_day.get(iso, [])
+                    _pkg_extra = _package_extra_by_day.get(iso, [])
+                    _pkg_unknown = _package_unknown_unmatched_by_day.get(iso, [])
                 _return_missing = _return_missing_by_day.get(iso, [])
                 _inbound_extra = _inbound_extra_by_day.get(iso, [])
-                _pkg_unknown = _package_unknown_unmatched_by_day.get(iso, [])
                 _pkg_miss_vs_inbound_extra = _cross_matches(_pkg_missing, _inbound_extra)
                 _return_miss_vs_pkg_extra = _cross_matches(_return_missing, _pkg_extra)
                 _add_matrix(iso, _pkg_missing, _pkg_extra, _return_missing, _inbound_extra, _pkg_unknown, day)
@@ -2724,6 +2750,9 @@ def load_week_summary():
             if isinstance(data.get("month"), dict):
                 m = data["month"]
                 m["vid_dong"] = _msum(vdong)
+                for _dd, _rec in (_a4_package_recon_by_day or {}).items():
+                    if str(_dd).startswith(_mpref):
+                        m["vid_dong"] += int(_rec.get("matched") or 0) - int(vdong.get(_dd, 0) or 0)
                 m["vid_hoan_raw"] = _msum(vhoan)
                 m["vid_hoan"] = _msum(_matched_vhoan) if _matched_vhoan else _msum(vhoan)
                 m["tag_dong"], m["tag_hoan"] = _mtag(tdong), _mtag(thoan)
@@ -7086,10 +7115,11 @@ def _render_daily():
         if st.button("🔄 Cập nhật video Dohana ngay", key="week_dohana_refresh_btn",
                      help="Dùng khi app đóng hàng đã có clip mới nhưng bảng 30 ngày vẫn báo thiếu; nút này xoá cache và hút lại Dohana."):
             load_week_summary.clear()
-            try:
-                load_dohana_store.clear()
-            except Exception:
-                pass
+            for _clear_fn in (load_dohana, load_dohana_inbound, load_dohana_videos, load_dohana_video_store):
+                try:
+                    _clear_fn.clear()
+                except Exception:
+                    pass
             st.rerun()
         try:
             _wk = load_week_summary()
