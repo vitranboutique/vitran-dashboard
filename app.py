@@ -9912,7 +9912,7 @@ def _render_returns():
                     st.session_state["returns_dohana_deep_lookup"] = True
                     st.rerun()
             _sub_table(_ckn_render_list, 520, show_reason=True, show_location=True,
-                       pg_key="ckn", per_page=50, show_ticket=True)
+                       show_type=True, pg_key="ckn", per_page=50, show_ticket=True)
             st.subheader("⛔ Đơn không cần KN — đã có kết luận", anchor="don-khong-can-kn")
             _return_info("Các đơn trong bảng detail đã có ghi chú KHÔNG CẦN KN: đã nhận hàng, đã nhận/được đền tiền, hoặc shop đóng thiếu thật. Nhóm này không trộn vào danh sách CẦN KN.")
             _sub_table(_khong_can_kn_list, 300, show_reason=True, pg_key="khong_can_kn")
