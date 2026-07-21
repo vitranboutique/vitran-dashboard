@@ -10152,12 +10152,17 @@ def _render_returns():
                 q = _search_norm(code)
                 if not q:
                     return []
+                # Fuzzy (mã này DÍNH trong mã kia) CHỈ cho mã CÓ CHỮ — vd 'SPXVN064435411156' nằm trong
+                # '861864498916SPXVN064435411156'. Mã THUẦN SỐ rất dễ khớp OAN (1 mã ngắn tình cờ nằm
+                # trong 1 mã dài khác) → khiến tag video này gán nhầm sang đơn khác → CHỈ nhận khớp CHÍNH XÁC.
+                _q_alpha = any(ch.isalpha() for ch in q)
                 rows = []
                 for d in (source_rows or []):
                     fields = (d.get("order_code"), d.get("return_code"), d.get("vd_di"), d.get("vd_tra"))
                     norms = [_search_norm(x) for x in fields if x]
                     exact = q in norms
-                    fuzzy = (not exact) and any(q in n or n in q for n in norms if n)
+                    fuzzy = (not exact and _q_alpha
+                             and any((q in n or n in q) for n in norms if n and len(n) >= 8))
                     if exact or fuzzy:
                         item = dict(d)
                         item["_match_exact"] = exact
