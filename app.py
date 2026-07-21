@@ -411,13 +411,15 @@ def _week_table_html(data):
             # ── HOÀN HÀNG (cam) ──
             ("hoan_don", "Hoàn (đơn)"), ("hoan_sp", "Hoàn SP"), ("vid_hoan", "Vid hoàn"),
             ("thieu", "Thiếu SP"), ("tag_hoan", "Tag hoàn"),
+            # ── CHỐT đối chiếu video đóng↔khui (đưa lên từ bảng đối chiếu) ──
+            ("chot_video", "Chốt video"),
             ("ghi_chu", "Ghi chú")]
     _sepkey = "hoan_don"                     # cột đầu khối HOÀN → kẻ vạch dọc ngăn 2 khối
     def _lsep(k):
         return "border-left:3px solid #64748b;" if k == _sepkey else ""
     _bd = "border:1px solid #aab2c2;"
     _tagcols = ("tag_dong", "tag_hoan")
-    _txt = ("ngay", "thu", "tag_dong", "tag_hoan", "ghi_chu")
+    _txt = ("ngay", "thu", "tag_dong", "tag_hoan", "ghi_chu", "chot_video")
     _dong = ("soan_sp", "soan", "vid_dong", "tag_dong", "huy_truoc", "huy_sau", "shipper_nhan", "giao_khach")  # ĐÓNG → XANH
     _hoan = ("hoan_don", "hoan_sp", "vid_hoan", "thieu", "tag_hoan")                            # HOÀN → CAM
     _redkeys = ("huy_sau", "thieu")   # sau soạn (cần lấy lại) > 0 → tô đỏ. Trước soạn = khách hủy sớm, thường.
@@ -568,7 +570,7 @@ def _week_table_html(data):
         f'<th style="position:sticky;top:0;z-index:3;text-align:{"left" if k in _txt else "right"};'
         f'padding:6px 8px;{_bd}{_lsep(k)}background:{_bg(k, "head")};'
         f'color:{"#b91c1c" if k == "tag_dong" else "#16233f"}'
-        f'{";min-width:130px" if k == "ghi_chu" else ""}">{lbl}</th>'
+        f'{";min-width:130px" if k == "ghi_chu" else ";min-width:150px" if k == "chot_video" else ""}">{lbl}</th>'
         for k, lbl in cols)
 
     body = ""
@@ -585,13 +587,13 @@ def _week_table_html(data):
         _badges = _lech_badge(r)
         for k, _ in cols:
             al = "left" if k in _txt else "right"
-            if k == "ghi_chu" or k in _tagcols:
+            if k in ("ghi_chu", "chot_video") or k in _tagcols:
                 v = str(r.get(k, "") or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             elif k in ("huy_sau", "huy_truoc") and not r.get("huy_split_known"):
                 v = "—"      # hôm nay số còn chạy → chưa suy được sau/trước soạn
             else:
                 v = r.get(k, "")
-            mw = "min-width:110px;" if (k == "ghi_chu" or k in _tagcols) else ""
+            mw = "min-width:150px;" if k == "chot_video" else "min-width:110px;" if (k == "ghi_chu" or k in _tagcols) else ""
             _nay = (' <span style="color:#E24B4A;font-size:11px">• nay</span>'
                     if hot and k == "ngay" else "")
             if k == "tag_dong" and v:      # đóng thiếu/sai sp = MẤT HÀNG / lỗi đóng → đỏ đậm
@@ -602,7 +604,13 @@ def _week_table_html(data):
                 _tagclr = ""
             wt = "font-weight:800;" if hot else ""
             bg = "#fff2e0" if hot else _bg(k, "cell")     # hôm nay: nền cam nhạt cả dòng
-            cells += (f'<td style="text-align:{al};padding:5px 8px;{_bd}{_lsep(k)}{wtop}{mw}background:{bg};{wt}{_red(k, v)}{_tagclr}">'
+            _chotc = ""
+            if k == "chot_video" and v:                    # xanh = đủ/khớp · đỏ = còn lệch
+                if v.startswith("Đủ"):
+                    bg, _chotc = "#dcfce7", "color:#166534;font-weight:700;"
+                elif v.startswith("Còn lệch"):
+                    bg, _chotc = "#fee2e2", "color:#b91c1c;font-weight:800;"
+            cells += (f'<td style="text-align:{al};padding:5px 8px;{_bd}{_lsep(k)}{wtop}{mw}background:{bg};{wt}{_red(k, v)}{_tagclr}{_chotc}">'
                       f'{v}{_nay}{_badges.get(k, "")}</td>')
         body += f'<tr>{cells}</tr>'
 
@@ -612,7 +620,7 @@ def _week_table_html(data):
         if rows is not None:
             _tbadge.update(_total_gap_badges(rows))
         for k, _ in cols[2:]:
-            if k == "ghi_chu":
+            if k in ("ghi_chu", "chot_video"):
                 cells += f'<td style="padding:6px 8px;{_bd}background:#ffffff"></td>'
                 continue
             if k in _tagcols:
@@ -2358,7 +2366,11 @@ def load_week_summary():
                 elif parts:
                     chot = "Còn lệch: " + "; ".join(parts)
                 else:
+                    if isinstance(day, dict):
+                        day["chot_video"] = "Đủ"      # khớp hết, không lệch
                     return
+                if isinstance(day, dict):
+                    day["chot_video"] = chot           # đưa kết quả chốt lên bảng 30 ngày
                 def _disp(vals, prefer=""):
                     return [_waybill_display(v, prefer) for v in vals if _waybill_display(v, prefer)]
                 def _matched_waybills(a, b, a_prefer, b_prefer):
