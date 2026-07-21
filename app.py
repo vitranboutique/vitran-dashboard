@@ -2693,7 +2693,7 @@ def load_restock_novideo(days: int = 30):
     changed = False
     _DISPLAY = ("order_code", "return_id", "order_id", "order_link", "return_link", "vd_di", "vd_tra",
                 "ngay_tao", "restock_date", "recv_time", "nhan_vien", "sku", "sp", "sp_nhap", "money",
-                "ly_do", "loai_tra", "loai_tra_code", "gian_hang", "order_source", "ghi_chu")
+                "ly_do", "loai_tra", "loai_tra_code", "gian_hang", "order_source", "ghi_chu", "_ret_direct")
     # AN TOÀN: kho video rỗng (Dohana 429 / chưa sync) → KHÔNG dò (tránh gắn oan cả loạt vào sổ vĩnh
     # viễn). Chỉ giữ nguyên sổ cũ. UI sẽ báo "kho video trống".
     if not inbound_codes:
@@ -2766,6 +2766,19 @@ def load_restock_novideo(days: int = 30):
                 changed = True
             continue
         it = items.get(key)                                # KHÔNG khớp video khui nào
+        # Shopee: nếu link Mã trả CHƯA trực tiếp (đang là search) → lấy FULL phiếu trả để có mã return
+        # Shopee → link thẳng /portal/sale/return/{id}. Fetch 1 LẦN (đánh dấu _ret_direct để khỏi lấy lại).
+        if ("shopee" in str(c.get("order_source") or c.get("gian_hang") or "").lower()
+                and c.get("return_id") and "/portal/sale/return/" not in str(c.get("return_link") or "")
+                and not (it and it.get("_ret_direct"))):
+            try:
+                _fr = get_order_return(build_session(), c.get("return_id"))
+                _rl2 = L.shopee_return_detail_url(_fr, keyword=c.get("return_code") or "") if _fr else ""
+                if "/portal/sale/return/" in str(_rl2):
+                    c["return_link"] = _rl2
+                c["_ret_direct"] = True
+            except Exception:
+                pass
         if it is None:
             rec = {k: c.get(k) for k in _DISPLAY}
             rec.update({"return_code": key, "status": "active",
