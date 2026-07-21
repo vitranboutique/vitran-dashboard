@@ -703,11 +703,88 @@ def _week_table_html(data):
 
 
 def _render_week_video_audit(data):
+    def _fallback_matrix_rows(src):
+        if not isinstance(src, dict):
+            return []
+
+        def _n(value):
+            try:
+                return int(round(float(value or 0)))
+            except Exception:
+                return 0
+
+        def _age(iso):
+            try:
+                _d = date.fromisoformat(str(iso or "")[:10])
+                _stale = ((datetime.now(timezone.utc) + timedelta(hours=7)).date() - _d).days > _DOHANA_RETENTION
+                return "Kho cũ" if _stale else "Còn trong hạn Dohana"
+            except Exception:
+                return ""
+
+        def _join(vals):
+            vals = [str(v or "").strip() for v in (vals or []) if str(v or "").strip()]
+            return " · ".join(list(dict.fromkeys(vals)))
+
+        out = []
+        a4_by_day = src.get("a4_package_recon_by_day") or {}
+        for day in src.get("days") or []:
+            if not isinstance(day, dict):
+                continue
+            iso = str(day.get("iso") or "")
+            if not iso:
+                continue
+            a4 = a4_by_day.get(iso) or {}
+            a4_missing = [
+                str(v or "").strip()
+                for v in (a4.get("missing") or [])
+                if str(v or "").strip()
+            ]
+            pkg_gap = _n(day.get("soan")) - _n(day.get("vid_dong"))
+            pkg_missing_n = len(a4_missing) if a4_missing else max(pkg_gap, 0)
+            pkg_extra_n = 0 if a4_missing else max(-pkg_gap, 0)
+            dispute = sum(int(x) for x in re.findall(r"[×x]\s*(\d+)", str(day.get("tag_hoan") or ""), flags=re.I))
+            ret_gap = dispute + _n(day.get("hoan_don")) - _n(day.get("vid_hoan"))
+            ret_missing_n = max(ret_gap, 0)
+            ret_extra_n = max(-ret_gap, 0)
+            if not (pkg_missing_n or pkg_extra_n or ret_missing_n or ret_extra_n):
+                continue
+            parts = []
+            if pkg_missing_n:
+                parts.append(f"Thiếu video đóng: {pkg_missing_n}")
+            if ret_missing_n:
+                parts.append(f"Thiếu video khui hoàn: {ret_missing_n}")
+            if pkg_extra_n:
+                parts.append(f"Dư video đóng: {pkg_extra_n}")
+            if ret_extra_n:
+                parts.append(f"Dư video khui hoàn: {ret_extra_n}")
+            out.append({
+                "Ngày": iso,
+                "Nhóm tuổi": _age(iso),
+                "Mã đối chiếu": "",
+                "Đóng thiếu SL": pkg_missing_n,
+                "Đóng thiếu": _join(a4_missing),
+                "Đóng dư SL": pkg_extra_n,
+                "Đóng dư": "",
+                "Hoàn thiếu SL": ret_missing_n,
+                "Hoàn thiếu": "",
+                "Hoàn dư SL": ret_extra_n,
+                "Hoàn dư": "",
+                "Khớp lộn mục": "",
+                "Video chưa khớp đơn": "",
+                "Chốt": str(day.get("chot_video") or ("Còn lệch: " + "; ".join(parts))),
+            })
+        return out
+
     matrix_rows = (data or {}).get("video_audit_matrix") or []
+    if not matrix_rows:
+        matrix_rows = _fallback_matrix_rows(data or {})
     rows = matrix_rows or (data or {}).get("video_audit") or []
     if not rows:
+        with st.expander("🔎 Bảng khớp mã video đóng hàng ↔ khui hàng — 0 dòng", expanded=True):
+            st.info("Chưa có dòng lệch để đối chiếu mã.")
         return
     with st.expander(f"🔎 Đối chiếu mã dư/thiếu video đóng hàng ↔ khui hàng — {len(rows)} dòng", expanded=True):
+        st.markdown("**Bảng khớp mã**")
         st.caption(
             "Mỗi dòng là 1 ngày. App tự khớp mã thiếu bên này với mã dư bên kia; ô vàng là khả năng cao quay lộn mục. "
             "Cột Chốt là kết quả sau khi đã bù trừ các mã khớp lộn."
@@ -2538,6 +2615,7 @@ def load_week_summary():
                     }
             except Exception:
                 _a4_package_recon_by_day = {}
+            data["a4_package_recon_by_day"] = _a4_package_recon_by_day
             _mpref = (data.get("days") or [{}])[0].get("iso", "")[:7]   # 'YYYY-MM' tháng này
 
             _package_missing_by_day, _package_extra_by_day, _package_unknown_unmatched_by_day = {}, {}, {}
@@ -2801,6 +2879,7 @@ def load_week_summary():
             data["video_audit"] = _video_audit
             data["report_return_video_missing"] = _report_return_missing
             data["video_trace_by_day"] = _video_trace_by_day
+            data["a4_package_recon_by_day"] = _a4_package_recon_by_day
     except Exception:
         pass
     return data
@@ -7147,8 +7226,8 @@ def _render_daily():
         return
 
     # ===== Tổng hợp 7 NGÀY QUA (số cố định sau ngày — query lại là ra số cuối) =====
-    # Ẩn mặc định — bấm mới mở (đỡ rối, chỉ xem khi cần).
-    with st.expander("📅 Tổng hợp 30 ngày (1 tháng) — đóng gói & đơn hoàn", expanded=False):
+    # Mở sẵn để bảng tổng hợp và bảng khớp mã bên dưới không bị người dùng bỏ sót.
+    with st.expander("📅 Tổng hợp 30 ngày (1 tháng) — đóng gói & đơn hoàn", expanded=True):
         if st.button("🔄 Cập nhật video Dohana ngay", key="week_dohana_refresh_btn",
                      help="Dùng khi app đóng hàng đã có clip mới nhưng bảng 30 ngày vẫn báo thiếu; nút này xoá cache và hút lại Dohana."):
             load_week_summary.clear()
