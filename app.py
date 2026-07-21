@@ -651,6 +651,38 @@ def _render_week_video_audit(data):
             "Mỗi dòng là 1 ngày. App tự khớp mã thiếu bên này với mã dư bên kia; ô vàng là khả năng cao quay lộn mục. "
             "Cột Chốt là kết quả sau khi đã bù trừ các mã khớp lộn."
         )
+        # ── 🔍 SOI 1 MÃ: video trong kho (ngày/type/trạng thái) + đang nằm ở cột thiếu/dư nào ──
+        _probe = st.text_input("🔍 Soi 1 mã (vì sao vào cột thiếu/dư này)", key="week_audit_probe",
+                               placeholder="Dán mã vận đơn / mã đơn, vd 861877934768…").strip()
+        if _probe:
+            _pn = _ascii_code(_probe)
+            _pvids = [v for v in (picklog.read_dohana_videos() if picklog.configured() else [])
+                      if _pn and _pn in _ascii_code(v.get("code"))]
+            if _pvids:
+                st.markdown(f"**Kho video — {len(_pvids)} clip khớp `{_probe}`:**")
+                st.dataframe(pd.DataFrame([{
+                    "Mã": v.get("code"),
+                    "Loại": ("đóng hàng" if v.get("type") == "package"
+                             else "khui hàng" if v.get("type") == "inbound" else str(v.get("type"))),
+                    "Ngày": v.get("date"), "Giờ": v.get("time"),
+                    "Trạng thái": v.get("status") or "—",
+                    "Tag": v.get("tag_name") or v.get("locked_tag_name") or "",
+                } for v in _pvids]), hide_index=True, use_container_width=True)
+            else:
+                st.warning(f"KHÔNG thấy `{_probe}` trong kho video đã lưu → app chưa lưu được clip này "
+                           "(bị xóa trước khi app kịp đồng bộ, hoặc ngoài phạm vi quét).")
+            _phits = []
+            for _r in rows:
+                if not isinstance(_r, dict):
+                    continue
+                _rday = _r.get("Ngày") or _r.get("iso") or _r.get("ngay") or "?"
+                for _col, _val in _r.items():
+                    if _col in ("Ngày", "iso", "ngay", "Thứ", "thu"):
+                        continue
+                    if _pn and _pn in _ascii_code(_val):
+                        _phits.append(f"{_rday} → **{_col}**")
+            st.markdown("**Đang nằm ở:** " + (" · ".join(_phits[:15]) if _phits
+                        else "_không thấy ở cột thiếu/dư nào trong bảng dưới_"))
         df = pd.DataFrame(rows)
         if "Nhóm tuổi" in df.columns:
             _age_filter = st.radio(
