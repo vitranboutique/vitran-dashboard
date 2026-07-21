@@ -413,7 +413,7 @@ def _video_audit_chip(icon, n, day, kind, fg, bgc, tip):
     return (
         f'<span title="{_esc(tip)}" style="display:inline-flex;align-items:center;gap:3px;'
         f'margin:2px 3px 2px 0;padding:2px 6px;border-radius:999px;background:{bgc};'
-        f'color:{fg};font-weight:900;white-space:nowrap">{icon}'
+        f'color:{fg};font-weight:900;white-space:nowrap"><span aria-hidden="true">{_esc(icon)}</span>'
         f'<a href="#{anchor_id}" style="color:{fg};text-decoration:underline;text-underline-offset:2px">{n}</a></span>'
     )
 
@@ -422,10 +422,10 @@ def _video_audit_chot_html(row=None, chot="", day=""):
     row = row or {}
     day = day or row.get("Ngày") or row.get("Ngay") or row.get("iso")
     chips = "".join([
-        _video_audit_chip("📦↓", row.get("Đóng thiếu SL"), day, "pkg-miss", "#b91c1c", "#fee2e2", "Thiếu video đóng hàng"),
-        _video_audit_chip("📦↑", row.get("Đóng dư SL"), day, "pkg-extra", "#1d4ed8", "#dbeafe", "Dư video đóng hàng"),
-        _video_audit_chip("↩↓", row.get("Hoàn thiếu SL"), day, "ret-miss", "#b91c1c", "#fee2e2", "Thiếu video khui hoàn"),
-        _video_audit_chip("↩↑", row.get("Hoàn dư SL"), day, "ret-extra", "#1d4ed8", "#dbeafe", "Dư video khui hoàn"),
+        _video_audit_chip("🎥📦-", row.get("Đóng thiếu SL"), day, "pkg-miss", "#b91c1c", "#fee2e2", "Thiếu video đóng hàng"),
+        _video_audit_chip("🎥📦+", row.get("Đóng dư SL"), day, "pkg-extra", "#1d4ed8", "#dbeafe", "Dư video đóng hàng"),
+        _video_audit_chip("🎥↩-", row.get("Hoàn thiếu SL"), day, "ret-miss", "#b91c1c", "#fee2e2", "Thiếu video khui hoàn"),
+        _video_audit_chip("🎥↩+", row.get("Hoàn dư SL"), day, "ret-extra", "#1d4ed8", "#dbeafe", "Dư video khui hoàn"),
     ])
     if chips:
         return chips
@@ -808,10 +808,11 @@ def _render_week_video_audit(data):
 
             def _chot_cell(r):
                 chot = str(r.get("Chốt") or "").strip()
+                content = _video_audit_chot_html(r, chot, str(r.get("Ngày") or ""))
                 tip = chot or "Đủ"
-                bg = "#dcfce7" if chot.startswith("Đủ") else "#fee2e2"
+                bg = "#fff7ed" if "<a " in content else "#dcfce7"
                 return (f'<td title="{_esc(tip)}" style="padding:6px 8px;border:1px solid #d6dce6;'
-                        f'background:{bg};font-weight:800;vertical-align:top">{_esc(chot)}</td>')
+                        f'background:{bg};text-align:center;font-weight:900;vertical-align:top">{content}</td>')
 
             body = []
             for _, r in df.iterrows():
