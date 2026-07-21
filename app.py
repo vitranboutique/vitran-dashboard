@@ -2159,6 +2159,15 @@ def _apply_picklog_soan_to_daily(rep, rows, dvr=None, dup_orders=0):
                 for i, rec in zip(miss_idx, candidates):
                     matched[i] = (rec["code"], "time")
                     used_video_codes.add(rec["code"])
+            remaining_idx = [i for i in range(len(code_groups)) if i not in matched]
+            remaining_videos = [
+                rec for rec in active_records
+                if rec["code"] not in used_video_codes
+            ]
+            if remaining_idx and len(remaining_idx) == len(remaining_videos):
+                for i, rec in zip(remaining_idx, remaining_videos):
+                    matched[i] = (rec["code"], "count")
+                    used_video_codes.add(rec["code"])
         except Exception:
             pass
         missing = [code_labels[i] for i in range(len(code_groups)) if i not in matched]
