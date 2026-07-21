@@ -696,3 +696,37 @@ def dismiss_restock_novideo(keys, reason="admin đã kiểm tra là ổn") -> bo
             items[k]["resolved_at"] = today
             hit = True
     return _write_gist_file(_RESTOCK_NOVIDEO_FILE, d) if hit else False
+
+
+# ───── KHỚP TAY clip khui ↔ đơn hoàn — khi mã trên Dohana nhập THIẾU/SAI (vd clip "3Q" thay vì
+# "GYXVRB3Q") mà KHÔNG sửa được trong app đóng hàng → admin tự khớp trong app vận hành. Lưu VĨNH VIỄN
+# ở Gist, key theo mã đơn hoàn đã chuẩn hoá (caller tự chuẩn hoá bằng _ascii_code). ─────
+_KHUI_MATCH_FILE = "vitran_khui_manual_match.json"
+
+
+def read_khui_manual_match() -> list:
+    """[{ret, clip, ret_raw, clip_raw, day, at}] — ret/clip đã chuẩn hoá sẵn (ascii-lower) bởi caller."""
+    d = _read_gist_file(_KHUI_MATCH_FILE)
+    if isinstance(d, dict) and isinstance(d.get("matches"), list):
+        return d["matches"]
+    return []
+
+
+def add_khui_manual_match(entry: dict) -> bool:
+    """Thêm/thay 1 cặp khớp tay. entry cần {ret, clip} (đã chuẩn hoá) + tuỳ chọn ret_raw/clip_raw/day/at.
+    Cùng 1 mã đơn hoàn (ret) thì thay cặp cũ (1 đơn ↔ 1 clip)."""
+    ret = str((entry or {}).get("ret") or "").strip()
+    clip = str((entry or {}).get("clip") or "").strip()
+    if not (ret and clip):
+        return False
+    matches = [m for m in read_khui_manual_match() if m.get("ret") != ret]
+    row = dict(entry)
+    row.setdefault("at", _today_vn())
+    matches.append(row)
+    return _write_gist_file(_KHUI_MATCH_FILE, {"matches": matches})
+
+
+def remove_khui_manual_match(ret: str) -> bool:
+    ret = str(ret or "").strip()
+    matches = [m for m in read_khui_manual_match() if m.get("ret") != ret]
+    return _write_gist_file(_KHUI_MATCH_FILE, {"matches": matches})

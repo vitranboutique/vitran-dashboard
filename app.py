@@ -801,6 +801,57 @@ def _week_table_html(data):
             f'<thead><tr>{head}</tr></thead><tbody>{tots}{body}</tbody></table></div>')
 
 
+def _render_khui_manual_match(data):
+    """Khớp tay clip khui ↔ đơn hoàn khi Dohana nhập mã sai/thiếu (vd clip "3Q" vs vận đơn "GYXVRB3Q").
+    Expander RIÊNG (không lồng trong bảng khớp) → luôn xem/sửa được kể cả khi không còn dòng lệch."""
+    _orphans = (data or {}).get("khui_orphan_clips") or []
+    _saved_matches = (data or {}).get("khui_manual_matches") or []
+    if not (_orphans or _saved_matches):
+        return
+    with st.expander(f"🔧 Khớp tay clip khui ↔ đơn hoàn — {len(_orphans)} clip mồ côi · {len(_saved_matches)} đã khớp tay",
+                     expanded=bool(_orphans and not _saved_matches)):
+        st.caption("Dùng khi NV quay khui nhập MÃ SAI/THIẾU trên Dohana (clip có thật nhưng mã không khớp vận đơn). "
+                   "Nối tay xong: đơn HẾT báo 'chưa quay', clip hết 'mồ côi'. Lưu vĩnh viễn trên kho.")
+        if _orphans:
+            st.markdown(f"**Clip khui CHƯA khớp đơn nào ({len(_orphans)}) — kể cả mã ngắn/lạ (bị ẩn ở cột Dư):**")
+            st.dataframe(pd.DataFrame([{
+                "Mã clip (Dohana)": o.get("code"), "Ngày": o.get("date"), "Giờ": o.get("time"),
+                "Thời lượng": (f"{int(o['dur'])}s" if o.get("dur") else ""), "Tag": o.get("tag") or "",
+            } for o in _orphans[:200]]), hide_index=True, use_container_width=True)
+        else:
+            st.info("Không có clip khui mồ côi — mọi clip đã khớp đơn.")
+        with st.form("khui_manual_match_form", clear_on_submit=True):
+            _fc1, _fc2, _fc3 = st.columns([2, 2, 1])
+            _clip_in = _fc1.text_input("Mã clip trên Dohana", placeholder="vd 3Q").strip()
+            _ret_in = _fc2.text_input("Mã đơn hoàn / vận đơn (đang báo thiếu)", placeholder="vd GYXVRB3Q").strip()
+            _fc3.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+            _submit = _fc3.form_submit_button("🔗 Lưu khớp")
+            if _submit and _clip_in and _ret_in:
+                if picklog.add_khui_manual_match({
+                    "ret": _ascii_code(_ret_in), "clip": _ascii_code(_clip_in),
+                    "ret_raw": _ret_in, "clip_raw": _clip_in,
+                }):
+                    st.cache_data.clear()
+                    st.success(f"Đã khớp clip `{_clip_in}` ↔ đơn `{_ret_in}`. Đang tải lại…")
+                    st.rerun()
+                else:
+                    st.error("Lưu thất bại (kiểm tra token Gist trong Secrets).")
+            elif _submit:
+                st.warning("Nhập ĐỦ cả mã clip và mã đơn hoàn.")
+        if _saved_matches:
+            st.markdown("**Đã khớp tay (bấm Xóa để bỏ khớp):**")
+            for _m in _saved_matches:
+                _mc1, _mc2 = st.columns([6, 1])
+                _mc1.markdown(f"• clip `{_m.get('clip_raw') or _m.get('clip')}` ↔ đơn "
+                              f"`{_m.get('ret_raw') or _m.get('ret')}` "
+                              f"<span style='color:#6b7280;font-size:11px'>({_m.get('at','')})</span>",
+                              unsafe_allow_html=True)
+                if _mc2.button("Xóa", key=f"del_khui_{_m.get('ret')}"):
+                    picklog.remove_khui_manual_match(_m.get("ret"))
+                    st.cache_data.clear()
+                    st.rerun()
+
+
 def _render_week_video_audit(data):
     def _fallback_matrix_rows(src):
         if not isinstance(src, dict):
@@ -883,6 +934,7 @@ def _render_week_video_audit(data):
     if not matrix_rows:
         matrix_rows = _fallback_matrix_rows(data or {})
     rows = matrix_rows or (data or {}).get("video_audit") or []
+    _render_khui_manual_match(data)   # khớp tay clip khui ↔ đơn hoàn (luôn hiện, kể cả khi hết dòng lệch)
     if not rows:
         with st.expander("🔎 Bảng khớp mã video đóng hàng ↔ khui hàng — 0 dòng", expanded=True):
             st.info("Chưa có dòng lệch để đối chiếu mã.")
@@ -3065,6 +3117,14 @@ def load_week_summary():
                 _matched_by_day = _Dd(set)
                 _matched_inbound_codes_by_day = _Dd(set)
                 _return_missing_by_day = _Dd(list)
+                _manual_match = {}   # {mã đơn hoàn (norm): mã clip (norm)} — admin khớp tay khi Dohana nhập mã sai
+                try:
+                    for _m in (picklog.read_khui_manual_match() or []):
+                        _r, _c = str(_m.get("ret") or "").strip(), str(_m.get("clip") or "").strip()
+                        if _r and _c:
+                            _manual_match[_r] = _c
+                except Exception:
+                    _manual_match = {}
                 def _return_carrier_group(name):
                     name = _norm(name)
                     if "SPX" in name:
@@ -3119,6 +3179,13 @@ def load_week_summary():
                         ))
                         for code in label_codes:
                             _return_label_by_code.setdefault(code, merged_label)
+                        # KHỚP TAY (admin tự nối clip ↔ đơn khi Dohana nhập mã sai) — ưu tiên TRƯỚC mọi khớp tự động.
+                        _man_clip = next((_manual_match[code] for code in label_codes if code in _manual_match), None)
+                        if _man_clip:
+                            _consumed_codes.add(_man_clip)
+                            _matched_by_day[dd].add(parcel_key)
+                            _matched_inbound_codes_by_day[dd].add(_man_clip)
+                            continue
                         _exact = next(((video_day, video) for video_day, video in _window_videos
                                        if video in label_codes), None)
                         if _exact:
@@ -3163,6 +3230,35 @@ def load_week_summary():
                         _return_label_by_code.get(c) or f"VĐ đi/đóng: | VĐ hoàn: {c} | Mã trả: | Mã đơn:"
                         for c in sorted(_raw - _used)
                     ]
+                # CLIP KHUI MỒ CÔI: có trong kho nhưng KHÔNG khớp đơn nào (kể cả mã NGẮN/lạ như "3Q" do NV
+                # nhập thiếu — vốn bị ẩn khỏi cột "Dư mã" vì <6 ký tự). Xuất để admin THẤY và tự khớp tay.
+                _khui_orphans = []
+                try:
+                    _all_used_clips = set(_manual_match.values())
+                    for _s in _matched_inbound_codes_by_day.values():
+                        _all_used_clips |= set(_s)
+                    for _s in _tagged_inbound_codes_by_day.values():
+                        _all_used_clips |= set(_s)
+                    _seen_orphan = set()
+                    for r in inbound_rows:
+                        c = _norm(r.get("code"))
+                        if not c or c in _all_used_clips or c in _seen_orphan:
+                            continue
+                        _seen_orphan.add(c)
+                        _khui_orphans.append({
+                            "code": str(r.get("code") or ""), "norm": c,
+                            "date": str(r.get("date") or ""), "time": str(r.get("time") or ""),
+                            "link": str(r.get("link") or ""), "dur": r.get("dur"),
+                            "tag": _video_tag_label(r) if _video_tag_id(r) else "",
+                        })
+                    _khui_orphans.sort(key=lambda x: (x.get("date") or "", x.get("time") or ""), reverse=True)
+                except Exception:
+                    _khui_orphans = []
+                data["khui_orphan_clips"] = _khui_orphans
+                try:
+                    data["khui_manual_matches"] = picklog.read_khui_manual_match()
+                except Exception:
+                    data["khui_manual_matches"] = []
             except Exception:
                 _matched_vhoan = {}
                 _return_missing_by_day = {}
