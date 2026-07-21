@@ -1958,7 +1958,7 @@ def _apply_picklog_soan_to_daily(rep, rows, dvr=None, dup_orders=0):
             rep["funnel"]["video"] = len(matched)
 
 
-@st.cache_data(ttl=600, show_spinner="Đang tổng hợp 30 ngày (1 tháng)…")
+@st.cache_data(ttl=300, show_spinner="Đang tổng hợp 30 ngày (1 tháng)…")
 def load_week_summary():
     data = L.get_week_summary(make_fetch_json(build_session()), days=30)
     # SOẠN = tổng đơn các ĐỢT PHIẾU NHẶT đã in trong ngày (picklog so_don) — đúng số ở tab Phiếu nhặt.
@@ -7083,6 +7083,14 @@ def _render_daily():
     # ===== Tổng hợp 7 NGÀY QUA (số cố định sau ngày — query lại là ra số cuối) =====
     # Ẩn mặc định — bấm mới mở (đỡ rối, chỉ xem khi cần).
     with st.expander("📅 Tổng hợp 30 ngày (1 tháng) — đóng gói & đơn hoàn", expanded=False):
+        if st.button("🔄 Cập nhật video Dohana ngay", key="week_dohana_refresh_btn",
+                     help="Dùng khi app đóng hàng đã có clip mới nhưng bảng 30 ngày vẫn báo thiếu; nút này xoá cache và hút lại Dohana."):
+            load_week_summary.clear()
+            try:
+                load_dohana_store.clear()
+            except Exception:
+                pass
+            st.rerun()
         try:
             _wk = load_week_summary()
             _bld = getattr(L, "WEEK_SUMMARY_BUILD", "⚠️ CHƯA nạp code mới — cần Reboot")
