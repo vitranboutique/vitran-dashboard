@@ -1260,6 +1260,30 @@ def _enrich_daily(rep, dvr, inb):
             d["clip"] = False
         nk["clip_co"], nk["clip_total"] = 0, 0
         nk["clip_unmatched"], nk["clip_unmatched_detail"] = [], []
+    # BỔ SUNG TAG TỪ KHO LƯU (tag đã khóa vĩnh viễn): load_dohana_inbound() cache 1 GIỜ, F5 KHÔNG xóa
+    # cache → tag vừa gắn (vd "Khách tráo") có thể chưa vào → cột Tag hiện "—". Kho lưu (sync ~5', đọc
+    # cache 15') thường đã có tag → lấy bù để không bỏ sót tranh chấp. Mã nào live đã có tag thì GIỮ nguyên.
+    try:
+        _store_inb_tag = {}
+        for _r in (load_dohana_video_store() or []):
+            if _r.get("type") == "inbound":
+                _c = str(_r.get("code") or "").strip()
+                _tid = _video_tag_id(_r)
+                if _c and _tid and _c not in _store_inb_tag:
+                    _store_inb_tag[_c] = (_tid, _video_tag_label(_r))
+        if _store_inb_tag:
+            for _d in nk.get("detail", []):
+                if not str(_d.get("clip_tag") or "").strip():
+                    _hit = _store_inb_tag.get(str(_d.get("clip_code") or "").strip())
+                    if _hit:
+                        _d["clip_tag_id"], _d["clip_tag"] = _hit
+            for _u in nk.get("clip_unmatched_detail") or []:
+                if not str(_u.get("tag") or "").strip():
+                    _hit = _store_inb_tag.get(str(_u.get("code") or "").strip())
+                    if _hit:
+                        _u["tag_id"], _u["tag"] = _hit
+    except Exception:
+        pass
     # GỘP đơn hoàn CÙNG KIỆN: cùng mã đơn + cùng VĐ gửi đi (khách trả NHIỀU SP của 1 đơn về
     # trong 1 kiện, NV quay 1 clip) → gộp thành 1 DÒNG (nối mã đơn trả + SKU, cộng SP), tránh
     # lặp clip nhiều dòng nhìn "trùng/sai". clip_co đếm lại theo KIỆN.
