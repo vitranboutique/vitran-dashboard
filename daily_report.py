@@ -54,11 +54,19 @@ _CSS = """
   .sign .role{font-weight:800;color:var(--navy);}
   .sign .hint{color:#9aa3af;font-size:.86em;}
   .sign .space{height:3.2em;}
-  .foot{margin-top:.55em;text-align:center;font-size:.73em;color:#9aa3af;border-top:1px solid var(--line);padding-top:.3em;}
+  .foot{margin-top:.36em;text-align:center;font-size:.73em;color:#9aa3af;border-top:1px solid var(--line);padding-top:.2em;}
   .page2{page-break-before:always;page:return-landscape;width:297mm;height:210mm;}
-  .page2 .pfit{padding:7mm 9mm 6mm;}
-  .return-table{font-size:1.06em;line-height:1.28;}
-  .return-table th,.return-table td{padding:.36em .48em;}
+  .page2 .pfit{padding:5mm 6mm 4mm;}
+  .page2 .hd{padding-bottom:.2em;border-bottom-width:2px;}
+  .page2 .hd .brand{font-size:1.22em;}
+  .page2 .title{margin:.24em 0 .04em;font-size:1.08em;}
+  .page2 .title-sub{margin-bottom:.2em;}
+  .page2 .kpis.kf5{gap:.22em;margin:.2em 0 .22em;}
+  .page2 .kf5 .kpi{padding:.18em .34em;}
+  .page2 .warn{padding:.28em .55em;margin:.28em 0 .34em;}
+  .page2 .sec{margin:.32em 0 .16em;padding:.18em .5em;}
+  .return-table{font-size:1.24em;line-height:1.2;}
+  .return-table th,.return-table td{padding:.22em .36em;}
   .return-table th:first-child,.return-table td:first-child{white-space:nowrap;padding-left:.15em;padding-right:.15em;}
   .mono-code{white-space:nowrap;word-break:normal;overflow-wrap:normal;font-size:.9em;letter-spacing:0;font-variant-numeric:tabular-nums;}
   .kpis.k3{grid-template-columns:repeat(3,1fr);}
