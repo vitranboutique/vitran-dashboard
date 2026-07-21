@@ -2366,6 +2366,7 @@ def get_restocked_returns_range(fetch_json, days: int = 30, max_pages: int = 24)
             "loai_tra_code": x.get("return_type") or "",
             "gian_hang": _gh,                          # = branch_name (đã gồm nền tảng) như bảng Cần KN
             "order_source": x.get("order_source") or "",
+            "shop_id": _chan.get("branch_external_id") or "",   # shop_id sàn (Shopee) → Chrome launcher đúng shop
             "carrier": si.get("carrier_name") or "",    # ĐVVC → ghép mềm clip khui khi mã VĐ hoàn lệch
             "codes": sorted(codes),
         })

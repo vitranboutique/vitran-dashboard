@@ -2693,7 +2693,7 @@ def load_restock_novideo(days: int = 30):
     changed = False
     _DISPLAY = ("order_code", "return_id", "order_id", "order_link", "return_link", "vd_di", "vd_tra",
                 "ngay_tao", "restock_date", "recv_time", "nhan_vien", "sku", "sp", "sp_nhap", "money",
-                "ly_do", "loai_tra", "loai_tra_code", "gian_hang", "order_source", "ghi_chu", "_ret_direct")
+                "ly_do", "loai_tra", "loai_tra_code", "gian_hang", "order_source", "ghi_chu")
     # AN TOÀN: kho video rỗng (Dohana 429 / chưa sync) → KHÔNG dò (tránh gắn oan cả loạt vào sổ vĩnh
     # viễn). Chỉ giữ nguyên sổ cũ. UI sẽ báo "kho video trống".
     if not inbound_codes:
@@ -2766,19 +2766,17 @@ def load_restock_novideo(days: int = 30):
                 changed = True
             continue
         it = items.get(key)                                # KHÔNG khớp video khui nào
-        # Shopee: nếu link Mã trả CHƯA trực tiếp (đang là search) → lấy FULL phiếu trả để có mã return
-        # Shopee → link thẳng /portal/sale/return/{id}. Fetch 1 LẦN (đánh dấu _ret_direct để khỏi lấy lại).
-        if ("shopee" in str(c.get("order_source") or c.get("gian_hang") or "").lower()
-                and c.get("return_id") and "/portal/sale/return/" not in str(c.get("return_link") or "")
-                and not (it and it.get("_ret_direct"))):
-            try:
-                _fr = get_order_return(build_session(), c.get("return_id"))
-                _rl2 = L.shopee_return_detail_url(_fr, keyword=c.get("return_code") or "") if _fr else ""
-                if "/portal/sale/return/" in str(_rl2):
-                    c["return_link"] = _rl2
-                c["_ret_direct"] = True
-            except Exception:
-                pass
+        # Shopee KHÔNG đưa ID nội bộ cho Sapo (không link thẳng /return/{id} được) → link SEARCH TRỰC TIẾP
+        # banhang.shopee.vn, KÈM cnsc_shop_id (Shopee tự chuyển đúng shop, KHÔNG cần Chrome launcher).
+        if "shopee" in str(c.get("order_source") or c.get("gian_hang") or "").lower():
+            _shop = str(c.get("shop_id") or "").strip()
+            _ol = "https://banhang.shopee.vn/portal/sale?search=" + quote_plus(str(c.get("order_code") or ""))
+            _rl = ("https://banhang.shopee.vn/portal/sale/returnrefundcancel?keyword="
+                   + quote_plus(str(c.get("return_code") or "")))
+            if _shop:
+                _ol += "&cnsc_shop_id=" + _shop
+                _rl += "&cnsc_shop_id=" + _shop
+            c["order_link"], c["return_link"] = _ol, _rl
         if it is None:
             rec = {k: c.get(k) for k in _DISPLAY}
             rec.update({"return_code": key, "status": "active",
@@ -8875,6 +8873,8 @@ def _render_returns():
 
             def _return_code_cell(d):
                 code = _display_return_code(d)
+                if (d or {}).get("_restock_novideo"):   # bảng nhập-kho-không-video: link đã dựng sẵn (cnsc_shop_id, KHÔNG launcher)
+                    return _code_cell(code, str((d or {}).get("return_link") or "")) if code else ""
                 link = _normalize_shopee_return_link((d or {}).get("return_link"), code)
                 if link and "banhang.shopee.vn/portal/sale/return" in link:
                     is_direct = bool(re.search(r"/portal/sale/return/\d+", link))
@@ -8899,6 +8899,8 @@ def _render_returns():
 
             def _order_link_for_row(d):
                 link = str((d or {}).get("order_link") or "").strip()
+                if (d or {}).get("_restock_novideo") and link:   # link đã dựng sẵn (cnsc_shop_id, KHÔNG launcher)
+                    return link
                 src = " ".join(str((d or {}).get(k) or "") for k in (
                     "order_source", "gian_hang", "order_link", "return_link"
                 )).lower()
