@@ -3019,41 +3019,111 @@ def load_week_summary():
                     if code and r.get("date"):
                         _inbound_days_by_code[code].add(str(r.get("date")))
 
-                # Dùng đúng danh sách đã tạo ra cột Hoàn (đơn). Nguồn này có đủ cả ngày kho cũ,
-                # không bị giới hạn trang như lượt quét API phụ trước đây.
+                # Dùng đúng từng kiện/phiếu trả đã tạo báo cáo A4. Không gom toàn bộ
+                # phiếu của cùng một mã đơn vì một đơn có thể có nhiều kiện hoàn.
                 _return_groups_by_day = _Dd(lambda: _Dd(list))
-                for dd, labels in (data.get("restocked_return_labels_by_day") or {}).items():
-                    for label in labels or []:
-                        if str(label or "").strip():
-                            _return_groups_by_day[str(dd)][_label_order_key(label)].append(str(label))
+                _structured_returns = data.get("restocked_return_details_by_day") or {}
+                for dd, rows in _structured_returns.items():
+                    for row in rows or []:
+                        if not isinstance(row, dict):
+                            continue
+                        _parcel_key = (
+                            str(row.get("order_code") or "").strip(),
+                            str(row.get("track_return") or row.get("return_code") or "").strip(),
+                            str(row.get("tracking") or "").strip(),
+                        )
+                        _return_groups_by_day[str(dd)][_parcel_key].append(row)
+                # Compatibility fallback for a cached response created before structured
+                # A4 rows were added. A fresh cache uses the branch above.
+                if not _return_groups_by_day:
+                    for dd, labels in (data.get("restocked_return_labels_by_day") or {}).items():
+                        for label in labels or []:
+                            if str(label or "").strip():
+                                _return_groups_by_day[str(dd)][_label_order_key(label)].append({
+                                    "label": str(label), "codes": _label_codes(label),
+                                    "order_code": _label_order_key(label),
+                                })
 
                 _return_label_by_code = {}
                 _exact_used_by_day = _Dd(set)
                 _matched_by_day = _Dd(set)
                 _matched_inbound_codes_by_day = _Dd(set)
                 _return_missing_by_day = _Dd(list)
+                def _return_carrier_group(name):
+                    name = _norm(name)
+                    if "SPX" in name:
+                        return "SPX"
+                    if "VIETTEL" in name or "VTP" in name:
+                        return "VTP"
+                    if "GIAOHANGNHANH" in name or "GHN" in name:
+                        return "GHN"
+                    if "J&T" in name or name.startswith("JT"):
+                        return "JT"
+                    return name[:3]
+
+                def _video_carrier_group(code):
+                    code = _norm(code)
+                    if code.startswith("SPXVN"):
+                        return "SPX"
+                    if code.startswith(("VTPVN", "VTP")):
+                        return "VTP"
+                    if code.startswith("GHN"):
+                        return "GHN"
+                    if code[:2] in ("86", "85", "84", "87"):
+                        return "JT"
+                    return code[:3]
+
                 for dd, groups in _return_groups_by_day.items():
-                    _day_inbound_codes = {
+                    try:
+                        _target_day = date.fromisoformat(str(dd))
+                        _window_days = [(_target_day - timedelta(days=i)).isoformat() for i in range(3)]
+                    except Exception:
+                        _window_days = [str(dd)]
+                    # A4 exact matching searches the target day plus two preceding
+                    # days. Carrier fallback only uses unmatched clips on target day.
+                    _window_videos = []
+                    for _video_day in _window_days:
+                        for _video in inbound_codes_by_day.get(_video_day, []):
+                            _nv = _norm(_video)
+                            if _nv:
+                                _window_videos.append((_video_day, _nv))
+                    _today_videos = list(dict.fromkeys(
                         _norm(code) for code in inbound_codes_by_day.get(dd, []) if _norm(code)
-                    }
-                    _day_used = _exact_used_by_day[dd]
-                    for order_key, labels in groups.items():
+                    ))
+                    _consumed_codes = set()
+                    _unmatched_groups = []
+                    for parcel_key, rows in groups.items():
+                        labels = [str(row.get("label") or "") for row in rows]
                         merged_label = _merge_return_labels(labels)
-                        label_codes = _label_codes(merged_label)
+                        label_codes = list(dict.fromkeys(
+                            _norm(code)
+                            for row in rows
+                            for code in ((row.get("codes") or []) + _label_codes(row.get("label") or ""))
+                            if _norm(code)
+                        ))
                         for code in label_codes:
-                            _return_label_by_code.setdefault(_norm(code), merged_label)
-                        hit = next((video for video in sorted(_day_inbound_codes - _day_used)
-                                    if any(_code_match(_norm(code), video) for code in label_codes)), None)
-                        # 1 clip khui có thể dùng chung cho NHIỀU đơn hoàn gộp kiện (nhiều SP trả 1 kiện, quay 1 clip).
-                        # Occurrence-match cũ (trừ _exact_used) khiến đơn thứ 2 báo THIẾU OAN dù clip CÓ THẬT.
-                        # → hết clip chưa dùng thì vẫn nhận clip ĐÃ dùng khớp mã, KHÔNG báo thiếu (chỉ không dùng lại).
-                        shared = hit or next((video for video in sorted(_day_inbound_codes)
-                                              if any(_code_match(_norm(code), video) for code in label_codes)), None)
-                        if hit:
-                            _day_used.add(hit)
-                        if shared:
-                            _matched_by_day[dd].add(order_key)
-                            _matched_inbound_codes_by_day[dd].add(shared)
+                            _return_label_by_code.setdefault(code, merged_label)
+                        _exact = next(((video_day, video) for video_day, video in _window_videos
+                                       if video in label_codes), None)
+                        if _exact:
+                            _video_day, _video = _exact
+                            _consumed_codes.add(_video)
+                            _matched_by_day[dd].add(parcel_key)
+                            _matched_inbound_codes_by_day[_video_day].add(_video)
+                        else:
+                            _unmatched_groups.append((parcel_key, rows, merged_label))
+                    _leftover_today = [v for v in _today_videos if v not in _consumed_codes]
+                    for parcel_key, rows, merged_label in _unmatched_groups:
+                        _first = rows[0] if rows else {}
+                        _soft = None
+                        if _first.get("loai_tra_code") != "delivery_failed":
+                            _carrier = _return_carrier_group(_first.get("carrier"))
+                            _soft = next((v for v in _leftover_today
+                                          if _video_carrier_group(v) == _carrier), None)
+                        if _soft:
+                            _leftover_today.remove(_soft)
+                            _matched_by_day[dd].add(parcel_key)
+                            _matched_inbound_codes_by_day[dd].add(_soft)
                         else:
                             _return_missing_by_day[dd].append(merged_label)
                 _tagged_inbound_by_day = {

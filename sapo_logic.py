@@ -1562,6 +1562,9 @@ def get_week_summary(fetch_json, days: int = 7) -> dict:
         _register_context(codes, label)
     _hoan_day, _hoan_mon = {}, set()   # HOÀN (đơn) đếm theo MÃ ĐƠN distinct (1 đơn nhiều SP/mã trả = 1)
     restocked_return_labels_by_day = {}
+    # Keep the identifiers used by the A4 report so the 30-day table can apply
+    # the same video reconciliation instead of rebuilding a different summary.
+    restocked_return_details_by_day = {}
     for x in rrows:
         if x.get("restock_status") != "restocked":
             continue
@@ -1580,10 +1583,25 @@ def get_week_summary(fetch_json, days: int = 7) -> dict:
         _ret_wb = str(si.get("tracking_number") or "").strip()
         _out_wbs = [str(v).strip() for v in (si.get("fulfillment_tracking_numbers") or []) if str(v).strip()]
         _ret_code = str(x.get("name") or "").strip()
-        restocked_return_labels_by_day.setdefault(rd.isoformat(), []).append(
+        _return_label = (
             f"VĐ đi/đóng: {' · '.join(dict.fromkeys(_out_wbs))} | "
             f"VĐ hoàn: {_ret_wb} | Mã trả: {_ret_code} | Mã đơn: {_oc}"
         )
+        restocked_return_labels_by_day.setdefault(rd.isoformat(), []).append(_return_label)
+        _match_codes = list(dict.fromkeys([
+            *_out_wbs, _ret_wb, _ret_code, _oc,
+            *_TRACK_RE.findall(str(x.get("note") or "")),
+        ]))
+        restocked_return_details_by_day.setdefault(rd.isoformat(), []).append({
+            "label": _return_label,
+            "order_code": str(_oc or "").strip(),
+            "return_code": _ret_code,
+            "track_return": _ret_wb,
+            "tracking": _out_wbs[0] if _out_wbs else "",
+            "codes": [str(c).strip() for c in _match_codes if str(c or "").strip()],
+            "carrier": _return_dvvc(x),
+            "loai_tra_code": str(x.get("return_type") or "").strip(),
+        })
         _bump("hoan_sp", rd, sp_nhap)
         _bump("thieu", rd, thieu)
         _bump("trao", rd, trao)
@@ -1613,7 +1631,8 @@ def get_week_summary(fetch_json, days: int = 7) -> dict:
         })
     return {"days": out, "month": mon, "month_label": today.strftime("%m/%Y"),
             "order_context_by_code": order_context_by_code,
-            "restocked_return_labels_by_day": restocked_return_labels_by_day}
+            "restocked_return_labels_by_day": restocked_return_labels_by_day,
+            "restocked_return_details_by_day": restocked_return_details_by_day}
 
 
 # ── Thống kê MẤT HÀNG (THUA/HẾT HẠN): trích ĐVVC + shipper từ carrier_name/ghi chú ──
