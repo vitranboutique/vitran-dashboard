@@ -2711,10 +2711,23 @@ def load_week_summary():
                         str(c or "").strip() for c in (_vr.get("missing_codes") or [])
                         if str(c or "").strip()
                     ]
+                    _matched_count = int(_vr.get("open_with_video") or 0)
+                    _a4_base = int(
+                        _a4_rep.get("tong_don_soan")
+                        or ((_a4_rep.get("funnel") or {}).get("soan") or 0)
+                        or 0
+                    )
+                    _missing_count = max(
+                        int(_vr.get("missing_video") or 0),
+                        len(_missing_codes),
+                        max(0, _a4_base - _matched_count),
+                    )
+                    if _missing_codes and _missing_count > len(_missing_codes):
+                        _missing_codes += [_missing_codes[-1]] * (_missing_count - len(_missing_codes))
                     _a4_package_recon_by_day[_today_iso] = {
-                        "matched": int(_vr.get("open_with_video") or 0),
+                        "matched": _matched_count,
                         "missing": _missing_codes,
-                        "missing_count": int(_vr.get("missing_video") or len(_missing_codes)),
+                        "missing_count": _missing_count,
                         "dup": dict(_vr.get("dup") or {}),
                     }
             except Exception:
