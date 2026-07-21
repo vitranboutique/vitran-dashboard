@@ -2739,15 +2739,25 @@ def load_week_summary():
             # TỰ ĐỒNG BỘ ~28 ngày video từ Dohana rồi gộp vào kho TRƯỚC khi đọc — để bảng 30 ngày
             # KHÔNG bị đứng số khi có video mới (Dohana giữ ~25-30 ngày; giữ nhịp _throttle chống 429).
             # Lỗi/429 → bỏ qua, đọc kho cũ (không làm bảng trống).
+            _package_live_ok = True
+            _inbound_live_ok = True
             try:
                 _fresh = []
-                for _fn in (dohana.today_package_videos, dohana.inbound_videos):
-                    _r = _fn(days_match=28, max_pages=80)
-                    if _r and _r.get("records"):
-                        _fresh += _r["records"]
+                _pkg_live = dohana.today_package_videos(days_match=28, max_pages=80)
+                if _pkg_live is None:
+                    _package_live_ok = False
+                elif _pkg_live.get("records"):
+                    _fresh += _pkg_live["records"]
+                _inb_live = dohana.inbound_videos(days_match=28, max_pages=80)
+                if _inb_live is None:
+                    _inbound_live_ok = False
+                elif _inb_live.get("records"):
+                    _fresh += _inb_live["records"]
                 if _fresh:
                     picklog.merge_dohana_videos(_fresh)
             except Exception:
+                _package_live_ok = False
+                _inbound_live_ok = False
                 pass
             recs = picklog.read_dohana_videos()
             vdong, vhoan, tdong, thoan = {}, {}, {}, {}   # tag TÁCH theo loại video: đóng vs khui
@@ -2784,6 +2794,8 @@ def load_week_summary():
                 _today_iso = _today_iso_vn()
                 _a4_rep = L.get_daily_report(make_fetch_json(build_session()), target_date=date.fromisoformat(_today_iso))
                 _a4_dvr = load_dohana()
+                if isinstance(_a4_dvr, dict) and _a4_dvr.get("_from_store"):
+                    raise RuntimeError("Dohana package live unavailable; skip stale A4 package recon")
                 _ps = picklog.read_date_summary(_today_iso)
                 _apply_picklog_soan_to_daily(_a4_rep, _ps.get("rows") or [], _a4_dvr, _ps.get("dup_orders") or 0)
                 _vr = (_a4_rep.get("video_recon") or {}) if isinstance(_a4_rep, dict) else {}
@@ -2968,10 +2980,16 @@ def load_week_summary():
 
             for day in data.get("days", []):
                 iso = day.get("iso")
+                _package_stale_today = (str(iso or "") == _today_iso_vn() and not _package_live_ok)
                 day["vid_dong"] = vdong.get(iso, 0)
                 _a4_pkg_recon = _a4_package_recon_by_day.get(str(iso or ""))
                 if _a4_pkg_recon:
                     day["vid_dong"] = int(_a4_pkg_recon.get("matched") or 0)
+                if _package_stale_today:
+                    try:
+                        day["vid_dong"] = max(int(day.get("vid_dong") or 0), int(day.get("soan") or 0))
+                    except Exception:
+                        pass
                 day["vid_hoan_raw"] = vhoan.get(iso, 0)
                 day["vid_hoan"] = _matched_vhoan.get(iso, vhoan.get(iso, 0))
                 day["tag_dong"] = _tagstr(tdong.get(iso))
@@ -2990,6 +3008,11 @@ def load_week_summary():
                     _pkg_missing_count = None
                     _pkg_extra = _package_extra_by_day.get(iso, [])
                     _pkg_unknown = _package_unknown_unmatched_by_day.get(iso, [])
+                if _package_stale_today:
+                    _pkg_missing = []
+                    _pkg_missing_count = None
+                    _pkg_extra = []
+                    _pkg_unknown = []
                 _return_missing = _return_missing_by_day.get(iso, [])
                 _inbound_extra = _inbound_extra_by_day.get(iso, [])
                 _pkg_miss_vs_inbound_extra = _cross_matches(_pkg_missing, _inbound_extra)
@@ -3022,6 +3045,8 @@ def load_week_summary():
                     "Video khui dư có thể là clip đóng hàng quay nhầm bên khui, hoặc đơn hoàn chưa nhập kho/tag thiếu.",
                     _pkg_miss_vs_inbound_extra,
                 )
+                if _package_stale_today:
+                    day["chot_video"] = "⏳ Dohana API tạm lỗi, chưa chốt video đóng"
             if isinstance(data.get("month"), dict):
                 m = data["month"]
                 m["vid_dong"] = _msum(vdong)
