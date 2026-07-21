@@ -1984,12 +1984,6 @@ def _apply_picklog_soan_to_daily(rep, rows, dvr=None, dup_orders=0):
         for _key in ("tracking", "track", "name"):
             _vals.append(_item.get(_key))
         _add_alias_group(_vals)
-    for _item in rep.get("order_code_aliases") or []:
-        _vals = list(_item.get("codes") or [])
-        for _key in ("tracking", "track", "name"):
-            _vals.append(_item.get(_key))
-        _add_alias_group(_vals)
-
     def _prefer_video_lookup_code(codes):
         vals = [str(c or "").strip() for c in (codes or []) if str(c or "").strip()]
         vals = list(dict.fromkeys(vals))
