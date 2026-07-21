@@ -2102,6 +2102,7 @@ def _apply_picklog_soan_to_daily(rep, rows, dvr=None, dup_orders=0):
         unknown = max(0, total_orders - len(code_groups))
         if unknown:
             missing += [f"{unknown} đơn phiếu nhặt chưa lưu mã đối chiếu"]
+        missing_count = len(missing)
         video_total = int(dvr.get("total") or 0)
         unique_video = len(vset)
         rep["video_recon"] = {
@@ -2111,9 +2112,10 @@ def _apply_picklog_soan_to_daily(rep, rows, dvr=None, dup_orders=0):
             "dup": dvr.get("dup", {}),
             "open_with_video": len(matched),
             "matched_video": len(matched),
-            "unmatched_order_count": max(0, total_orders - len(matched)),
+            "unmatched_order_count": missing_count,
+            "raw_unmatched_order_count": max(0, total_orders - len(matched)),
             "unmatched_order_codes": missing,
-            "missing_video": max(0, total_orders - len(matched)),
+            "missing_video": missing_count,
             "missing_codes": missing,
             "font_fixed": font_fixed,
             "source": "picklog_dedup",
@@ -2712,15 +2714,9 @@ def load_week_summary():
                         if str(c or "").strip()
                     ]
                     _matched_count = int(_vr.get("open_with_video") or 0)
-                    _a4_base = int(
-                        _a4_rep.get("tong_don_soan")
-                        or ((_a4_rep.get("funnel") or {}).get("soan") or 0)
-                        or 0
-                    )
                     _missing_count = max(
                         int(_vr.get("missing_video") or 0),
                         len(_missing_codes),
-                        max(0, _a4_base - _matched_count),
                     )
                     if _missing_codes and _missing_count > len(_missing_codes):
                         _missing_codes += [_missing_codes[-1]] * (_missing_count - len(_missing_codes))

@@ -459,7 +459,11 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
         _is_pick_video = vr.get("source") == "picklog_dedup"
         _video_subject = "Đơn trong phiếu nhặt đã khử trùng" if _is_pick_video else "Đơn đóng gói hôm nay"
         _video_base = rep.get("tong_don_soan") if _is_pick_video else t["dong_goi"]
-        _mv = max(0, int(_video_base or 0) - _have)
+        _mv_raw = max(0, int(_video_base or 0) - _have)
+        try:
+            _mv = int(vr.get("missing_video")) if vr.get("missing_video") is not None else _mv_raw
+        except Exception:
+            _mv = _mv_raw
         _raw_total = int(vr.get("total") or 0)
         _unique_total = int(vr.get("unique_total") or _raw_total or 0)
         _match_note = ""
