@@ -524,8 +524,8 @@ def _week_table_html(data):
             out["vid_hoan"] = _gap_badge("⚠", "#b91c1c", "#fee2e2", "chưa quay", ret_missing,
                                          "Số thiếu đã chốt từ bảng khớp mã.")
         elif ret_extra:
-            out["vid_hoan"] = _gap_badge("▲", "#1d4ed8", "#dbeafe", "video lẻ", ret_extra,
-                                         "Số dư đã chốt từ bảng khớp mã.")
+            out["vid_hoan"] = _gap_badge("⚠", "#b91c1c", "#fee2e2", "video thiếu tag", ret_extra,
+                                         "Có video khui nhưng không khớp nhập kho và chưa gắn tag xử lý.")
 
     def _lech_badge(d):
         """Trả badge lệch cho từng cột cần đối chiếu (▼ thiếu · ▲ dư):
@@ -581,9 +581,9 @@ def _week_table_html(data):
                     "hoàn CHƯA quay clip khui (đã bù phần tráo/đã dùng vốn CÓ quay mà không nhập kho). "
                     "Mở báo cáo A4 ngày này để biết ĐƠN nào chưa quay.")
         elif _tc < 0:
-            out["vid_hoan"] = _gap_badge("▲", "#1d4ed8", "#dbeafe", "video lẻ", -_tc,
-                "Video khui DƯ hơn cả đơn hoàn lẫn tag tráo/đã dùng — có thể NV quay LỘN bên đóng "
-                "hàng, quay dư, hoặc quên gắn tag. Mở A4 để đối chiếu.")
+            out["vid_hoan"] = _gap_badge("⚠", "#b91c1c", "#fee2e2", "video thiếu tag", -_tc,
+                "Có video khui nhưng không khớp nhập kho và chưa gắn tag xử lý. Nếu không nhập kho, "
+                "nhân viên bắt buộc phải gắn tag để theo dõi.")
         _apply_audit_video_badges(out, d)
         return out
 
@@ -651,8 +651,8 @@ def _week_table_html(data):
             ret += _gap_badge("⚠", "#b91c1c", "#fee2e2", "chưa quay", totals["ret_missing"],
                               "Tổng số video khui hoàn thiếu, cộng riêng theo từng ngày.")
         if totals["ret_extra"]:
-            ret += _gap_badge("▲", "#1d4ed8", "#dbeafe", "video lẻ", totals["ret_extra"],
-                              "Tổng số video khui hoàn dư, cộng riêng theo từng ngày.")
+            ret += _gap_badge("⚠", "#b91c1c", "#fee2e2", "video thiếu tag", totals["ret_extra"],
+                              "Tổng video khui không khớp nhập kho và chưa gắn tag xử lý.")
         if totals["ret_old"]:
             ret += _gap_badge("▽", "#64748b", "#f1f5f9", "kho cũ", totals["ret_old"],
                               "Tổng chênh thiếu thuộc các ngày đã quá hạn lưu video Dohana.")
@@ -7798,8 +7798,8 @@ def _render_daily():
                        '**Vid hoàn:** 🔴 **⚠ chưa quay** (đỏ) = còn đơn hoàn CHƯA quay clip khui — số này ĐÃ CỘNG BÙ '
                        'phần tráo/đã dùng (vốn có quay mà không nhập kho) nên **không bị giấu dù Vid hoàn = Hoàn đơn**; '
                        'mở báo cáo A4 ngày đó để biết ĐƠN nào chưa quay · '
-                       '🔵 **▲ video lẻ** (xanh) = video khui dư hơn cả đơn hoàn lẫn tráo → NV quay LỘN bên đóng hàng / '
-                       'quay dư / quên gắn tag. '
+                       '🔴 **⚠ video thiếu tag** = có clip khui nhưng không khớp nhập kho và chưa gắn tag xử lý; '
+                       'nếu không nhập kho thì nhân viên bắt buộc phải gắn tag. '
                        '👉 Đơn **tráo / đã dùng / hư** (KHÔNG nhập kho là ĐÚNG) xem ở cột **Tag hoàn**. '
                        'Công thức thiếu clip = **Tag tranh chấp + Hoàn nhập kho − Vid hoàn**. '
                        '**Shipper nhận** nên = **Soạn (đơn) − Hủy sau soạn** (lệch → cảnh báo). '
