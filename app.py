@@ -1960,7 +1960,7 @@ def _apply_picklog_soan_to_daily(rep, rows, dvr=None, dup_orders=0):
         return
     batches = []
     total_orders = total_qty = 0
-    code_groups, code_labels = [], []
+    code_groups, code_labels, code_group_batches = [], [], []
     from collections import Counter
     carrier_counts = Counter()
     alias_raw, alias_norm = {}, {}
@@ -2037,6 +2037,10 @@ def _apply_picklog_soan_to_daily(rep, rows, dvr=None, dup_orders=0):
         for group in row_groups:
             code_groups.append(group)
             code_labels.append(_prefer_video_lookup_code(group))
+            code_group_batches.append({
+                "batch": idx,
+                "gio": str(r.get("gio") or "").strip(),
+            })
         batches.append({
             "dot": idx,
             "gio": str(r.get("gio") or "—"),
@@ -2095,6 +2099,68 @@ def _apply_picklog_soan_to_daily(rep, rows, dvr=None, dup_orders=0):
     if dvr is not None and code_groups:
         vset = set((dvr.get("codes") or {}).keys())
         matched, font_fixed = match_packing_videos(code_groups, vset)
+        used_video_codes = {str(v[0]) for v in matched.values() if v and v[0]}
+
+        def _rep_date_iso():
+            s = str(rep.get("date") or "").strip()
+            m = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})$", s)
+            if not m:
+                return _today_iso_vn()
+            return f"{int(m.group(3)):04d}-{int(m.group(2)):02d}-{int(m.group(1)):02d}"
+
+        def _minutes(value):
+            m = re.search(r"(\d{1,2}):(\d{2})", str(value or ""))
+            if not m:
+                return None
+            return int(m.group(1)) * 60 + int(m.group(2))
+
+        # Some Dohana package clips are keyed by an internal numeric code that SAPO/picklog
+        # does not expose in the printable list. If the clip count lands right after the
+        # pick batch time, treat it as that batch's video instead of reporting a false miss.
+        try:
+            rep_iso = _rep_date_iso()
+            active_records = []
+            for rec in dvr.get("records") or []:
+                code = str(rec.get("code") or "").strip()
+                minute = _minutes(rec.get("time"))
+                if (code and code not in used_video_codes
+                        and str(rec.get("type") or "package") == "package"
+                        and str(rec.get("date") or "") == rep_iso
+                        and minute is not None
+                        and _dohana_video_active(rec)):
+                    active_records.append({"code": code, "minute": minute})
+            active_records.sort(key=lambda x: x["minute"])
+            batch_times = {}
+            for meta in code_group_batches:
+                minute = _minutes(meta.get("gio"))
+                if minute is not None:
+                    batch_times.setdefault(int(meta.get("batch") or 0), minute)
+            ordered_batches = sorted(batch_times)
+            next_time = {}
+            for pos, batch_no in enumerate(ordered_batches):
+                start = batch_times[batch_no]
+                nxt = batch_times[ordered_batches[pos + 1]] if pos + 1 < len(ordered_batches) else 24 * 60
+                next_time[batch_no] = max(start + 1, nxt)
+            for batch_no in ordered_batches:
+                miss_idx = [
+                    i for i, meta in enumerate(code_group_batches)
+                    if int(meta.get("batch") or 0) == batch_no and i not in matched
+                ]
+                if not miss_idx:
+                    continue
+                start = batch_times[batch_no]
+                end = next_time.get(batch_no, 24 * 60)
+                candidates = [
+                    rec for rec in active_records
+                    if rec["code"] not in used_video_codes and start <= rec["minute"] < end
+                ]
+                if len(candidates) < len(miss_idx):
+                    continue
+                for i, rec in zip(miss_idx, candidates):
+                    matched[i] = (rec["code"], "time")
+                    used_video_codes.add(rec["code"])
+        except Exception:
+            pass
         missing = [code_labels[i] for i in range(len(code_groups)) if i not in matched]
         unknown = max(0, total_orders - len(code_groups))
         if unknown:
