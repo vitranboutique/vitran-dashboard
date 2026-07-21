@@ -9,6 +9,7 @@ Key đặt trong Streamlit secrets:  [dohana]\n  x_api_key = "..."
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 import time
+import threading
 import unicodedata
 
 import requests
@@ -276,14 +277,32 @@ def _tag_name(tag_id, fallback=""):
 
 
 _LAST_REQ = [0.0]   # mốc request Dohana gần nhất (dùng chung mọi call) — giữ nhịp ≤ 10 req/s
+_RATE_LOCK = threading.Lock()
+_COOLDOWN_UNTIL = [0.0]
 
 
 def _throttle(min_gap=0.34):
-    """Giãn nhịp gọi Dohana (~3 req/s, dư an toàn dưới 10/s) → tránh bị phạt 429 tích luỹ."""
-    dt = time.monotonic() - _LAST_REQ[0]
-    if dt < min_gap:
-        time.sleep(min_gap - dt)
-    _LAST_REQ[0] = time.monotonic()
+    """Giãn nhịp TOÀN TIẾN TRÌNH, kể cả nhiều session/luồng Streamlit cùng tải."""
+    with _RATE_LOCK:
+        now = time.monotonic()
+        wait_for = max(
+            0.0,
+            min_gap - (now - _LAST_REQ[0]),
+            _COOLDOWN_UNTIL[0] - now,
+        )
+        if wait_for:
+            time.sleep(wait_for)
+        _LAST_REQ[0] = time.monotonic()
+
+
+def _note_rate_limit(seconds=2.0):
+    """Đặt thời gian nghỉ dùng chung khi bất kỳ request nào nhận 429."""
+    try:
+        seconds = max(1.0, min(float(seconds or 2.0), 10.0))
+    except Exception:
+        seconds = 2.0
+    with _RATE_LOCK:
+        _COOLDOWN_UNTIL[0] = max(_COOLDOWN_UNTIL[0], time.monotonic() + seconds)
 
 
 def _fetch_videos(typ: str, cutoff_date, max_pages: int):
@@ -305,7 +324,7 @@ def _fetch_videos(typ: str, cutoff_date, max_pages: int):
             except Exception:
                 break
             if r.status_code == 429:
-                time.sleep(min(float(r.headers.get("Retry-After") or 1), 3))
+                _note_rate_limit(r.headers.get("Retry-After") or (2 + _try * 2))
                 continue
             if r.status_code == 200:
                 rows = r.json().get("data", [])

@@ -7653,9 +7653,11 @@ def _render_daily():
                     if _ty:
                         _params["type"] = _ty
                     try:
-                        _tm.sleep(0.2)
+                        dohana._throttle()
                         _pr = _rq.get("https://backend.dhn.io.vn/dpm/v1/partner/video/search",
                                       params=_params, headers={"x-api-key": _dk}, timeout=20)
+                        if _pr.status_code == 429:
+                            dohana._note_rate_limit(_pr.headers.get("Retry-After") or 3)
                         if _pr.status_code == 200:
                             _data = (_pr.json() or {}).get("data") or []
                             _codes = ", ".join(str(v.get("orderCode") or "?") for v in _data[:3])
@@ -7736,9 +7738,12 @@ def _render_daily():
                 st.error("Chưa có key Dohana.")
             else:
                 try:
+                    dohana._throttle()
                     _pr2 = _rq2.get("https://backend.dhn.io.vn/dpm/v1/partner/video/search",
                                     params={"page": 0, "limit": 20, "orderCode": _lvq.strip()},
                                     headers={"x-api-key": _dk2}, timeout=20)
+                    if _pr2.status_code == 429:
+                        dohana._note_rate_limit(_pr2.headers.get("Retry-After") or 3)
                     if _pr2.status_code == 200:
                         _dd = (_pr2.json() or {}).get("data") or []
                         if _dd:
