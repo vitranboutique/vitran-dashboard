@@ -1336,6 +1336,9 @@ def _nv_row_restock(it):
     Lý do KN = 'NV nhập kho sai' cho CẢ bảng; tô vàng (need_kn) đến khi có ghi chú CHUẨN thì thôi
     (khi đó tự rớt khỏi Cần KN). Dùng chung cho bảng 'theo loại' lẫn danh sách Cần KN."""
     _std = _note_is_standard(it.get("ghi_chu", ""))
+    # Đơn CHỈ HOÀN TIỀN (không có hàng hoàn về) → KHÔNG cần video khui → KHÔNG phải lỗi NV: đổi nhãn
+    # + KHÔNG tô vàng / KHÔNG đưa vào Cần KN. Nhờ group theo loại, đơn này tự nằm ở mục "Chỉ hoàn tiền".
+    _refund = str(it.get("loai_tra_code") or "") == "refund"
     return {
         "order_code": it.get("order_code") or "", "return_code": it.get("return_code") or "",
         "order_source": it.get("order_source") or "", "gian_hang": it.get("gian_hang") or "",
@@ -1344,11 +1347,11 @@ def _nv_row_restock(it):
         "created": it.get("ngay_tao") or it.get("restock_date") or "",
         "created_on": it.get("restock_date") or "",
         "note": it.get("ghi_chu") or "", "reason": it.get("ly_do") or "",
-        "_reason_label": "❌ NV nhập kho sai",          # CẢ bảng lý do = nhân viên nhập sai
+        "_reason_label": ("💸 Chỉ hoàn tiền — không cần video" if _refund else "❌ NV nhập kho sai"),
         "loai_tra": it.get("loai_tra") or "", "loai_tra_code": it.get("loai_tra_code") or "",
         "sku": it.get("sku") or "", "qty": it.get("sp") or 0, "money": it.get("money") or 0,
         "stock_status": "Đã nhập kho", "return_shipper": it.get("carrier") or "",
-        "need_kn": (not _std),                          # tô vàng + vào Cần KN tới khi có ghi chú chuẩn
+        "need_kn": (False if _refund else (not _std)),  # refund: không tô vàng, không vào Cần KN
         "_restock_novideo": True,
     }
 
