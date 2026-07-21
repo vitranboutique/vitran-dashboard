@@ -2233,27 +2233,41 @@ def _apply_picklog_soan_to_daily(rep, rows, dvr=None, dup_orders=0):
             for i in remaining_idx:
                 matched[i] = ("__count_only__", "count")
         _vset_norm = {_ascii_code(v) for v in vset if _ascii_code(v)}
+        def _is_ship_waybill(code):
+            n = _ascii_code(code)
+            if not n:
+                return False
+            if n.startswith(("SPXVN", "VTPVN", "VTP", "GHN", "GHTK", "JNT", "JT", "GYX")):
+                return True
+            return bool(re.fullmatch(r"8[4567]\d{8,14}", n))   # mã 86… ; LOẠI mã ngắn kiểu shop_id 179135299
+        def _order_has_video(i):
+            _grp = code_groups[i] if i < len(code_groups) else []
+            return any(_ascii_code(c) in _vset_norm for c in _grp)
         def _missing_label(i):
             _grp = code_groups[i] if i < len(code_groups) else []
-            # Hiện mã THỰC SỰ chưa có video (không nằm trong vset) để tra Dohana khớp đúng thực tế —
-            # tránh gán nhãn 1 mã aliased vốn ĐÃ có clip (khiến tưởng "báo sai" như ca SPXVN060117232017).
-            _absent = [c for c in _grp if _ascii_code(c) and _ascii_code(c) not in _vset_norm]
-            return _prefer_video_lookup_code(_absent) if _absent else code_labels[i]
-        missing = [_missing_label(i) for i in range(len(code_groups)) if i not in matched]
+            # CHỈ hiện vận đơn THẬT đang vắng video (SPXVN/VTP/86…) — KHÔNG hiện mã ngắn shop_id (179135299).
+            _wb_absent = [c for c in _grp if _is_ship_waybill(c) and _ascii_code(c) not in _vset_norm]
+            return _prefer_video_lookup_code(_wb_absent) if _wb_absent else code_labels[i]
+        # Đơn CHỈ tính THIẾU khi KHÔNG mã nào của nó nằm trong kho video. Nếu vận đơn của đơn ĐÃ có clip
+        # (dù bị gom nhóm trùng nhiều đơn cùng 1 vận đơn) → coi như ĐÃ quay, KHÔNG báo thiếu oan.
+        _missing_idx = [i for i in range(len(code_groups)) if i not in matched and not _order_has_video(i)]
+        _covered_extra = sum(1 for i in range(len(code_groups)) if i not in matched and _order_has_video(i))
+        missing = [_missing_label(i) for i in _missing_idx]
         unknown = max(0, total_orders - len(code_groups))
         if unknown:
             missing += [f"{unknown} đơn phiếu nhặt chưa lưu mã đối chiếu"]
         missing_count = len(missing)
         unique_video = len(vset)
+        _open_with_video = len(matched) + _covered_extra
         rep["video_recon"] = {
             "available": True,
             "total": video_total,
             "unique_total": unique_video,
             "dup": dvr.get("dup", {}),
-            "open_with_video": len(matched),
+            "open_with_video": _open_with_video,
             "matched_video": len(matched),
             "unmatched_order_count": missing_count,
-            "raw_unmatched_order_count": max(0, total_orders - len(matched)),
+            "raw_unmatched_order_count": max(0, total_orders - _open_with_video),
             "unmatched_order_codes": missing,
             "missing_video": missing_count,
             "missing_codes": missing,
@@ -2261,7 +2275,7 @@ def _apply_picklog_soan_to_daily(rep, rows, dvr=None, dup_orders=0):
             "source": "picklog_dedup",
         }
         if isinstance(rep.get("funnel"), dict):
-            rep["funnel"]["video"] = len(matched)
+            rep["funnel"]["video"] = _open_with_video
 
 
 @st.cache_data(ttl=300, show_spinner="Đang tổng hợp 30 ngày (1 tháng)…")
