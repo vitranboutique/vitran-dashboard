@@ -58,6 +58,8 @@ _CSS = """
   .page2{page-break-before:always;}
   .return-table{font-size:.94em;line-height:1.28;}
   .return-table th,.return-table td{padding:.36em .48em;}
+  .return-table th:first-child,.return-table td:first-child{white-space:nowrap;padding-left:.15em;padding-right:.15em;}
+  .mono-code{white-space:nowrap;word-break:normal;overflow-wrap:normal;font-size:.9em;letter-spacing:0;font-variant-numeric:tabular-nums;}
   .kpis.k3{grid-template-columns:repeat(3,1fr);}
   .kpis.kf4{grid-template-columns:repeat(4,1fr);gap:.38em;margin:.3em 0 .4em;}
   .kpis.kf3{grid-template-columns:repeat(3,1fr);gap:.38em;margin:.3em 0 .4em;}
@@ -402,7 +404,8 @@ def _recon_rows(rows, start=0, clip_on=True):
                 _cs.append(f'{r["clip_dur"]}s')
             if r.get("clip_time"):
                 _cs.append(str(r["clip_time"]))
-            clip_cell = (f'<b style="color:#6d28d9">🎥 {_e(str(r.get("clip_code") or "?"))}</b>{_alt}'
+            clip_cell = (f'<b style="color:#6d28d9">🎥 <span class="mono-code">'
+                         f'{_e(str(r.get("clip_code") or "?"))}</span></b>{_alt}'
                          + (f'<div style="font-size:.82em;color:#6b7280">⏱ {_e(" · ".join(_cs))}</div>'
                             if _cs else ''))
             clip_td = ""
@@ -433,7 +436,7 @@ def _recon_rows(rows, start=0, clip_on=True):
                 f'<div style="font-size:.85em;color:#b91c1c;font-weight:900;margin-top:2px">'
                 f'⚠️ ĐÃ nhập kho dù clip có tag “{_e(str(_tag))}” — kiểm tra/gỡ nhập kho nếu hàng hư hỏng, thiếu, sai hoặc tráo.</div>'
                 if _tag else '')
-            sapo_cell = (f'<b>{_e(str(r.get("order_code") or "?"))}</b>'
+            sapo_cell = (f'<b class="mono-code">{_e(str(r.get("order_code") or "?"))}</b>'
                          + (f'<div style="font-size:.82em;color:#6b7280">{" · ".join(_ss)}</div>'
                             if _ss else '')
                          + f'<div style="font-size:.82em;color:#475569">🏪 {_e(str(r.get("gian_hang") or "Chưa xác định"))}</div>'
@@ -442,7 +445,7 @@ def _recon_rows(rows, start=0, clip_on=True):
         else:
             _oc = r.get("order_code") or ""
             _tag = _tag_label(r.get("clip_tag"), r.get("clip_tag_id"))
-            _ocb = f'<b>{_e(str(_oc))}</b><br>' if _oc else ''
+            _ocb = f'<b class="mono-code">{_e(str(_oc))}</b><br>' if _oc else ''
             if _tag:
                 _rsn = (f'✓ KHÔNG nhập kho Sapo — đúng quy trình vì clip có tag “{_e(str(_tag))}”. '
                         'Giữ xử lý tranh chấp/khiếu nại sàn, giữ clip làm bằng chứng.')
@@ -463,13 +466,15 @@ def _recon_rows(rows, start=0, clip_on=True):
                     f'padding:1px 5px;border-radius:4px">🏷️ {_e(str(tag))}</span>'
                     if tag else '<span style="color:#cbd5e1">—</span>')
         _vdg = str(r.get("vd_gui") or "")
-        vdg_cell = (f'{_e(_vdg)}' if _vdg and _vdg != r.get("order_code")
+        vdg_cell = (f'<span class="mono-code">{_e(_vdg)}</span>' if _vdg and _vdg != r.get("order_code")
                     else '<span style="color:#cbd5e1">—</span>')
         # Mã ĐƠN trả (tra trên sàn, vd 585...-R1) — KHÁC mã vận đơn trả (đã có ở cột VĐ)
         _rct = str(r.get("return_code") or "")
-        vdt_cell = f'{_e(_rct)}' if _rct else '<span style="color:#cbd5e1">—</span>'
+        vdt_cell = (f'<span class="mono-code">{_e(_rct)}</span>'
+                    if _rct else '<span style="color:#cbd5e1">—</span>')
         _vdr = str(r.get("track_return") or "")
-        vdr_cell = _e(_vdr) if _vdr else '<span style="color:#cbd5e1">—</span>'
+        vdr_cell = (f'<span class="mono-code">{_e(_vdr)}</span>'
+                    if _vdr else '<span style="color:#cbd5e1">—</span>')
         transport_cell = (
             f'<div><span style="color:#64748b;font-weight:700">Đi:</span> {vdg_cell}</div>'
             f'<div><span style="color:#64748b;font-weight:700">Hoàn:</span> {vdr_cell}</div>'
@@ -930,7 +935,7 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
         ),
     )
     # Số đơn/tờ (auto-fit tự co chữ nên không lo tràn/mất dòng; giữ vừa phải cho chữ dễ đọc).
-    _FIRST, _REST = 8, 10
+    _FIRST, _REST = 11, 14
     _chunks, _starts, _i = [], [], 0
     while _i < len(recon):
         _sz = _FIRST if _i == 0 else _REST
