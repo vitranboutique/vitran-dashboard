@@ -2011,10 +2011,6 @@ def _apply_picklog_soan_to_daily(rep, rows, dvr=None, dup_orders=0):
             nc = _ascii_code(c)
             if nc:
                 out.update(alias_norm.get(nc, set()))
-                for alias_nc, alias_vals in list(alias_norm.items()):
-                    if (alias_nc and alias_nc != nc and len(alias_nc) >= 8 and len(nc) >= 8
-                            and (alias_nc in nc or nc in alias_nc)):
-                        out.update(alias_vals)
         return sorted(out)
 
     for idx, r in enumerate(rows, 1):
