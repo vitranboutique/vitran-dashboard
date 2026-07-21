@@ -99,8 +99,17 @@ def shopee_return_detail_url(*docs, keyword: str = "") -> str:
         path_l = ".".join(path).lower()
         if any(token in path_l for token in blocked):
             return
-        has_return_context = any(token in path_l for token in ("return", "refund", "request", "reverse", "rma"))
-        if "order" in path_l and not has_return_context:
+        leaf = path[-1].lower() if path else ""
+        explicit_return_leaf = leaf in (
+            "return_id", "request_id", "refund_id", "return_request_id", "refund_request_id",
+            "reverse_id", "rma_id", "shopee_return_id", "shopee_refund_id",
+        )
+        parent_path = ".".join(path[:-1]).lower()
+        has_return_context = explicit_return_leaf or any(
+            token in parent_path for token in ("refund", "request", "reverse", "rma", "shopee_return")
+        )
+        # `order_return.order.*` is order metadata, not the Shopee return id.
+        if any(str(part).lower() == "order" for part in path[:-1]) and not explicit_return_leaf:
             return
         score = 0
         if "shopee" in path_l:
@@ -109,7 +118,6 @@ def shopee_return_detail_url(*docs, keyword: str = "") -> str:
             score += 20
         if any(token in path_l for token in ("source", "external", "reference", "origin", "marketplace", "platform")):
             score += 10
-        leaf = path[-1].lower() if path else ""
         if leaf in (
             "id", "code", "source_id", "source_identifier", "external_id", "reference_id",
             "return_id", "request_id", "refund_id", "return_request_id", "refund_request_id",
@@ -1759,6 +1767,7 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120, canceled_max_pages
         rtype = x.get("return_type") or "refund"
         sstat = _ship_code(x)
         return {
+            "sapo_return_id": x.get("id") or "",
             "order_code": _ocode or "?",
             "order_link": order_link,
             "return_code": x.get("name") or "",

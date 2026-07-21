@@ -1468,6 +1468,7 @@ def _return_row_from_sapo_api(row: dict, detail: dict | None = None) -> dict:
         order_link = f"https://vitranboutiquehcm.mysapo.net/admin/orders/{order_id}" if order_id else ""
         return_link = f"https://vitranboutiquehcm.mysapo.net/admin/order_returns/{return_id}" if return_id else ""
     return {
+        "sapo_return_id": return_id,
         "order_code": order_code,
         "order_link": order_link,
         "return_code": return_code,
@@ -2622,13 +2623,19 @@ def load_returns_followup():
 
 @st.cache_data(ttl=600, show_spinner="Đang quét đơn trả đang xử lý…")
 def load_returns_inprogress():
-    _cache_ver = 14  # bump khi đổi cấu trúc trả về → buộc tính lại (tránh cache cũ gây lỗi)
+    _cache_ver = 15  # bump khi đổi cấu trúc trả về → buộc tính lại (tránh cache cũ gây lỗi)
     return L.get_returns_in_progress(make_fetch_json(build_session()), canceled_max_pages=120)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def load_return_detail_for_link(return_id):
+    """Tải chi tiết đúng một phiếu để lấy external Shopee return id cho link trực tiếp."""
+    return get_order_return(build_session(), return_id)
 
 
 @st.cache_data(ttl=3600, show_spinner="Đang quét đơn trả bị đóng cả năm…")
 def load_closed_returns_full_year():
-    _cache_ver = 1
+    _cache_ver = 2  # include SAPO return id so Shopee links can resolve to direct detail pages
     return L.get_returns_in_progress(make_fetch_json(build_session()), max_pages=0, canceled_max_pages=500)
 
 
@@ -8837,6 +8844,16 @@ def _render_returns():
                 code = _display_return_code(d)
                 link = _normalize_shopee_return_link((d or {}).get("return_link"), code)
                 if link and "banhang.shopee.vn/portal/sale/return" in link:
+                    is_direct = bool(re.search(r"/portal/sale/return/\d+", link))
+                    return_id = str((d or {}).get("sapo_return_id") or "").strip()
+                    if not is_direct and return_id:
+                        try:
+                            detail = load_return_detail_for_link(return_id)
+                            direct = L.shopee_return_detail_url(detail, d, keyword=code)
+                            if re.search(r"/portal/sale/return/\d+", str(direct or "")):
+                                link = direct
+                        except Exception:
+                            pass
                     link = _shopee_chrome_launcher_url(link, d)
                 return _code_cell(code, link) if code else ""
 
