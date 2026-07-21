@@ -63,7 +63,12 @@ _CSS = """
   .page2 .title-sub{margin-bottom:.2em;}
   .page2 .kpis.kf5{gap:.22em;margin:.2em 0 .22em;}
   .page2 .kf5 .kpi{padding:.18em .34em;}
+  .page2 .kf5 .kpi .l{font-size:.9em;line-height:1.22;}
+  .page2 .kf5 .kpi .v{font-size:1.62em;}
   .page2 .warn{padding:.28em .55em;margin:.28em 0 .34em;}
+  .page2 .warn .wh{font-size:1em;}
+  .page2 .warn .wb{font-size:.88em;line-height:1.32;}
+  .page2 .warn .wc{font-size:.94em;}
   .page2 .sec{margin:.32em 0 .16em;padding:.18em .5em;}
   .return-table{font-size:1.24em;line-height:1.2;}
   .return-table th,.return-table td{padding:.22em .36em;}
@@ -407,15 +412,16 @@ def _short_store_label(value):
     return brand
 
 
-def _recon_rows(rows, start=0, clip_on=True):
+def _recon_rows(rows, start=0, clip_on=True, show_tag=True):
     """Đối chiếu mỗi sự kiện hoàn, nhóm ĐVVC trước rồi đến loại trả hàng."""
     body = ""
     _prev_carrier = None
     _prev_lt = None
+    _cols = 6 if show_tag else 5
     for i, r in enumerate(rows, start + 1):
         _carrier = _return_carrier_label(r)
         if _carrier != _prev_carrier:
-            body += (f'<tr><td colspan="6" style="background:#dbeafe;color:#1e3a8a;'
+            body += (f'<tr><td colspan="{_cols}" style="background:#dbeafe;color:#1e3a8a;'
                      f'font-weight:900;padding:6px 8px;text-transform:uppercase">'
                      f'🚚 ĐVVC: {_e(_carrier)}</td></tr>')
             _prev_carrier = _carrier
@@ -423,7 +429,7 @@ def _recon_rows(rows, start=0, clip_on=True):
         _ltn = r.get("loai_tra") or "—"
         if _ltn != _prev_lt:
             _df = r.get("loai_tra_code") == "delivery_failed"
-            body += (f'<tr><td colspan="6" style="background:{"#fdece3" if _df else "#eef6ea"};'
+            body += (f'<tr><td colspan="{_cols}" style="background:{"#fdece3" if _df else "#eef6ea"};'
                      f'color:{"#c2410c" if _df else "#166534"};font-weight:800;padding:5px 8px">'
                      f'↳ 📦 Loại trả: {_e(str(_ltn))}</td></tr>')
             _prev_lt = _ltn
@@ -518,8 +524,9 @@ def _recon_rows(rows, start=0, clip_on=True):
                  f'<td class="l"{sapo_td}>{sapo_cell}</td>'
                  f'<td class="l">{transport_cell}</td>'
                  f'<td class="l">{sku}</td>'
-                 f'<td class="l">{tag_cell}</td></tr>')
-    return body or '<tr><td colspan="6">Hôm nay không có đơn hoàn / clip khui hàng.</td></tr>'
+                 + (f'<td class="l">{tag_cell}</td>' if show_tag else '')
+                 + '</tr>')
+    return body or f'<tr><td colspan="{_cols}">Hôm nay không có đơn hoàn / clip khui hàng.</td></tr>'
 
 
 def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
@@ -683,7 +690,9 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
         ((_shop, len(_orders)) for _shop, _orders in _shop_orders.items()),
         key=lambda item: (-item[1], item[0].lower()),
     )
-    _shop_summary = " · ".join(f"{_e(_shop)} {_count}" for _shop, _count in _shop_counts) or "Chưa có đơn"
+    _shop_summary = " · ".join(
+        f"{_e(_short_store_label(_shop))} {_count}" for _shop, _count in _shop_counts
+    ) or "Chưa có đơn"
     _sp_exp = sum(int(d.get("sp", 0) or 0) for d in nk_detail)         # Σ SP kỳ vọng phải trả về
     _sp_nhap = sum(int(d.get("sp_nhap", 0) or 0) for d in nk_detail)   # Σ SP thực nhập kho
     _sp_thieu = max(0, _sp_exp - _sp_nhap)                             # SP khách trả THIẾU
@@ -942,12 +951,14 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
 </div></div>"""
 
     # ===== TRANG 2: bảng 6 cột, chia ít đơn mỗi tờ để chữ đọc rõ khi in A4 =====
+    _show_tag = any(_tag_label(r.get("clip_tag"), r.get("clip_tag_id")) for r in recon)
     _thead = ('<thead><tr><th>#</th>'
               '<th class="l">🎥 Clip khui hàng (Dohana)<br><span style="font-weight:600;font-size:.85em">mã · thời lượng · giờ quay</span></th>'
               '<th class="l">📥 Đơn hàng · gian hàng<br><span style="font-weight:600;font-size:.85em">giờ nhận · NV nhập kho</span></th>'
               '<th class="l">🚚 Mã vận chuyển<br><span style="font-weight:600;font-size:.85em">VĐ đi · VĐ hoàn · mã trả</span></th>'
               '<th class="l">Sản phẩm (SKU × SL)</th>'
-              '<th class="l">🏷️ Tag app đóng hàng</th></tr></thead>')
+              + ('<th class="l">🏷️ Tag app đóng hàng</th>' if _show_tag else '')
+              + '</tr></thead>')
     _legend = ('<div style="font-size:.72em;color:#6b7280;margin:.25em 0 0">🔎 <b>Mã clip</b> = tra trên '
                '<b>app đóng hàng (Dohana)</b>. <b>Mã đơn</b> = tra trên <b>Sapo</b> và <b>sàn TMĐT</b>. '
                'Ô <span style="color:#dc2626;font-weight:700">đỏ</span> = thiếu/chưa làm, đã ghi rõ lý do trong ô. '
@@ -997,7 +1008,7 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
   <div class="title-sub">Phần 2 — Hàng hoàn nhận về · nhập kho · video khui hàng{_sub}</div>
   {_kpi}
   <div class="sec">A. Đối chiếu Clip khui hàng ↔ Đã nhận hàng trả{_badge}</div>
-  <table class="return-table" style="table-layout:fixed;overflow-wrap:anywhere"><colgroup><col style="width:3%"><col style="width:16%"><col style="width:25%"><col style="width:24%"><col style="width:15%"><col style="width:17%"></colgroup>{_thead}<tbody>{_recon_rows(_chunk, start=_starts[_si], clip_on=clip_on)}</tbody></table>
+  <table class="return-table" style="table-layout:fixed;overflow-wrap:anywhere"><colgroup>{'<col style="width:3%"><col style="width:20%"><col style="width:29%"><col style="width:29%"><col style="width:19%">' if not _show_tag else '<col style="width:3%"><col style="width:17%"><col style="width:27%"><col style="width:27%"><col style="width:16%"><col style="width:10%">'}</colgroup>{_thead}<tbody>{_recon_rows(_chunk, start=_starts[_si], clip_on=clip_on, show_tag=_show_tag)}</tbody></table>
   {_tail}
   <div class="foot">VITRAN BOUTIQUE · {_pno} — Đơn hàng hoàn trả · {_e(rep["date"])}</div>
 </div></div>"""
