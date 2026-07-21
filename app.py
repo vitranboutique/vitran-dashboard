@@ -9143,9 +9143,10 @@ def _render_returns():
                 for i, d in enumerate(items, _start + 1):
                     _lt = str(d.get("loai_tra_code") or "")
                     if show_type and _lt != _prev_lt:      # GẠCH NGANG ĐẬM + tên loại khi ĐỔI loại trả
-                        body += (f"<tr><td colspan='{len(cols)}' style='border-top:3px solid #334155;"
-                                 f"background:#e5e7eb;font-weight:800;color:#111827;padding:5px 8px'>"
-                                 f"▸ {_safe(d.get('loai_tra') or _lt or '—')}</td></tr>")
+                        body += (f"<tr class='grp-sep'><td colspan='{len(cols)}' style='border-top:3px solid "
+                                 f"#334155;background:#e5e7eb;padding:5px 8px'>"
+                                 f"<span style='position:sticky;left:8px;display:inline-block;font-weight:800;"
+                                 f"color:#111827'>▸ {_safe(d.get('loai_tra') or _lt or '—')}</span></td></tr>")
                         _prev_lt = _lt
                     bg = "background:#fff3cd" if d.get("need_kn") and _is_need_kn_shape(d) else ""
                     note = d.get("note") or ""
@@ -9218,6 +9219,7 @@ def _render_returns():
   var head=tbl.querySelector('thead tr'); if(!head) return;
   var offs=[]; for(var i=0;i<N;i++){{offs.push(head.children[i].offsetLeft);}}
   tbl.querySelectorAll('tr').forEach(function(tr){{
+   if(tr.classList && tr.classList.contains('grp-sep')) return;   // dòng tiêu đề loại: chữ đã sticky riêng
    var isHead=tr.parentElement.tagName==='THEAD';
    for(var i=0;i<N && i<tr.children.length;i++){{
     var c=tr.children[i];
@@ -9858,6 +9860,7 @@ def _render_returns():
   var head=tbl.querySelector('thead tr'); if(!head) return;
   var offs=[]; for(var i=0;i<N;i++){{offs.push(head.children[i].offsetLeft);}}
   tbl.querySelectorAll('tr').forEach(function(tr){{
+   if(tr.classList && tr.classList.contains('grp-sep')) return;   // dòng tiêu đề loại: chữ đã sticky riêng
    var isHead=tr.parentElement.tagName==='THEAD';
    for(var i=0;i<N && i<tr.children.length;i++){{
     var c=tr.children[i];
