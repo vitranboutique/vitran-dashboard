@@ -2164,7 +2164,7 @@ def _apply_picklog_soan_to_daily(rep, rows, dvr=None, dup_orders=0):
                 rec for rec in active_records
                 if rec["code"] not in used_video_codes
             ]
-            if remaining_idx and len(remaining_idx) == len(remaining_videos):
+            if remaining_idx and len(remaining_videos) >= len(remaining_idx):
                 for i, rec in zip(remaining_idx, remaining_videos):
                     matched[i] = (rec["code"], "count")
                     used_video_codes.add(rec["code"])
