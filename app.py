@@ -9257,7 +9257,10 @@ def _render_returns():
                             "ngay_tao": _entry.get("date") or "",
                             "restock_date": _entry.get("date") or "",
                         })
-                    _row["_reason_label"] = "❌ Nhân viên nhập kho sai"
+                    # Đơn CHỈ HOÀN TIỀN (không trả hàng) → hệ thống tự hoàn, KHÔNG cần video khui, KHÔNG phải
+                    # lỗi NV → giữ nhãn "💸 Chỉ hoàn tiền — không cần video", KHÔNG ép thành "NV nhập kho sai".
+                    if str(_row.get("loai_tra_code") or "").strip().lower() != "refund":
+                        _row["_reason_label"] = "❌ Nhân viên nhập kho sai"
                     _row["_report_video_age"] = _entry.get("age") or ""
                     _row["_report_video_missing"] = True
                     _rows.append(_row)
@@ -9286,8 +9289,12 @@ def _render_returns():
                             _d["note"] = _pool_note[_pv]   # kéo ghi chú (kết luận nếu có; không thì "CẦN KN")
                             break
                 for _d in _rows:
-                    # HẾT tô vàng / rớt Cần KN CHỈ khi ĐÃ KẾT LUẬN. Note "CẦN KN" = vẫn cần KN → GIỮ vàng.
-                    _d["need_kn"] = not _note_is_concluded(_d.get("note", ""))
+                    # Đơn chỉ hoàn tiền: KHÔNG cần video → KHÔNG tô vàng / KHÔNG vào Cần KN (khớp nhãn).
+                    # Còn lại: HẾT vàng / rớt Cần KN CHỈ khi ĐÃ KẾT LUẬN (note "CẦN KN" vẫn giữ vàng).
+                    if str(_d.get("loai_tra_code") or "").strip().lower() == "refund":
+                        _d["need_kn"] = False
+                    else:
+                        _d["need_kn"] = not _note_is_concluded(_d.get("note", ""))
                 _restock_novideo_rows._cache = [dict(r) for r in _rows]
                 return _rows
             _closed_returns_with_waybill_detail = [
