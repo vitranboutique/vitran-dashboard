@@ -8588,6 +8588,23 @@ def _render_returns():
                     _row["_report_video_missing"] = True
                     _rows.append(_row)
                 _apply_closed_return_app_notes(_rows, _closed_return_app_notes)
+                # KÉO ghi chú CHUẨN từ CÁC BẢNG KHÁC: nếu đơn (mã trả/mã đơn/VĐ) TRÙNG 1 dòng ở bảng khác
+                # mà dòng đó ĐÃ có ghi chú chuẩn → dùng luôn ghi chú đó (hết tô vàng + tự rớt khỏi Cần KN).
+                _pool_note = {}
+                for _pd in (_return_match_detail or []):
+                    _pn = str(_pd.get("note") or "").strip()
+                    if _pn and _note_is_standard(_pn):
+                        for _pf in ("return_code", "order_code", "vd_tra", "vd_di"):
+                            _pv = _search_norm(_pd.get(_pf))
+                            if _pv:
+                                _pool_note.setdefault(_pv, _pn)
+                for _d in _rows:
+                    if not _note_is_standard(_d.get("note", "")):
+                        for _pf in ("return_code", "order_code", "vd_tra", "vd_di"):
+                            _pv = _search_norm(_d.get(_pf))
+                            if _pv and _pv in _pool_note:
+                                _d["note"] = _pool_note[_pv]
+                                break
                 for _d in _rows:
                     _d["need_kn"] = not _note_is_standard(_d.get("note", ""))
                 _restock_novideo_rows._cache = [dict(r) for r in _rows]
