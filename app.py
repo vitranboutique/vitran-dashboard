@@ -8174,10 +8174,17 @@ def _render_daily():
             x for x in (_match_summary.get("extra_package_video_candidates") or [])
             if str(x.get("date") or "") == _match_day
         ]
+        _undo_package_to_inbound = [
+            x for x in (picklog.read_video_type_overrides() or [])
+            if str(x.get("date") or "") == _match_day
+            and str(x.get("source_type") or "") == "package"
+            and str(x.get("type") or "") == "inbound"
+        ]
     except Exception:
         _match_suggestions = []
         _extra_package_suggestions = []
         _raw_extra_package_candidates = []
+        _undo_package_to_inbound = []
 
     def _clear_a4_video_caches():
         # Chỉ làm mới dữ liệu video; KHÔNG xóa load_daily_report vì Sapo không đổi
@@ -8294,6 +8301,59 @@ def _render_daily():
             f"ℹ️ Ngày {_pick_date.strftime('%d/%m')}: có {len(_raw_extra_package_candidates)} mã Đóng hàng dư, "
             "nhưng 0 mã trùng đơn hoàn đang thiếu video — không có mã để chuyển."
         )
+
+    if _undo_package_to_inbound:
+        with st.expander(
+            f"↩️ Hoàn tác mã đã chuyển Đóng hàng → Khui hoàn — {len(_undo_package_to_inbound)} mã",
+            expanded=False,
+        ):
+            _undo_codes = list(dict.fromkeys(
+                str(x.get("code") or "").strip()
+                for x in _undo_package_to_inbound
+                if str(x.get("code") or "").strip()
+            ))
+            _undo_all_key = f"undo_all_package_to_inbound_{_match_day}"
+
+            def _toggle_all_undo_package_codes():
+                _checked = bool(st.session_state.get(_undo_all_key))
+                for _code in _undo_codes:
+                    st.session_state[f"undo_package_to_inbound_{_match_day}_{_code}"] = _checked
+
+            st.checkbox(
+                f"☑️ Chọn tất cả {len(_undo_codes)} mã cần hoàn tác",
+                key=_undo_all_key,
+                on_change=_toggle_all_undo_package_codes,
+            )
+            _selected_undo_codes = []
+            with st.form(f"undo_package_to_inbound_form_{_match_day}"):
+                _undo_cols = st.columns(2)
+                for _stt, _code in enumerate(_undo_codes, 1):
+                    with _undo_cols[(_stt - 1) % 2]:
+                        if st.checkbox(
+                            f"**{_stt}. {_code}** · trả về Đóng hàng",
+                            key=f"undo_package_to_inbound_{_match_day}_{_code}",
+                        ):
+                            _selected_undo_codes.append(_code)
+                _submit_undo_codes = st.form_submit_button(
+                    "↩️ Hoàn tác các mã đã chọn", use_container_width=True
+                )
+            if _submit_undo_codes:
+                if not _selected_undo_codes:
+                    st.warning("Chưa chọn mã cần hoàn tác.")
+                else:
+                    _saved = picklog.add_video_type_overrides([{
+                        "date": _match_day,
+                        "code": _code,
+                        "type": "package",
+                        "source_type": "package",
+                        "reason": "undo_wrong_package_to_inbound_transfer",
+                    } for _code in _selected_undo_codes])
+                    if _saved:
+                        _clear_a4_video_caches()
+                        st.success(f"Đã hoàn tác {len(_selected_undo_codes)} mã về Đóng hàng.")
+                        st.rerun()
+                    else:
+                        st.error("Không lưu được hoàn tác. Vui lòng kiểm tra kho Gist.")
 
     # ---- Xem báo cáo NGÀY CŨ (query lại Sapo + Dohana theo ngày, số đã cố định) ----
     if not _is_today:
