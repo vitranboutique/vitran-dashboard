@@ -428,6 +428,25 @@ def _return_sort_key(row):
 
 def _recon_rows(rows, start=0, clip_on=True):
     """Đối chiếu mỗi sự kiện hoàn, nhóm ĐVVC trước rồi đến loại trả hàng."""
+    def _compact_codes(raw, limit=2):
+        values = []
+        for value in re.split(r"\s*[·,;\n]+\s*", str(raw or "")):
+            value = value.strip()
+            if value and value not in values:
+                values.append(value)
+        if not values:
+            return '<span style="color:#cbd5e1">—</span>'
+        shown = " · ".join(values[:limit])
+        more = len(values) - limit
+        suffix = f' <b style="color:#2563eb">(+{more} mã)</b>' if more > 0 else ""
+        return f'<span class="mono-code" title="{_e(" · ".join(values))}">{_e(shown)}</span>{suffix}'
+
+    def _compact_text(raw, max_chars=105):
+        text = str(raw or "—").strip() or "—"
+        shown = text if len(text) <= max_chars else text[:max_chars].rstrip(" ·-") + "…"
+        return (f'<div title="{_e(text)}" style="max-height:3.1em;overflow:hidden;line-height:1.45">'
+                f'{_e(shown)}</div>')
+
     body = ""
     _prev_carrier = None
     _prev_lt = None
@@ -506,7 +525,7 @@ def _recon_rows(rows, start=0, clip_on=True):
                 sapo_cell = (f'{_ocb}<div style="font-size:.82em;color:#475569">'
                              f'🏪 {_e(_short_store_label(r.get("gian_hang")))}</div>'
                              f'<span style="color:#15803d;font-weight:900">{_rsn}</span>')
-                sapo_td = ' style="background:#f0fdf4"'
+                sapo_td = ' style="background:#f0fdf4;border:2px solid #16a34a"'
             else:
                 _rsn = '✗ CHƯA bấm nhập kho trên Sapo — kiểm tra: quên nhập kho / quay nhầm mục / quay trùng'
                 sapo_cell = (f'{_ocb}<div style="font-size:.82em;color:#475569">'
@@ -514,14 +533,13 @@ def _recon_rows(rows, start=0, clip_on=True):
                              f'<span style="color:#dc2626;font-weight:800">{_rsn}</span>')
                 sapo_td = ' style="background:#fef2f2"'
         # ── SKU · Loại trả ──
-        sku = _e(str(r.get("sku") or "—"))
+        sku = _compact_text(r.get("sku") or "—")
         _vdg = str(r.get("vd_gui") or "")
         vdg_cell = (f'<span class="mono-code">{_e(_vdg)}</span>' if _vdg and _vdg != r.get("order_code")
                     else '<span style="color:#cbd5e1">—</span>')
         # Mã ĐƠN trả (tra trên sàn, vd 585...-R1) — KHÁC mã vận đơn trả (đã có ở cột VĐ)
         _rct = str(r.get("return_code") or "")
-        vdt_cell = (f'<span class="mono-code">{_e(_rct)}</span>'
-                    if _rct else '<span style="color:#cbd5e1">—</span>')
+        vdt_cell = _compact_codes(_rct)
         _vdr = str(r.get("track_return") or "")
         vdr_cell = (f'<span class="mono-code">{_e(_vdr)}</span>'
                     if _vdr else '<span style="color:#cbd5e1">—</span>')
