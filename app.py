@@ -7686,6 +7686,23 @@ def _render_daily():
                     st.warning("⚠️ Chưa đọc được danh sách tag từ DHN API `/tag`; app sẽ hiện `Tag chưa map tên (id...)`.")
                 st.caption("📸 Chụp bảng + dòng xanh gửi Claude. inbound=0 mà package/không-lọc>0 → clip khui hàng "
                            "nằm ở loại KHÁC → sửa cách lấy. Toàn 401/429 → key/tốc độ.")
+        st.markdown("**Sửa tag gắn nhầm đã lưu trong báo cáo**")
+        _wrong_tag_code = st.text_input(
+            "Mã video Dohana cần gỡ tag",
+            key="dohana_clear_wrong_tag_code",
+            placeholder="VD: SPXVN060860994977",
+        ).strip()
+        if st.button("🧹 Gỡ tag lưu nhầm", key="dohana_clear_wrong_tag_btn"):
+            if not _wrong_tag_code:
+                st.warning("Nhập mã video Dohana cần gỡ tag.")
+            else:
+                _cleared = picklog.clear_dohana_video_tag(_wrong_tag_code, "inbound")
+                if _cleared:
+                    st.cache_data.clear()
+                    st.success(f"Đã gỡ tag lưu nhầm cho `{_wrong_tag_code}`.")
+                    st.rerun()
+                else:
+                    st.warning(f"Không tìm thấy tag đang lưu của `{_wrong_tag_code}`.")
         st.divider()
         st.caption("**Kho video** (cột Vid/Tag ở bảng Tổng hợp 30 ngày) chỉ có video ĐÃ fetch được. Dohana vừa bị "
                    "429 nên kho THIẾU → bấm nút này hút lại **~25 ngày** (Dohana chỉ giữ 25 ngày) gộp vào kho.")

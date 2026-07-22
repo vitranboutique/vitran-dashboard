@@ -666,6 +666,31 @@ def merge_dohana_videos(new_list) -> list:
     return cur
 
 
+def clear_dohana_video_tag(code: str, video_type: str = "inbound") -> int:
+    """Gỡ tag đã lưu nhầm của đúng một mã video; trả số record đã sửa."""
+    code = str(code or "").strip()
+    video_type = str(video_type or "").strip()
+    if not code or not _resolve_gid():
+        return 0
+    cur = read_dohana_videos()
+    changed = 0
+    for rec in cur:
+        if str(rec.get("code") or "").strip() != code:
+            continue
+        if video_type and str(rec.get("type") or "").strip() != video_type:
+            continue
+        had_tag = any(rec.get(k) for k in ("tag_id", "tag_name", "locked_tag_id",
+                                           "locked_tag_name", "tag_locked_at"))
+        for key in ("tag_id", "tag_name", "locked_tag_id", "locked_tag_name", "tag_locked_at"):
+            rec[key] = ""
+        rec["tag_corrected_at"] = _today_vn()
+        if had_tag:
+            changed += 1
+    if changed and _write_gist_file(_DFILE, {"videos": cur}):
+        return changed
+    return 0
+
+
 # ───── ĐƠN NHẬP KHO NHƯNG KHÔNG CÓ VIDEO KHUI — lưu VĨNH VIỄN, KHÔNG mất khi Dohana xoá video ─────
 # Đơn hoàn đã restock (Sapo) mà không khớp video khui (inbound) nào trong kho video đã lưu → nghi
 # NV nhập kho nhầm / không quay clip. Sổ này TÍCH LUỸ, không tự xoá; video xuất hiện sau → tự đánh
