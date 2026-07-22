@@ -4951,6 +4951,24 @@ def _render_shared_sync_sidebar():
             if _at:
                 st.caption("Lần đồng bộ: " + _at.strftime("%H:%M:%S %d/%m"))
             st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch", height=min(240, 40 + 35 * len(rows)))
+        st.divider()
+        try:
+            _bld_now = getattr(L, "WEEK_SUMMARY_BUILD", "?")
+        except Exception:
+            _bld_now = "?"
+        st.caption(f"🏷️ Build đang chạy: **{_bld_now}**")
+        st.caption("♻️ Bấm khi ĐÃ push code mới mà app CHƯA đổi (build tag vẫn cũ). Nút này TẮT tiến trình app "
+                   "để Streamlit dựng lại + nạp code mới — app gián đoạn ~30–60s rồi tự lên.")
+        if st.button("♻️ Khởi động lại app (nạp CODE mới)", width="stretch", key="hard_reboot_app"):
+            import os as _os, signal as _sig, time as _tm
+            try:
+                st.cache_data.clear()
+                st.cache_resource.clear()
+            except Exception:
+                pass
+            st.warning("Đang khởi động lại… chờ ~30–60s rồi F5. Nếu 1 phút chưa lên thì F5 thêm lần nữa.")
+            _tm.sleep(1.5)
+            _os.kill(_os.getpid(), _sig.SIGKILL)
 
 
 # Popup cảnh báo cố định — hiện ở MỌI trang (kho/admin thêm việc SX/cắt tay)
