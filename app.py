@@ -511,9 +511,6 @@ def _week_table_html(data):
         """Đếm đúng các ô SAPO trống trong đối chiếu A4, không suy từ chênh lệch tổng."""
         if not isinstance(row, dict):
             return ""
-        stale, _ = _day_video_age(row)
-        if stale:
-            return ""
         plain = _video_audit_num(row.get("return_blank_sapo_plain_count"))
         tagged = _video_audit_num(row.get("return_blank_sapo_tagged_count"))
         tag_note = str(row.get("return_blank_sapo_tag_notes") or "").strip()
