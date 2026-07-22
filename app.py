@@ -505,37 +505,28 @@ def _week_table_html(data):
         )
 
     def _return_sapo_reconcile_badge(row):
-        """Giải thích ngay tại cột Hoàn SAPO vì sao Vid hoàn khác số đơn nhập kho."""
+        """Đếm đúng các ô SAPO trống trong đối chiếu A4, không suy từ chênh lệch tổng."""
         if not isinstance(row, dict):
             return ""
         stale, _ = _day_video_age(row)
-        if stale:  # Dohana đã xóa video cũ: không đủ dữ liệu để kết luận SAPO thiếu
+        if stale:
             return ""
-        try:
-            sapo = int(round(float(row.get("hoan_don") or 0)))
-            videos = int(round(float(row.get("vid_hoan") or 0)))
-        except Exception:
-            return ""
-        tag_text = str(row.get("tag_hoan") or "")
-        tagged_not_stocked = sum(int(x) for x in re.findall(r"×\s*(\d+)", tag_text))
-        raw_gap = videos - sapo
-        if raw_gap == 0 and tagged_not_stocked == 0:
-            return ""
-        if raw_gap > 0:
-            unexplained = max(0, raw_gap - tagged_not_stocked)
-            if unexplained:
-                return _gap_badge(
-                    "⚠", "#b91c1c", "#fee2e2", "thiếu SAPO", unexplained,
-                    f"Hoàn SAPO thấp hơn Video hoàn {unexplained}: chưa nhập kho SAPO hoặc video chưa gắn tag.",
-                )
-            return _gap_badge(
-                "✓", "#166534", "#dcfce7", "không nhập · có tag", raw_gap,
-                f"Hoàn SAPO thấp hơn {raw_gap} nhưng đã có lý do ở Tag hoàn: {tag_text}.",
+        plain = _video_audit_num(row.get("return_blank_sapo_plain_count"))
+        tagged = _video_audit_num(row.get("return_blank_sapo_tagged_count"))
+        tag_note = str(row.get("return_blank_sapo_tag_notes") or "").strip()
+        out = ""
+        if plain:
+            out += _gap_badge(
+                "⚠", "#b91c1c", "#fee2e2", "ô trống · chưa nhập/tag", plain,
+                "Ô Hoàn SAPO trống: chưa bấm nhập kho SAPO hoặc video chưa gắn tag xử lý.",
             )
-        # video < sapo → THIẾU VIDEO là lỗi bên VIDEO → đã cảnh báo ở cột "Video hoàn (Dohana)"
-        # (chưa quay / chưa lấy được / video cũ đã xóa). KHÔNG lặp sang cột Hoàn SAPO.
-        # Cột Hoàn SAPO CHỈ cảnh báo khi CHÍNH NÓ thiếu (video > sapo = Sapo chưa nhập/chưa tag).
-        return ""
+        if tagged:
+            reason = tag_note or "có tag giữ xử lý"
+            out += _gap_badge(
+                "✓", "#166534", "#dcfce7", f"ô trống · {reason}", tagged,
+                f"Ô Hoàn SAPO trống là đúng quy trình vì clip có tag: {reason}. Giữ xử lý tranh chấp/khiếu nại.",
+            )
+        return out
 
     def _day_video_age(d):
         """(stale, fresh_today): quá hạn Dohana (~25 ngày → video cũ ĐÃ XÓA) · hôm nay (chưa đồng bộ kịp)."""
@@ -606,16 +597,15 @@ def _week_table_html(data):
             else:             # DƯ (xanh) — bên này dư video, có thể quay lộn sang → chuyển đi
                 out[k] = _gap_badge("▲", "#1d4ed8", "#dbeafe", "dư", abs(lech), tip)
 
-        # HOÀN: chỉ so trực tiếp 2 cột. Bên nào thấp hơn thì cảnh báo ngay tại ô bên đó.
-        # Ngày quá hạn Dohana đã xóa video cũ → không đủ dữ liệu, tuyệt đối không kết luận thiếu.
-        _return_gap = _n("hoan_don") - _n("vid_hoan")
-        if d.get("iso") and _return_gap > 0 and not _stale:
+        # HOÀN: dùng đúng số Ô VIDEO TRỐNG của từng dòng đối chiếu A4; không suy từ phép trừ 2 tổng.
+        _blank_video = _video_audit_num(d.get("return_blank_video_count"))
+        if d.get("iso") and _blank_video > 0 and not _stale:
             if _fresh_today:
-                out["vid_hoan"] = _gap_badge("⏳", "#b45309", "#fef3c7", "chưa đồng bộ", _return_gap,
-                    "Video hoàn thấp hơn Hoàn SAPO; hôm nay Dohana có thể chưa đồng bộ xong.")
+                out["vid_hoan"] = _gap_badge("⏳", "#b45309", "#fef3c7", "ô trống · chưa đồng bộ", _blank_video,
+                    "Ô Video hoàn trống; hôm nay Dohana có thể chưa đồng bộ xong.")
             else:
-                out["vid_hoan"] = _gap_badge("⚠", "#b91c1c", "#fee2e2", "thiếu video", _return_gap,
-                    f"Video hoàn thấp hơn Hoàn SAPO {_return_gap}.")
+                out["vid_hoan"] = _gap_badge("⚠", "#b91c1c", "#fee2e2", "ô trống · chưa có video", _blank_video,
+                    "Ô Video hoàn trống: phiếu đã nhập SAPO nhưng chưa tìm thấy clip khui tương ứng.")
         _apply_audit_video_badges(out, d)
         return out
 
@@ -3261,6 +3251,18 @@ def load_week_summary():
                 for r in inbound_rows:
                     if _video_tag_id(r) and r.get("code"):
                         _tagged_inbound_codes_by_day[str(r.get("date") or "")].add(_norm(r.get("code")))
+                # Các clip có tag nhưng KHÔNG khớp phiếu SAPO chính là các dòng A4 có ô Hoàn SAPO trống
+                # và ghi chú "KHÔNG nhập kho SAPO — đúng quy trình".
+                _tagged_unmatched_by_day = _Dd(set)
+                _tagged_unmatched_notes_by_day = _Dd(_Ct)
+                for r in inbound_rows:
+                    dd = str(r.get("date") or "")
+                    code = _norm(r.get("code"))
+                    tag_label = _video_tag_label(r) if _video_tag_id(r) else ""
+                    if (dd and code and tag_label
+                            and code not in set(_matched_inbound_codes_by_day.get(dd, set()))):
+                        _tagged_unmatched_by_day[dd].add(code)
+                        _tagged_unmatched_notes_by_day[dd][tag_label] += 1
                 _inbound_extra_by_day = {}
                 for dd, codes in inbound_codes_by_day.items():
                     _raw = {_norm(c) for c in codes if _norm(c)}
@@ -3369,10 +3371,19 @@ def load_week_summary():
                 if _return_video_stale:
                     _return_missing = []
                     _inbound_extra = []
+                    day["return_blank_video_count"] = 0
+                    day["return_blank_sapo_plain_count"] = 0
+                    day["return_blank_sapo_tagged_count"] = 0
+                    day["return_blank_sapo_tag_notes"] = ""
+                else:
+                    day["return_blank_video_count"] = len(_return_missing)
+                    day["return_blank_sapo_plain_count"] = len(_inbound_extra)
+                    day["return_blank_sapo_tagged_count"] = len(_tagged_unmatched_by_day.get(iso, set()))
+                    day["return_blank_sapo_tag_notes"] = _tagstr(_tagged_unmatched_notes_by_day.get(iso))
                 _pkg_miss_vs_inbound_extra = _cross_matches(_pkg_missing, _inbound_extra)
                 _return_miss_vs_pkg_extra = _cross_matches(_return_missing, _pkg_extra)
                 _add_matrix(
-                    iso, _pkg_missing, _pkg_extra, _return_missing, _inbound_extra,
+                    iso, _pkg_missing, _pkg_extra, [], [],
                     _pkg_unknown, day, pkg_missing_count=_pkg_missing_count,
                 )
                 _add_audit(
@@ -3386,18 +3397,6 @@ def load_week_summary():
                     _return_missing,
                     "Video đóng dư có thể là clip khui hàng quay nhầm bên đóng.",
                     _return_miss_vs_pkg_extra,
-                )
-                _add_audit(
-                    iso, "Thiếu video khui hàng hoàn", _return_missing,
-                    _pkg_extra,
-                    "Tìm mã này trong video đóng hàng cùng ngày; nếu có thì quay lộn mục đóng/khui.",
-                    _return_miss_vs_pkg_extra,
-                )
-                _add_audit(
-                    iso, "Dư video khui hàng hoàn", _inbound_extra,
-                    _pkg_missing,
-                    "Video khui dư có thể là clip đóng hàng quay nhầm bên khui, hoặc đơn hoàn chưa nhập kho/tag thiếu.",
-                    _pkg_miss_vs_inbound_extra,
                 )
                 if _package_stale_today:
                     day["chot_video"] = "⏳ Dohana API tạm lỗi, chưa chốt video đóng"
@@ -7875,8 +7874,8 @@ def _render_daily():
                 _d["ghi_chu"] = _notes.get(_d.get("iso"), "")
             st.markdown(_week_table_html(_wk), unsafe_allow_html=True)
             _render_week_video_audit(_wk)
-            st.caption('Đối chiếu hoàn chỉ dùng **Hoàn SAPO ↔ Video hoàn**: cột nào thấp hơn thì báo ngắn ngay '
-                       'tại ô đó. Ngày quá hạn Dohana đã xóa video cũ sẽ **không báo thiếu** và **không đưa vào Chốt video**.')
+            st.caption('Đối chiếu hoàn đếm đúng **ô trống trên từng dòng A4**, không suy bằng phép trừ hai tổng. '
+                       'Lý do hiện ngắn ngay tại cột có ô trống; video cũ đã xóa không báo thiếu và không đưa vào Chốt video.')
             st.caption('🔑 **Luồng đóng hàng:** **Soạn** (nhặt hàng theo phiếu nhặt — **SL SP** = tổng sản phẩm, '
                        '**SL đơn** = tổng đơn) → **Đóng gói (video)** = số đơn ĐÓNG GÓI THẬT có video → '
                        'Shipper nhận → Giao khách. Soạn (SP/đơn) lấy từ đợt phiếu nhặt đã lưu.')
