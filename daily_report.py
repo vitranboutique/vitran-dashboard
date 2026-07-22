@@ -465,7 +465,7 @@ def _recon_rows(rows, start=0, clip_on=True):
             clip_td = ' style="background:#fef2f2"'
         else:   # Dohana 429/lỗi: cảnh báo nổi bật nhưng KHÔNG kết luận nhân viên chưa quay
             clip_cell = ('<span style="color:#b91c1c;font-weight:900">'
-                         '⚠ DOHANA TẠM KHÔNG LẤY ĐƯỢC CLIP</span>')
+                         '⚠ KHÔNG CÓ VIDEO — Dohana chưa lấy được clip</span>')
             clip_td = ' style="background:#fee2e2;border:2px solid #dc2626"'
         _row_tag = _tag_label(r.get("clip_tag"), r.get("clip_tag_id"))
         if _row_tag:
@@ -502,8 +502,7 @@ def _recon_rows(rows, start=0, clip_on=True):
             _tag = _tag_label(r.get("clip_tag"), r.get("clip_tag_id"))
             _ocb = f'<b class="mono-code">{_e(str(_oc))}</b><br>' if _oc else ''
             if _tag:
-                _rsn = (f'✓ KHÔNG nhập kho Sapo — đúng quy trình vì clip có tag “{_e(str(_tag))}”. '
-                        'Giữ xử lý tranh chấp/khiếu nại sàn, giữ clip làm bằng chứng.')
+                _rsn = f'✓ Không nhập SAPO — {_e(str(_tag))}'
                 sapo_cell = (f'{_ocb}<div style="font-size:.82em;color:#475569">'
                              f'🏪 {_e(_short_store_label(r.get("gian_hang")))}</div>'
                              f'<span style="color:#15803d;font-weight:900">{_rsn}</span>')
