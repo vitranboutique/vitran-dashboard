@@ -38,6 +38,8 @@ from sapo_client import (
 )
 from picking_render import picking_html
 
+_DOHANA_RETENTION = 25  # file video bị xóa sau khoảng 25 ngày; mã trong kho vẫn được giữ để đối chiếu
+
 # ───────── Tự nạp lại module logic mỗi lần chạy → sửa code là CÓ NGAY, khỏi Reboot ─────────
 # app.py hot-reload khi push, nhưng module (sapo_logic, daily_report) thì Streamlit giữ bản cũ
 # trong RAM tới khi Reboot. Reload tại đây để 2 module đó luôn chạy code mới nhất mà không cần
@@ -608,6 +610,16 @@ def _week_table_html(data):
                 out["vid_hoan"] = _gap_badge("⚠", "#b91c1c", "#fee2e2", "chưa có video", _blank_video,
                     "Ô Video hoàn trống: phiếu đã nhập SAPO nhưng chưa tìm thấy clip khui tương ứng.")
         _apply_audit_video_badges(out, d)
+        _deleted_pkg = _video_audit_num(d.get("video_deleted_pkg_count"))
+        _deleted_ret = _video_audit_num(d.get("video_deleted_ret_count"))
+        if _deleted_pkg:
+            out["vid_dong"] = out.get("vid_dong", "") + _gap_badge(
+                "🗑", "#475569", "#f1f5f9", "đã xóa file", _deleted_pkg,
+                "File video cũ đã bị Dohana xóa, nhưng mã vẫn còn trong kho lưu và vẫn được tính.")
+        if _deleted_ret:
+            out["vid_hoan"] = out.get("vid_hoan", "") + _gap_badge(
+                "🗑", "#475569", "#f1f5f9", "đã xóa file", _deleted_ret,
+                "File video cũ đã bị Dohana xóa, nhưng mã vẫn còn trong kho lưu và vẫn được tính.")
         _moved_pkg = _video_audit_num(d.get("video_move_pkg_in"))
         _moved_ret = _video_audit_num(d.get("video_move_ret_in"))
         _pending_pkg = _video_audit_num(d.get("video_a4_pending_pkg"))
@@ -3068,14 +3080,28 @@ def load_week_summary():
                 pass
             recs = _dohana_records_effective()
             vdong, vhoan, tdong, thoan = {}, {}, {}, {}   # tag TÁCH theo loại video: đóng vs khui
+            _deleted_pkg_by_day, _deleted_ret_by_day = {}, {}
             package_codes_by_day, package_unknown_by_day, inbound_codes_by_day = {}, {}, {}
             inbound_rows = []
             for r in recs:
-                if not _dohana_video_active(r):
-                    continue
                 d, ty = r.get("date"), r.get("type")
                 if not d:
                     continue
+                _active_video = _dohana_video_active(r)
+                if not _active_video:
+                    try:
+                        _stored_old = (
+                            (datetime.now(timezone.utc) + timedelta(hours=7)).date()
+                            - date.fromisoformat(str(d))
+                        ).days > _DOHANA_RETENTION
+                    except Exception:
+                        _stored_old = False
+                    # Dohana chỉ xóa FILE khi quá hạn; mã trong kho Gist vẫn là bằng chứng
+                    # video đã quay và phải tiếp tục được tính trong báo cáo lịch sử.
+                    if not _stored_old:
+                        continue
+                    _deleted_map = _deleted_pkg_by_day if ty == "package" else _deleted_ret_by_day
+                    _deleted_map[d] = _deleted_map.get(d, 0) + 1
                 code = str(r.get("code") or "").strip()
                 tn = _video_tag_label(r) if _video_tag_id(r) else ""
                 if ty == "package":          # đóng hàng → tag đóng (vd đóng thiếu SP)
@@ -3548,6 +3574,8 @@ def load_week_summary():
                 # Cột Vid hoàn là số clip khui thực tế trên Dohana. Số clip khớp đơn
                 # được giữ riêng để bảng đối chiếu xác định clip dư/thiếu.
                 day["vid_hoan"] = day["vid_hoan_raw"]
+                day["video_deleted_pkg_count"] = int(_deleted_pkg_by_day.get(iso, 0))
+                day["video_deleted_ret_count"] = int(_deleted_ret_by_day.get(iso, 0))
                 day["tag_dong"] = _tagstr(tdong.get(iso))
                 day["tag_hoan"] = _tagstr(thoan.get(iso))
                 # Cùng cảnh báo với A4: clip khui còn dư sau khi đã loại clip khớp đơn
