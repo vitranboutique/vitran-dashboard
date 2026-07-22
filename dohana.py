@@ -321,7 +321,11 @@ def _fetch_videos(typ: str, cutoff_date, max_pages: int):
     # p=custom tránh giới hạn mặc định 30 ngày khi app cần đồng bộ 35 ngày.
     # Lấy dư một ngày UTC; kết quả cuối vẫn được lọc theo ngày Việt Nam.
     from_iso = f"{cutoff_date - timedelta(days=1)}T00:00:00Z"
-    to_iso = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%dT00:00:00Z")
+    # Dùng thời điểm hiện tại (thay vì 00:00 ngày mai cố định cả ngày) để URL request
+    # thay đổi theo mỗi lần refresh, tránh lớp cache phía Dohana trả snapshot cũ nhiều giờ.
+    to_iso = (datetime.now(timezone.utc) + timedelta(minutes=1)).isoformat(
+        timespec="seconds"
+    ).replace("+00:00", "Z")
     for page_no in range(max_pages):
         rows = None
         payload = {}
