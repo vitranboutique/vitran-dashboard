@@ -1422,7 +1422,7 @@ def get_alerts(fetch_json) -> dict:
             "cancel_retrieve_express": cancel_retrieve_express}
 
 
-WEEK_SUMMARY_BUILD = "cong-cu-chuyen-doc-thang-bang-ma-23jul"   # đổi mỗi lần sửa module → biết app đã reboot chưa
+WEEK_SUMMARY_BUILD = "hoan-sapo-dem-theo-ma-tra-23jul"   # đổi mỗi lần sửa module → biết app đã reboot chưa
 
 
 def get_week_summary(fetch_json, days: int = 7) -> dict:
@@ -1560,7 +1560,7 @@ def get_week_summary(fetch_json, days: int = 7) -> dict:
         codes = [return_wb, return_code, order_code, *outbound_wbs]
         codes += _TRACK_RE.findall(str(x.get("note") or ""))
         _register_context(codes, label)
-    _hoan_day, _hoan_mon = {}, set()   # HOÀN (đơn) đếm theo MÃ ĐƠN distinct (1 đơn nhiều SP/mã trả = 1)
+    _hoan_day, _hoan_mon = {}, set()   # HOÀN SAPO đếm theo MÃ TRẢ distinct; 1 đơn gốc có nhiều phiếu trả phải tính riêng.
     restocked_return_labels_by_day = {}
     # Keep the identifiers used by the A4 report so the 30-day table can apply
     # the same video reconciliation instead of rebuilding a different summary.
@@ -1578,11 +1578,14 @@ def get_week_summary(fetch_json, days: int = 7) -> dict:
         sp_nhap = int(round(sum((li.get("stocked_quantity") or 0) for li in lis)))
         thieu = max(0, int(round(x.get("total_quantity") or 0)) - sp_nhap)
         trao = 1 if "tráo" in str(x.get("note") or "").lower() else 0
-        _oc = (x.get("order") or {}).get("name") or x.get("name") or ""   # MÃ ĐƠN (cột "Đã nhận hàng trả")
+        _oc = (x.get("order") or {}).get("name") or ""
         si = x.get("shipping_info") or {}
         _ret_wb = str(si.get("tracking_number") or "").strip()
         _out_wbs = [str(v).strip() for v in (si.get("fulfillment_tracking_numbers") or []) if str(v).strip()]
         _ret_code = str(x.get("name") or "").strip()
+        # Khóa phiếu hoàn: ưu tiên mã trả Sapo. Chỉ fallback khi dữ liệu cũ thiếu mã trả;
+        # tuyệt đối không gộp hai mã trả khác nhau chỉ vì cùng mã đơn gốc.
+        _return_identity = _ret_code or _ret_wb or str(_oc or "").strip()
         _return_label = (
             f"VĐ đi/đóng: {' · '.join(dict.fromkeys(_out_wbs))} | "
             f"VĐ hoàn: {_ret_wb} | Mã trả: {_ret_code} | Mã đơn: {_oc}"
@@ -1605,10 +1608,10 @@ def get_week_summary(fetch_json, days: int = 7) -> dict:
         _bump("hoan_sp", rd, sp_nhap)
         _bump("thieu", rd, thieu)
         _bump("trao", rd, trao)
-        if _oc:
-            _hoan_day.setdefault(rd, set()).add(_oc)
+        if _return_identity:
+            _hoan_day.setdefault(rd, set()).add(_return_identity)
             if month_start <= rd <= today:
-                _hoan_mon.add(_oc)
+                _hoan_mon.add(_return_identity)
     for _d in day_set:
         agg[_d]["hoan_don"] = len(_hoan_day.get(_d, set()))
     mon["hoan_don"] = len(_hoan_mon)

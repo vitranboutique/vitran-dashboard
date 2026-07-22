@@ -513,7 +513,11 @@ def _recon_rows(rows, start=0, clip_on=True):
                 f'<div style="font-size:.85em;color:#b91c1c;font-weight:900;margin-top:2px">'
                 f'⚠️ ĐÃ nhập kho dù clip có tag “{_e(str(_tag))}” — kiểm tra/gỡ nhập kho nếu hàng hư hỏng, thiếu, sai hoặc tráo.</div>'
                 if _tag else '')
-            sapo_cell = (f'<b class="mono-code">{_e(str(r.get("order_code") or "?"))}</b>'
+            _return_main = str(r.get("return_code") or r.get("track_return") or r.get("order_code") or "?")
+            _order_sub = str(r.get("order_code") or "").strip()
+            sapo_cell = (f'<b class="mono-code">{_e(_return_main)}</b>'
+                         + (f'<div style="font-size:.78em;color:#64748b">Đơn gốc: {_e(_order_sub)}</div>'
+                            if _order_sub and _order_sub != _return_main else '')
                          + (f'<div style="font-size:.82em;color:#6b7280">{" · ".join(_ss)}</div>'
                             if _ss else '')
                          + f'<div style="font-size:.88em;color:#475569">🏪 {_e(_short_store_label(r.get("gian_hang")))}</div>'
@@ -540,9 +544,6 @@ def _recon_rows(rows, start=0, clip_on=True):
         _vdg = str(r.get("vd_gui") or "")
         vdg_cell = (f'<span class="mono-code">{_e(_vdg)}</span>' if _vdg and _vdg != r.get("order_code")
                     else '<span style="color:#cbd5e1">—</span>')
-        # Mã ĐƠN trả (tra trên sàn, vd 585...-R1) — KHÁC mã vận đơn trả (đã có ở cột VĐ)
-        _rct = str(r.get("return_code") or "")
-        vdt_cell = _compact_codes(_rct)
         _vdr = str(r.get("track_return") or "")
         vdr_cell = (f'<span class="mono-code">{_e(_vdr)}</span>'
                     if _vdr else '<span style="color:#cbd5e1">—</span>')
@@ -554,7 +555,6 @@ def _recon_rows(rows, start=0, clip_on=True):
                 f'<div><span style="color:#64748b;font-weight:700">Đi:</span> {vdg_cell}</div>'
                 f'<div><span style="color:#64748b;font-weight:700">Hoàn:</span> {vdr_cell}</div>'
             )
-        transport_cell += f'<div><span style="color:#64748b;font-weight:700">Mã trả:</span> {vdt_cell}</div>'
         body += (f'<tr><td>{i}</td>'
                  f'<td class="l"{clip_td}>{clip_cell}</td>'
                  f'<td class="l"{sapo_td}>{sapo_cell}</td>'
@@ -718,8 +718,9 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
     _shop_orders = OrderedDict()
     for _d in nk_detail:
         _shop = str(_d.get("gian_hang") or "Chưa xác định")
-        _order = str(_d.get("order_code") or _d.get("return_code") or id(_d))
-        _shop_orders.setdefault(_shop, set()).add(_order)
+        _return_identity = str(_d.get("return_code") or _d.get("track_return") or
+                               _d.get("order_code") or id(_d))
+        _shop_orders.setdefault(_shop, set()).add(_return_identity)
     _shop_counts = sorted(
         ((_shop, len(_orders)) for _shop, _orders in _shop_orders.items()),
         key=lambda item: (-item[1], item[0].lower()),
@@ -999,12 +1000,12 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
     # ===== TRANG 2: bảng 5 cột; tag (nếu có) nằm ngay trong cột clip =====
     _thead = ('<thead><tr><th>#</th>'
               '<th class="l">🎥 Clip khui hàng (Dohana)<br><span style="font-weight:600;font-size:.85em">mã · thời lượng · giờ quay</span></th>'
-              '<th class="l">📥 Đơn hàng · gian hàng<br><span style="font-weight:600;font-size:.85em">giờ nhận · NV nhập kho</span></th>'
-              '<th class="l">🚚 Mã vận chuyển<br><span style="font-weight:600;font-size:.85em">VĐ đi · VĐ hoàn · mã trả</span></th>'
+              '<th class="l">📥 Mã trả · gian hàng<br><span style="font-weight:600;font-size:.85em">mã đơn gốc · giờ nhận · NV nhập kho</span></th>'
+              '<th class="l">🚚 Mã vận chuyển<br><span style="font-weight:600;font-size:.85em">VĐ đi · VĐ hoàn</span></th>'
               '<th class="l">Sản phẩm (SKU × SL)</th>'
               + '</tr></thead>')
     _legend = ('<div style="font-size:.72em;color:#6b7280;margin:.25em 0 0">🔎 <b>Mã clip</b> = tra trên '
-               '<b>app đóng hàng (Dohana)</b>. <b>Mã đơn</b> = tra trên <b>Sapo</b> và <b>sàn TMĐT</b>. '
+               '<b>app đóng hàng (Dohana)</b>. <b>Mã trả</b> = từng phiếu nhập hoàn trên <b>Sapo</b>; mã đơn gốc chỉ là thông tin phụ. '
                'Ô <span style="color:#dc2626;font-weight:700">đỏ</span> = thiếu/chưa làm, đã ghi rõ lý do trong ô. '
                '<b style="color:#b45309">“mã khác”</b> = clip có nhưng lưu dưới <b>mã vận đơn KHÁC</b> với đơn '
                '(SPX đổi mã nhiều lần) — máy ghép theo ĐVVC + ngày, nên KIỂM TRA lại cho chắc.</div>')

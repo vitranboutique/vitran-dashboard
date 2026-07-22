@@ -455,7 +455,7 @@ def _week_table_html(data):
             ("huy_truoc", "Hủy trước soạn"), ("huy_sau", "Hủy sau soạn"),
             ("shipper_nhan", "Shipper nhận"), ("giao_khach", "Giao khách"),
             # ── HOÀN HÀNG (cam) ──
-            ("hoan_don", "Hoàn SAPO"), ("hoan_sp", "Hoàn SP"), ("vid_hoan", "Video hoàn (Dohana)"),
+            ("hoan_don", "Mã trả SAPO"), ("hoan_sp", "Hoàn SP"), ("vid_hoan", "Video hoàn (Dohana)"),
             ("thieu", "Thiếu SP"), ("tag_hoan", "Tag hoàn"),
             # ── CHỐT đối chiếu video đóng↔khui (đưa lên từ bảng đối chiếu) ──
             ("chot_video", "Chốt video"),
@@ -518,13 +518,13 @@ def _week_table_html(data):
         if plain:
             out += _gap_badge(
                 "⚠", "#b91c1c", "#fee2e2", "chưa nhập SAPO", plain,
-                "Ô Hoàn SAPO trống: chưa bấm nhập kho SAPO hoặc video chưa gắn tag xử lý.",
+                "Ô Mã trả SAPO trống: chưa bấm nhập kho SAPO hoặc video chưa gắn tag xử lý.",
             )
         if tagged:
             reason = tag_note or "có tag giữ xử lý"
             out += _gap_badge(
                 "✓", "#166534", "#dcfce7", reason, tagged,
-                f"Ô Hoàn SAPO trống là đúng quy trình vì clip có tag: {reason}. Giữ xử lý tranh chấp/khiếu nại.",
+                f"Ô Mã trả SAPO trống là đúng quy trình vì clip có tag: {reason}. Giữ xử lý tranh chấp/khiếu nại.",
             )
         return out
 
@@ -723,7 +723,7 @@ def _week_table_html(data):
         sapo_ret = ""
         if totals["ret_extra"]:
             sapo_ret += _gap_badge("⚠", "#b91c1c", "#fee2e2", "chưa nhập SAPO", totals["ret_extra"],
-                                   "Tổng clip có ô Hoàn SAPO trống và chưa có tag giữ xử lý.")
+                                   "Tổng clip có ô Mã trả SAPO trống và chưa có tag giữ xử lý.")
         ship = ""
         if totals["ship_missing"]:
             ship += _gap_badge("▼", "#b91c1c", "#fee2e2", "thiếu", totals["ship_missing"],
@@ -1398,9 +1398,12 @@ def _enrich_daily(rep, dvr, inb):
     # một đơn có thể phát sinh nhiều phiếu hoàn, mỗi phiếu dùng ĐVVC hoàn khác nhau.
     _kien, _korder = {}, []
     for _d in nk.get("detail", []):
-        _return_identity = str(_d.get("track_return") or _d.get("return_code") or "")
-        _kk = (str(_d.get("order_code") or ""), _return_identity,
-               str(_d.get("tracking") or ""))
+        _return_identity = str(
+            _d.get("return_code") or _d.get("track_return") or
+            _d.get("tracking") or _d.get("order_code") or ""
+        ).strip()
+        # Một đơn gốc có thể có nhiều phiếu trả. Mã trả là khóa chính, mã đơn chỉ là thông tin phụ.
+        _kk = (_return_identity,)
         _g = _kien.get(_kk)
         if _g is None:
             _g = dict(_d)
@@ -1421,13 +1424,21 @@ def _enrich_daily(rep, dvr, inb):
                     _g[_ck] = _d.get(_ck)
     _merged = [_kien[_kk] for _kk in _korder]
     for _g in _merged:
-        if len(_g.get("_ret_codes") or []) > 1:
-            _g["return_code"] = " · ".join(_g["_ret_codes"])
-        if len(_g.get("_skus") or []) > 1:
-            _g["sku"] = " · ".join(_g["_skus"])
+        _unique_ret_codes = list(dict.fromkeys(_g.get("_ret_codes") or []))
+        _unique_skus = list(dict.fromkeys(_g.get("_skus") or []))
+        if _unique_ret_codes:
+            _g["return_code"] = " · ".join(_unique_ret_codes)
+        if _unique_skus:
+            _g["sku"] = " · ".join(_unique_skus)
     nk["detail"] = _merged
-    # HOÀN NHẬP KHO đếm theo MÃ ĐƠN (distinct) — 1 đơn nhiều SP/mã trả = 1 (khớp cột "Đã nhận hàng trả")
-    nk["so_phieu"] = len({str(_d.get("order_code") or "") for _d in _merged if _d.get("order_code")})
+    # HOÀN NHẬP KHO đếm theo MÃ TRẢ distinct. Dữ liệu cũ thiếu mã trả mới fallback VĐ hoàn/mã đơn.
+    nk["so_phieu"] = len({
+        str(_d.get("return_code") or _d.get("track_return") or
+            _d.get("tracking") or _d.get("order_code") or "").strip()
+        for _d in _merged
+        if (_d.get("return_code") or _d.get("track_return") or
+            _d.get("tracking") or _d.get("order_code"))
+    })
     if nk.get("clip_available"):
         nk["clip_co"] = sum(1 for _d in _merged if _d.get("clip"))
     # BẢNG ĐỐI CHIẾU: DỰNG LUÔN LUÔN (kể cả khi Dohana lỗi/429) → đơn trả hàng KHÔNG biến mất;
@@ -8211,8 +8222,8 @@ def _render_daily():
         try:
             _wk = load_week_summary()
             _bld = getattr(L, "WEEK_SUMMARY_BUILD", "⚠️ CHƯA nạp code mới — cần Reboot")
-            st.caption(f"🔧 Bản dữ liệu: `{_bld}` · cột **Hoàn SAPO** đếm theo MÃ ĐƠN "
-                       "(nhiều kiện/1 đơn chỉ tính 1) — khớp với 'Đã nhận hàng trả' ở báo cáo A4.")
+            st.caption(f"🔧 Bản dữ liệu: `{_bld}` · cột **Mã trả SAPO** đếm theo MÃ TRẢ "
+                       "(mỗi phiếu trả tính 1) — cùng chuẩn với báo cáo A4.")
             if _RELOAD_ERR:
                 st.warning("Không nạp lại được module (đang chạy bản cũ):\n" + _RELOAD_ERR)
             _NOTE_FILE = "vitran_ghichu_ngay.json"
