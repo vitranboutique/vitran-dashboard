@@ -602,7 +602,7 @@ def _week_table_html(data):
 
         # HOÀN: dùng đúng số Ô VIDEO TRỐNG của từng dòng đối chiếu A4; không suy từ phép trừ 2 tổng.
         _blank_video = _video_audit_num(d.get("return_blank_video_count"))
-        if d.get("iso") and _blank_video > 0 and not _stale:
+        if d.get("iso") and _blank_video > 0:
             if _fresh_today:
                 out["vid_hoan"] = _gap_badge("⏳", "#b45309", "#fef3c7", "chưa đồng bộ", _blank_video,
                     "Ô Video hoàn trống; hôm nay Dohana có thể chưa đồng bộ xong.")
@@ -669,9 +669,9 @@ def _week_table_html(data):
                     totals["pkg_old" if stale else "pkg_missing"] += pkg_missing
                 if pkg_extra:
                     totals["pkg_extra"] += pkg_extra
-                if ret_missing and not stale:
+                if ret_missing:
                     totals["ret_missing"] += ret_missing
-                if ret_extra and not stale:
+                if ret_extra:
                     totals["ret_extra"] += ret_extra
             else:
                 pkg_gap = int(round(float(row.get("soan") or 0))) - int(round(float(row.get("vid_dong") or 0)))
@@ -2035,7 +2035,7 @@ def _dohana_pkg_from_store(date_iso, days_match=3, authoritative=False):
     """Dựng lại dict video ĐÓNG GÓI (package) từ kho khi Dohana tạm không lấy được."""
     from datetime import date as _date, timedelta as _td
     recs = [r for r in _dohana_records_effective()
-            if r.get("type") == "package" and _dohana_video_active(r)]
+            if r.get("type") == "package" and _dohana_video_kept_as_history(r)]
     lo = (_date.fromisoformat(date_iso) - _td(days=days_match - 1)).isoformat()
     day = [r for r in recs if r.get("date") == date_iso]
     codes = {}
@@ -2053,7 +2053,7 @@ def _dohana_inb_from_store(date_iso, days_match=3, authoritative=False):
     """Dựng lại dict CLIP KHUI HÀNG (inbound) từ kho khi Dohana tạm không lấy được."""
     from datetime import date as _date, timedelta as _td
     recs = [r for r in _dohana_records_effective()
-            if r.get("type") == "inbound" and _dohana_video_active(r)]
+            if r.get("type") == "inbound" and _dohana_video_kept_as_history(r)]
     lo = (_date.fromisoformat(date_iso) - _td(days=days_match - 1)).isoformat()
     day = [r for r in recs if r.get("date") == date_iso]
     win = [r for r in recs if r.get("code") and r.get("date") and lo <= r["date"] <= date_iso]
@@ -2069,6 +2069,7 @@ def _dohana_inb_from_store(date_iso, days_match=3, authoritative=False):
                        "tag": _video_tag_label(r),
                        "link": r.get("link") or "",
                        "staff": r.get("staff") or "",
+                       "file_deleted": not _dohana_video_active(r),
                        "type_overridden": bool(r.get("_type_overridden"))}
     return {"total": len(day), "count": count, "match": set(count),
             "today_codes": {r.get("code") for r in day if r.get("code")},
@@ -2082,6 +2083,18 @@ def _today_iso_vn():
 def _dohana_video_active(row):
     status = _ascii_code((row or {}).get("status") or "")
     return not any(token in status for token in ("DELETED", "REMOVED", "DAXOA", "XOA"))
+
+
+def _dohana_video_kept_as_history(row):
+    """File quá hạn có thể bị Dohana xóa, nhưng mã đã lưu vẫn chứng minh video từng được quay."""
+    if _dohana_video_active(row):
+        return True
+    try:
+        row_day = date.fromisoformat(str((row or {}).get("date") or ""))
+        today_vn = (datetime.now(timezone.utc) + timedelta(hours=7)).date()
+        return (today_vn - row_day).days > _DOHANA_RETENTION
+    except Exception:
+        return False
 
 
 @st.cache_data(ttl=300, show_spinner=False)   # 5 phút: Dohana cho 10 req/s; client vẫn throttle ~3 req/s
@@ -2124,6 +2137,7 @@ def load_dohana_video_store():
 
 @st.cache_data(ttl=1800, show_spinner=False)  # video ngày cũ không đổi → cache dài, đỡ gọi Dohana
 def load_dohana_date(date_iso):
+    _cache_ver = 2  # A4 ngày cũ phải nhận mã lưu dù file Dohana đã bị xóa
     from datetime import date as _date
     live = dohana.today_package_videos(target_date=_date.fromisoformat(date_iso))
     if live is not None:
@@ -2134,6 +2148,7 @@ def load_dohana_date(date_iso):
 
 @st.cache_data(ttl=1800, show_spinner=False)  # video ngày cũ không đổi → cache dài, đỡ gọi Dohana
 def load_dohana_inbound_date(date_iso):
+    _cache_ver = 2  # A4 ngày cũ phải nhận mã lưu dù file Dohana đã bị xóa
     from datetime import date as _date
     live = dohana.inbound_videos(target_date=_date.fromisoformat(date_iso))
     if live is not None:
@@ -3621,27 +3636,12 @@ def load_week_summary():
                     _pkg_unknown = []
                 _return_missing = _return_missing_by_day.get(iso, [])
                 _inbound_extra = _inbound_extra_by_day.get(iso, [])
-                # Dohana đã xóa video quá hạn: không còn dữ liệu để kết luận thiếu/dư hàng hoàn.
-                # Loại hoàn khỏi Chốt video; chỉ đối chiếu Hoàn SAPO ↔ Video hoàn ở ngày còn dữ liệu.
-                try:
-                    _return_video_stale = (
-                        (datetime.now(timezone.utc) + timedelta(hours=7)).date()
-                        - date.fromisoformat(str(iso or ""))
-                    ).days > 25
-                except Exception:
-                    _return_video_stale = False
-                if _return_video_stale:
-                    _return_missing = []
-                    _inbound_extra = []
-                    day["return_blank_video_count"] = 0
-                    day["return_blank_sapo_plain_count"] = 0
-                    day["return_blank_sapo_tagged_count"] = 0
-                    day["return_blank_sapo_tag_notes"] = ""
-                else:
-                    day["return_blank_video_count"] = len(_return_missing)
-                    day["return_blank_sapo_plain_count"] = len(_inbound_extra)
-                    day["return_blank_sapo_tagged_count"] = len(_tagged_unmatched_by_day.get(iso, set()))
-                    day["return_blank_sapo_tag_notes"] = _tagstr(_tagged_unmatched_notes_by_day.get(iso))
+                # Ngày cũ vẫn đối chiếu bằng MÃ video đã lưu. File Dohana bị xóa không làm mất mã;
+                # chỉ khi A4 không tìm thấy cả mã lưu thì mới kết luận thật sự chưa có video.
+                day["return_blank_video_count"] = len(_return_missing)
+                day["return_blank_sapo_plain_count"] = len(_inbound_extra)
+                day["return_blank_sapo_tagged_count"] = len(_tagged_unmatched_by_day.get(iso, set()))
+                day["return_blank_sapo_tag_notes"] = _tagstr(_tagged_unmatched_notes_by_day.get(iso))
                 _pkg_miss_vs_inbound_extra = _cross_matches(_pkg_missing, _inbound_extra)
                 _return_miss_vs_pkg_extra = _cross_matches(_return_missing, _pkg_extra)
                 _add_matrix(
