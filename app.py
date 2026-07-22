@@ -8145,6 +8145,161 @@ def _render_daily():
                 _d["ghi_chu"] = _notes.get(_d.get("iso"), "")
             st.markdown(_week_table_html(_wk), unsafe_allow_html=True)
             _render_week_video_audit(_wk)
+            _bulk_return_moves = list(_wk.get("extra_package_video_suggestions") or [])
+            if _bulk_return_moves:
+                with st.expander(
+                    f"↪️ Mã có thể chuyển Đóng hàng → Khui hoàn — {len(_bulk_return_moves)} mã",
+                    expanded=False,
+                ):
+                    st.caption("Chỉ gồm mã Đóng hàng dư và trùng chính xác đơn hoàn thiếu video trong cùng ngày.")
+                    _bulk_move_keys = [
+                        (str(x.get("date") or ""), str(x.get("code") or "").strip())
+                        for x in _bulk_return_moves
+                        if str(x.get("date") or "") and str(x.get("code") or "").strip()
+                    ]
+                    _bulk_all_key = "select_all_valid_package_to_inbound_30d"
+
+                    def _toggle_all_valid_return_moves():
+                        _checked = bool(st.session_state.get(_bulk_all_key))
+                        for _day, _code in _bulk_move_keys:
+                            st.session_state[f"bulk_valid_return_move_{_day}_{_code}"] = _checked
+
+                    st.checkbox(
+                        f"☑️ Chọn tất cả {len(_bulk_move_keys)} mã",
+                        key=_bulk_all_key,
+                        on_change=_toggle_all_valid_return_moves,
+                    )
+                    _selected_bulk_moves = []
+                    with st.form("bulk_valid_package_to_inbound_30d_form"):
+                        _bulk_moves_by_day = {}
+                        for _day, _code in _bulk_move_keys:
+                            _bulk_moves_by_day.setdefault(_day, []).append(_code)
+                        _stt = 0
+                        for _day, _codes in _bulk_moves_by_day.items():
+                            try:
+                                _day_label = datetime.fromisoformat(_day).strftime("%d/%m")
+                            except Exception:
+                                _day_label = _day
+                            st.markdown(f"**📅 {_day_label} — {len(_codes)} mã**")
+                            _bulk_cols = st.columns(2)
+                            for _day_stt, _code in enumerate(_codes):
+                                _stt += 1
+                                _package_url = _with_url_query(
+                                    "https://dhn.io.vn/order/", q=_code, orderCode=_code
+                                )
+                                with _bulk_cols[_day_stt % 2]:
+                                    if st.checkbox(
+                                        f"[**{_stt}. {_code}**]({_package_url})",
+                                        key=f"bulk_valid_return_move_{_day}_{_code}",
+                                    ):
+                                        _selected_bulk_moves.append((_day, _code))
+                        _submit_bulk_moves = st.form_submit_button(
+                            "✅ Chuyển các mã đã chọn sang Khui hoàn", use_container_width=True
+                        )
+                    if _submit_bulk_moves:
+                        if not _selected_bulk_moves:
+                            st.warning("Chưa chọn mã nào.")
+                        else:
+                            _saved = picklog.add_video_type_overrides([{
+                                "date": _day,
+                                "code": _code,
+                                "type": "inbound",
+                                "source_type": "package",
+                                "reason": "approved_exact_return_match_in_30d_summary",
+                            } for _day, _code in _selected_bulk_moves])
+                            if _saved:
+                                for _fn in (load_week_summary, load_dohana, load_dohana_inbound,
+                                            load_dohana_date, load_dohana_inbound_date,
+                                            load_dohana_videos, load_dohana_video_store):
+                                    try:
+                                        _fn.clear()
+                                    except Exception:
+                                        pass
+                                st.success(f"Đã chuyển {len(_selected_bulk_moves)} mã sang Khui hoàn.")
+                                st.rerun()
+                            else:
+                                st.error("Không lưu được. Vui lòng kiểm tra kho Gist.")
+            else:
+                st.caption("✅ Không có mã Đóng dư nào trùng đơn hoàn thiếu video trong 30 ngày.")
+
+            _week_day_set = {
+                str(x.get("iso") or "") for x in (_wk.get("days") or []) if str(x.get("iso") or "")
+            }
+            _bulk_undo_moves = [
+                x for x in (picklog.read_video_type_overrides() or [])
+                if str(x.get("date") or "") in _week_day_set
+                and str(x.get("source_type") or "") == "package"
+                and str(x.get("type") or "") == "inbound"
+            ]
+            if _bulk_undo_moves:
+                with st.expander(
+                    f"↩️ Hoàn tác chuyển sai — {len(_bulk_undo_moves)} mã",
+                    expanded=False,
+                ):
+                    _bulk_undo_keys = list(dict.fromkeys(
+                        (str(x.get("date") or ""), str(x.get("code") or "").strip())
+                        for x in _bulk_undo_moves
+                        if str(x.get("date") or "") and str(x.get("code") or "").strip()
+                    ))
+                    _bulk_undo_all_key = "select_all_undo_package_to_inbound_30d"
+
+                    def _toggle_all_undo_moves_30d():
+                        _checked = bool(st.session_state.get(_bulk_undo_all_key))
+                        for _day, _code in _bulk_undo_keys:
+                            st.session_state[f"bulk_undo_move_{_day}_{_code}"] = _checked
+
+                    st.checkbox(
+                        f"☑️ Chọn tất cả {len(_bulk_undo_keys)} mã",
+                        key=_bulk_undo_all_key,
+                        on_change=_toggle_all_undo_moves_30d,
+                    )
+                    _selected_bulk_undo = []
+                    with st.form("bulk_undo_package_to_inbound_30d_form"):
+                        _bulk_undo_by_day = {}
+                        for _day, _code in _bulk_undo_keys:
+                            _bulk_undo_by_day.setdefault(_day, []).append(_code)
+                        _stt = 0
+                        for _day, _codes in _bulk_undo_by_day.items():
+                            try:
+                                _day_label = datetime.fromisoformat(_day).strftime("%d/%m")
+                            except Exception:
+                                _day_label = _day
+                            st.markdown(f"**📅 {_day_label} — {len(_codes)} mã**")
+                            _undo_cols = st.columns(2)
+                            for _day_stt, _code in enumerate(_codes):
+                                _stt += 1
+                                with _undo_cols[_day_stt % 2]:
+                                    if st.checkbox(
+                                        f"**{_stt}. {_code}**",
+                                        key=f"bulk_undo_move_{_day}_{_code}",
+                                    ):
+                                        _selected_bulk_undo.append((_day, _code))
+                        _submit_bulk_undo = st.form_submit_button(
+                            "↩️ Hoàn tác các mã đã chọn về Đóng hàng", use_container_width=True
+                        )
+                    if _submit_bulk_undo:
+                        if not _selected_bulk_undo:
+                            st.warning("Chưa chọn mã cần hoàn tác.")
+                        else:
+                            _saved = picklog.add_video_type_overrides([{
+                                "date": _day,
+                                "code": _code,
+                                "type": "package",
+                                "source_type": "package",
+                                "reason": "undo_wrong_package_to_inbound_transfer_30d",
+                            } for _day, _code in _selected_bulk_undo])
+                            if _saved:
+                                for _fn in (load_week_summary, load_dohana, load_dohana_inbound,
+                                            load_dohana_date, load_dohana_inbound_date,
+                                            load_dohana_videos, load_dohana_video_store):
+                                    try:
+                                        _fn.clear()
+                                    except Exception:
+                                        pass
+                                st.success(f"Đã hoàn tác {len(_selected_bulk_undo)} mã về Đóng hàng.")
+                                st.rerun()
+                            else:
+                                st.error("Không lưu được hoàn tác. Vui lòng kiểm tra kho Gist.")
         except Exception as e:
             st.warning(f"Chưa lấy được tổng hợp: `{e}`")
 
@@ -8166,25 +8321,8 @@ def _render_daily():
             x for x in (_match_summary.get("wrong_side_video_suggestions") or [])
             if str(x.get("date") or "") == _match_day
         ]
-        _extra_package_suggestions = [
-            x for x in (_match_summary.get("extra_package_video_suggestions") or [])
-            if str(x.get("date") or "") == _match_day
-        ]
-        _raw_extra_package_candidates = [
-            x for x in (_match_summary.get("extra_package_video_candidates") or [])
-            if str(x.get("date") or "") == _match_day
-        ]
-        _undo_package_to_inbound = [
-            x for x in (picklog.read_video_type_overrides() or [])
-            if str(x.get("date") or "") == _match_day
-            and str(x.get("source_type") or "") == "package"
-            and str(x.get("type") or "") == "inbound"
-        ]
     except Exception:
         _match_suggestions = []
-        _extra_package_suggestions = []
-        _raw_extra_package_candidates = []
-        _undo_package_to_inbound = []
 
     def _clear_a4_video_caches():
         # Chỉ làm mới dữ liệu video; KHÔNG xóa load_daily_report vì Sapo không đổi
@@ -8224,137 +8362,6 @@ def _render_daily():
                     st.rerun()
                 else:
                     st.error("Không lưu được. Vui lòng kiểm tra kho Gist.")
-    if _extra_package_suggestions:
-        st.markdown(f"**📦 Video Đóng hàng dư — {len(_extra_package_suggestions)} đơn**")
-        _extra_codes = [
-            str(_suggestion.get("code") or "").strip()
-            for _suggestion in _extra_package_suggestions
-            if str(_suggestion.get("code") or "").strip()
-        ]
-        _select_all_extra_key = f"select_all_extra_to_inbound_{_match_day}"
-
-        def _toggle_all_extra_codes():
-            _checked = bool(st.session_state.get(_select_all_extra_key))
-            for _code in _extra_codes:
-                st.session_state[f"select_extra_to_inbound_{_match_day}_{_code}"] = _checked
-
-        st.checkbox(
-            f"☑️ Chọn tất cả {len(_extra_codes)} đơn",
-            key=_select_all_extra_key,
-            on_change=_toggle_all_extra_codes,
-        )
-        _selected_extra_codes = []
-        with st.form(f"bulk_extra_to_inbound_{_match_day}"):
-            _extra_cols = st.columns(2)
-            for _stt, _suggestion in enumerate(_extra_package_suggestions, 1):
-                _extra_code = str(_suggestion.get("code") or "").strip()
-                _extra_package_url = _with_url_query(
-                    "https://dhn.io.vn/order/", q=_extra_code, orderCode=_extra_code
-                )
-                with _extra_cols[(_stt - 1) % 2]:
-                    if st.checkbox(f"[**{_stt}. {_extra_code}**]({_extra_package_url}) · Đóng hàng → Khui hoàn",
-                                   key=f"select_extra_to_inbound_{_match_day}_{_extra_code}"):
-                        _selected_extra_codes.append(_extra_code)
-            _submit_selected_extras = st.form_submit_button(
-                "✅ Chuyển các mã đã chọn sang Khui hoàn", use_container_width=True)
-        if _submit_selected_extras:
-            if not _selected_extra_codes:
-                st.warning("Chưa chọn mã nào.")
-            else:
-                _saved = picklog.add_video_type_overrides([{
-                    "date": _match_day,
-                    "code": code,
-                    "type": "inbound",
-                    "source_type": "package",
-                    "reason": "approved_wrong_side_on_a4",
-                } for code in _selected_extra_codes])
-                if _saved:
-                    _clear_a4_video_caches()
-                    st.success(f"Đã chuyển {len(_selected_extra_codes)} mã sang Khui hàng hoàn.")
-                    st.rerun()
-                else:
-                    st.error("Không lưu được. Vui lòng kiểm tra kho Gist.")
-        with st.expander("🏷️ Gắn tag thay vì chuyển"):
-            for _suggestion in _extra_package_suggestions:
-                _extra_code = str(_suggestion.get("code") or "").strip()
-                st.caption(_extra_code)
-                _tag_col, _tag_btn_col = st.columns([2, 1], vertical_alignment="center")
-                _extra_tag = _tag_col.text_input(
-                    "Tag", key=f"extra_package_tag_{_match_day}_{_extra_code}",
-                    placeholder="Nhập tag", label_visibility="collapsed",
-                ).strip()
-                if _tag_btn_col.button("Gắn tag", key=f"tag_extra_package_{_match_day}_{_extra_code}",
-                                       use_container_width=True):
-                    if not _extra_tag:
-                        st.warning("Nhập tag trước.")
-                    else:
-                        _updated = picklog.set_dohana_video_tag(
-                            _extra_code, _extra_tag, "package", date_iso=_match_day)
-                        if _updated:
-                            _clear_a4_video_caches()
-                            st.success(f"Đã gắn tag {_extra_tag}.")
-                            st.rerun()
-                        else:
-                            st.warning("Không tìm thấy clip hoặc tag không thay đổi.")
-    elif _raw_extra_package_candidates:
-        st.info(
-            f"ℹ️ Ngày {_pick_date.strftime('%d/%m')}: có {len(_raw_extra_package_candidates)} mã Đóng hàng dư, "
-            "nhưng 0 mã trùng đơn hoàn đang thiếu video — không có mã để chuyển."
-        )
-
-    if _undo_package_to_inbound:
-        with st.expander(
-            f"↩️ Hoàn tác mã đã chuyển Đóng hàng → Khui hoàn — {len(_undo_package_to_inbound)} mã",
-            expanded=False,
-        ):
-            _undo_codes = list(dict.fromkeys(
-                str(x.get("code") or "").strip()
-                for x in _undo_package_to_inbound
-                if str(x.get("code") or "").strip()
-            ))
-            _undo_all_key = f"undo_all_package_to_inbound_{_match_day}"
-
-            def _toggle_all_undo_package_codes():
-                _checked = bool(st.session_state.get(_undo_all_key))
-                for _code in _undo_codes:
-                    st.session_state[f"undo_package_to_inbound_{_match_day}_{_code}"] = _checked
-
-            st.checkbox(
-                f"☑️ Chọn tất cả {len(_undo_codes)} mã cần hoàn tác",
-                key=_undo_all_key,
-                on_change=_toggle_all_undo_package_codes,
-            )
-            _selected_undo_codes = []
-            with st.form(f"undo_package_to_inbound_form_{_match_day}"):
-                _undo_cols = st.columns(2)
-                for _stt, _code in enumerate(_undo_codes, 1):
-                    with _undo_cols[(_stt - 1) % 2]:
-                        if st.checkbox(
-                            f"**{_stt}. {_code}** · trả về Đóng hàng",
-                            key=f"undo_package_to_inbound_{_match_day}_{_code}",
-                        ):
-                            _selected_undo_codes.append(_code)
-                _submit_undo_codes = st.form_submit_button(
-                    "↩️ Hoàn tác các mã đã chọn", use_container_width=True
-                )
-            if _submit_undo_codes:
-                if not _selected_undo_codes:
-                    st.warning("Chưa chọn mã cần hoàn tác.")
-                else:
-                    _saved = picklog.add_video_type_overrides([{
-                        "date": _match_day,
-                        "code": _code,
-                        "type": "package",
-                        "source_type": "package",
-                        "reason": "undo_wrong_package_to_inbound_transfer",
-                    } for _code in _selected_undo_codes])
-                    if _saved:
-                        _clear_a4_video_caches()
-                        st.success(f"Đã hoàn tác {len(_selected_undo_codes)} mã về Đóng hàng.")
-                        st.rerun()
-                    else:
-                        st.error("Không lưu được hoàn tác. Vui lòng kiểm tra kho Gist.")
-
     # ---- Xem báo cáo NGÀY CŨ (query lại Sapo + Dohana theo ngày, số đã cố định) ----
     if not _is_today:
         _iso = _pick_date.isoformat()
