@@ -3143,13 +3143,26 @@ def load_week_summary():
                 if r.get("type") == "package" and _dohana_video_active(r)
                 and _ascii_code(r.get("code") or "") and _video_tag_id(r)
             }
-            data["extra_package_video_suggestions"] = [
-                {"date": str(_dd), "code": str(_code),
-                 "from_type": "package", "to_type": "inbound"}
-                for _dd in sorted(_package_extra_by_day)
-                for _code in sorted({_ascii_code(c) for c in (_package_extra_by_day.get(_dd) or []) if _ascii_code(c)})
-                if (str(_dd), _code) not in _tagged_package_keys
-            ]
+            # Chỉ gợi ý số mã DƯ THỰC TẾ. Có những clip dùng mã nội bộ/biến thể không xuất hiện
+            # nguyên văn trong phiếu soạn nhưng A4 vẫn khớp đúng theo nhóm mã hoặc số lượng.
+            # Nếu số video <= số đơn soạn thì các mã lệch chữ là clip hợp lệ, tuyệt đối không báo dư.
+            _extra_package_suggestions = []
+            for _dd in sorted(_package_extra_by_day):
+                _soan_orders = int(((_psumm if "_psumm" in locals() else {}).get(_dd) or {}).get("so_don") or 0)
+                _actual_package_videos = int(vdong.get(_dd, 0) or 0)
+                _real_extra_count = max(0, _actual_package_videos - _soan_orders)
+                if not _real_extra_count:
+                    continue
+                _candidate_codes = [
+                    c for c in sorted({_ascii_code(x) for x in (_package_extra_by_day.get(_dd) or []) if _ascii_code(x)})
+                    if (str(_dd), c) not in _tagged_package_keys
+                ]
+                for _code in _candidate_codes[:_real_extra_count]:
+                    _extra_package_suggestions.append({
+                        "date": str(_dd), "code": str(_code),
+                        "from_type": "package", "to_type": "inbound",
+                    })
+            data["extra_package_video_suggestions"] = _extra_package_suggestions
 
             # Vid hoàn phải là clip KHỚP đơn hoàn, không phải tổng clip inbound thô.
             # Nếu đếm thô, video quay dư/sai mã/ngày có thể che mất các đơn thật sự chưa quay.
