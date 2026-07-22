@@ -2015,7 +2015,7 @@ def load_dohana():
     return _dohana_pkg_from_store(_today_iso_vn()) if picklog.configured() else None
 
 
-@st.cache_data(ttl=30, show_spinner=False)   # clip khui mới phải lên A4 gần như ngay; API v2 lấy tối đa 1000/video request
+@st.cache_data(ttl=60, show_spinner=False)   # 1 request/phút, tránh khóa key Dohana; nút tải lại vẫn xóa cache thủ công
 def load_dohana_inbound():
     live = dohana.inbound_videos()
     if live is not None:
@@ -7628,7 +7628,7 @@ if _page == PAGE_TTKH:
 def _render_daily():
     st.title("📄 Báo cáo vận hành cuối ngày")
     st.caption("Tổng hợp tự động từ Sapo + Dohana — bấm **In báo cáo A4** trong khung để in/lưu PDF.  "
-               "🎥 *Clip nhập hàng hoàn tự cập nhật khoảng 30 giây; bấm “Tải lại số liệu” để cập nhật ngay.*")
+               "🎥 *Clip nhập hàng hoàn tự cập nhật khoảng 1 phút; bấm “Tải lại số liệu” để cập nhật ngay.*")
     with st.expander("🔌 Kiểm tra kết nối Dohana (bấm khi video không lên)"):
         st.caption("Bấm để dò Dohana theo TỪNG loại (inbound/package) + xem loại THẬT Dohana trả về.")
         if st.button("Gửi thử tới Dohana", key="dohana_ping_btn"):
