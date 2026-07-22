@@ -452,7 +452,7 @@ def _week_table_html(data):
             ("huy_truoc", "Hủy trước soạn"), ("huy_sau", "Hủy sau soạn"),
             ("shipper_nhan", "Shipper nhận"), ("giao_khach", "Giao khách"),
             # ── HOÀN HÀNG (cam) ──
-            ("hoan_don", "Hoàn SAPO"), ("hoan_sp", "Hoàn SP"), ("vid_hoan", "Vid hoàn"),
+            ("hoan_don", "Hoàn SAPO"), ("hoan_sp", "Hoàn SP"), ("vid_hoan", "Video hoàn (Dohana)"),
             ("thieu", "Thiếu SP"), ("tag_hoan", "Tag hoàn"),
             # ── CHỐT đối chiếu video đóng↔khui (đưa lên từ bảng đối chiếu) ──
             ("chot_video", "Chốt video"),
