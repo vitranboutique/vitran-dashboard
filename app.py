@@ -2091,6 +2091,14 @@ def load_daily_report(date_iso=None):
     return L.get_daily_report(make_fetch_json(build_session()), target_date=td)
 
 
+@st.cache_data(ttl=21600, show_spinner="Đang tải báo cáo ngày cũ…")
+def load_daily_report_archive(date_iso):
+    """Ngày cũ không đổi: giữ 6 giờ để xem/chuyển video mà không quét lại Sapo."""
+    from datetime import date as _date
+    return L.get_daily_report(
+        make_fetch_json(build_session()), target_date=_date.fromisoformat(str(date_iso)))
+
+
 def _inject_huy_soan(rep, date_iso):
     """Cắm cờ 'soan' cho từng đơn HỦY: mã (VĐ/đơn) ∈ mã phiếu nhặt đã lưu ngày đó = ĐÃ SOẠN
     (cầm hàng ra kho → cần lấy lại). Không có trong phiếu nhặt = hủy sớm, khỏi lấy.
@@ -8046,6 +8054,17 @@ def _render_daily():
     except Exception:
         _match_suggestions = []
         _extra_package_suggestions = []
+
+    def _clear_a4_video_caches():
+        # Chỉ làm mới dữ liệu video; KHÔNG xóa load_daily_report vì Sapo không đổi
+        # khi ta chuyển loại clip. Giữ cache Sapo để tránh gọi lại hàng loạt và dính 429.
+        for _fn in (load_week_summary, load_dohana, load_dohana_inbound,
+                    load_dohana_date, load_dohana_inbound_date,
+                    load_dohana_videos, load_dohana_video_store):
+            try:
+                _fn.clear()
+            except Exception:
+                pass
     if _match_suggestions:
         st.markdown("**🔄 Gợi ý khớp clip lộn mục**")
         _selected_match_codes = []
@@ -8069,7 +8088,7 @@ def _render_daily():
                     "reason": "approved_wrong_side_on_a4",
                 } for code in _selected_match_codes])
                 if _saved:
-                    st.cache_data.clear()
+                    _clear_a4_video_caches()
                     st.success(f"Đã khớp {len(_selected_match_codes)} mã sang Đóng hàng.")
                     st.rerun()
                 else:
@@ -8097,7 +8116,7 @@ def _render_daily():
                     "reason": "approved_wrong_side_on_a4",
                 } for code in _selected_extra_codes])
                 if _saved:
-                    st.cache_data.clear()
+                    _clear_a4_video_caches()
                     st.success(f"Đã chuyển {len(_selected_extra_codes)} mã sang Khui hàng hoàn.")
                     st.rerun()
                 else:
@@ -8119,7 +8138,7 @@ def _render_daily():
                         _updated = picklog.set_dohana_video_tag(
                             _extra_code, _extra_tag, "package", date_iso=_match_day)
                         if _updated:
-                            st.cache_data.clear()
+                            _clear_a4_video_caches()
                             st.success(f"Đã gắn tag {_extra_tag}.")
                             st.rerun()
                         else:
@@ -8129,7 +8148,7 @@ def _render_daily():
     if not _is_today:
         _iso = _pick_date.isoformat()
         try:
-            _rep = load_daily_report(_iso)
+            _rep = load_daily_report_archive(_iso)
         except Exception as e:
             st.error(f"❌ Lỗi tổng hợp báo cáo ngày {_disp}: `{e}`")
             return

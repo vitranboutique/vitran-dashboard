@@ -73,11 +73,28 @@ def build_session() -> requests.Session:
 
 
 def make_fetch_json(session: requests.Session):
-    """Trả về hàm fetch_json(path, **params) -> dict (đã raise_for_status)."""
+    """Trả về fetch_json có giãn nhịp và tự thử lại khi Sapo trả 429."""
+    last_call = 0.0
+
     def fetch_json(path: str, **params):
-        r = session.get(f"{BASE}{path}", params=params, timeout=30)
+        nonlocal last_call
+        for attempt in range(5):
+            elapsed = time.monotonic() - last_call
+            if elapsed < 0.22:
+                time.sleep(0.22 - elapsed)
+            r = session.get(f"{BASE}{path}", params=params, timeout=30)
+            last_call = time.monotonic()
+            if r.status_code != 429:
+                r.raise_for_status()
+                return r.json()
+            if attempt >= 4:
+                r.raise_for_status()
+            try:
+                retry_after = float(r.headers.get("Retry-After") or 0)
+            except Exception:
+                retry_after = 0
+            time.sleep(min(15.0, max(retry_after, 1.5 * (2 ** attempt))))
         r.raise_for_status()
-        return r.json()
     return fetch_json
 
 
