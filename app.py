@@ -3241,6 +3241,7 @@ def load_week_summary():
                     _ascii_code(x.get("code"))
                     for x in (_type_overrides_by_day.get(str(_dd), []) or [])
                     if _ascii_code(x.get("code"))
+                    and str(x.get("source_type") or "") != str(x.get("type") or "")
                 }
                 _wrong_side_inbound_by_day[str(_dd)] = (
                     (_missing_pack & _inbound_actual) - _already_decided
@@ -3272,6 +3273,7 @@ def load_week_summary():
                     if (str(_dd), c) not in _tagged_package_keys
                     and not any(
                         _ascii_code(x.get("code")) == c
+                        and str(x.get("source_type") or "") != str(x.get("type") or "")
                         for x in (_type_overrides_by_day.get(str(_dd), []) or [])
                     )
                 ]
