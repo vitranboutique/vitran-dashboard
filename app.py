@@ -11211,20 +11211,9 @@ def _render_returns():
             _dohana_yellow_ckn = _dohana_yellow_need_kn_rows(_dtag_kn + _dtag_nokn)
             _ckn_with_closed_returns = _merge_need_kn_rows(_ckn_list, _closed_returns_need_kn_detail)
             _ckn_render_raw_list = _merge_need_kn_rows(_ckn_with_closed_returns, _dohana_yellow_ckn)
-            # + Đơn ĐÃ NHẬP KHO thiếu video khui mà CHƯA có ghi chú chuẩn → cũng đưa vào Cần KN (tới khi
-            #   có ghi chú chuẩn thì tự rớt khỏi đây & mất màu vàng). Dùng chung _nv_row_restock cho đồng nhất.
+            # Đơn ĐÃ NHẬP KHO thiếu video khui là lỗi vận hành kho, KHÔNG phải hồ sơ khiếu nại sàn.
+            # Chỉ hiển thị ở bảng "Nhập kho không video" bên dưới; tuyệt đối không trộn vào Cần KN.
             _nv_ckn_added = 0
-            try:
-                # APPEND thẳng (KHÔNG merge) → KHÔNG trộn ghi chú/lý do với đơn Cần KN khác. Bỏ đơn đã
-                # có sẵn trong Cần KN (theo mã trả/mã đơn/VĐ) để không lặp.
-                _ckn_keys = {_dohana_row_key(d) for d in _ckn_render_raw_list if _dohana_row_key(d)}
-                _nv_ckn = [d for d in _restock_novideo_rows()
-                           if d.get("need_kn") and _dohana_row_key(d) not in _ckn_keys]
-                if _nv_ckn:
-                    _nv_ckn_added = len(_nv_ckn)
-                    _ckn_render_raw_list = _ckn_render_raw_list + _nv_ckn
-            except Exception:
-                pass
             _ckn_render_list = [
                 d for d in _ckn_render_raw_list
                 if _is_need_kn_shape(d) and not _is_closed_kn_result(d)
