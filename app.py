@@ -3230,7 +3230,21 @@ def load_week_summary():
                             _matched_inbound_codes_by_day[_video_day].add(_video)
                         else:
                             _unmatched_groups.append((parcel_key, rows, merged_label))
-                    _leftover_today = [v for v in _today_videos if v not in _consumed_codes]
+                    # Mã đã nằm trong danh sách THIẾU video đóng hàng không được phép đem đi
+                    # "khớp mềm cùng hãng" với một đơn hoàn khác. Đây là clip quay lộn mục:
+                    # phải giữ lại để hiện Dư mã bên Nhập hàng hoàn và Khớp lộn mục.
+                    _reserved_package_missing = {
+                        _norm(code) for code in (_package_missing_by_day.get(dd, []) or []) if _norm(code)
+                    }
+                    _reserved_package_missing.update(
+                        _norm(code)
+                        for code in ((_a4_package_recon_by_day.get(dd) or {}).get("missing") or [])
+                        if _norm(code)
+                    )
+                    _leftover_today = [
+                        v for v in _today_videos
+                        if v not in _consumed_codes and v not in _reserved_package_missing
+                    ]
                     for parcel_key, rows, merged_label in _unmatched_groups:
                         _first = rows[0] if rows else {}
                         _soft = None
