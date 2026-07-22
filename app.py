@@ -3085,6 +3085,27 @@ def load_week_summary():
                 _package_missing_by_day, _package_extra_by_day, _package_unknown_unmatched_by_day = {}, {}, {}
                 _real_match_days = set()
 
+            # BÓC LỘN MỤC TỔNG QUÁT THEO TẬP MÃ, KHÔNG hard-code mã cụ thể:
+            # mã thiếu bên Đóng hàng ∩ mã clip có thật bên Nhập hàng hoàn trong cùng ngày.
+            _wrong_side_inbound_by_day = {}
+            for _dd in set(_package_missing_by_day) | set(inbound_codes_by_day) | set(_a4_package_recon_by_day):
+                _missing_pack = {
+                    _ascii_code(code)
+                    for code in (_package_missing_by_day.get(_dd, []) or [])
+                    if _ascii_code(code)
+                }
+                _missing_pack.update(
+                    _ascii_code(code)
+                    for code in ((_a4_package_recon_by_day.get(_dd) or {}).get("missing") or [])
+                    if _ascii_code(code)
+                )
+                _inbound_actual = {
+                    _ascii_code(code)
+                    for code in (inbound_codes_by_day.get(_dd, []) or [])
+                    if _ascii_code(code)
+                }
+                _wrong_side_inbound_by_day[str(_dd)] = _missing_pack & _inbound_actual
+
             # Vid hoàn phải là clip KHỚP đơn hoàn, không phải tổng clip inbound thô.
             # Nếu đếm thô, video quay dư/sai mã/ngày có thể che mất các đơn thật sự chưa quay.
             try:
@@ -3204,17 +3225,10 @@ def load_week_summary():
                     # BÓC CƯỠNG CHẾ CLIP QUAY LỘN MỤC: một clip nằm bên Nhập hàng hoàn nhưng mã
                     # đồng thời đang THIẾU bên Đóng hàng cùng ngày thì KHÔNG được khớp tự động
                     # với phiếu hoàn, kể cả mã đó xuất hiện trong VĐ đi/đóng của phiếu hoàn.
-                    _reserved_package_missing = {
-                        _norm(code) for code in (_package_missing_by_day.get(dd, []) or []) if _norm(code)
-                    }
-                    _reserved_package_missing.update(
-                        _norm(code)
-                        for code in ((_a4_package_recon_by_day.get(dd) or {}).get("missing") or [])
-                        if _norm(code)
-                    )
+                    _reserved_package_missing = set(_wrong_side_inbound_by_day.get(str(dd), set()))
                     _matchable_window_videos = [
                         (video_day, video) for video_day, video in _window_videos
-                        if not (video_day == str(dd) and video in _reserved_package_missing)
+                        if video not in set(_wrong_side_inbound_by_day.get(str(video_day), set()))
                     ]
                     _consumed_codes = set()
                     _unmatched_groups = []
@@ -3291,9 +3305,11 @@ def load_week_summary():
                 for dd, codes in inbound_codes_by_day.items():
                     _raw = {_norm(c) for c in codes if _norm(c)}
                     _used = set(_matched_inbound_codes_by_day.get(dd, set())) | set(_tagged_inbound_codes_by_day.get(dd, set()))
+                    # Luôn ép mã lộn mục vào Dư mã, kể cả trước đó từng bị cache/khớp tự động đánh dấu đã dùng.
+                    _extra_codes = (_raw - _used) | set(_wrong_side_inbound_by_day.get(str(dd), set()))
                     _inbound_extra_by_day[dd] = [
                         _return_label_by_code.get(c) or f"VĐ đi/đóng: | VĐ hoàn: {c} | Mã trả: | Mã đơn:"
-                        for c in sorted(_raw - _used)
+                        for c in sorted(_extra_codes)
                     ]
                 # CLIP KHUI MỒ CÔI: có trong kho nhưng KHÔNG khớp đơn nào (kể cả mã NGẮN/lạ như "3Q" do NV
                 # nhập thiếu — vốn bị ẩn khỏi cột "Dư mã" vì <6 ký tự). Xuất để admin THẤY và tự khớp tay.
