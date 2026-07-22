@@ -469,8 +469,8 @@ def _recon_rows(rows, start=0, clip_on=True):
             clip_td = ' style="background:#fee2e2;border:2px solid #dc2626"'
         _row_tag = _tag_label(r.get("clip_tag"), r.get("clip_tag_id"))
         if _row_tag:
-            clip_cell += (f'<div style="margin-top:2px"><span style="color:#6d28d9;font-weight:800;'
-                          f'background:#f3e8ff;padding:1px 5px;border-radius:4px">'
+            clip_cell += (f'<div style="margin-top:4px"><span style="display:inline-block;color:#ffffff;font-size:1.05em;'
+                          f'font-weight:900;background:#7c3aed;padding:3px 8px;border-radius:5px;line-height:1.25">'
                           f'🏷️ {_e(str(_row_tag))}</span></div>')
         # ── Cột 2: ĐÃ NHẬN HÀNG TRẢ (Sapo) ──
         if r.get("has_sapo"):
