@@ -222,6 +222,7 @@ def _records_from(vids, typ):
                "dur": int(dur) if isinstance(dur, (int, float)) else None,
                "tag_id": tag_id,
                "tag_name": tag_name,
+               "tag_observed": True,
                "slug": _video_slug(v),
                "link": _video_link(v),
                "staff": ((v.get("user") or {}).get("firstName") or "").strip()}

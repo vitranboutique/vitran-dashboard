@@ -607,7 +607,8 @@ def _lock_dohana_tag(rec: dict, tag_id, tag_name, today: str) -> bool:
 
 def merge_dohana_videos(new_list) -> list:
     """Gộp metadata video mới (từ fetch) vào kho, khử trùng (code,type).
-    Tag đã từng thấy sẽ được khóa vĩnh viễn trong record để không mất khi DHN gỡ tag/xóa video.
+    Fetch live có ``tag_observed=True`` là nguồn sự thật hiện tại: Dohana gỡ/đổi tag
+    thì kho cũng phải gỡ/đổi. Bản dự phòng cũ không có cờ này sẽ không được xóa tag.
     Các field clip đã có (ngày/giờ/thời lượng/link) chỉ được bổ sung khi còn trống, không bị xóa bởi lần fetch sau."""
     gid = _resolve_gid()
     cur = read_dohana_videos()
@@ -616,28 +617,36 @@ def merge_dohana_videos(new_list) -> list:
     idx = {(r.get("code"), r.get("type")): r for r in cur}
     today = _today_vn()
     changed = False
-    for old in cur:
-        if _lock_dohana_tag(old, old.get("locked_tag_id") or old.get("tag_id"),
-                            old.get("locked_tag_name") or old.get("tag_name"), today):
-            changed = True
     for r in (new_list or []):
         c, ty = r.get("code"), r.get("type")
         if not c:
             continue
         tag_id = r.get("locked_tag_id") or r.get("tag_id")
         tag_name = r.get("locked_tag_name") or r.get("tag_name")
+        tag_observed = r.get("tag_observed") is True
         old = idx.get((c, ty))
         if old is None:
             rec = {"code": c, "type": ty, "status": r.get("status"), "date": r.get("date"),
                    "time": r.get("time"), "dur": r.get("dur"), "tag_id": tag_id,
                    "tag_name": tag_name, "slug": r.get("slug"), "link": r.get("link"),
                    "staff": r.get("staff"), "first_seen": today}
-            _lock_dohana_tag(rec, tag_id, tag_name, today)
+            if not tag_observed:
+                _lock_dohana_tag(rec, tag_id, tag_name, today)
             cur.append(rec)
             idx[(c, ty)] = rec
             changed = True
         else:
-            if _lock_dohana_tag(old, tag_id, tag_name, today):
+            if tag_observed:
+                # Live API xác nhận trạng thái tag hiện tại, kể cả xác nhận đã gỡ (None/rỗng).
+                for key, value in (("tag_id", tag_id or ""), ("tag_name", tag_name or ""),
+                                   ("locked_tag_id", ""), ("locked_tag_name", "")):
+                    if old.get(key) != value:
+                        old[key] = value
+                        changed = True
+                if old.get("tag_locked_at"):
+                    old["tag_locked_at"] = ""
+                    changed = True
+            elif _lock_dohana_tag(old, tag_id, tag_name, today):
                 changed = True
             if r.get("status") and old.get("status") != r.get("status"):
                 old["status"] = r.get("status")
