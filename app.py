@@ -2988,8 +2988,11 @@ def load_week_summary():
                 # placeholder theo chênh lệch tổng, vì placeholder không thể dùng để đối chiếu.
                 rem_inbound_extra_rows = list(rem_inbound_extra_rows)
                 rem_return_missing_rows = list(rem_return_missing_rows)
-                _report_return_missing.extend({"date": iso, "age": _age, "label": row}
-                                              for row in rem_return_missing_rows)
+                # Bảng "ĐÃ nhập kho nhưng KHÔNG có video" chỉ nhận lỗi đã xác nhận.
+                # Mã còn pending_sync vẫn nằm ở báo cáo vận hành, tuyệt đối không đẩy sang bảng KN.
+                if str((day or {}).get("return_video_status") or "") != "pending_sync":
+                    _report_return_missing.extend({"date": iso, "age": _age, "label": row}
+                                                  for row in rem_return_missing_rows)
                 rem_pkg_missing = len(rem_pkg_missing_rows)
                 try:
                     if pkg_missing_count is not None:
