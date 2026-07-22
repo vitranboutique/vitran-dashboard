@@ -455,7 +455,7 @@ def _week_table_html(data):
             ("huy_truoc", "Hủy trước soạn"), ("huy_sau", "Hủy sau soạn"),
             ("shipper_nhan", "Shipper nhận"), ("giao_khach", "Giao khách"),
             # ── HOÀN HÀNG (cam) ──
-            ("hoan_don", "Mã trả SAPO"), ("hoan_sp", "Hoàn SP"), ("vid_hoan", "Video hoàn (Dohana)"),
+            ("hoan_don", "Mã trả SAPO"), ("hoan_sp", "Hoàn SP"), ("vid_hoan", "Video khớp hoàn"),
             ("thieu", "Thiếu SP"), ("tag_hoan", "Tag hoàn"),
             # ── CHỐT đối chiếu video đóng↔khui (đưa lên từ bảng đối chiếu) ──
             ("chot_video", "Chốt video"),
@@ -637,6 +637,14 @@ def _week_table_html(data):
             out["vid_hoan"] = out.get("vid_hoan", "") + _gap_badge(
                 "↪", "#166534", "#dcfce7", "đã chuyển vào", _moved_ret,
                 "Số mã đã được duyệt trên A4 và chuyển từ Đóng hàng sang Khui hoàn.")
+        for _delay_days, _delay_count in sorted((d.get("return_video_delay_days") or {}).items(),
+                                                key=lambda item: int(item[0])):
+            _delay_days = int(_delay_days)
+            _delay_count = _video_audit_num(_delay_count)
+            if _delay_days > 0 and _delay_count > 0:
+                out["vid_hoan"] = out.get("vid_hoan", "") + _gap_badge(
+                    "⚠", "#b91c1c", "#fee2e2", f"TRỄ {_delay_days} NGÀY", _delay_count,
+                    f"{_delay_count} phiếu nhập kho trễ {_delay_days} ngày so với lúc quay video.")
         return out
 
     def _total_gap_badges(rows):
@@ -3367,6 +3375,8 @@ def load_week_summary():
                 _matched_by_day = _Dd(set)
                 _matched_inbound_codes_by_day = _Dd(set)
                 _return_missing_by_day = _Dd(list)
+                _return_video_delay_by_day = _Dd(_Ct)
+                _used_inbound_video_keys = set()  # một clip chỉ được khớp cho đúng một phiếu trả
                 _manual_match = {}   # {mã đơn hoàn (norm): mã clip (norm)} — admin khớp tay khi Dohana nhập mã sai
                 try:
                     for _m in (picklog.read_khui_manual_match() or []):
@@ -3402,7 +3412,9 @@ def load_week_summary():
                 for dd, groups in _return_groups_by_day.items():
                     try:
                         _target_day = date.fromisoformat(str(dd))
-                        _window_days = [(_target_day - timedelta(days=i)).isoformat() for i in range(3)]
+                        # Nhân viên có thể nhập kho trễ. Ghép đúng mã với video quay từ ngày nhập kho
+                        # lùi tối đa 7 ngày; không ép riêng mã nào.
+                        _window_days = [(_target_day - timedelta(days=i)).isoformat() for i in range(8)]
                     except Exception:
                         _window_days = [str(dd)]
                     # A4 exact matching searches the target day plus two preceding
@@ -3441,12 +3453,19 @@ def load_week_summary():
                             _matched_inbound_codes_by_day[dd].add(_man_clip)
                             continue
                         _exact = next(((video_day, video) for video_day, video in _matchable_window_videos
-                                       if video in label_codes), None)
+                                       if video in label_codes and (video_day, video) not in _used_inbound_video_keys), None)
                         if _exact:
                             _video_day, _video = _exact
                             _consumed_codes.add(_video)
+                            _used_inbound_video_keys.add((_video_day, _video))
                             _matched_by_day[dd].add(parcel_key)
                             _matched_inbound_codes_by_day[_video_day].add(_video)
+                            try:
+                                _delay_days = (date.fromisoformat(str(dd)) - date.fromisoformat(str(_video_day))).days
+                            except Exception:
+                                _delay_days = 0
+                            if _delay_days > 0:
+                                _return_video_delay_by_day[dd][_delay_days] += 1
                         else:
                             _unmatched_groups.append((parcel_key, rows, merged_label))
                     _leftover_today = [
@@ -3469,12 +3488,9 @@ def load_week_summary():
                 _tagged_inbound_by_day = {
                     dd: sum(cnt.values()) for dd, cnt in thoan.items()
                 }
-                _matched_vhoan = {
-                    dd: len(vals) + int(_tagged_inbound_by_day.get(dd, 0))
-                    for dd, vals in _matched_by_day.items()
-                }
-                for dd, tag_n in _tagged_inbound_by_day.items():
-                    _matched_vhoan.setdefault(dd, int(tag_n))
+                # Chỉ số khớp hoàn = số phiếu trả SAPO tìm thấy video đúng mã trong cửa sổ 7 ngày.
+                # Clip có tag nhưng chưa nhập SAPO được báo riêng, không cộng vào số khớp phiếu trả.
+                _matched_vhoan = {dd: len(vals) for dd, vals in _matched_by_day.items()}
                 _tagged_inbound_codes_by_day = _Dd(set)
                 for r in inbound_rows:
                     if _video_tag_id(r) and r.get("code"):
@@ -3640,10 +3656,13 @@ def load_week_summary():
                     except Exception:
                         pass
                 day["vid_hoan_raw"] = vhoan.get(iso, 0)
-                day["vid_hoan_matched"] = _matched_vhoan.get(iso, day["vid_hoan_raw"])
-                # Cột Vid hoàn là số clip khui thực tế trên Dohana. Số clip khớp đơn
-                # được giữ riêng để bảng đối chiếu xác định clip dư/thiếu.
-                day["vid_hoan"] = day["vid_hoan_raw"]
+                day["vid_hoan_matched"] = _matched_vhoan.get(iso, 0)
+                # Cột chính đối chiếu theo ngày nhập kho SAPO; số quay thô theo ngày Dohana vẫn giữ riêng.
+                day["vid_hoan"] = day["vid_hoan_matched"]
+                day["return_video_delay_days"] = {
+                    str(k): int(v) for k, v in (_return_video_delay_by_day.get(str(iso), {}) or {}).items()
+                    if int(k) > 0 and int(v) > 0
+                }
                 day["video_deleted_pkg_count"] = int(_deleted_pkg_by_day.get(iso, 0))
                 day["video_deleted_ret_count"] = int(_deleted_ret_by_day.get(iso, 0))
                 day["tag_dong"] = _tagstr(tdong.get(iso))
@@ -3715,8 +3734,8 @@ def load_week_summary():
                     if str(_dd).startswith(_mpref):
                         m["vid_dong"] += int(_rec.get("matched") or 0) - int(vdong.get(_dd, 0) or 0)
                 m["vid_hoan_raw"] = _msum(vhoan)
-                m["vid_hoan_matched"] = _msum(_matched_vhoan) if _matched_vhoan else m["vid_hoan_raw"]
-                m["vid_hoan"] = m["vid_hoan_raw"]
+                m["vid_hoan_matched"] = _msum(_matched_vhoan)
+                m["vid_hoan"] = m["vid_hoan_matched"]
                 m["tag_dong"], m["tag_hoan"] = _mtag(tdong), _mtag(thoan)
             # Keep the detailed audit table aligned with A4 when today's package
             # video count is overridden by A4's matched/missing-code recon.
