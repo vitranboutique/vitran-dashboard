@@ -10893,17 +10893,17 @@ def _render_returns():
             st.subheader("⛔ Đơn không cần KN — đã có kết luận", anchor="don-khong-can-kn")
             _return_info("Các đơn trong bảng detail đã có ghi chú KHÔNG CẦN KN: đã nhận hàng, đã nhận/được đền tiền, hoặc shop đóng thiếu thật. Nhóm này không trộn vào danh sách CẦN KN.")
             _sub_table(_khong_can_kn_list, 300, show_reason=True, show_type=True, pg_key="khong_can_kn")
-            st.markdown(f"**🏷️ + Đơn Dohana gắn tag ĐÓNG HÀNG (đóng thiếu SP) — {len(_dtag_nokn)} đơn** "
-                        f"<span style='color:#6b7280'>(trong đó {len(_dtag_nokn_only)} chưa khớp bảng chi tiết)</span>",
-                        unsafe_allow_html=True)
-            _dohana_tag_tbl(_dtag_nokn)
+            with st.expander(f"🏷️ Đơn Dohana gắn tag ĐÓNG HÀNG (đóng thiếu SP) — {len(_dtag_nokn)} đơn"
+                             + (f" · {len(_dtag_nokn_only)} chưa khớp chi tiết" if _dtag_nokn_only else ""),
+                             expanded=False):
+                _dohana_tag_tbl(_dtag_nokn)
             st.divider()
             st.markdown("### 📋 Chi tiết còn hàng hoàn về theo loại")
             # ── 🏷️ Dohana gắn tag KHUI HÀNG (dời từ Cần KN xuống — là 1 loại đơn hoàn về) ──
-            st.markdown(f"**🏷️ + Đơn Dohana gắn tag KHUI HÀNG (tráo · đã dùng · trả thiếu · hư hỏng) — {len(_dtag_kn)} đơn** "
-                        f"<span style='color:#6b7280'>(trong đó {len(_dtag_kn_only)} chưa khớp bảng chi tiết)</span>",
-                        unsafe_allow_html=True)
-            _dohana_tag_tbl(_dtag_kn)
+            with st.expander(f"🏷️ Đơn Dohana gắn tag KHUI HÀNG (tráo · đã dùng · trả thiếu · hư hỏng) — {len(_dtag_kn)} đơn"
+                             + (f" · {len(_dtag_kn_only)} chưa khớp chi tiết" if _dtag_kn_only else ""),
+                             expanded=False):
+                _dohana_tag_tbl(_dtag_kn)
             # ── 🚫 Đơn ĐÃ NHẬP KHO nhưng KHÔNG có video khui (đơn đã nhập kho — render bằng _sub_table cho đồng nhất) ──
             _nvhelp = ("Danh sách lấy trực tiếp từ cột Chốt video của Báo cáo vận hành cuối ngày: chỉ gồm các "
                        "dòng còn thiếu video khui hoàn sau khi đã trừ mã quay lộn mục. SAPO chỉ bổ sung thông tin mã đơn/mã trả/vận đơn. "
@@ -10964,7 +10964,7 @@ def _render_returns():
 
             # ── 🔍 KIỂM TRA MÃ TRẢ TRÙNG trong từng bảng (đếm mã trả xuất hiện >1 lần) ──
             st.divider()
-            with st.expander("🔍 Kiểm tra đơn TRÙNG (① trong 1 bảng · ② chéo giữa các bảng)", expanded=True):
+            with st.expander("🔍 Kiểm tra đơn TRÙNG (① trong 1 bảng · ② chéo giữa các bảng)", expanded=False):
                 from collections import Counter as _Cnt
 
                 def _row_id(d):   # danh tính đơn = mã trả / mã đơn / VĐ (CÙNG key với lúc gộp Cần KN)
