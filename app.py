@@ -955,95 +955,17 @@ def _render_week_video_audit(data):
     if not matrix_rows:
         matrix_rows = _fallback_matrix_rows(data or {})
     rows = matrix_rows or (data or {}).get("video_audit") or []
-    _render_khui_manual_match(data)   # khớp tay clip khui ↔ đơn hoàn (luôn hiện, kể cả khi hết dòng lệch)
     if not rows:
-        with st.expander("🔎 Bảng khớp mã video đóng hàng ↔ khui hàng — 0 dòng", expanded=True):
+        with st.expander("🔎 Tổng hợp mã thiếu/dư Đóng hàng — 0 dòng", expanded=True):
             st.info("Chưa có dòng lệch để đối chiếu mã.")
         return
-    with st.expander(f"🔎 Đối chiếu mã dư/thiếu video đóng hàng ↔ khui hàng — {len(rows)} dòng", expanded=True):
-        st.markdown("**Bảng khớp mã**")
+    with st.expander(f"🔎 Tổng hợp mã thiếu/dư Đóng hàng — {len(rows)} dòng", expanded=True):
+        st.markdown("**Bảng tổng hợp — không tự khớp mã**")
         st.caption(
-            "Mỗi dòng là 1 ngày. App tự khớp mã thiếu bên này với mã dư bên kia; ô vàng là khả năng cao quay lộn mục. "
-            "Cột Chốt là kết quả sau khi đã bù trừ các mã khớp lộn."
+            "Chỉ tổng hợp mã thiếu/dư Đóng hàng. Mọi thao tác chuyển loại thực hiện tại A4; "
+            "cột Xử lý A4 ghi mã đã chuyển hoặc chưa xử lý. Cột Chốt giữ nguyên để các bảng khác tiếp tục tính đúng."
         )
-        # ── 🔍 SOI 1 MÃ: video trong kho (ngày/type/trạng thái) + đang nằm ở cột thiếu/dư nào ──
-        _probe = st.text_input("🔍 Soi 1 mã (vì sao vào cột thiếu/dư này)", key="week_audit_probe",
-                               placeholder="Dán mã vận đơn / mã đơn, vd 861877934768…").strip()
-        if _probe:
-            _pn = _ascii_code(_probe)
-            _pvids = [v for v in (_dohana_records_effective() if picklog.configured() else [])
-                      if _pn and _pn in _ascii_code(v.get("code"))]
-            if _pvids:
-                st.markdown(f"**Kho video — {len(_pvids)} clip khớp `{_probe}`:**")
-                st.dataframe(pd.DataFrame([{
-                    "Mã": v.get("code"),
-                    "Loại": ("đóng hàng" if v.get("type") == "package"
-                             else "khui hàng" if v.get("type") == "inbound" else str(v.get("type"))),
-                    "Ngày": v.get("date"), "Giờ": v.get("time"),
-                    "Trạng thái": v.get("status") or "—",
-                    "Tag": v.get("tag_name") or v.get("locked_tag_name") or "",
-                } for v in _pvids]), hide_index=True, use_container_width=True)
-            else:
-                st.warning(f"KHÔNG thấy `{_probe}` trong kho video đã lưu → app chưa lưu được clip này "
-                           "(bị xóa trước khi app kịp đồng bộ, hoặc ngoài phạm vi quét).")
-            _phits = []
-            for _r in rows:
-                if not isinstance(_r, dict):
-                    continue
-                _rday = _r.get("Ngày") or _r.get("iso") or _r.get("ngay") or "?"
-                for _col, _val in _r.items():
-                    if _col in ("Ngày", "iso", "ngay", "Thứ", "thu"):
-                        continue
-                    if _pn and _pn in _ascii_code(_val):
-                        _phits.append(f"{_rday} → **{_col}**")
-            st.markdown("**Đang nằm ở:** " + (" · ".join(_phits[:15]) if _phits
-                        else "_không thấy ở cột thiếu/dư nào trong bảng dưới_"))
-            # ── DẤU VẾT ĐỐI CHIẾU BÊN ĐÓNG: vì sao vào (hay KHÔNG vào) cột "Đóng dư" ──
-            _trace = (data or {}).get("video_trace_by_day") or {}
-            _trace_rows = []
-            for _td, _tv in _trace.items():
-                if not isinstance(_tv, dict):
-                    continue
-                _in = lambda lst: any(_pn and _pn in _ascii_code(x) for x in (lst or []))
-                _is_soan = _in(_tv.get("soan"))
-                _is_video = _in(_tv.get("pkg_video"))
-                _is_matched = _in(_tv.get("pkg_matched"))
-                _is_extra = _in(_tv.get("pkg_extra"))
-                if not (_is_soan or _is_video):
-                    continue
-                if _is_matched:
-                    _kl = "✅ KHỚP soạn → không tính dư (đúng: có soạn mã này)"
-                elif _is_extra:
-                    _kl = "🟦 Video đóng KHÔNG khớp soạn → PHẢI vào 'Đóng dư'"
-                elif _is_video and not _tv.get("has_soan_list"):
-                    _kl = "⚠️ Có video nhưng NGÀY MẤT phiếu soạn → không ghép được"
-                else:
-                    _kl = "—"
-                _trace_rows.append({
-                    "Ngày": _td,
-                    "Có trong SOẠN?": "có" if _is_soan else "không",
-                    "Là video ĐÓNG?": "có" if _is_video else "không",
-                    "Đã khớp soạn?": "có" if _is_matched else "không",
-                    "Xếp vào Đóng dư?": "có" if _is_extra else "không",
-                    "Kết luận": _kl,
-                })
-            if _trace_rows:
-                st.markdown("**Dấu vết bên ĐÓNG (vì sao vào/không vào cột Đóng dư):**")
-                st.dataframe(pd.DataFrame(_trace_rows), hide_index=True, use_container_width=True)
-                _ctx = (data or {}).get("order_context_by_code") or {}
-                _ctx_lbl = _ctx.get(_pn) or _ctx.get(_probe)
-                if _ctx_lbl:
-                    st.caption(f"Nhãn ngữ cảnh của mã này: `{_ctx_lbl}`")
         df = pd.DataFrame(rows)
-        if "Nhóm tuổi" in df.columns:
-            _age_filter = st.radio(
-                "Phạm vi",
-                ["Tất cả", "Còn trong hạn Dohana", "Kho cũ"],
-                horizontal=True,
-                key="week_video_audit_age_filter",
-            )
-            if _age_filter != "Tất cả":
-                df = df[df["Nhóm tuổi"] == _age_filter]
         if df.empty:
             st.info("Không có dòng trong phạm vi đã chọn.")
             return
@@ -1070,7 +992,7 @@ def _render_week_video_audit(data):
 
             body = []
             for _, r in df.iterrows():
-                has_match = bool(str(r.get("Khớp lộn mục") or "").strip())
+                has_action = bool(str(r.get("Xử lý A4") or "").strip())
                 day_key = str(r.get("Ngày") or "")
                 anchors = {
                     "pkg_miss": _video_audit_anchor(day_key, "pkg-miss"),
@@ -1081,15 +1003,11 @@ def _render_week_video_audit(data):
                 cells = [
                     "<tr>",
                     f'<td style="padding:6px 8px;border:1px solid #d6dce6;white-space:nowrap">{_esc(str(r.get("Ngày") or ""))}</td>',
-                    _fmt_cell(r.get("Khớp lộn mục"), has_match),
-                    f'<td style="padding:6px 8px;border:1px solid #d6dce6;text-align:right;font-weight:800">{_video_audit_num(r.get("Đóng thiếu SL"))}</td>',
-                    _fmt_cell(r.get("Đóng thiếu"), anchor_id=anchors["pkg_miss"]),
-                    f'<td style="padding:6px 8px;border:1px solid #d6dce6;text-align:right;font-weight:800">{_video_audit_num(r.get("Đóng dư SL"))}</td>',
-                    _fmt_cell(r.get("Đóng dư"), anchor_id=anchors["pkg_extra"]),
-                    f'<td style="padding:6px 8px;border:1px solid #d6dce6;text-align:right;font-weight:800">{_video_audit_num(r.get("Hoàn thiếu SL"))}</td>',
-                    _fmt_cell(r.get("Hoàn thiếu"), anchor_id=anchors["ret_miss"]),
-                    f'<td style="padding:6px 8px;border:1px solid #d6dce6;text-align:right;font-weight:800">{_video_audit_num(r.get("Hoàn dư SL"))}</td>',
-                    _fmt_cell(r.get("Hoàn dư"), anchor_id=anchors["ret_extra"]),
+                    _fmt_cell(r.get("Xử lý A4"), has_action),
+                    f'<td style="padding:6px 8px;border:1px solid #d6dce6;text-align:right;font-weight:800">{_video_audit_num(r.get("Hiển thị Đóng thiếu SL", r.get("Đóng thiếu SL")))}</td>',
+                    _fmt_cell(r.get("Hiển thị Đóng thiếu", r.get("Đóng thiếu")), anchor_id=anchors["pkg_miss"]),
+                    f'<td style="padding:6px 8px;border:1px solid #d6dce6;text-align:right;font-weight:800">{_video_audit_num(r.get("Hiển thị Đóng dư SL", r.get("Đóng dư SL")))}</td>',
+                    _fmt_cell(r.get("Hiển thị Đóng dư", r.get("Đóng dư")), anchor_id=anchors["pkg_extra"]),
                     _chot_cell(r),
                     "</tr>",
                 ]
@@ -1108,9 +1026,8 @@ td.audit-target:target {
   <thead>
     <tr>
       <th rowspan="2" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#e2e8f0">Ngày</th>
-      <th rowspan="2" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#fef3c7;min-width:220px">Khớp lộn mục</th>
+      <th rowspan="2" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#fef3c7;min-width:260px">Xử lý trên A4</th>
       <th colspan="4" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#dbeafe">Đóng hàng</th>
-      <th colspan="4" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#ffedd5">Nhập hàng hoàn</th>
       <th rowspan="2" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#f1f5f9;min-width:160px">Chốt</th>
     </tr>
     <tr>
@@ -1118,10 +1035,6 @@ td.audit-target:target {
       <th style="position:sticky;top:31px;z-index:3;padding:6px 8px;border:1px solid #cbd5e1;background:#dbeafe;min-width:190px">Thiếu mã</th>
       <th style="position:sticky;top:31px;z-index:3;padding:6px 8px;border:1px solid #cbd5e1;background:#dbeafe">Dư SL</th>
       <th style="position:sticky;top:31px;z-index:3;padding:6px 8px;border:1px solid #cbd5e1;background:#dbeafe;min-width:190px">Dư mã</th>
-      <th style="position:sticky;top:31px;z-index:3;padding:6px 8px;border:1px solid #cbd5e1;background:#ffedd5">Thiếu SL</th>
-      <th style="position:sticky;top:31px;z-index:3;padding:6px 8px;border:1px solid #cbd5e1;background:#ffedd5;min-width:190px">Thiếu mã</th>
-      <th style="position:sticky;top:31px;z-index:3;padding:6px 8px;border:1px solid #cbd5e1;background:#ffedd5">Dư SL</th>
-      <th style="position:sticky;top:31px;z-index:3;padding:6px 8px;border:1px solid #cbd5e1;background:#ffedd5;min-width:190px">Dư mã</th>
     </tr>
   </thead>
   <tbody>
@@ -2847,6 +2760,15 @@ def load_week_summary():
                     rows += [f"{pad_label} #{i}" for i in range(len(rows) + 1, n + 1)]
                 return rows
 
+            _type_overrides_by_day = {}
+            try:
+                for _ov in picklog.read_video_type_overrides():
+                    _od = str(_ov.get("date") or "").strip()
+                    if _od:
+                        _type_overrides_by_day.setdefault(_od, []).append(dict(_ov))
+            except Exception:
+                _type_overrides_by_day = {}
+
             def _add_matrix(iso, pkg_missing, pkg_extra, return_missing, inbound_extra, pkg_unknown=None, day=None,
                             pkg_missing_count=None):
                 pkg_missing_raw = [str(v or "").strip() for v in (pkg_missing or []) if str(v or "").strip()]
@@ -2901,6 +2823,7 @@ def load_week_summary():
                 rem_inbound_extra = len(rem_inbound_extra_rows)
                 rem_return_missing = len(rem_return_missing_rows)
                 rem_pkg_extra = len(display_pkg_extra_rows)
+                _has_a4_actions = bool(_type_overrides_by_day.get(str(iso), []))
                 parts = []
                 if rem_pkg_missing:
                     parts.append(f"Thiếu video đóng: {rem_pkg_missing}")
@@ -2917,7 +2840,9 @@ def load_week_summary():
                 else:
                     if isinstance(day, dict):
                         day["chot_video"] = "Đủ"      # khớp hết, không lệch
-                    return
+                    if not _has_a4_actions:
+                        return
+                    chot = "Đủ"
                 if isinstance(day, dict):
                     day["chot_video"] = chot           # đưa kết quả chốt lên bảng 30 ngày
                 def _disp(vals, prefer=""):
@@ -2936,6 +2861,24 @@ def load_week_summary():
                 ] + [
                     _matched_waybills(a, b, "return", "package") for a, b in p2
                 ]
+                # Bảng này chỉ TỔNG HỢP, không được tự quyết định khớp. Hiển thị nguyên trạng
+                # mã thiếu/dư Đóng hàng; việc chuyển loại chỉ lấy từ nút đã duyệt trên A4.
+                _a4_actions = []
+                for _ov in (_type_overrides_by_day.get(str(iso), []) or []):
+                    _oc = str(_ov.get("code") or "").strip()
+                    _src = str(_ov.get("source_type") or "").strip()
+                    _dst = str(_ov.get("type") or "").strip()
+                    if not _oc:
+                        continue
+                    if _src == "inbound" and _dst == "package":
+                        _a4_actions.append(f"Đã chuyển: {_oc} · Khui hoàn → Đóng hàng")
+                    elif _src == "package" and _dst == "inbound":
+                        _a4_actions.append(f"Đã chuyển: {_oc} · Đóng hàng → Khui hoàn")
+                _raw_pkg_missing_display = _disp_counted(raw_pkg_missing_rows, "package", pkg_missing_raw)
+                _raw_pkg_extra_display = _disp(raw_pkg_extra_rows, "package")
+                _still_codes = list(dict.fromkeys(_raw_pkg_missing_display + _raw_pkg_extra_display))
+                if _still_codes:
+                    _a4_actions.append("Chưa xử lý: " + " · ".join(_still_codes))
                 _video_matrix.append({
                     "Ngày": iso,
                     "Nhóm tuổi": _audit_age(iso),
@@ -2945,11 +2888,16 @@ def load_week_summary():
                     "Đóng thiếu": _short_codes(_disp_counted(rem_pkg_missing_rows, "package", pkg_missing_raw)),
                     "Đóng dư SL": len(display_pkg_extra_rows),
                     "Đóng dư": _short_codes(_disp(display_pkg_extra_rows, "package")),
+                    "Hiển thị Đóng thiếu SL": max(len(raw_pkg_missing_rows), int(pkg_missing_count or 0)),
+                    "Hiển thị Đóng thiếu": _short_codes(_raw_pkg_missing_display),
+                    "Hiển thị Đóng dư SL": len(raw_pkg_extra_rows),
+                    "Hiển thị Đóng dư": _short_codes(_raw_pkg_extra_display),
                     "Hoàn thiếu SL": len(rem_return_missing_rows),
                     "Hoàn thiếu": _short_codes(_disp(rem_return_missing_rows, "return")),
                     "Hoàn dư SL": len(rem_inbound_extra_rows),
                     "Hoàn dư": _short_codes(_disp(rem_inbound_extra_rows, "return")),
                     "Khớp lộn mục": _short_codes(matched_rows),
+                    "Xử lý A4": _short_codes(_a4_actions),
                     "Video chưa khớp đơn": _short_codes(pkg_unknown),
                     "Chốt": chot,
                 })
@@ -7984,33 +7932,6 @@ def _render_daily():
                 _d["ghi_chu"] = _notes.get(_d.get("iso"), "")
             st.markdown(_week_table_html(_wk), unsafe_allow_html=True)
             _render_week_video_audit(_wk)
-            st.caption('Đối chiếu theo từng dòng A4; cảnh báo ngắn ngay tại cột liên quan. Video cũ đã xóa không báo thiếu.')
-            st.caption('🔑 **Luồng đóng hàng:** **Soạn** (nhặt hàng theo phiếu nhặt — **SL SP** = tổng sản phẩm, '
-                       '**SL đơn** = tổng đơn) → **Đóng gói (video)** = số đơn ĐÓNG GÓI THẬT có video → '
-                       'Shipper nhận → Giao khách. Soạn (SP/đơn) lấy từ đợt phiếu nhặt đã lưu.')
-            st.caption('ℹ️ Dohana chỉ giữ video khoảng 25 ngày; ngày cũ không còn video thì bảng bỏ qua đối chiếu hoàn, '
-                       'không quy thành lỗi nhân viên.')
-            if picklog.configured():
-                st.caption("✏️ Gõ ghi chú theo ngày rồi bấm **Lưu** — sẽ hiện vào cột *Ghi chú* của bảng trên (lưu bền, lần sau mở vẫn còn).")
-                _ndf = pd.DataFrame([{"Ngày": d["ngay"], "Thứ": d["thu"], "iso": d["iso"],
-                                      "Ghi chú": _notes.get(d["iso"], "")} for d in _wk.get("days", [])])
-                _ed = st.data_editor(
-                    _ndf, hide_index=True, use_container_width=True, key="week_note_editor",
-                    disabled=["Ngày", "Thứ", "iso"],
-                    column_config={"iso": None,
-                                   "Ngày": st.column_config.TextColumn("Ngày", width="small"),
-                                   "Thứ": st.column_config.TextColumn("Thứ", width="small"),
-                                   "Ghi chú": st.column_config.TextColumn("Ghi chú", width="large")})
-                if st.button("💾 Lưu ghi chú", key="save_week_note"):
-                    _out = {r["iso"]: str(r.get("Ghi chú") or "").strip()
-                            for r in _ed.to_dict("records") if str(r.get("Ghi chú") or "").strip()}
-                    if picklog._write_gist_file(_NOTE_FILE, _out):
-                        st.success("✅ Đã lưu ghi chú.")
-                        st.rerun()
-                    else:
-                        st.error("❌ Lưu lỗi (thiếu token picklog?).")
-            else:
-                st.caption("Ghi chú theo ngày cần cấu hình kho lưu (token picklog).")
         except Exception as e:
             st.warning(f"Chưa lấy được tổng hợp: `{e}`")
 
