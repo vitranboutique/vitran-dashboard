@@ -1,9 +1,11 @@
 """
 dohana.py — Lấy VIDEO ĐÓNG HÀNG từ Dohana (dhn.io.vn) qua Partner API.
 
-API: GET https://backend.dhn.io.vn/dpm/v1/partner/video/search  (header x-api-key)
-  params: page, limit, type (package=đóng hàng / outbound / inbound), orderCode, status
-Mỗi video: orderCode (= mã vận đơn), type, createdAt, slug, duration, status...
+API v2 (keyset CURSOR): GET https://openapi.dhn.io.vn/dpm/v1/partner/v2/video/search  (header x-api-key)
+  params: cursor (ISO timestamp bản ghi cuối trang trước), limit (≤1000), type (package/inbound/outbound/prepare), orderCode, status[]
+  response: {data:[...], nextCursor, hasNextPage, pageSize}
+Mỗi video: orderCode (= mã vận đơn), type, createdAt, slug, duration, status, tagId, user...
+Domain cũ be/backend.dhn.io.vn (page/limit, "Legacy") NGƯNG sau 17/08/2026 → đã chuyển openapi.dhn.io.vn + cursor.
 Key đặt trong Streamlit secrets:  [dohana]\n  x_api_key = "..."
 """
 from collections import Counter
@@ -15,7 +17,8 @@ import unicodedata
 import requests
 import streamlit as st
 
-_BASE = "https://backend.dhn.io.vn/dpm/v1/partner/video/search"
+_API_ROOT = "https://openapi.dhn.io.vn/dpm/v1"
+_BASE = f"{_API_ROOT}/partner/v2/video/search"
 _TAG_CACHE = {"ts": 0.0, "map": {}}
 
 
@@ -165,10 +168,9 @@ def _fetch_tag_names():
     if key:
         headers = {"x-api-key": key}
         urls = [
-            "https://backend.dhn.io.vn/dpm/v1/partner/tag",
-            "https://backend.dhn.io.vn/dpm/v1/partner/tags",
-            "https://backend.dhn.io.vn/dpm/v1/tag",
-            "https://be.dhn.io.vn/dpm/v1/tag",
+            f"{_API_ROOT}/partner/tag",
+            f"{_API_ROOT}/partner/tags",
+            f"{_API_ROOT}/tag",
         ]
         for url in urls:
             try:
@@ -306,20 +308,31 @@ def _note_rate_limit(seconds=2.0):
 
 
 def _fetch_videos(typ: str, cutoff_date, max_pages: int):
-    """Lấy video theo type, lùi (page 0 = MỚI NHẤT) tới khi createdAt < cutoff_date. Khử trùng id."""
+    """Lấy video theo type bằng cursor tới khi createdAt < cutoff_date. Khử trùng id."""
     key = _key()
     if not key:
         return None
     headers = {"x-api-key": key}
     vids = []
-    for p in range(0, max_pages):        # ⚠️ 0-INDEXED: page=0 = MỚI NHẤT
+    cursor = None
+    seen_cursors = set()
+    # p=custom tránh giới hạn mặc định 30 ngày khi app cần đồng bộ 35 ngày.
+    # Lấy dư một ngày UTC; kết quả cuối vẫn được lọc theo ngày Việt Nam.
+    from_iso = f"{cutoff_date - timedelta(days=1)}T00:00:00Z"
+    to_iso = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%dT00:00:00Z")
+    for page_no in range(max_pages):
         rows = None
+        payload = {}
         # Dohana giới hạn 10 req/s (xác nhận từ Dohana). _throttle() giữ ~3/s → thừa dưới 10/s.
         # 429 → thử lại TỐI ĐA 1 lần (ít đấm lại để key đang bị phạt hồi nhanh; kho lưu phục vụ đọc).
         for _try in range(2):
             _throttle()
             try:
-                r = requests.get(_BASE, params={"page": p, "limit": 100, "type": typ},
+                params = {"limit": 1000, "type": typ, "p": "custom",
+                          "from": from_iso, "to": to_iso}
+                if cursor:
+                    params["cursor"] = cursor
+                r = requests.get(_BASE, params=params,
                                  headers=headers, timeout=20)
             except Exception:
                 break
@@ -327,10 +340,11 @@ def _fetch_videos(typ: str, cutoff_date, max_pages: int):
                 _note_rate_limit(r.headers.get("Retry-After") or (2 + _try * 2))
                 continue
             if r.status_code == 200:
-                rows = r.json().get("data", [])
+                payload = r.json() or {}
+                rows = payload.get("data", [])
             break                        # thành công / lỗi khác → thoát vòng thử lại
         if rows is None:                 # vẫn 429 sau 5 lần / lỗi mạng
-            if p == 0:                   # trang ĐẦU fail → Dohana KHÔNG sẵn sàng → trả None
+            if page_no == 0:             # trang ĐẦU fail → Dohana KHÔNG sẵn sàng → trả None
                 return None              # (báo 'tạm không lấy được', KHÔNG nhầm '0 video')
             break                        # trang sau: giữ video đã lấy
         if not rows:
@@ -339,6 +353,11 @@ def _fetch_videos(typ: str, cutoff_date, max_pages: int):
         last = _vnd(rows[-1].get("createdAt"))
         if last and last < cutoff_date:
             break
+        next_cursor = payload.get("nextCursor")
+        if not payload.get("hasNextPage") or not next_cursor or next_cursor in seen_cursors:
+            break
+        seen_cursors.add(next_cursor)
+        cursor = next_cursor
     return list({v.get("id"): v for v in vids}.values())
 
 

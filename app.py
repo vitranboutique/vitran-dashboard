@@ -7644,12 +7644,12 @@ def _render_daily():
                 st.caption(f"Key …{str(_dk)[-6:]}")
                 _rows, _all_types = [], None
                 for _ty in ("inbound", "package", None):
-                    _params = {"page": 0, "limit": 30}
+                    _params = {"limit": 30}
                     if _ty:
                         _params["type"] = _ty
                     try:
                         dohana._throttle()
-                        _pr = _rq.get("https://backend.dhn.io.vn/dpm/v1/partner/video/search",
+                        _pr = _rq.get(dohana._BASE,
                                       params=_params, headers={"x-api-key": _dk}, timeout=20)
                         if _pr.status_code == 429:
                             dohana._note_rate_limit(_pr.headers.get("Retry-After") or 3)
@@ -7734,8 +7734,8 @@ def _render_daily():
             else:
                 try:
                     dohana._throttle()
-                    _pr2 = _rq2.get("https://backend.dhn.io.vn/dpm/v1/partner/video/search",
-                                    params={"page": 0, "limit": 20, "orderCode": _lvq.strip()},
+                    _pr2 = _rq2.get(dohana._BASE,
+                                    params={"limit": 20, "orderCode": _lvq.strip()},
                                     headers={"x-api-key": _dk2}, timeout=20)
                     if _pr2.status_code == 429:
                         dohana._note_rate_limit(_pr2.headers.get("Retry-After") or 3)
