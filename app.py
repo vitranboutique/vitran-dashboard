@@ -607,6 +607,16 @@ def _week_table_html(data):
                 out["vid_hoan"] = _gap_badge("⚠", "#b91c1c", "#fee2e2", "chưa có video", _blank_video,
                     "Ô Video hoàn trống: phiếu đã nhập SAPO nhưng chưa tìm thấy clip khui tương ứng.")
         _apply_audit_video_badges(out, d)
+        _moved_pkg = _video_audit_num(d.get("video_move_pkg_in"))
+        _moved_ret = _video_audit_num(d.get("video_move_ret_in"))
+        if _moved_pkg:
+            out["vid_dong"] = out.get("vid_dong", "") + _gap_badge(
+                "↪", "#166534", "#dcfce7", "đã chuyển vào", _moved_pkg,
+                "Số mã đã được duyệt trên A4 và chuyển từ Khui hoàn sang Đóng hàng.")
+        if _moved_ret:
+            out["vid_hoan"] = out.get("vid_hoan", "") + _gap_badge(
+                "↪", "#166534", "#dcfce7", "đã chuyển vào", _moved_ret,
+                "Số mã đã được duyệt trên A4 và chuyển từ Đóng hàng sang Khui hoàn.")
         return out
 
     def _total_gap_badges(rows):
@@ -615,8 +625,11 @@ def _week_table_html(data):
             "pkg_missing": 0, "pkg_extra": 0, "pkg_old": 0,
             "ret_missing": 0, "ret_extra": 0, "ret_old": 0,
             "ship_missing": 0, "ship_extra": 0,
+            "moved_pkg": 0, "moved_ret": 0,
         }
         for row in rows or []:
+            totals["moved_pkg"] += _video_audit_num((row or {}).get("video_move_pkg_in"))
+            totals["moved_ret"] += _video_audit_num((row or {}).get("video_move_ret_in"))
             try:
                 stale = (_today_vn - date.fromisoformat(str(row.get("iso") or ""))).days > _DOHANA_RETENTION
             except Exception:
@@ -667,12 +680,18 @@ def _week_table_html(data):
         if totals["pkg_old"]:
             pkg += _gap_badge("▽", "#64748b", "#f1f5f9", "video cũ đã xóa", totals["pkg_old"],
                               "Tổng chênh thiếu thuộc các ngày đã quá hạn lưu video Dohana.")
+        if totals["moved_pkg"]:
+            pkg += _gap_badge("↪", "#166534", "#dcfce7", "đã chuyển vào", totals["moved_pkg"],
+                              "Tổng mã đã chuyển từ Khui hoàn sang Đóng hàng trên A4.")
 
         # Tổng cảnh báo hoàn theo đúng các dòng A4 còn dữ liệu; video cũ đã xóa đã bị loại ở trên.
         ret = ""
         if totals["ret_missing"]:
             ret += _gap_badge("⚠", "#b91c1c", "#fee2e2", "chưa có video", totals["ret_missing"],
                               "Tổng phiếu SAPO có ô Video hoàn trống.")
+        if totals["moved_ret"]:
+            ret += _gap_badge("↪", "#166534", "#dcfce7", "đã chuyển vào", totals["moved_ret"],
+                              "Tổng mã đã chuyển từ Đóng hàng sang Khui hoàn trên A4.")
         sapo_ret = ""
         if totals["ret_extra"]:
             sapo_ret += _gap_badge("⚠", "#b91c1c", "#fee2e2", "chưa nhập SAPO", totals["ret_extra"],
@@ -962,8 +981,8 @@ def _render_week_video_audit(data):
     with st.expander(f"🔎 Tổng hợp mã thiếu/dư Đóng hàng — {len(rows)} dòng", expanded=True):
         st.markdown("**Bảng tổng hợp — không tự khớp mã**")
         st.caption(
-            "Chỉ tổng hợp mã thiếu/dư Đóng hàng. Mọi thao tác chuyển loại thực hiện tại A4; "
-            "cột Xử lý A4 ghi mã đã chuyển hoặc chưa xử lý. Cột Chốt giữ nguyên để các bảng khác tiếp tục tính đúng."
+            "Chỉ tổng hợp, không tự khớp. Mọi thao tác chuyển loại thực hiện tại A4; "
+            "mã đã chuyển có ký hiệu ↪ tại cột đích. Cột Chốt giữ nguyên để các bảng khác tiếp tục tính đúng."
         )
         df = pd.DataFrame(rows)
         if df.empty:
@@ -992,7 +1011,6 @@ def _render_week_video_audit(data):
 
             body = []
             for _, r in df.iterrows():
-                has_action = bool(str(r.get("Xử lý A4") or "").strip())
                 day_key = str(r.get("Ngày") or "")
                 anchors = {
                     "pkg_miss": _video_audit_anchor(day_key, "pkg-miss"),
@@ -1003,11 +1021,16 @@ def _render_week_video_audit(data):
                 cells = [
                     "<tr>",
                     f'<td style="padding:6px 8px;border:1px solid #d6dce6;white-space:nowrap">{_esc(str(r.get("Ngày") or ""))}</td>',
-                    _fmt_cell(r.get("Xử lý A4"), has_action),
                     f'<td style="padding:6px 8px;border:1px solid #d6dce6;text-align:right;font-weight:800">{_video_audit_num(r.get("Hiển thị Đóng thiếu SL", r.get("Đóng thiếu SL")))}</td>',
                     _fmt_cell(r.get("Hiển thị Đóng thiếu", r.get("Đóng thiếu")), anchor_id=anchors["pkg_miss"]),
                     f'<td style="padding:6px 8px;border:1px solid #d6dce6;text-align:right;font-weight:800">{_video_audit_num(r.get("Hiển thị Đóng dư SL", r.get("Đóng dư SL")))}</td>',
                     _fmt_cell(r.get("Hiển thị Đóng dư", r.get("Đóng dư")), anchor_id=anchors["pkg_extra"]),
+                    _fmt_cell(r.get("Đã đẩy vào Đóng"), bool(str(r.get("Đã đẩy vào Đóng") or "").strip())),
+                    f'<td style="padding:6px 8px;border:1px solid #d6dce6;text-align:right;font-weight:800">{_video_audit_num(r.get("Hiển thị Hoàn thiếu SL", r.get("Hoàn thiếu SL")))}</td>',
+                    _fmt_cell(r.get("Hiển thị Hoàn thiếu", r.get("Hoàn thiếu")), anchor_id=anchors["ret_miss"]),
+                    f'<td style="padding:6px 8px;border:1px solid #d6dce6;text-align:right;font-weight:800">{_video_audit_num(r.get("Hiển thị Hoàn dư SL", r.get("Hoàn dư SL")))}</td>',
+                    _fmt_cell(r.get("Hiển thị Hoàn dư", r.get("Hoàn dư")), anchor_id=anchors["ret_extra"]),
+                    _fmt_cell(r.get("Đã đẩy vào Hoàn"), bool(str(r.get("Đã đẩy vào Hoàn") or "").strip())),
                     _chot_cell(r),
                     "</tr>",
                 ]
@@ -1026,8 +1049,8 @@ td.audit-target:target {
   <thead>
     <tr>
       <th rowspan="2" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#e2e8f0">Ngày</th>
-      <th rowspan="2" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#fef3c7;min-width:260px">Xử lý trên A4</th>
-      <th colspan="4" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#dbeafe">Đóng hàng</th>
+      <th colspan="5" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#dbeafe">Đóng hàng</th>
+      <th colspan="5" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#ffedd5">Nhập hàng hoàn</th>
       <th rowspan="2" style="position:sticky;top:0;z-index:3;padding:7px 8px;border:1px solid #cbd5e1;background:#f1f5f9;min-width:160px">Chốt</th>
     </tr>
     <tr>
@@ -1035,6 +1058,12 @@ td.audit-target:target {
       <th style="position:sticky;top:31px;z-index:3;padding:6px 8px;border:1px solid #cbd5e1;background:#dbeafe;min-width:190px">Thiếu mã</th>
       <th style="position:sticky;top:31px;z-index:3;padding:6px 8px;border:1px solid #cbd5e1;background:#dbeafe">Dư SL</th>
       <th style="position:sticky;top:31px;z-index:3;padding:6px 8px;border:1px solid #cbd5e1;background:#dbeafe;min-width:190px">Dư mã</th>
+      <th style="position:sticky;top:31px;z-index:3;padding:6px 8px;border:1px solid #cbd5e1;background:#dcfce7;min-width:190px">↪ Đã đẩy vào</th>
+      <th style="position:sticky;top:31px;z-index:3;padding:6px 8px;border:1px solid #cbd5e1;background:#ffedd5">Thiếu SL</th>
+      <th style="position:sticky;top:31px;z-index:3;padding:6px 8px;border:1px solid #cbd5e1;background:#ffedd5;min-width:190px">Thiếu mã</th>
+      <th style="position:sticky;top:31px;z-index:3;padding:6px 8px;border:1px solid #cbd5e1;background:#ffedd5">Dư SL</th>
+      <th style="position:sticky;top:31px;z-index:3;padding:6px 8px;border:1px solid #cbd5e1;background:#ffedd5;min-width:190px">Dư mã</th>
+      <th style="position:sticky;top:31px;z-index:3;padding:6px 8px;border:1px solid #cbd5e1;background:#dcfce7;min-width:190px">↪ Đã đẩy vào</th>
     </tr>
   </thead>
   <tbody>
@@ -2864,6 +2893,8 @@ def load_week_summary():
                 # Bảng này chỉ TỔNG HỢP, không được tự quyết định khớp. Hiển thị nguyên trạng
                 # mã thiếu/dư Đóng hàng; việc chuyển loại chỉ lấy từ nút đã duyệt trên A4.
                 _a4_actions = []
+                _moved_into_package = []
+                _moved_into_return = []
                 for _ov in (_type_overrides_by_day.get(str(iso), []) or []):
                     _oc = str(_ov.get("code") or "").strip()
                     _src = str(_ov.get("source_type") or "").strip()
@@ -2872,8 +2903,10 @@ def load_week_summary():
                         continue
                     if _src == "inbound" and _dst == "package":
                         _a4_actions.append(f"Đã chuyển: {_oc} · Khui hoàn → Đóng hàng")
+                        _moved_into_package.append(f"↪ {_oc}")
                     elif _src == "package" and _dst == "inbound":
                         _a4_actions.append(f"Đã chuyển: {_oc} · Đóng hàng → Khui hoàn")
+                        _moved_into_return.append(f"↪ {_oc}")
                 _raw_pkg_missing_display = _disp_counted(raw_pkg_missing_rows, "package", pkg_missing_raw)
                 _raw_pkg_extra_display = _disp(raw_pkg_extra_rows, "package")
                 _still_codes = list(dict.fromkeys(_raw_pkg_missing_display + _raw_pkg_extra_display))
@@ -2892,10 +2925,16 @@ def load_week_summary():
                     "Hiển thị Đóng thiếu": _short_codes(_raw_pkg_missing_display),
                     "Hiển thị Đóng dư SL": len(raw_pkg_extra_rows),
                     "Hiển thị Đóng dư": _short_codes(_raw_pkg_extra_display),
+                    "Đã đẩy vào Đóng": _short_codes(_moved_into_package),
                     "Hoàn thiếu SL": len(rem_return_missing_rows),
                     "Hoàn thiếu": _short_codes(_disp(rem_return_missing_rows, "return")),
                     "Hoàn dư SL": len(rem_inbound_extra_rows),
                     "Hoàn dư": _short_codes(_disp(rem_inbound_extra_rows, "return")),
+                    "Hiển thị Hoàn thiếu SL": len(raw_return_missing_rows),
+                    "Hiển thị Hoàn thiếu": _short_codes(_disp(raw_return_missing_rows, "return")),
+                    "Hiển thị Hoàn dư SL": len(raw_inbound_extra_rows),
+                    "Hiển thị Hoàn dư": _short_codes(_disp(raw_inbound_extra_rows, "return")),
+                    "Đã đẩy vào Hoàn": _short_codes(_moved_into_return),
                     "Khớp lộn mục": _short_codes(matched_rows),
                     "Xử lý A4": _short_codes(_a4_actions),
                     "Video chưa khớp đơn": _short_codes(pkg_unknown),
@@ -3366,6 +3405,15 @@ def load_week_summary():
 
             for day in data.get("days", []):
                 iso = day.get("iso")
+                _day_overrides = _type_overrides_by_day.get(str(iso or ""), []) or []
+                day["video_move_pkg_in"] = sum(
+                    1 for x in _day_overrides
+                    if str(x.get("source_type") or "") == "inbound" and str(x.get("type") or "") == "package"
+                )
+                day["video_move_ret_in"] = sum(
+                    1 for x in _day_overrides
+                    if str(x.get("source_type") or "") == "package" and str(x.get("type") or "") == "inbound"
+                )
                 _package_stale_today = (str(iso or "") == _today_iso_vn() and not _package_live_ok)
                 day["vid_dong"] = vdong.get(iso, 0)
                 _a4_pkg_recon = _a4_package_recon_by_day.get(str(iso or ""))
