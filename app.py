@@ -426,10 +426,10 @@ def _video_audit_chot_html(row=None, chot="", day=""):
     day = day or row.get("Ngày") or row.get("Ngay") or row.get("iso")
     _return_pending_sync = str(row.get("Hoàn trạng thái") or "") == "pending_sync"
     _return_chip = (
-        _video_audit_chip("⏳", row.get("Hoàn thiếu SL"), day, "ret-miss", "#b45309", "#fef3c7",
+        _video_audit_chip("⏳ chưa đồng bộ", row.get("Hoàn thiếu SL"), day, "ret-miss", "#b45309", "#fef3c7",
                           "Dohana chưa đồng bộ/bắt được các mã này; chưa kết luận thiếu video")
         if _return_pending_sync else
-        _video_audit_chip("🎥↩-", row.get("Hoàn thiếu SL"), day, "ret-miss", "#b91c1c", "#fee2e2",
+        _video_audit_chip("⚠ chưa có video", row.get("Hoàn thiếu SL"), day, "ret-miss", "#b91c1c", "#fee2e2",
                           "Đã đồng bộ nhưng chưa tìm thấy video khui hoàn")
     )
     chips = "".join([
@@ -808,8 +808,8 @@ def _week_table_html(data):
             chip("⚠ A4", totals["a4_pending"], "#b45309", "#fef3c7", "Tổng mã còn chờ duyệt chuyển trên A4.")
             + chip("🎥📦-", totals["pkg_miss"], "#b91c1c", "#fee2e2", "Tổng thiếu video đóng hàng đã chốt.")
             + chip("🎥📦+", totals["pkg_extra"], "#1d4ed8", "#dbeafe", "Tổng dư video đóng hàng đã chốt.")
-            + chip("🎥↩-", totals["ret_miss"], "#b91c1c", "#fee2e2", "Tổng thiếu video khui hoàn đã chốt.")
-            + chip("⏳", totals["sync_pending"], "#b45309", "#fef3c7", "Dohana chưa đồng bộ/bắt được; chưa kết luận thiếu video.")
+            + chip("⚠ chưa có video", totals["ret_miss"], "#b91c1c", "#fee2e2", "Tổng phiếu đã đồng bộ nhưng chưa tìm thấy video khui hoàn.")
+            + chip("⏳ chưa đồng bộ", totals["sync_pending"], "#b45309", "#fef3c7", "Dohana chưa đồng bộ/bắt được; chưa kết luận thiếu video.")
             + chip("🎥↩+", totals["ret_extra"], "#1d4ed8", "#dbeafe", "Tổng dư video khui hoàn đã chốt.")
             + chip("⏳", totals["pending"], "#92400e", "#fef3c7", "Số ngày chưa chốt được do Dohana/API tạm lỗi.")
         )
@@ -3732,7 +3732,9 @@ def load_week_summary():
                 # trong scope tải dữ liệu và sẽ làm toàn bộ khối video rơi về 0.
                 _return_fresh = str(iso or "") == _today_iso_vn()
                 day["return_video_status"] = (
-                    "pending_sync" if (_return_missing and (_return_fresh or not _inbound_live_ok))
+                    # Phải đồng nhất đúng với badge ở ô Video hoàn: chỉ ngày đang đồng bộ
+                    # mới là pending_sync. API lỗi chung không được biến lỗi ngày cũ thành "chưa đồng bộ".
+                    "pending_sync" if (_return_missing and _return_fresh)
                     else ("missing" if _return_missing else "matched")
                 )
                 day["return_blank_sapo_plain_count"] = len(_inbound_extra)
