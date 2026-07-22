@@ -828,7 +828,7 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
     # ── KẾT LUẬN sai lệch (Phần 2) + lý do có thể ──
     _concl = []
     if _cm > 0:
-        _concl.append(f"🎥 <b>{_cm}</b> đơn hoàn thiếu video")
+        _concl.append(f"🚨 <b>{_cm}</b> đơn nhân viên nhập kho sai — không có video")
     if clip_on and unmatched_plain:
         _concl.append(f"📥 <b>{len(unmatched_plain)}</b> video chưa nhập Sapo")
     if _sp_thieu > 0:
