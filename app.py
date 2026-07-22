@@ -1296,7 +1296,13 @@ def _enrich_daily(rep, dvr, inb):
         nk["clip_available"] = not _inb_from_store
         nk["clip_co"] = sum(1 for d in nk.get("detail", []) if d.get("clip"))
         nk["clip_total"] = inb.get("total", 0)
-        nk["clip_unmatched"] = sorted(inb.get("today_codes", set()) - consumed)
+        # Mã đã được duyệt chuyển loại trên A4 là ĐÃ XỬ LÝ. Nếu chưa khớp được
+        # một phiếu SAPO cụ thể, không đưa nó trở lại cảnh báo đỏ "chưa nhập SAPO".
+        _approved_moved = {
+            c for c in inb.get("today_codes", set())
+            if bool((meta.get(c) or {}).get("type_overridden"))
+        }
+        nk["clip_unmatched"] = sorted(inb.get("today_codes", set()) - consumed - _approved_moved)
         # Kèm TAG (vd Khách tráo!) + thời lượng/giờ cho clip dư — đơn có tag thường bị giữ lại
         # xử lý tranh chấp nên KHÔNG nhập kho (đúng quy trình) → cần hiện rõ tag để theo dõi.
         nk["clip_unmatched_detail"] = [
@@ -2011,7 +2017,8 @@ def _dohana_inb_from_store(date_iso, days_match=3, authoritative=False):
                        "tag_id": _video_tag_id(r),
                        "tag": _video_tag_label(r),
                        "link": r.get("link") or "",
-                       "staff": r.get("staff") or ""}
+                       "staff": r.get("staff") or "",
+                       "type_overridden": bool(r.get("_type_overridden"))}
     return {"total": len(day), "count": count, "match": set(count),
             "today_codes": {r.get("code") for r in day if r.get("code")},
             "dup": {}, "meta": meta, "records": [], "_from_store": not authoritative}
@@ -3153,7 +3160,14 @@ def load_week_summary():
                     for code in (inbound_codes_by_day.get(_dd, []) or [])
                     if _ascii_code(code)
                 }
-                _wrong_side_inbound_by_day[str(_dd)] = _missing_pack & _inbound_actual
+                _already_decided = {
+                    _ascii_code(x.get("code"))
+                    for x in (_type_overrides_by_day.get(str(_dd), []) or [])
+                    if _ascii_code(x.get("code"))
+                }
+                _wrong_side_inbound_by_day[str(_dd)] = (
+                    (_missing_pack & _inbound_actual) - _already_decided
+                )
             data["wrong_side_video_suggestions"] = [
                 {"date": str(_dd), "code": str(_code),
                  "from_type": "inbound", "to_type": "package"}
@@ -3179,6 +3193,10 @@ def load_week_summary():
                 _candidate_codes = [
                     c for c in sorted({_ascii_code(x) for x in (_package_extra_by_day.get(_dd) or []) if _ascii_code(x)})
                     if (str(_dd), c) not in _tagged_package_keys
+                    and not any(
+                        _ascii_code(x.get("code")) == c
+                        for x in (_type_overrides_by_day.get(str(_dd), []) or [])
+                    )
                 ]
                 for _code in _candidate_codes[:_real_extra_count]:
                     _extra_package_suggestions.append({
@@ -3386,8 +3404,18 @@ def load_week_summary():
                 for dd, codes in inbound_codes_by_day.items():
                     _raw = {_norm(c) for c in codes if _norm(c)}
                     _used = set(_matched_inbound_codes_by_day.get(dd, set())) | set(_tagged_inbound_codes_by_day.get(dd, set()))
+                    _approved_to_inbound = {
+                        _norm(x.get("code"))
+                        for x in (_type_overrides_by_day.get(str(dd), []) or [])
+                        if str(x.get("source_type") or "") == "package"
+                        and str(x.get("type") or "") == "inbound"
+                        and _norm(x.get("code"))
+                    }
                     # Luôn ép mã lộn mục vào Dư mã, kể cả trước đó từng bị cache/khớp tự động đánh dấu đã dùng.
-                    _extra_codes = (_raw - _used) | set(_wrong_side_inbound_by_day.get(str(dd), set()))
+                    _extra_codes = (
+                        ((_raw - _used) | set(_wrong_side_inbound_by_day.get(str(dd), set())))
+                        - _approved_to_inbound
+                    )
                     _inbound_extra_by_day[dd] = [
                         _return_label_by_code.get(c) or f"VĐ đi/đóng: | VĐ hoàn: {c} | Mã trả: | Mã đơn:"
                         for c in sorted(_extra_codes)
@@ -3404,7 +3432,13 @@ def load_week_summary():
                     _seen_orphan = set()
                     for r in inbound_rows:
                         c = _norm(r.get("code"))
-                        if not c or c in _all_used_clips or c in _seen_orphan:
+                        _approved = any(
+                            str(x.get("source_type") or "") == "package"
+                            and str(x.get("type") or "") == "inbound"
+                            and _norm(x.get("code")) == c
+                            for x in (_type_overrides_by_day.get(str(r.get("date") or ""), []) or [])
+                        )
+                        if not c or c in _all_used_clips or c in _seen_orphan or _approved:
                             continue
                         _seen_orphan.add(c)
                         _khui_orphans.append({
