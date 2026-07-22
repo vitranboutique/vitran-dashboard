@@ -423,6 +423,7 @@ def _video_audit_chot_html(row=None, chot="", day=""):
         row = {}
     day = day or row.get("Ngày") or row.get("Ngay") or row.get("iso")
     chips = "".join([
+        _video_audit_chip("⚠ A4", row.get("A4 chờ xử lý SL"), day, "a4-pending", "#b45309", "#fef3c7", "Mã đang chờ duyệt chuyển trên A4"),
         _video_audit_chip("🎥📦-", row.get("Đóng thiếu SL"), day, "pkg-miss", "#b91c1c", "#fee2e2", "Thiếu video đóng hàng"),
         _video_audit_chip("🎥📦+", row.get("Đóng dư SL"), day, "pkg-extra", "#1d4ed8", "#dbeafe", "Dư video đóng hàng"),
         _video_audit_chip("🎥↩-", row.get("Hoàn thiếu SL"), day, "ret-miss", "#b91c1c", "#fee2e2", "Thiếu video khui hoàn"),
@@ -609,6 +610,16 @@ def _week_table_html(data):
         _apply_audit_video_badges(out, d)
         _moved_pkg = _video_audit_num(d.get("video_move_pkg_in"))
         _moved_ret = _video_audit_num(d.get("video_move_ret_in"))
+        _pending_pkg = _video_audit_num(d.get("video_a4_pending_pkg"))
+        _pending_ret = _video_audit_num(d.get("video_a4_pending_ret"))
+        if _pending_pkg:
+            out["vid_dong"] = out.get("vid_dong", "") + _gap_badge(
+                "⚠", "#b45309", "#fef3c7", "chờ xử lý A4", _pending_pkg,
+                "Mã đang ở Khui hoàn nhưng thiếu bên Đóng hàng; chưa được duyệt chuyển trên A4.")
+        if _pending_ret:
+            out["vid_hoan"] = out.get("vid_hoan", "") + _gap_badge(
+                "⚠", "#b45309", "#fef3c7", "chờ xử lý A4", _pending_ret,
+                "Mã đang dư bên Đóng hàng; chưa được duyệt chuyển sang Khui hoàn trên A4.")
         if _moved_pkg:
             out["vid_dong"] = out.get("vid_dong", "") + _gap_badge(
                 "↪", "#166534", "#dcfce7", "đã chuyển vào", _moved_pkg,
@@ -625,11 +636,13 @@ def _week_table_html(data):
             "pkg_missing": 0, "pkg_extra": 0, "pkg_old": 0,
             "ret_missing": 0, "ret_extra": 0, "ret_old": 0,
             "ship_missing": 0, "ship_extra": 0,
-            "moved_pkg": 0, "moved_ret": 0,
+            "moved_pkg": 0, "moved_ret": 0, "pending_pkg": 0, "pending_ret": 0,
         }
         for row in rows or []:
             totals["moved_pkg"] += _video_audit_num((row or {}).get("video_move_pkg_in"))
             totals["moved_ret"] += _video_audit_num((row or {}).get("video_move_ret_in"))
+            totals["pending_pkg"] += _video_audit_num((row or {}).get("video_a4_pending_pkg"))
+            totals["pending_ret"] += _video_audit_num((row or {}).get("video_a4_pending_ret"))
             try:
                 stale = (_today_vn - date.fromisoformat(str(row.get("iso") or ""))).days > _DOHANA_RETENTION
             except Exception:
@@ -683,6 +696,9 @@ def _week_table_html(data):
         if totals["moved_pkg"]:
             pkg += _gap_badge("↪", "#166534", "#dcfce7", "đã chuyển vào", totals["moved_pkg"],
                               "Tổng mã đã chuyển từ Khui hoàn sang Đóng hàng trên A4.")
+        if totals["pending_pkg"]:
+            pkg += _gap_badge("⚠", "#b45309", "#fef3c7", "chờ A4", totals["pending_pkg"],
+                              "Tổng mã chưa duyệt chuyển vào Đóng hàng trên A4.")
 
         # Tổng cảnh báo hoàn theo đúng các dòng A4 còn dữ liệu; video cũ đã xóa đã bị loại ở trên.
         ret = ""
@@ -692,6 +708,9 @@ def _week_table_html(data):
         if totals["moved_ret"]:
             ret += _gap_badge("↪", "#166534", "#dcfce7", "đã chuyển vào", totals["moved_ret"],
                               "Tổng mã đã chuyển từ Đóng hàng sang Khui hoàn trên A4.")
+        if totals["pending_ret"]:
+            ret += _gap_badge("⚠", "#b45309", "#fef3c7", "chờ A4", totals["pending_ret"],
+                              "Tổng mã chưa duyệt chuyển vào Khui hoàn trên A4.")
         sapo_ret = ""
         if totals["ret_extra"]:
             sapo_ret += _gap_badge("⚠", "#b91c1c", "#fee2e2", "chưa nhập SAPO", totals["ret_extra"],
@@ -718,7 +737,8 @@ def _week_table_html(data):
     }
 
     def _total_chot_video(rows):
-        totals = {"pkg_miss": 0, "pkg_extra": 0, "ret_miss": 0, "ret_extra": 0, "pending": 0}
+        totals = {"pkg_miss": 0, "pkg_extra": 0, "ret_miss": 0, "ret_extra": 0,
+                  "pending": 0, "a4_pending": 0}
         for row in rows or []:
             if not isinstance(row, dict):
                 continue
@@ -728,6 +748,7 @@ def _week_table_html(data):
                 totals["pkg_extra"] += _audit_count(audit_row, "Đóng dư SL")
                 totals["ret_miss"] += _audit_count(audit_row, "Hoàn thiếu SL")
                 totals["ret_extra"] += _audit_count(audit_row, "Hoàn dư SL")
+                totals["a4_pending"] += _audit_count(audit_row, "A4 chờ xử lý SL")
                 continue
             chot = str(row.get("chot_video") or "")
             norm = "".join(ch for ch in unicodedata.normalize("NFKD", chot).upper()
@@ -743,7 +764,8 @@ def _week_table_html(data):
                     f'color:{fg};font-weight:900;white-space:nowrap">{_esc(label)} <b>{n}</b></span>')
 
         html = (
-            chip("🎥📦-", totals["pkg_miss"], "#b91c1c", "#fee2e2", "Tổng thiếu video đóng hàng đã chốt.")
+            chip("⚠ A4", totals["a4_pending"], "#b45309", "#fef3c7", "Tổng mã còn chờ duyệt chuyển trên A4.")
+            + chip("🎥📦-", totals["pkg_miss"], "#b91c1c", "#fee2e2", "Tổng thiếu video đóng hàng đã chốt.")
             + chip("🎥📦+", totals["pkg_extra"], "#1d4ed8", "#dbeafe", "Tổng dư video đóng hàng đã chốt.")
             + chip("🎥↩-", totals["ret_miss"], "#b91c1c", "#fee2e2", "Tổng thiếu video khui hoàn đã chốt.")
             + chip("🎥↩+", totals["ret_extra"], "#1d4ed8", "#dbeafe", "Tổng dư video khui hoàn đã chốt.")
@@ -2939,6 +2961,10 @@ def load_week_summary():
                     "Đã đẩy vào Hoàn": _short_codes(_moved_into_return),
                     "Khớp lộn mục": _short_codes(matched_rows),
                     "Xử lý A4": _short_codes(_a4_actions),
+                    "A4 chờ xử lý SL": (
+                        int((day or {}).get("video_a4_pending_pkg") or 0)
+                        + int((day or {}).get("video_a4_pending_ret") or 0)
+                    ),
                     "Video chưa khớp đơn": _short_codes(pkg_unknown),
                     "Chốt": chot,
                 })
@@ -3405,8 +3431,18 @@ def load_week_summary():
                         mt.update(cnt)
                 return _tagstr(mt)
 
+            _pending_pkg_by_day = _Ct(
+                str(x.get("date") or "") for x in (data.get("wrong_side_video_suggestions") or [])
+                if str(x.get("date") or "")
+            )
+            _pending_ret_by_day = _Ct(
+                str(x.get("date") or "") for x in (data.get("extra_package_video_suggestions") or [])
+                if str(x.get("date") or "")
+            )
             for day in data.get("days", []):
                 iso = day.get("iso")
+                day["video_a4_pending_pkg"] = int(_pending_pkg_by_day.get(str(iso or ""), 0))
+                day["video_a4_pending_ret"] = int(_pending_ret_by_day.get(str(iso or ""), 0))
                 _day_overrides = _type_overrides_by_day.get(str(iso or ""), []) or []
                 day["video_move_pkg_in"] = sum(
                     1 for x in _day_overrides
