@@ -666,19 +666,23 @@ def merge_dohana_videos(new_list) -> list:
     return cur
 
 
-def set_dohana_video_tag(code: str, tag_name: str = "", video_type: str = "inbound") -> int:
+def set_dohana_video_tag(code: str, tag_name: str = "", video_type: str = "inbound",
+                         date_iso: str = "") -> int:
     """Sửa tag thủ công của đúng một mã video; tag_name rỗng nghĩa là gỡ tag."""
     code = str(code or "").strip()
     tag_name = str(tag_name or "").strip()
     video_type = str(video_type or "").strip()
+    date_iso = str(date_iso or "").strip()
     if not code or not _resolve_gid():
         return 0
     cur = read_dohana_videos()
     changed = 0
     for rec in cur:
-        if str(rec.get("code") or "").strip() != code:
+        if str(rec.get("code") or "").strip().upper() != code.upper():
             continue
         if video_type and str(rec.get("type") or "").strip() != video_type:
+            continue
+        if date_iso and str(rec.get("date") or "").strip() != date_iso:
             continue
         new_tag_id = f"manual:{tag_name}" if tag_name else ""
         before = tuple(rec.get(k) for k in ("tag_id", "tag_name", "locked_tag_id", "locked_tag_name"))

@@ -3137,6 +3137,19 @@ def load_week_summary():
                 for _dd in sorted(_wrong_side_inbound_by_day)
                 for _code in sorted(_wrong_side_inbound_by_day.get(_dd) or set())
             ]
+            _tagged_package_keys = {
+                (str(r.get("date") or ""), _ascii_code(r.get("code") or ""))
+                for r in recs
+                if r.get("type") == "package" and _dohana_video_active(r)
+                and _ascii_code(r.get("code") or "") and _video_tag_id(r)
+            }
+            data["extra_package_video_suggestions"] = [
+                {"date": str(_dd), "code": str(_code),
+                 "from_type": "package", "to_type": "inbound"}
+                for _dd in sorted(_package_extra_by_day)
+                for _code in sorted({_ascii_code(c) for c in (_package_extra_by_day.get(_dd) or []) if _ascii_code(c)})
+                if (str(_dd), _code) not in _tagged_package_keys
+            ]
 
             # Vid hoàn phải là clip KHỚP đơn hoàn, không phải tổng clip inbound thô.
             # Nếu đếm thô, video quay dư/sai mã/ngày có thể che mất các đơn thật sự chưa quay.
@@ -8006,8 +8019,13 @@ def _render_daily():
             x for x in (_match_summary.get("wrong_side_video_suggestions") or [])
             if str(x.get("date") or "") == _match_day
         ]
+        _extra_package_suggestions = [
+            x for x in (_match_summary.get("extra_package_video_suggestions") or [])
+            if str(x.get("date") or "") == _match_day
+        ]
     except Exception:
         _match_suggestions = []
+        _extra_package_suggestions = []
     if _match_suggestions:
         st.markdown("**🔄 Gợi ý khớp clip lộn mục**")
         for _suggestion in _match_suggestions:
@@ -8029,6 +8047,46 @@ def _render_daily():
                     st.rerun()
                 else:
                     st.error("Không lưu được. Vui lòng kiểm tra kho Gist.")
+    if _extra_package_suggestions:
+        st.markdown("**📦 Video Đóng hàng dư**")
+        for _suggestion in _extra_package_suggestions:
+            _extra_code = str(_suggestion.get("code") or "").strip()
+            _ec1, _ec2, _ec3 = st.columns([4, 2, 3], vertical_alignment="center")
+            _ec1.warning(f"**{_extra_code}** · Dư bên Đóng hàng")
+            if _ec2.button("→ Khui hoàn", key=f"move_extra_to_inbound_{_match_day}_{_extra_code}",
+                           use_container_width=True):
+                _saved = picklog.add_video_type_override({
+                    "date": _match_day,
+                    "code": _extra_code,
+                    "type": "inbound",
+                    "source_type": "package",
+                    "reason": "approved_wrong_side_on_a4",
+                })
+                if _saved:
+                    st.cache_data.clear()
+                    st.success(f"Đã chuyển {_extra_code} sang Khui hàng hoàn.")
+                    st.rerun()
+                else:
+                    st.error("Không lưu được. Vui lòng kiểm tra kho Gist.")
+            with _ec3:
+                _tag_col, _tag_btn_col = st.columns([2, 1], vertical_alignment="center")
+                _extra_tag = _tag_col.text_input(
+                    "Tag", key=f"extra_package_tag_{_match_day}_{_extra_code}",
+                    placeholder="Nhập tag", label_visibility="collapsed",
+                ).strip()
+                if _tag_btn_col.button("Gắn tag", key=f"tag_extra_package_{_match_day}_{_extra_code}",
+                                       use_container_width=True):
+                    if not _extra_tag:
+                        st.warning("Nhập tag trước.")
+                    else:
+                        _updated = picklog.set_dohana_video_tag(
+                            _extra_code, _extra_tag, "package", date_iso=_match_day)
+                        if _updated:
+                            st.cache_data.clear()
+                            st.success(f"Đã gắn tag {_extra_tag}.")
+                            st.rerun()
+                        else:
+                            st.warning("Không tìm thấy clip hoặc tag không thay đổi.")
 
     # ---- Xem báo cáo NGÀY CŨ (query lại Sapo + Dohana theo ngày, số đã cố định) ----
     if not _is_today:
