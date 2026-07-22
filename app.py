@@ -7686,23 +7686,29 @@ def _render_daily():
                     st.warning("⚠️ Chưa đọc được danh sách tag từ DHN API `/tag`; app sẽ hiện `Tag chưa map tên (id...)`.")
                 st.caption("📸 Chụp bảng + dòng xanh gửi Claude. inbound=0 mà package/không-lọc>0 → clip khui hàng "
                            "nằm ở loại KHÁC → sửa cách lấy. Toàn 401/429 → key/tốc độ.")
-        st.markdown("**Sửa tag gắn nhầm đã lưu trong báo cáo**")
+        st.markdown("**Sửa tag Dohana thủ công trong báo cáo**")
         _wrong_tag_code = st.text_input(
-            "Mã video Dohana cần gỡ tag",
+            "Mã video Dohana cần sửa tag",
             key="dohana_clear_wrong_tag_code",
             placeholder="VD: SPXVN060860994977",
         ).strip()
-        if st.button("🧹 Gỡ tag lưu nhầm", key="dohana_clear_wrong_tag_btn"):
+        _manual_tag_name = st.text_input(
+            "Tên tag đúng (để trống nếu muốn gỡ tag)",
+            key="dohana_manual_tag_name",
+            placeholder="VD: Trả hàng thiếu",
+        ).strip()
+        if st.button("💾 Lưu tag thủ công", key="dohana_clear_wrong_tag_btn"):
             if not _wrong_tag_code:
-                st.warning("Nhập mã video Dohana cần gỡ tag.")
+                st.warning("Nhập mã video Dohana cần sửa tag.")
             else:
-                _cleared = picklog.clear_dohana_video_tag(_wrong_tag_code, "inbound")
-                if _cleared:
+                _updated = picklog.set_dohana_video_tag(_wrong_tag_code, _manual_tag_name, "inbound")
+                if _updated:
                     st.cache_data.clear()
-                    st.success(f"Đã gỡ tag lưu nhầm cho `{_wrong_tag_code}`.")
+                    _tag_result = _manual_tag_name or "Không có tag"
+                    st.success(f"Đã lưu `{_wrong_tag_code}` → **{_tag_result}**.")
                     st.rerun()
                 else:
-                    st.warning(f"Không tìm thấy tag đang lưu của `{_wrong_tag_code}`.")
+                    st.warning(f"Không tìm thấy mã `{_wrong_tag_code}` trong kho video, hoặc tag không thay đổi.")
         st.divider()
         st.caption("**Kho video** (cột Vid/Tag ở bảng Tổng hợp 30 ngày) chỉ có video ĐÃ fetch được. Dohana vừa bị "
                    "429 nên kho THIẾU → bấm nút này hút lại **~25 ngày** (Dohana chỉ giữ 25 ngày) gộp vào kho.")

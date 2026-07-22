@@ -666,9 +666,10 @@ def merge_dohana_videos(new_list) -> list:
     return cur
 
 
-def clear_dohana_video_tag(code: str, video_type: str = "inbound") -> int:
-    """Gỡ tag đã lưu nhầm của đúng một mã video; trả số record đã sửa."""
+def set_dohana_video_tag(code: str, tag_name: str = "", video_type: str = "inbound") -> int:
+    """Sửa tag thủ công của đúng một mã video; tag_name rỗng nghĩa là gỡ tag."""
     code = str(code or "").strip()
+    tag_name = str(tag_name or "").strip()
     video_type = str(video_type or "").strip()
     if not code or not _resolve_gid():
         return 0
@@ -679,16 +680,26 @@ def clear_dohana_video_tag(code: str, video_type: str = "inbound") -> int:
             continue
         if video_type and str(rec.get("type") or "").strip() != video_type:
             continue
-        had_tag = any(rec.get(k) for k in ("tag_id", "tag_name", "locked_tag_id",
-                                           "locked_tag_name", "tag_locked_at"))
-        for key in ("tag_id", "tag_name", "locked_tag_id", "locked_tag_name", "tag_locked_at"):
-            rec[key] = ""
+        new_tag_id = f"manual:{tag_name}" if tag_name else ""
+        before = tuple(rec.get(k) for k in ("tag_id", "tag_name", "locked_tag_id", "locked_tag_name"))
+        rec["tag_id"] = new_tag_id
+        rec["tag_name"] = tag_name
+        rec["locked_tag_id"] = ""
+        rec["locked_tag_name"] = ""
+        rec["tag_locked_at"] = ""
+        rec["tag_source"] = "manual"
         rec["tag_corrected_at"] = _today_vn()
-        if had_tag:
+        after = tuple(rec.get(k) for k in ("tag_id", "tag_name", "locked_tag_id", "locked_tag_name"))
+        if before != after:
             changed += 1
     if changed and _write_gist_file(_DFILE, {"videos": cur}):
         return changed
     return 0
+
+
+def clear_dohana_video_tag(code: str, video_type: str = "inbound") -> int:
+    """Tương thích lệnh cũ: gỡ tag thủ công."""
+    return set_dohana_video_tag(code, "", video_type)
 
 
 # ───── ĐƠN NHẬP KHO NHƯNG KHÔNG CÓ VIDEO KHUI — lưu VĨNH VIỄN, KHÔNG mất khi Dohana xoá video ─────
