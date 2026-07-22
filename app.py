@@ -9863,27 +9863,6 @@ def _render_returns():
                     # lỗi NV → giữ nhãn "💸 Chỉ hoàn tiền — không cần video", KHÔNG ép thành "NV nhập kho sai".
                     if str(_row.get("loai_tra_code") or "").strip().lower() != "refund":
                         _row["_reason_label"] = "❌ Nhân viên nhập kho sai"
-                    # Nếu cùng mã chỉ tồn tại ở video ĐÓNG HÀNG, nói rõ nguồn mâu thuẫn:
-                    # video đóng không phải video khui và không được dùng để lấp lỗi nhập hàng hoàn.
-                    _row_codes = set()
-                    for _field in ("vd_di", "vd_tra", "order_code", "return_code"):
-                        _row_codes.update(_ids(_row.get(_field)))
-                    _package_hits = [
-                        _v for _v in (_dvids or [])
-                        if str(_v.get("type") or "") == "package"
-                        and _ascii_code(_v.get("code")) in _row_codes
-                    ]
-                    if _package_hits and str(_row.get("loai_tra_code") or "").strip().lower() != "refund":
-                        _pkg = sorted(
-                            _package_hits,
-                            key=lambda _v: (str(_v.get("date") or ""), str(_v.get("time") or "")),
-                            reverse=True,
-                        )[0]
-                        _pkg_day = str(_pkg.get("date") or "").strip()
-                        _restock_day = str(_row.get("restock_date") or "").strip()
-                        _row["_reason_label"] = (
-                            f"📦 Chỉ có video đóng {_pkg_day} · ❌ Sapo nhập hoàn {_restock_day} không có video khui"
-                        )
                     _row["_report_video_age"] = _entry.get("age") or ""
                     _row["_report_video_missing"] = True
                     _rows.append(_row)
@@ -11232,8 +11211,7 @@ def _render_returns():
             _dohana_yellow_ckn = _dohana_yellow_need_kn_rows(_dtag_kn + _dtag_nokn)
             _ckn_with_closed_returns = _merge_need_kn_rows(_ckn_list, _closed_returns_need_kn_detail)
             _ckn_render_raw_list = _merge_need_kn_rows(_ckn_with_closed_returns, _dohana_yellow_ckn)
-            # Đơn Sapo báo ĐÃ NHẬP KHO nhưng thiếu video khui vẫn phải lên Cần KN để không che lỗi.
-            # Nếu chỉ có video đóng cùng mã, lý do bên trên sẽ ghi rõ hai mốc video đóng / nhập hoàn.
+            # Đơn ĐÃ NHẬP KHO thiếu video khui mà CHƯA có ghi chú chuẩn → cũng đưa vào Cần KN.
             _nv_ckn_added = 0
             try:
                 _ckn_keys = {_dohana_row_key(d) for d in _ckn_render_raw_list if _dohana_row_key(d)}
