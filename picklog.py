@@ -789,14 +789,29 @@ def read_video_type_overrides() -> list:
 
 
 def add_video_type_override(entry: dict) -> bool:
-    day = str((entry or {}).get("date") or "").strip()
-    code = str((entry or {}).get("code") or "").strip()
-    video_type = str((entry or {}).get("type") or "").strip()
-    if not (day and code and video_type in ("package", "inbound")):
+    return add_video_type_overrides([entry])
+
+
+def add_video_type_overrides(entries: list) -> bool:
+    """Lưu nhiều lần chuyển loại trong đúng một lần ghi Gist."""
+    valid = []
+    for entry in (entries or []):
+        day = str((entry or {}).get("date") or "").strip()
+        code = str((entry or {}).get("code") or "").strip()
+        video_type = str((entry or {}).get("type") or "").strip()
+        if day and code and video_type in ("package", "inbound"):
+            row = dict(entry)
+            row.setdefault("at", _today_vn())
+            valid.append(row)
+    if not valid:
         return False
-    items = [x for x in read_video_type_overrides()
-             if not (str(x.get("date") or "") == day and str(x.get("code") or "") == code)]
-    row = dict(entry)
-    row.setdefault("at", _today_vn())
-    items.append(row)
+    replace_keys = {
+        (str(x.get("date") or "").strip(), str(x.get("code") or "").strip().upper())
+        for x in valid
+    }
+    items = [
+        x for x in read_video_type_overrides()
+        if (str(x.get("date") or "").strip(), str(x.get("code") or "").strip().upper()) not in replace_keys
+    ]
+    items.extend(valid)
     return _write_gist_file(_VIDEO_TYPE_OVERRIDE_FILE, {"items": items})

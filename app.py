@@ -8012,47 +8012,64 @@ def _render_daily():
         _extra_package_suggestions = []
     if _match_suggestions:
         st.markdown("**🔄 Gợi ý khớp clip lộn mục**")
-        for _suggestion in _match_suggestions:
-            _match_code = str(_suggestion.get("code") or "").strip()
-            _mc1, _mc2 = st.columns([5, 2], vertical_alignment="center")
-            _mc1.warning(f"**{_match_code}** · Nhập hàng hoàn → Đóng hàng")
-            if _mc2.button("✅ Đồng ý khớp", key=f"approve_wrong_side_{_match_day}_{_match_code}",
-                           use_container_width=True):
-                _saved = picklog.add_video_type_override({
+        _selected_match_codes = []
+        with st.form(f"bulk_wrong_side_{_match_day}"):
+            for _suggestion in _match_suggestions:
+                _match_code = str(_suggestion.get("code") or "").strip()
+                if st.checkbox(f"**{_match_code}** · Nhập hàng hoàn → Đóng hàng",
+                               key=f"select_wrong_side_{_match_day}_{_match_code}"):
+                    _selected_match_codes.append(_match_code)
+            _submit_selected_matches = st.form_submit_button(
+                "✅ Khớp các mã đã chọn", use_container_width=True)
+        if _submit_selected_matches:
+            if not _selected_match_codes:
+                st.warning("Chưa chọn mã nào.")
+            else:
+                _saved = picklog.add_video_type_overrides([{
                     "date": _match_day,
-                    "code": _match_code,
+                    "code": code,
                     "type": "package",
                     "source_type": "inbound",
                     "reason": "approved_wrong_side_on_a4",
-                })
+                } for code in _selected_match_codes])
                 if _saved:
                     st.cache_data.clear()
-                    st.success(f"Đã khớp {_match_code} sang Đóng hàng.")
+                    st.success(f"Đã khớp {len(_selected_match_codes)} mã sang Đóng hàng.")
                     st.rerun()
                 else:
                     st.error("Không lưu được. Vui lòng kiểm tra kho Gist.")
     if _extra_package_suggestions:
         st.markdown("**📦 Video Đóng hàng dư**")
-        for _suggestion in _extra_package_suggestions:
-            _extra_code = str(_suggestion.get("code") or "").strip()
-            _ec1, _ec2, _ec3 = st.columns([4, 2, 3], vertical_alignment="center")
-            _ec1.warning(f"**{_extra_code}** · Dư bên Đóng hàng")
-            if _ec2.button("→ Khui hoàn", key=f"move_extra_to_inbound_{_match_day}_{_extra_code}",
-                           use_container_width=True):
-                _saved = picklog.add_video_type_override({
+        _selected_extra_codes = []
+        with st.form(f"bulk_extra_to_inbound_{_match_day}"):
+            for _suggestion in _extra_package_suggestions:
+                _extra_code = str(_suggestion.get("code") or "").strip()
+                if st.checkbox(f"**{_extra_code}** · Đóng hàng → Khui hoàn",
+                               key=f"select_extra_to_inbound_{_match_day}_{_extra_code}"):
+                    _selected_extra_codes.append(_extra_code)
+            _submit_selected_extras = st.form_submit_button(
+                "✅ Chuyển các mã đã chọn sang Khui hoàn", use_container_width=True)
+        if _submit_selected_extras:
+            if not _selected_extra_codes:
+                st.warning("Chưa chọn mã nào.")
+            else:
+                _saved = picklog.add_video_type_overrides([{
                     "date": _match_day,
-                    "code": _extra_code,
+                    "code": code,
                     "type": "inbound",
                     "source_type": "package",
                     "reason": "approved_wrong_side_on_a4",
-                })
+                } for code in _selected_extra_codes])
                 if _saved:
                     st.cache_data.clear()
-                    st.success(f"Đã chuyển {_extra_code} sang Khui hàng hoàn.")
+                    st.success(f"Đã chuyển {len(_selected_extra_codes)} mã sang Khui hàng hoàn.")
                     st.rerun()
                 else:
                     st.error("Không lưu được. Vui lòng kiểm tra kho Gist.")
-            with _ec3:
+        with st.expander("🏷️ Gắn tag thay vì chuyển"):
+            for _suggestion in _extra_package_suggestions:
+                _extra_code = str(_suggestion.get("code") or "").strip()
+                st.caption(_extra_code)
                 _tag_col, _tag_btn_col = st.columns([2, 1], vertical_alignment="center")
                 _extra_tag = _tag_col.text_input(
                     "Tag", key=f"extra_package_tag_{_match_day}_{_extra_code}",
