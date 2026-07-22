@@ -3036,6 +3036,12 @@ def load_week_summary():
                     "Hiển thị Hoàn thiếu": _short_codes(_disp(raw_return_missing_rows, "return")),
                     "Hiển thị Hoàn dư SL": len(raw_inbound_extra_rows),
                     "Hiển thị Hoàn dư": _short_codes(_disp(raw_inbound_extra_rows, "return")),
+                    # Danh sách đầy đủ cùng nguồn với các ô bảng trên; UI chuyển mã đọc các field
+                    # này thay vì tự dựng lại từ tập trung gian hoặc chuỗi đã rút gọn "+N mã".
+                    "_full_pkg_missing": _disp(raw_pkg_missing_rows, "package"),
+                    "_full_pkg_extra": _disp(raw_pkg_extra_rows, "package"),
+                    "_full_ret_missing": _disp(raw_return_missing_rows, "return"),
+                    "_full_ret_extra": _disp(raw_inbound_extra_rows, "return"),
                     "Đã đẩy vào Hoàn": _short_codes(_moved_into_return),
                     "Khớp lộn mục": _short_codes(matched_rows),
                     "Xử lý A4": _short_codes(_a4_actions),
@@ -3740,6 +3746,61 @@ def load_week_summary():
             except Exception:
                 pass
             data["video_audit_matrix"] = _video_matrix
+            # NGUỒN DUY NHẤT cho công cụ chuyển mã: đọc thẳng từng dòng của Bảng tổng hợp
+            # thiếu/dư đang hiển thị phía trên, rồi lấy giao mã trong CÙNG NGÀY.
+            _active_move_keys = {
+                (str(_ov.get("date") or ""), _ascii_code(_ov.get("code")))
+                for _ovs in _type_overrides_by_day.values()
+                for _ov in (_ovs or [])
+                if str(_ov.get("source_type") or "") != str(_ov.get("type") or "")
+                and _ascii_code(_ov.get("code"))
+            }
+            _matrix_to_package = []
+            _matrix_to_inbound = []
+            for _row in (_video_matrix or []):
+                _dd = str(_row.get("Ngày") or "")
+                _pkg_missing_codes = {_ascii_code(x) for x in (_row.get("_full_pkg_missing") or []) if _ascii_code(x)}
+                _pkg_extra_codes = {_ascii_code(x) for x in (_row.get("_full_pkg_extra") or []) if _ascii_code(x)}
+                _ret_missing_codes = {_ascii_code(x) for x in (_row.get("_full_ret_missing") or []) if _ascii_code(x)}
+                _ret_extra_codes = {_ascii_code(x) for x in (_row.get("_full_ret_extra") or []) if _ascii_code(x)}
+
+                # Đóng dư ∩ Hoàn thiếu — đúng hai ô trên cùng một dòng/ngày của bảng.
+                for _code in sorted(_pkg_extra_codes & _ret_missing_codes):
+                    if (_dd, _code) not in _active_move_keys:
+                        _matrix_to_inbound.append({
+                            "date": _dd, "code": _code,
+                            "from_type": "package", "to_type": "inbound",
+                        })
+
+                # Đóng thiếu ∩ mọi video Khui có thật cùng ngày. Giữ cả trạng thái đã nhập kho
+                # theo yêu cầu vận hành, nhưng mã Đóng thiếu phải lấy đúng từ dòng bảng.
+                _inbound_actual_codes = {
+                    _ascii_code(x) for x in (inbound_codes_by_day.get(_dd, []) or []) if _ascii_code(x)
+                }
+                for _code in sorted(_pkg_missing_codes & _inbound_actual_codes):
+                    if (_dd, _code) in _active_move_keys:
+                        continue
+                    if _code in set(_inbound_extra_codes_by_day.get(_dd, set())):
+                        _stock_state = "Chưa nhập kho"
+                    elif _code in set(_matched_inbound_codes_by_day.get(_dd, set())):
+                        _stock_state = "Đã nhập kho"
+                    elif _code in set(_tagged_inbound_codes_by_day.get(_dd, set())):
+                        _stock_state = "Có tag/giữ xử lý"
+                    else:
+                        _stock_state = "Đã khớp Khui hoàn"
+                    _matrix_to_package.append({
+                        "date": _dd, "code": _code,
+                        "from_type": "inbound", "to_type": "package",
+                        "inbound_stock_status": _stock_state,
+                    })
+            data["wrong_side_video_suggestions"] = _matrix_to_package
+            data["extra_package_video_suggestions"] = _matrix_to_inbound
+            _pending_pkg_final = _Ct(x["date"] for x in _matrix_to_package)
+            _pending_ret_final = _Ct(x["date"] for x in _matrix_to_inbound)
+            for _day in (data.get("days") or []):
+                _iso = str(_day.get("iso") or "")
+                _day["video_a4_pending_pkg"] = int(_pending_pkg_final.get(_iso, 0))
+                _day["video_a4_pending_ret"] = int(_pending_ret_final.get(_iso, 0))
             data["video_audit"] = _video_audit
             data["report_return_video_missing"] = _report_return_missing
             data["video_trace_by_day"] = _video_trace_by_day
