@@ -971,7 +971,7 @@ def _render_week_video_audit(data):
                                placeholder="Dán mã vận đơn / mã đơn, vd 861877934768…").strip()
         if _probe:
             _pn = _ascii_code(_probe)
-            _pvids = [v for v in (picklog.read_dohana_videos() if picklog.configured() else [])
+            _pvids = [v for v in (_dohana_records_effective() if picklog.configured() else [])
                       if _pn and _pn in _ascii_code(v.get("code"))]
             if _pvids:
                 st.markdown(f"**Kho video — {len(_pvids)} clip khớp `{_probe}`:**")
@@ -1980,10 +1980,40 @@ def _dohana_merge(live):
     return live
 
 
-def _dohana_pkg_from_store(date_iso, days_match=3):
+def _dohana_type_override_map():
+    """Map (ngày, mã chuẩn hoá) -> loại clip đã được duyệt trên A4."""
+    if not picklog.configured():
+        return {}
+    try:
+        return {
+            (str(x.get("date") or "").strip(), _ascii_code(x.get("code") or "")): str(x.get("type") or "").strip()
+            for x in picklog.read_video_type_overrides()
+            if str(x.get("date") or "").strip()
+            and _ascii_code(x.get("code") or "")
+            and str(x.get("type") or "").strip() in ("package", "inbound")
+        }
+    except Exception:
+        return {}
+
+
+def _dohana_records_effective():
+    """Dữ liệu Dohana sau khi áp các lần duyệt sửa lộn mục từ A4."""
+    overrides = _dohana_type_override_map()
+    out = []
+    for raw in (picklog.read_dohana_videos() or []):
+        row = dict(raw)
+        new_type = overrides.get((str(row.get("date") or "").strip(), _ascii_code(row.get("code") or "")))
+        if new_type:
+            row["type"] = new_type
+            row["_type_overridden"] = True
+        out.append(row)
+    return out
+
+
+def _dohana_pkg_from_store(date_iso, days_match=3, authoritative=False):
     """Dựng lại dict video ĐÓNG GÓI (package) từ kho khi Dohana tạm không lấy được."""
     from datetime import date as _date, timedelta as _td
-    recs = [r for r in picklog.read_dohana_videos()
+    recs = [r for r in _dohana_records_effective()
             if r.get("type") == "package" and _dohana_video_active(r)]
     lo = (_date.fromisoformat(date_iso) - _td(days=days_match - 1)).isoformat()
     day = [r for r in recs if r.get("date") == date_iso]
@@ -1995,13 +2025,13 @@ def _dohana_pkg_from_store(date_iso, days_match=3):
     return {"total": len(day), "codes": codes, "dup": {},
             "match": {r.get("code") for r in recs
                       if r.get("code") and r.get("date") and lo <= r["date"] <= date_iso},
-            "records": [], "_from_store": True}
+            "records": [], "_from_store": not authoritative}
 
 
-def _dohana_inb_from_store(date_iso, days_match=3):
+def _dohana_inb_from_store(date_iso, days_match=3, authoritative=False):
     """Dựng lại dict CLIP KHUI HÀNG (inbound) từ kho khi Dohana tạm không lấy được."""
     from datetime import date as _date, timedelta as _td
-    recs = [r for r in picklog.read_dohana_videos()
+    recs = [r for r in _dohana_records_effective()
             if r.get("type") == "inbound" and _dohana_video_active(r)]
     lo = (_date.fromisoformat(date_iso) - _td(days=days_match - 1)).isoformat()
     day = [r for r in recs if r.get("date") == date_iso]
@@ -2020,7 +2050,7 @@ def _dohana_inb_from_store(date_iso, days_match=3):
                        "staff": r.get("staff") or ""}
     return {"total": len(day), "count": count, "match": set(count),
             "today_codes": {r.get("code") for r in day if r.get("code")},
-            "dup": {}, "meta": meta, "records": [], "_from_store": True}
+            "dup": {}, "meta": meta, "records": [], "_from_store": not authoritative}
 
 
 def _today_iso_vn():
@@ -2036,7 +2066,8 @@ def _dohana_video_active(row):
 def load_dohana():
     live = dohana.today_package_videos()
     if live is not None:
-        return _dohana_merge(live)
+        _dohana_merge(live)
+        return _dohana_pkg_from_store(_today_iso_vn(), authoritative=True) if picklog.configured() else live
     return _dohana_pkg_from_store(_today_iso_vn()) if picklog.configured() else None
 
 
@@ -2044,7 +2075,8 @@ def load_dohana():
 def load_dohana_inbound():
     live = dohana.inbound_videos()
     if live is not None:
-        return _dohana_merge(live)
+        _dohana_merge(live)
+        return _dohana_inb_from_store(_today_iso_vn(), authoritative=True) if picklog.configured() else live
     return _dohana_inb_from_store(_today_iso_vn()) if picklog.configured() else None
 
 
@@ -2065,7 +2097,7 @@ def load_dohana_video_store():
     """Đọc nhanh kho video đã lưu, không gọi live Dohana khi mở trang trả hàng."""
     if not picklog.configured():
         return []
-    return picklog.read_dohana_videos()
+    return _dohana_records_effective()
 
 
 @st.cache_data(ttl=1800, show_spinner=False)  # video ngày cũ không đổi → cache dài, đỡ gọi Dohana
@@ -2073,11 +2105,8 @@ def load_dohana_date(date_iso):
     from datetime import date as _date
     live = dohana.today_package_videos(target_date=_date.fromisoformat(date_iso))
     if live is not None:
-        merged = _dohana_merge(live)
-        if merged.get("total") or merged.get("match") or not picklog.configured():
-            return merged
-        store = _dohana_pkg_from_store(date_iso)
-        return store if (store.get("total") or store.get("match")) else merged
+        _dohana_merge(live)
+        return _dohana_pkg_from_store(date_iso, authoritative=True) if picklog.configured() else live
     return _dohana_pkg_from_store(date_iso) if picklog.configured() else None
 
 
@@ -2086,11 +2115,8 @@ def load_dohana_inbound_date(date_iso):
     from datetime import date as _date
     live = dohana.inbound_videos(target_date=_date.fromisoformat(date_iso))
     if live is not None:
-        merged = _dohana_merge(live)
-        if merged.get("total") or merged.get("match") or not picklog.configured():
-            return merged
-        store = _dohana_inb_from_store(date_iso)
-        return store if (store.get("total") or store.get("match")) else merged
+        _dohana_merge(live)
+        return _dohana_inb_from_store(date_iso, authoritative=True) if picklog.configured() else live
     return _dohana_inb_from_store(date_iso) if picklog.configured() else None
 
 
@@ -2971,7 +2997,7 @@ def load_week_summary():
                 _package_live_ok = False
                 _inbound_live_ok = False
                 pass
-            recs = picklog.read_dohana_videos()
+            recs = _dohana_records_effective()
             vdong, vhoan, tdong, thoan = {}, {}, {}, {}   # tag TÁCH theo loại video: đóng vs khui
             package_codes_by_day, package_unknown_by_day, inbound_codes_by_day = {}, {}, {}
             inbound_rows = []
@@ -3105,6 +3131,12 @@ def load_week_summary():
                     if _ascii_code(code)
                 }
                 _wrong_side_inbound_by_day[str(_dd)] = _missing_pack & _inbound_actual
+            data["wrong_side_video_suggestions"] = [
+                {"date": str(_dd), "code": str(_code),
+                 "from_type": "inbound", "to_type": "package"}
+                for _dd in sorted(_wrong_side_inbound_by_day)
+                for _code in sorted(_wrong_side_inbound_by_day.get(_dd) or set())
+            ]
 
             # Vid hoàn phải là clip KHỚP đơn hoàn, không phải tổng clip inbound thô.
             # Nếu đếm thô, video quay dư/sai mã/ngày có thể che mất các đơn thật sự chưa quay.
@@ -3645,7 +3677,7 @@ def load_restock_novideo(days: int = 30):
             return None
     _inb = []                           # (code, nhóm ĐVVC, ngày) của video KHUI (inbound) đã lưu bền
     if picklog.configured():
-        for r in picklog.read_dohana_videos():
+        for r in _dohana_records_effective():
             if r.get("type") == "inbound" and r.get("code"):
                 _inb.append((_norm(r.get("code")), _cg(r.get("code")), _pdate(r.get("date"))))
     inbound_codes = {c for c, _cgx, _dx in _inb}
@@ -7964,6 +7996,39 @@ def _render_daily():
     _is_today = (_pick_date == _vn_today)
     _disp = _pick_date.strftime("%d/%m/%Y")
     _sign_on = "1"   # phần ký tên LUÔN đặt ở Trang 1 (mặt trước)
+
+    # Mã thiếu ở Đóng hàng nhưng có thật trong clip Nhập hàng hoàn cùng ngày.
+    # Duyệt tại A4 sẽ đổi loại clip trong kho chung nên mọi bảng cùng cập nhật.
+    try:
+        _match_day = _pick_date.isoformat()
+        _match_summary = load_week_summary() or {}
+        _match_suggestions = [
+            x for x in (_match_summary.get("wrong_side_video_suggestions") or [])
+            if str(x.get("date") or "") == _match_day
+        ]
+    except Exception:
+        _match_suggestions = []
+    if _match_suggestions:
+        st.markdown("**🔄 Gợi ý khớp clip lộn mục**")
+        for _suggestion in _match_suggestions:
+            _match_code = str(_suggestion.get("code") or "").strip()
+            _mc1, _mc2 = st.columns([5, 2], vertical_alignment="center")
+            _mc1.warning(f"**{_match_code}** · Nhập hàng hoàn → Đóng hàng")
+            if _mc2.button("✅ Đồng ý khớp", key=f"approve_wrong_side_{_match_day}_{_match_code}",
+                           use_container_width=True):
+                _saved = picklog.add_video_type_override({
+                    "date": _match_day,
+                    "code": _match_code,
+                    "type": "package",
+                    "source_type": "inbound",
+                    "reason": "approved_wrong_side_on_a4",
+                })
+                if _saved:
+                    st.cache_data.clear()
+                    st.success(f"Đã khớp {_match_code} sang Đóng hàng.")
+                    st.rerun()
+                else:
+                    st.error("Không lưu được. Vui lòng kiểm tra kho Gist.")
 
     # ---- Xem báo cáo NGÀY CŨ (query lại Sapo + Dohana theo ngày, số đã cố định) ----
     if not _is_today:

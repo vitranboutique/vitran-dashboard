@@ -747,6 +747,7 @@ def dismiss_restock_novideo(keys, reason="admin đã kiểm tra là ổn") -> bo
 # "GYXVRB3Q") mà KHÔNG sửa được trong app đóng hàng → admin tự khớp trong app vận hành. Lưu VĨNH VIỄN
 # ở Gist, key theo mã đơn hoàn đã chuẩn hoá (caller tự chuẩn hoá bằng _ascii_code). ─────
 _KHUI_MATCH_FILE = "vitran_khui_manual_match.json"
+_VIDEO_TYPE_OVERRIDE_FILE = "vitran_video_type_overrides.json"
 
 
 def read_khui_manual_match() -> list:
@@ -775,3 +776,23 @@ def remove_khui_manual_match(ret: str) -> bool:
     ret = str(ret or "").strip()
     matches = [m for m in read_khui_manual_match() if m.get("ret") != ret]
     return _write_gist_file(_KHUI_MATCH_FILE, {"matches": matches})
+
+
+def read_video_type_overrides() -> list:
+    """[{date, code, type}] — sửa loại clip trong app mà không thay dữ liệu gốc Dohana."""
+    d = _read_gist_file(_VIDEO_TYPE_OVERRIDE_FILE)
+    return d.get("items", []) if isinstance(d, dict) and isinstance(d.get("items"), list) else []
+
+
+def add_video_type_override(entry: dict) -> bool:
+    day = str((entry or {}).get("date") or "").strip()
+    code = str((entry or {}).get("code") or "").strip()
+    video_type = str((entry or {}).get("type") or "").strip()
+    if not (day and code and video_type in ("package", "inbound")):
+        return False
+    items = [x for x in read_video_type_overrides()
+             if not (str(x.get("date") or "") == day and str(x.get("code") or "") == code)]
+    row = dict(entry)
+    row.setdefault("at", _today_vn())
+    items.append(row)
+    return _write_gist_file(_VIDEO_TYPE_OVERRIDE_FILE, {"items": items})
