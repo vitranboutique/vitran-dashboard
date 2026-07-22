@@ -517,13 +517,13 @@ def _week_table_html(data):
         out = ""
         if plain:
             out += _gap_badge(
-                "⚠", "#b91c1c", "#fee2e2", "ô trống · chưa nhập/tag", plain,
+                "⚠", "#b91c1c", "#fee2e2", "chưa nhập SAPO", plain,
                 "Ô Hoàn SAPO trống: chưa bấm nhập kho SAPO hoặc video chưa gắn tag xử lý.",
             )
         if tagged:
             reason = tag_note or "có tag giữ xử lý"
             out += _gap_badge(
-                "✓", "#166534", "#dcfce7", f"ô trống · {reason}", tagged,
+                "✓", "#166534", "#dcfce7", reason, tagged,
                 f"Ô Hoàn SAPO trống là đúng quy trình vì clip có tag: {reason}. Giữ xử lý tranh chấp/khiếu nại.",
             )
         return out
@@ -601,10 +601,10 @@ def _week_table_html(data):
         _blank_video = _video_audit_num(d.get("return_blank_video_count"))
         if d.get("iso") and _blank_video > 0 and not _stale:
             if _fresh_today:
-                out["vid_hoan"] = _gap_badge("⏳", "#b45309", "#fef3c7", "ô trống · chưa đồng bộ", _blank_video,
+                out["vid_hoan"] = _gap_badge("⏳", "#b45309", "#fef3c7", "chưa đồng bộ", _blank_video,
                     "Ô Video hoàn trống; hôm nay Dohana có thể chưa đồng bộ xong.")
             else:
-                out["vid_hoan"] = _gap_badge("⚠", "#b91c1c", "#fee2e2", "ô trống · chưa có video", _blank_video,
+                out["vid_hoan"] = _gap_badge("⚠", "#b91c1c", "#fee2e2", "chưa có video", _blank_video,
                     "Ô Video hoàn trống: phiếu đã nhập SAPO nhưng chưa tìm thấy clip khui tương ứng.")
         _apply_audit_video_badges(out, d)
         return out
@@ -7874,8 +7874,7 @@ def _render_daily():
                 _d["ghi_chu"] = _notes.get(_d.get("iso"), "")
             st.markdown(_week_table_html(_wk), unsafe_allow_html=True)
             _render_week_video_audit(_wk)
-            st.caption('Đối chiếu hoàn đếm đúng **ô trống trên từng dòng A4**, không suy bằng phép trừ hai tổng. '
-                       'Lý do hiện ngắn ngay tại cột có ô trống; video cũ đã xóa không báo thiếu và không đưa vào Chốt video.')
+            st.caption('Đối chiếu theo từng dòng A4; cảnh báo ngắn ngay tại cột liên quan. Video cũ đã xóa không báo thiếu.')
             st.caption('🔑 **Luồng đóng hàng:** **Soạn** (nhặt hàng theo phiếu nhặt — **SL SP** = tổng sản phẩm, '
                        '**SL đơn** = tổng đơn) → **Đóng gói (video)** = số đơn ĐÓNG GÓI THẬT có video → '
                        'Shipper nhận → Giao khách. Soạn (SP/đơn) lấy từ đợt phiếu nhặt đã lưu.')
