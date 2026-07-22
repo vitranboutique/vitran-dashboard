@@ -539,6 +539,26 @@ def _week_table_html(data):
             )
         return ""
 
+    def _day_video_age(d):
+        """(stale, fresh_today): quá hạn Dohana (~25 ngày → video cũ ĐÃ XÓA) · hôm nay (chưa đồng bộ kịp)."""
+        _age = None
+        try:
+            _age = (_today_vn - date.fromisoformat(str((d or {}).get("iso") or "").strip())).days
+        except Exception:
+            _m = re.match(r"^\s*(\d{1,2})/(\d{1,2})", str((d or {}).get("ngay") or ""))
+            if _m:
+                try:
+                    _cand = date(_today_vn.year, int(_m.group(2)), int(_m.group(1)))
+                    if _cand > _today_vn:
+                        _cand = date(_today_vn.year - 1, int(_m.group(2)), int(_m.group(1)))
+                    _age = (_today_vn - _cand).days
+                except Exception:
+                    _age = None
+        _today = bool((d or {}).get("is_today"))
+        if _age is None:
+            return False, _today
+        return _age > _DOHANA_RETENTION, (_today or _age <= 1)
+
     def _apply_audit_video_badges(out, d):
         audit_row = _audit_by_day.get(str((d or {}).get("iso") or ""))
         if not isinstance(audit_row, dict):
@@ -556,8 +576,16 @@ def _week_table_html(data):
             out["vid_dong"] = _gap_badge("▲", "#1d4ed8", "#dbeafe", "dư", pkg_extra,
                                          "Số dư đã chốt từ bảng khớp mã, không dùng chênh lệch thô Soạn - Video.")
         if ret_missing:
-            out["vid_hoan"] = _gap_badge("⚠", "#b91c1c", "#fee2e2", "chưa quay", ret_missing,
-                                         "Số thiếu đã chốt từ bảng khớp mã.")
+            _st_am, _fr_am = _day_video_age(d)
+            if _st_am:        # quá hạn Dohana → video cũ đã bị xóa (KHÔNG phải chưa quay)
+                out["vid_hoan"] = _gap_badge("▽", "#64748b", "#f1f5f9", "video cũ đã xóa", ret_missing,
+                    "Ngày quá hạn Dohana (~25 ngày) — video cũ đã bị xóa, kho lưu không có lại. KHÔNG phải NV chưa quay.")
+            elif _fr_am:      # hôm nay → có thể chưa đồng bộ kịp
+                out["vid_hoan"] = _gap_badge("⏳", "#b45309", "#fef3c7", "chưa lấy được từ app", ret_missing,
+                    "Hôm nay — video có thể ĐÃ quay nhưng chưa đồng bộ từ app về kho (kéo dần). Đợi ~5' rồi bấm 'Tải lại số liệu'.")
+            else:
+                out["vid_hoan"] = _gap_badge("⚠", "#b91c1c", "#fee2e2", "chưa quay", ret_missing,
+                                             "Số thiếu đã chốt từ bảng khớp mã.")
         elif ret_extra:
             out["vid_hoan"] = _gap_badge("⚠", "#b91c1c", "#fee2e2", "video thiếu tag", ret_extra,
                                          "Có video khui nhưng không khớp nhập kho và chưa gắn tag xử lý.")
@@ -572,10 +600,7 @@ def _week_table_html(data):
                 return int(round(float(d.get(key) or 0)))
             except Exception:
                 return 0
-        try:
-            _stale = (_today_vn - date.fromisoformat(str(d.get("iso") or ""))).days > _DOHANA_RETENTION
-        except Exception:
-            _stale = False
+        _stale, _fresh_today = _day_video_age(d)   # quá hạn Dohana (video cũ đã xóa) · hôm nay (chưa đồng bộ)
         # Video khui có TAG TRANH CHẤP (khách tráo / đã dùng / hư hỏng / trả thiếu) → NV KHÔNG nhập
         # kho là ĐÚNG QUY TRÌNH → giải thích phần "dư" của Vid hoàn (không tính lỗi).
         _dispute = sum(int(x) for x in re.findall(r"×\s*(\d+)", str(d.get("tag_hoan") or "")))
@@ -591,9 +616,9 @@ def _week_table_html(data):
                 continue
             _is_vid = k in ("vid_dong", "vid_hoan")
             if _is_vid and _stale and lech > 0:   # ngoài hạn Dohana → xám, không đổ lỗi NV
-                out[k] = _gap_badge("▽", "#64748b", "#f1f5f9", "kho cũ", abs(lech),
-                                "Ngày đã quá hạn Dohana (~25 ngày) — không đồng bộ lại được. "
-                                "Số video có thể thiếu do kho lưu lúc đó chưa đầy, KHÔNG chắc NV quên quay")
+                out[k] = _gap_badge("▽", "#64748b", "#f1f5f9", "video cũ đã xóa", abs(lech),
+                                "Ngày đã quá hạn Dohana (~25 ngày) — video cũ đã bị Dohana xóa, kho lưu không có lại. "
+                                "KHÔNG phải nhân viên chưa quay")
                 continue
             if lech > 0:      # THIẾU (đỏ) — bên này thiếu video, cần quay bù / chuyển tới
                 out[k] = _gap_badge("▼", "#b91c1c", "#fee2e2", "thiếu", abs(lech), tip)
@@ -605,20 +630,28 @@ def _week_table_html(data):
         # Hoàn(nhập kho); phần dư đó dễ che lấp 1 đơn chưa quay khiến "lệch" = 0 (giấu lỗi). Cộng bù
         # phần tráo để lộ đúng số đơn chưa quay: thiếu clip = tag tranh chấp + Hoàn nhập kho − Vid hoàn.
         _tc = _dispute + _n("hoan_don") - _n("vid_hoan")
+        _extra_vid = _n("vid_hoan") - _n("hoan_don")     # video khui NHIỀU hơn đơn nhập kho
         if _tc > 0:
-            if _stale:        # ngoài hạn Dohana → kho video lúc đó có thể chưa đầy, KHÔNG đổ lỗi NV
-                out["vid_hoan"] = _gap_badge("▽", "#64748b", "#f1f5f9", "kho cũ", _tc,
-                    "Ngày quá hạn Dohana (~25 ngày) — kho video lúc đó có thể chưa đầy, "
-                    "KHÔNG chắc NV quên quay.")
+            if _stale:        # quá hạn Dohana → video cũ ĐÃ BỊ XÓA (không phải NV chưa quay)
+                out["vid_hoan"] = _gap_badge("▽", "#64748b", "#f1f5f9", "video cũ đã xóa", _tc,
+                    "Ngày quá hạn Dohana (~25 ngày) — video cũ đã bị Dohana XÓA, kho lưu không có lại. "
+                    "KHÔNG phải nhân viên chưa quay.")
+            elif _fresh_today:   # hôm nay → có thể ĐÃ quay nhưng CHƯA đồng bộ về kho (Dohana kéo dần)
+                out["vid_hoan"] = _gap_badge("⏳", "#b45309", "#fef3c7", "chưa lấy được từ app", _tc,
+                    "Hôm nay — video có thể ĐÃ quay nhưng CHƯA đồng bộ từ app đóng hàng về kho (kéo dần). "
+                    "Đợi ~5 phút rồi bấm 'Tải lại số liệu'. KHÔNG kết luận nhân viên chưa quay.")
             else:
                 out["vid_hoan"] = _gap_badge("⚠", "#b91c1c", "#fee2e2", "chưa quay", _tc,
                     "THIẾU CLIP KHUI = (tag tráo/đã dùng/hư) + Hoàn nhập kho − Vid hoàn. >0 = còn đơn "
-                    "hoàn CHƯA quay clip khui (đã bù phần tráo/đã dùng vốn CÓ quay mà không nhập kho). "
-                    "Mở báo cáo A4 ngày này để biết ĐƠN nào chưa quay.")
+                    "hoàn CHƯA quay clip khui. Mở báo cáo A4 ngày này để biết ĐƠN nào chưa quay.")
         elif _tc < 0:
             out["vid_hoan"] = _gap_badge("⚠", "#b91c1c", "#fee2e2", "video thiếu tag", -_tc,
                 "Có video khui nhưng không khớp nhập kho và chưa gắn tag xử lý. Nếu không nhập kho, "
                 "nhân viên bắt buộc phải gắn tag để theo dõi.")
+        elif _extra_vid > 0:   # tc=0 nhưng quay NHIỀU hơn đơn nhập kho → dư ĐÚNG BẰNG số đơn tranh chấp (KHỚP)
+            out["vid_hoan"] = _gap_badge("▲", "#1d4ed8", "#dbeafe", f"dư {_extra_vid} · đơn giữ lại", _extra_vid,
+                f"Quay {_n('vid_hoan')} video nhưng {_n('hoan_don')} đơn nhập kho — dư {_extra_vid} vì đơn "
+                "tranh chấp (khách tráo / đã dùng / hư) CÓ quay clip mà KHÔNG nhập kho (đúng quy trình). Không thiếu.")
         _apply_audit_video_badges(out, d)
         return out
 
@@ -678,7 +711,7 @@ def _week_table_html(data):
             pkg += _gap_badge("▲", "#1d4ed8", "#dbeafe", "dư", totals["pkg_extra"],
                               "Tổng số video đóng dư, cộng riêng theo từng ngày.")
         if totals["pkg_old"]:
-            pkg += _gap_badge("▽", "#64748b", "#f1f5f9", "kho cũ", totals["pkg_old"],
+            pkg += _gap_badge("▽", "#64748b", "#f1f5f9", "video cũ đã xóa", totals["pkg_old"],
                               "Tổng chênh thiếu thuộc các ngày đã quá hạn lưu video Dohana.")
 
         ret = ""
@@ -689,7 +722,7 @@ def _week_table_html(data):
             ret += _gap_badge("⚠", "#b91c1c", "#fee2e2", "video thiếu tag", totals["ret_extra"],
                               "Tổng video khui không khớp nhập kho và chưa gắn tag xử lý.")
         if totals["ret_old"]:
-            ret += _gap_badge("▽", "#64748b", "#f1f5f9", "kho cũ", totals["ret_old"],
+            ret += _gap_badge("▽", "#64748b", "#f1f5f9", "video cũ đã xóa", totals["ret_old"],
                               "Tổng chênh thiếu thuộc các ngày đã quá hạn lưu video Dohana.")
         ship = ""
         if totals["ship_missing"]:
