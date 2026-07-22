@@ -530,13 +530,9 @@ def _week_table_html(data):
                 "✓", "#166534", "#dcfce7", "có tag", raw_gap,
                 f"KHỚP: {videos} video hoàn = {sapo} đơn nhập SAPO + {raw_gap} video không nhập kho đã có tag: {tag_text}.",
             )
-        missing_video = sapo + tagged_not_stocked - videos
-        if missing_video > 0:
-            return _gap_badge(
-                "⚠", "#b91c1c", "#fee2e2", "thiếu video", missing_video,
-                f"{sapo} đơn nhập SAPO + {tagged_not_stocked} trường hợp có tag − {videos} video hoàn "
-                f"= thiếu {missing_video} video khui.",
-            )
+        # video < sapo → THIẾU VIDEO là lỗi bên VIDEO → đã cảnh báo ở cột "Video hoàn (Dohana)"
+        # (chưa quay / chưa lấy được / video cũ đã xóa). KHÔNG lặp sang cột Hoàn SAPO.
+        # Cột Hoàn SAPO CHỈ cảnh báo khi CHÍNH NÓ thiếu (video > sapo = Sapo chưa nhập/chưa tag).
         return ""
 
     def _day_video_age(d):
