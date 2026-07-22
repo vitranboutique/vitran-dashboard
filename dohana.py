@@ -323,11 +323,11 @@ def _fetch_videos(typ: str, cutoff_date, max_pages: int):
     vids = []
     cursor = None
     seen_cursors = set()
-    # p=custom tránh giới hạn mặc định 30 ngày khi app cần đồng bộ 35 ngày.
-    # Lấy dư một ngày UTC; kết quả cuối vẫn được lọc theo ngày Việt Nam.
+    # API mặc định đã trả 30 ngày: giữ request đầu tối giản đúng tài liệu Dohana.
+    # Chỉ dùng p=custom khi app thật sự cần lùi quá 30 ngày (ví dụ 35 ngày).
+    today_vn = (datetime.now(timezone.utc) + timedelta(hours=7)).date()
+    use_custom_range = cutoff_date < today_vn - timedelta(days=29)
     from_iso = f"{cutoff_date - timedelta(days=1)}T00:00:00Z"
-    # Dùng thời điểm hiện tại (thay vì 00:00 ngày mai cố định cả ngày) để URL request
-    # thay đổi theo mỗi lần refresh, tránh lớp cache phía Dohana trả snapshot cũ nhiều giờ.
     to_iso = (datetime.now(timezone.utc) + timedelta(minutes=1)).isoformat(
         timespec="seconds"
     ).replace("+00:00", "Z")
@@ -338,8 +338,9 @@ def _fetch_videos(typ: str, cutoff_date, max_pages: int):
         for _try in range(1):
             _throttle()
             try:
-                params = {"limit": 1000, "type": typ, "p": "custom",
-                          "from": from_iso, "to": to_iso}
+                params = {"limit": 1000, "type": typ}
+                if use_custom_range:
+                    params.update({"p": "custom", "from": from_iso, "to": to_iso})
                 if cursor:
                     params["cursor"] = cursor
                 r = requests.get(_BASE, params=params,
