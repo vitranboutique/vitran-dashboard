@@ -11,6 +11,7 @@ Dữ liệu trong gist (file vitran_picklog.json):
     {"logs": [ {ngay, gio, so_don, so_sp, so_sku, ht_don, th_don}, ... ]}
 """
 import json
+import time
 from datetime import datetime, timedelta, timezone
 
 import requests
@@ -558,12 +559,28 @@ def _write_gist_file(fname, data):
     gid = _resolve_gid()
     if not gid:
         return False
-    try:
-        body = {"files": {fname: {"content": json.dumps(data, ensure_ascii=False)}}}
-        r = requests.patch(f"{_API}/gists/{gid}", headers=_hdr(), data=json.dumps(body), timeout=15)
-        return r.status_code == 200
-    except Exception:
-        return False
+    body = {"files": {fname: {"content": json.dumps(data, ensure_ascii=False)}}}
+    for attempt in range(3):
+        try:
+            r = requests.patch(f"{_API}/gists/{gid}", headers=_hdr(), data=json.dumps(body), timeout=20)
+            if r.status_code == 200:
+                return True
+            if r.status_code not in (409, 429, 500, 502, 503, 504):
+                return False
+        except Exception:
+            pass
+        time.sleep(0.8 * (attempt + 1))
+    return False
+
+
+def _write_dohana_store(videos, type_overrides=None) -> bool:
+    """Ghi kho video nhưng bảo toàn sổ chuyển loại A4 nhúng trong cùng file."""
+    current = _read_gist_file(_DFILE) or {}
+    payload = dict(current) if isinstance(current, dict) else {}
+    payload["videos"] = list(videos or [])
+    if type_overrides is not None:
+        payload["type_overrides"] = list(type_overrides or [])
+    return _write_gist_file(_DFILE, payload)
 
 
 def read_dohana_videos() -> list:
@@ -658,11 +675,7 @@ def merge_dohana_videos(new_list) -> list:
                 old["tag_name"] = tag_name
                 changed = True
     if changed:
-        try:
-            body = {"files": {_DFILE: {"content": json.dumps({"videos": cur}, ensure_ascii=False)}}}
-            requests.patch(f"{_API}/gists/{gid}", headers=_hdr(), data=json.dumps(body), timeout=15)
-        except Exception:
-            pass
+        _write_dohana_store(cur)
     return cur
 
 
@@ -696,7 +709,7 @@ def set_dohana_video_tag(code: str, tag_name: str = "", video_type: str = "inbou
         after = tuple(rec.get(k) for k in ("tag_id", "tag_name", "locked_tag_id", "locked_tag_name"))
         if before != after:
             changed += 1
-    if changed and _write_gist_file(_DFILE, {"videos": cur}):
+    if changed and _write_dohana_store(cur):
         return changed
     return 0
 
@@ -785,7 +798,17 @@ def remove_khui_manual_match(ret: str) -> bool:
 def read_video_type_overrides() -> list:
     """[{date, code, type}] — sửa loại clip trong app mà không thay dữ liệu gốc Dohana."""
     d = _read_gist_file(_VIDEO_TYPE_OVERRIDE_FILE)
-    return d.get("items", []) if isinstance(d, dict) and isinstance(d.get("items"), list) else []
+    primary = d.get("items", []) if isinstance(d, dict) and isinstance(d.get("items"), list) else []
+    fallback = _read_gist_file(_DFILE) or {}
+    embedded = fallback.get("type_overrides", []) if isinstance(fallback, dict) else []
+    merged = {}
+    for row in [*embedded, *primary]:
+        if not isinstance(row, dict):
+            continue
+        key = (str(row.get("date") or "").strip(), str(row.get("code") or "").strip().upper())
+        if all(key):
+            merged[key] = row
+    return list(merged.values())
 
 
 def add_video_type_override(entry: dict) -> bool:
@@ -814,4 +837,8 @@ def add_video_type_overrides(entries: list) -> bool:
         if (str(x.get("date") or "").strip(), str(x.get("code") or "").strip().upper()) not in replace_keys
     ]
     items.extend(valid)
-    return _write_gist_file(_VIDEO_TYPE_OVERRIDE_FILE, {"items": items})
+    if _write_gist_file(_VIDEO_TYPE_OVERRIDE_FILE, {"items": items}):
+        return True
+    # Một số Gist cũ không nhận thêm file mới. Lưu dự phòng ngay trong file video
+    # vốn đã tồn tại và đang được app ghi ổn định.
+    return _write_dohana_store(read_dohana_videos(), type_overrides=items)
