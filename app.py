@@ -8196,13 +8196,32 @@ def _render_daily():
                     st.error("Không lưu được. Vui lòng kiểm tra kho Gist.")
     if _extra_package_suggestions:
         st.markdown(f"**📦 Video Đóng hàng dư — {len(_extra_package_suggestions)} đơn**")
+        _extra_codes = [
+            str(_suggestion.get("code") or "").strip()
+            for _suggestion in _extra_package_suggestions
+            if str(_suggestion.get("code") or "").strip()
+        ]
+        _select_all_extra_key = f"select_all_extra_to_inbound_{_match_day}"
+
+        def _toggle_all_extra_codes():
+            _checked = bool(st.session_state.get(_select_all_extra_key))
+            for _code in _extra_codes:
+                st.session_state[f"select_extra_to_inbound_{_match_day}_{_code}"] = _checked
+
+        st.checkbox(
+            f"☑️ Chọn tất cả {len(_extra_codes)} đơn",
+            key=_select_all_extra_key,
+            on_change=_toggle_all_extra_codes,
+        )
         _selected_extra_codes = []
         with st.form(f"bulk_extra_to_inbound_{_match_day}"):
+            _extra_cols = st.columns(2)
             for _stt, _suggestion in enumerate(_extra_package_suggestions, 1):
                 _extra_code = str(_suggestion.get("code") or "").strip()
-                if st.checkbox(f"**{_stt}. {_extra_code}** · Đóng hàng → Khui hoàn",
-                               key=f"select_extra_to_inbound_{_match_day}_{_extra_code}"):
-                    _selected_extra_codes.append(_extra_code)
+                with _extra_cols[(_stt - 1) % 2]:
+                    if st.checkbox(f"**{_stt}. {_extra_code}** · Đóng hàng → Khui hoàn",
+                                   key=f"select_extra_to_inbound_{_match_day}_{_extra_code}"):
+                        _selected_extra_codes.append(_extra_code)
             _submit_selected_extras = st.form_submit_button(
                 "✅ Chuyển các mã đã chọn sang Khui hoàn", use_container_width=True)
         if _submit_selected_extras:
