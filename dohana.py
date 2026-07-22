@@ -444,3 +444,42 @@ def today_package_videos(days_match: int = 3, max_pages: int = 25, target_date=N
         # Đơn CÓ tag (đóng thiếu SP) → mục KHÔNG CẦN KN.
         "records": _records_from(vids, "package"),
     }
+
+
+def probe_fetch(typ: str = "package") -> dict:
+    """CHẨN ĐOÁN (không cache): gọi API v2 đúng 1 lần → HTTP status, số clip, hasNextPage, lỗi.
+    Dùng để soi VÌ SAO không lấy được clip (429/quota · lỗi format · rỗng). KHÔNG dùng trong luồng chính."""
+    key = _key()
+    if not key:
+        return {"ok": False, "error": "Chưa cấu hình [dohana] x_api_key trong Secrets."}
+    if _rate_limit_active():
+        return {"ok": False, "error": "Đang trong thời gian NGHỈ sau 429 (cooldown). Đợi ~1-2' rồi test lại."}
+    out = {"url": _BASE, "type": typ}
+    try:
+        _throttle()
+        r = requests.get(_BASE, params={"limit": 50, "type": typ},
+                         headers={"x-api-key": key}, timeout=20)
+        out["status_code"] = r.status_code
+        out["ok"] = (r.status_code == 200)
+        if r.status_code == 429:
+            out["retry_after"] = r.headers.get("Retry-After")
+            _note_rate_limit(r.headers.get("Retry-After") or 60)
+        try:
+            j = r.json()
+        except Exception:
+            out["body"] = (r.text or "")[:500]
+            return out
+        if isinstance(j, dict):
+            data = j.get("data") or []
+            out["count"] = len(data)
+            out["hasNextPage"] = j.get("hasNextPage")
+            out["sample_codes"] = [str((v or {}).get("orderCode") or "") for v in data[:5]]
+            for k in ("message", "error", "code", "statusCode", "detail"):
+                if k in j:
+                    out.setdefault("api_msg", {})[k] = j.get(k)
+        else:
+            out["body"] = str(j)[:500]
+        return out
+    except Exception as e:
+        out.update({"ok": False, "error": f"{type(e).__name__}: {e}"})
+        return out

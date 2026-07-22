@@ -11103,6 +11103,23 @@ def _render_returns():
                     st.rerun()
                 except Exception as _e:
                     st.warning(f"Chưa cập nhật được Dohana live: `{_e}`")
+            with st.expander("🔧 Soi kết nối Dohana (vì sao KHÔNG lấy được clip đóng hàng?)", expanded=False):
+                st.caption("Gọi thử API v2 (cursor) ĐÚNG 1 lần → xem mã HTTP + số clip trả về. "
+                           "Biết ngay là 429/hết quota ngày · lỗi format · hay rỗng.")
+                _pc1, _pc2 = st.columns(2)
+                if _pc1.button("Test clip ĐÓNG HÀNG (package)", key="dohana_probe_pkg"):
+                    st.session_state["_dohana_probe"] = ("package", dohana.probe_fetch("package"))
+                if _pc2.button("Test clip KHUI HÀNG (inbound)", key="dohana_probe_inb"):
+                    st.session_state["_dohana_probe"] = ("inbound", dohana.probe_fetch("inbound"))
+                _pr = st.session_state.get("_dohana_probe")
+                if _pr:
+                    _ptyp, _pres = _pr
+                    _pok = bool((_pres or {}).get("ok"))
+                    (st.success if _pok else st.error)(
+                        f"[{_ptyp}] HTTP {(_pres or {}).get('status_code', '—')} · "
+                        f"{(_pres or {}).get('count', '—')} clip"
+                        + ("" if _pok else f" · {(_pres or {}).get('error') or (_pres or {}).get('api_msg') or 'không có data'}"))
+                    st.json(_pres)
             _return_info(f"Đã lưu {len(_dvids)} video (đóng hàng + khui hàng): trạng thái, ngày quay, giờ, "
                          "thời lượng, tag. Tag đã từng thấy sẽ được khóa trong kho, DHN gỡ tag sau này cũng không mất. "
                          "Dohana chỉ giữ 30 ngày; kho này gom dần (13/16/19h) nên đọc được đến cuối năm.")
