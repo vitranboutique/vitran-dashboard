@@ -804,6 +804,22 @@ def _week_table_html(data):
                 v = "—"      # hôm nay số còn chạy → chưa suy được sau/trước soạn
             else:
                 v = r.get(k, "")
+            # Hiện mã lệch ngay tại ô Video hoàn của bảng 30 ngày. Không chỉ báo chênh số:
+            # người dùng nhìn được chính xác mã trả SAPO nào thiếu clip và clip nào đang dư.
+            if k == "vid_hoan":
+                _audit_row_inline = _audit_by_day.get(str(r.get("iso") or "")) or {}
+                _ret_missing_inline = str(
+                    _audit_row_inline.get("Hiển thị Hoàn thiếu", _audit_row_inline.get("Hoàn thiếu")) or ""
+                ).strip()
+                _ret_extra_inline = str(
+                    _audit_row_inline.get("Hiển thị Hoàn dư", _audit_row_inline.get("Hoàn dư")) or ""
+                ).strip()
+                if _ret_missing_inline:
+                    v = (f'{v}<div style="margin-top:3px;color:#b91c1c;font-size:10px;font-weight:800;'
+                         f'white-space:normal">⚠ Thiếu: {_esc(_ret_missing_inline)}</div>')
+                if _ret_extra_inline:
+                    v = (f'{v}<div style="margin-top:3px;color:#1d4ed8;font-size:10px;font-weight:800;'
+                         f'white-space:normal">＋ Dư: {_esc(_ret_extra_inline)}</div>')
             mw = "min-width:150px;" if k == "chot_video" else "min-width:110px;" if (k == "ghi_chu" or k in _tagcols) else ""
             _nay = (' <span style="color:#E24B4A;font-size:11px">• nay</span>'
                     if hot and k == "ngay" else "")
