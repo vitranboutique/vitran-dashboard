@@ -668,9 +668,15 @@ def _week_table_html(data):
             pkg += _gap_badge("▽", "#64748b", "#f1f5f9", "video cũ đã xóa", totals["pkg_old"],
                               "Tổng chênh thiếu thuộc các ngày đã quá hạn lưu video Dohana.")
 
-        # Không cộng cảnh báo hoàn lên dòng tổng: ngày cũ đã bị Dohana xóa video sẽ làm sai lệch.
-        # Lệch hoàn chỉ hiển thị tại đúng ô của từng ngày còn dữ liệu.
+        # Tổng cảnh báo hoàn theo đúng các dòng A4 còn dữ liệu; video cũ đã xóa đã bị loại ở trên.
         ret = ""
+        if totals["ret_missing"]:
+            ret += _gap_badge("⚠", "#b91c1c", "#fee2e2", "chưa có video", totals["ret_missing"],
+                              "Tổng phiếu SAPO có ô Video hoàn trống.")
+        sapo_ret = ""
+        if totals["ret_extra"]:
+            sapo_ret += _gap_badge("⚠", "#b91c1c", "#fee2e2", "chưa nhập SAPO", totals["ret_extra"],
+                                   "Tổng clip có ô Hoàn SAPO trống và chưa có tag giữ xử lý.")
         ship = ""
         if totals["ship_missing"]:
             ship += _gap_badge("▼", "#b91c1c", "#fee2e2", "thiếu", totals["ship_missing"],
@@ -678,7 +684,7 @@ def _week_table_html(data):
         if totals["ship_extra"]:
             ship += _gap_badge("▲", "#1d4ed8", "#dbeafe", "dư", totals["ship_extra"],
                                "Tổng số shipper nhận dư, cộng riêng theo từng ngày đã chốt.")
-        return {"vid_dong": pkg, "vid_hoan": ret, "shipper_nhan": ship}
+        return {"vid_dong": pkg, "hoan_don": sapo_ret, "vid_hoan": ret, "shipper_nhan": ship}
 
     head = "".join(
         f'<th style="position:sticky;top:0;z-index:3;text-align:{"left" if k in _txt else "right"};'
@@ -3383,7 +3389,7 @@ def load_week_summary():
                 _pkg_miss_vs_inbound_extra = _cross_matches(_pkg_missing, _inbound_extra)
                 _return_miss_vs_pkg_extra = _cross_matches(_return_missing, _pkg_extra)
                 _add_matrix(
-                    iso, _pkg_missing, _pkg_extra, [], [],
+                    iso, _pkg_missing, _pkg_extra, _return_missing, _inbound_extra,
                     _pkg_unknown, day, pkg_missing_count=_pkg_missing_count,
                 )
                 _add_audit(
@@ -3397,6 +3403,18 @@ def load_week_summary():
                     _return_missing,
                     "Video đóng dư có thể là clip khui hàng quay nhầm bên đóng.",
                     _return_miss_vs_pkg_extra,
+                )
+                _add_audit(
+                    iso, "Thiếu video khui hàng hoàn", _return_missing,
+                    _pkg_extra,
+                    "Phiếu đã nhập SAPO nhưng chưa có video hoàn tương ứng.",
+                    _return_miss_vs_pkg_extra,
+                )
+                _add_audit(
+                    iso, "Dư video khui hàng hoàn", _inbound_extra,
+                    _pkg_missing,
+                    "Có video nhưng chưa nhập SAPO và chưa có tag giữ xử lý.",
+                    _pkg_miss_vs_inbound_extra,
                 )
                 if _package_stale_today:
                     day["chot_video"] = "⏳ Dohana API tạm lỗi, chưa chốt video đóng"
