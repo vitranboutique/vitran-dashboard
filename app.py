@@ -3728,7 +3728,9 @@ def load_week_summary():
                 # Ngày cũ vẫn đối chiếu bằng MÃ video đã lưu. File Dohana bị xóa không làm mất mã;
                 # chỉ khi A4 không tìm thấy cả mã lưu thì mới kết luận thật sự chưa có video.
                 day["return_blank_video_count"] = len(_return_missing)
-                _return_fresh = _day_video_age(day)[1]
+                # Không gọi helper hiển thị của _week_table_html tại đây; hàm đó không nằm
+                # trong scope tải dữ liệu và sẽ làm toàn bộ khối video rơi về 0.
+                _return_fresh = str(iso or "") == _today_iso_vn()
                 day["return_video_status"] = (
                     "pending_sync" if (_return_missing and (_return_fresh or not _inbound_live_ok))
                     else ("missing" if _return_missing else "matched")
