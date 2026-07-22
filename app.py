@@ -8218,8 +8218,11 @@ def _render_daily():
             _extra_cols = st.columns(2)
             for _stt, _suggestion in enumerate(_extra_package_suggestions, 1):
                 _extra_code = str(_suggestion.get("code") or "").strip()
+                _extra_package_url = _with_url_query(
+                    "https://dhn.io.vn/order/", q=_extra_code, orderCode=_extra_code
+                )
                 with _extra_cols[(_stt - 1) % 2]:
-                    if st.checkbox(f"**{_stt}. {_extra_code}** · Đóng hàng → Khui hoàn",
+                    if st.checkbox(f"[**{_stt}. {_extra_code}**]({_extra_package_url}) · Đóng hàng → Khui hoàn",
                                    key=f"select_extra_to_inbound_{_match_day}_{_extra_code}"):
                         _selected_extra_codes.append(_extra_code)
             _submit_selected_extras = st.form_submit_button(
