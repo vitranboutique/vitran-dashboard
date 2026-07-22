@@ -290,11 +290,16 @@ def _throttle(min_gap=1.1):
         wait_for = max(
             0.0,
             min_gap - (now - _LAST_REQ[0]),
-            _COOLDOWN_UNTIL[0] - now,
         )
         if wait_for:
             time.sleep(wait_for)
         _LAST_REQ[0] = time.monotonic()
+
+
+def _rate_limit_active():
+    """Đang trong thời gian nghỉ sau 429 thì bỏ call, không treo trang chờ cooldown."""
+    with _RATE_LOCK:
+        return time.monotonic() < _COOLDOWN_UNTIL[0]
 
 
 def _note_rate_limit(seconds=60.0):
@@ -311,6 +316,8 @@ def _fetch_videos(typ: str, cutoff_date, max_pages: int):
     """Lấy video theo type bằng cursor tới khi createdAt < cutoff_date. Khử trùng id."""
     key = _key()
     if not key:
+        return None
+    if _rate_limit_active():
         return None
     headers = {"x-api-key": key}
     vids = []

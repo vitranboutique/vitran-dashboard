@@ -1238,6 +1238,7 @@ def _enrich_daily(rep, dvr, inb):
 
     nk = rep.get("nhap_kho") or {}
     if inb is not None:
+        _inb_from_store = bool(inb.get("_from_store"))
         mset, cnt = inb.get("match", set()), inb.get("count", {})
         meta = inb.get("meta", {})
         consumed = set()
@@ -1304,7 +1305,9 @@ def _enrich_daily(rep, dvr, inb):
                     d["clip_tag_id"] = _video_tag_id(m)
                     d["clip_tag"] = _clip_tag(m)
                     d["clip_staff"] = m.get("staff")
-        nk["clip_available"] = True
+        # Kho lưu cũ chỉ xác nhận được clip ĐÃ có; không được dùng phần thiếu của kho
+        # để kết luận đỏ "CHƯA quay" khi API live đang 429/lỗi.
+        nk["clip_available"] = not _inb_from_store
         nk["clip_co"] = sum(1 for d in nk.get("detail", []) if d.get("clip"))
         nk["clip_total"] = inb.get("total", 0)
         nk["clip_unmatched"] = sorted(inb.get("today_codes", set()) - consumed)
