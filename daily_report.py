@@ -838,6 +838,22 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
     _hold_note = (f'<div class="wb" style="margin-top:3px;color:#166534">✅ <b>{_tag_hold}</b> clip có tag hư hỏng/thiếu/sai hàng/khách tráo: '
                   'không nhập kho Sapo là đúng quy trình, giữ xử lý tranh chấp/khiếu nại sàn.</div>'
                   if _tag_hold else '')
+    _moves = rep.get("video_move_summary") or {}
+    _move_lines = []
+    _move_to_package = int(_moves.get("inbound_to_package") or 0)
+    _move_to_inbound = int(_moves.get("package_to_inbound") or 0)
+    if _move_to_package:
+        _move_lines.append(
+            f'↪ Nhân viên quay nhầm bên <b>Khui hoàn</b> → đã chuyển sang <b>Đóng hàng: {_move_to_package} mã</b>'
+        )
+    if _move_to_inbound:
+        _move_lines.append(
+            f'↪ Nhân viên quay nhầm bên <b>Đóng hàng</b> → đã chuyển sang <b>Khui hoàn: {_move_to_inbound} mã</b>'
+        )
+    _move_note = (
+        '<div class="wb" style="margin-top:3px;color:#166534">' + '<br>'.join(_move_lines) + '</div>'
+        if _move_lines else ''
+    )
     if _concl:
         concl_box = (
             '<div class="warn" style="background:#fffbeb;border:1px solid #f59e0b;margin:.3em 0 .5em">'
@@ -846,12 +862,12 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
             '<div class="wb" style="margin-top:3px;color:#78350f">💡 Lý do có thể: '
             '<b>sai mã lúc quay</b> · <b>quay nhầm mục</b> (khui hàng ↔ đóng hàng) · '
             '<b>quay trùng</b> · <b>khách trả thiếu SP</b> · <b>chưa bấm nhập kho trên Sapo</b>.</div>'
-            + _hold_note +
+            + _move_note + _hold_note +
             '</div>')
     else:
         concl_box = ('<div class="warn" style="background:#f0fdf4;border:1px solid #16a34a;margin:.3em 0 .5em">'
                      '<div class="wh" style="color:#15803d">✅ KẾT LUẬN: Không có sai lệch cần kiểm tra.</div>'
-                     + _hold_note +
+                     + _move_note + _hold_note +
                      '</div>')
     # ── PHỄU: xác nhận → soạn(in phiếu) → video(đóng gói) → ĐVVC nhận | hủy · còn xót ──
     # 4 ô dòng 1 + 2 ô dòng 2. Mỗi ô có ô ☐ để NV KHO TICK xác nhận trước khi ký cuối.

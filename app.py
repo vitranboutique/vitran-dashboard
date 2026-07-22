@@ -1306,17 +1306,36 @@ def _enrich_daily(rep, dvr, inb):
         except Exception:
             _rep_iso = ""
         _approved_norm = set()
+        _video_move_summary = {"inbound_to_package": 0, "package_to_inbound": 0}
         try:
+            _day_overrides = [
+                x for x in picklog.read_video_type_overrides()
+                if str(x.get("date") or "") == _rep_iso
+            ]
             _approved_norm = {
                 _ascii_code(x.get("code"))
-                for x in picklog.read_video_type_overrides()
-                if str(x.get("date") or "") == _rep_iso
-                and str(x.get("source_type") or "") == "package"
+                for x in _day_overrides
+                if str(x.get("source_type") or "") == "package"
                 and str(x.get("type") or "") == "inbound"
                 and _ascii_code(x.get("code"))
             }
+            _video_move_summary = {
+                "inbound_to_package": len({
+                    _ascii_code(x.get("code")) for x in _day_overrides
+                    if str(x.get("source_type") or "") == "inbound"
+                    and str(x.get("type") or "") == "package"
+                    and _ascii_code(x.get("code"))
+                }),
+                "package_to_inbound": len({
+                    _ascii_code(x.get("code")) for x in _day_overrides
+                    if str(x.get("source_type") or "") == "package"
+                    and str(x.get("type") or "") == "inbound"
+                    and _ascii_code(x.get("code"))
+                }),
+            }
         except Exception:
             _approved_norm = set()
+        rep["video_move_summary"] = _video_move_summary
         _unmatched_raw = inb.get("today_codes", set()) - consumed
         nk["clip_unmatched"] = sorted(
             c for c in _unmatched_raw
