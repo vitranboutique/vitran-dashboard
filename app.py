@@ -3263,11 +3263,6 @@ def load_week_summary():
             # Nếu số video <= số đơn soạn thì các mã lệch chữ là clip hợp lệ, tuyệt đối không báo dư.
             _extra_package_suggestions = []
             for _dd in sorted(_package_extra_by_day):
-                _soan_orders = int(((_psumm if "_psumm" in locals() else {}).get(_dd) or {}).get("so_don") or 0)
-                _actual_package_videos = int(vdong.get(_dd, 0) or 0)
-                _real_extra_count = max(0, _actual_package_videos - _soan_orders)
-                if not _real_extra_count:
-                    continue
                 _candidate_codes = [
                     c for c in sorted({_ascii_code(x) for x in (_package_extra_by_day.get(_dd) or []) if _ascii_code(x)})
                     if (str(_dd), c) not in _tagged_package_keys
@@ -3277,7 +3272,10 @@ def load_week_summary():
                         for x in (_type_overrides_by_day.get(str(_dd), []) or [])
                     )
                 ]
-                for _code in _candidate_codes[:_real_extra_count]:
+                # Không cắt theo chênh lệch RÒNG trước khi đối chiếu: một ngày có thể vừa
+                # thiếu vừa dư mã nên tổng số cân bằng, nhưng từng mã vẫn quay lộn mục.
+                # Danh sách này sẽ được lọc giao chính xác với Hoàn thiếu ở bước dưới.
+                for _code in _candidate_codes:
                     _extra_package_suggestions.append({
                         "date": str(_dd), "code": str(_code),
                         "from_type": "package", "to_type": "inbound",
