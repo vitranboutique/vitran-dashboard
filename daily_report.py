@@ -463,9 +463,10 @@ def _recon_rows(rows, start=0, clip_on=True):
         elif clip_on:
             clip_cell = '<span style="color:#dc2626;font-weight:800">✗ CHƯA quay clip khui hàng — kiểm tra Dohana</span>'
             clip_td = ' style="background:#fef2f2"'
-        else:   # Dohana 429/lỗi: KHÔNG kết luận "chưa quay" — chỉ là tạm không lấy được clip
-            clip_cell = '<span style="color:#9ca3af">— Dohana tạm không lấy được clip</span>'
-            clip_td = ''
+        else:   # Dohana 429/lỗi: cảnh báo nổi bật nhưng KHÔNG kết luận nhân viên chưa quay
+            clip_cell = ('<span style="color:#b91c1c;font-weight:900">'
+                         '⚠ DOHANA TẠM KHÔNG LẤY ĐƯỢC CLIP</span>')
+            clip_td = ' style="background:#fee2e2;border:2px solid #dc2626"'
         _row_tag = _tag_label(r.get("clip_tag"), r.get("clip_tag_id"))
         if _row_tag:
             clip_cell += (f'<div style="margin-top:2px"><span style="color:#6d28d9;font-weight:800;'
