@@ -3201,6 +3201,21 @@ def load_week_summary():
                     _today_videos = list(dict.fromkeys(
                         _norm(code) for code in inbound_codes_by_day.get(dd, []) if _norm(code)
                     ))
+                    # BÓC CƯỠNG CHẾ CLIP QUAY LỘN MỤC: một clip nằm bên Nhập hàng hoàn nhưng mã
+                    # đồng thời đang THIẾU bên Đóng hàng cùng ngày thì KHÔNG được khớp tự động
+                    # với phiếu hoàn, kể cả mã đó xuất hiện trong VĐ đi/đóng của phiếu hoàn.
+                    _reserved_package_missing = {
+                        _norm(code) for code in (_package_missing_by_day.get(dd, []) or []) if _norm(code)
+                    }
+                    _reserved_package_missing.update(
+                        _norm(code)
+                        for code in ((_a4_package_recon_by_day.get(dd) or {}).get("missing") or [])
+                        if _norm(code)
+                    )
+                    _matchable_window_videos = [
+                        (video_day, video) for video_day, video in _window_videos
+                        if not (video_day == str(dd) and video in _reserved_package_missing)
+                    ]
                     _consumed_codes = set()
                     _unmatched_groups = []
                     for parcel_key, rows in groups.items():
@@ -3221,7 +3236,7 @@ def load_week_summary():
                             _matched_by_day[dd].add(parcel_key)
                             _matched_inbound_codes_by_day[dd].add(_man_clip)
                             continue
-                        _exact = next(((video_day, video) for video_day, video in _window_videos
+                        _exact = next(((video_day, video) for video_day, video in _matchable_window_videos
                                        if video in label_codes), None)
                         if _exact:
                             _video_day, _video = _exact
@@ -3230,17 +3245,6 @@ def load_week_summary():
                             _matched_inbound_codes_by_day[_video_day].add(_video)
                         else:
                             _unmatched_groups.append((parcel_key, rows, merged_label))
-                    # Mã đã nằm trong danh sách THIẾU video đóng hàng không được phép đem đi
-                    # "khớp mềm cùng hãng" với một đơn hoàn khác. Đây là clip quay lộn mục:
-                    # phải giữ lại để hiện Dư mã bên Nhập hàng hoàn và Khớp lộn mục.
-                    _reserved_package_missing = {
-                        _norm(code) for code in (_package_missing_by_day.get(dd, []) or []) if _norm(code)
-                    }
-                    _reserved_package_missing.update(
-                        _norm(code)
-                        for code in ((_a4_package_recon_by_day.get(dd) or {}).get("missing") or [])
-                        if _norm(code)
-                    )
                     _leftover_today = [
                         v for v in _today_videos
                         if v not in _consumed_codes and v not in _reserved_package_missing
