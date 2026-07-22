@@ -3532,15 +3532,30 @@ def load_week_summary():
                 _return_missing_by_day = {}
                 _inbound_extra_by_day = {}
                 _inbound_extra_codes_by_day = {}
+                _matched_inbound_codes_by_day = {}
+                _tagged_inbound_codes_by_day = {}
+                _wrong_side_candidates = []
 
-            # Khui hoàn → Đóng hàng: chỉ khi mã thiếu bên Đóng đồng thời vẫn còn dư/chưa nhập kho
-            # bên Khui hoàn sau khi đã cho khớp hết các đơn hoàn thật.
+            # Khui hoàn → Đóng hàng: mã thiếu bên Đóng và có thật bên Khui cùng ngày.
+            # Vẫn hiện cả clip ĐÃ nhập kho vì có trường hợp dữ liệu Đóng hàng cập nhật thiếu;
+            # gắn trạng thái rõ để người dùng kiểm tra trước khi tự tick chuyển.
             _filtered_wrong_side_suggestions = []
             for _suggestion in (_wrong_side_candidates or []):
                 _dd = str(_suggestion.get("date") or "")
                 _code = _ascii_code(_suggestion.get("code"))
-                if _code and _code in set(_inbound_extra_codes_by_day.get(_dd, set())):
-                    _filtered_wrong_side_suggestions.append(dict(_suggestion))
+                if not _code:
+                    continue
+                if _code in set(_inbound_extra_codes_by_day.get(_dd, set())):
+                    _stock_state = "Chưa nhập kho"
+                elif _code in set(_matched_inbound_codes_by_day.get(_dd, set())):
+                    _stock_state = "Đã nhập kho"
+                elif _code in set(_tagged_inbound_codes_by_day.get(_dd, set())):
+                    _stock_state = "Có tag/giữ xử lý"
+                else:
+                    _stock_state = "Đã khớp Khui hoàn"
+                _item = dict(_suggestion)
+                _item["inbound_stock_status"] = _stock_state
+                _filtered_wrong_side_suggestions.append(_item)
             data["wrong_side_video_suggestions"] = _filtered_wrong_side_suggestions
 
             # Gợi ý chuyển Đóng hàng → Khui hoàn chỉ khi thỏa ĐỒNG THỜI:
@@ -8156,12 +8171,17 @@ def _render_daily():
                     f"↪️ Mã có thể chuyển Khui hoàn → Đóng hàng — {len(_bulk_package_moves)} mã",
                     expanded=False,
                 ):
-                    st.caption("Chỉ gồm mã Đóng hàng thiếu và trùng chính xác video Khui hoàn chưa nhập kho cùng ngày.")
+                    st.caption("Mã Đóng hàng thiếu và trùng chính xác video Khui hoàn cùng ngày; trạng thái nhập kho hiện ngay cạnh mã.")
                     _bulk_package_keys = [
                         (str(x.get("date") or ""), str(x.get("code") or "").strip())
                         for x in _bulk_package_moves
                         if str(x.get("date") or "") and str(x.get("code") or "").strip()
                     ]
+                    _bulk_package_status = {
+                        (str(x.get("date") or ""), str(x.get("code") or "").strip()):
+                            str(x.get("inbound_stock_status") or "").strip()
+                        for x in _bulk_package_moves
+                    }
                     _bulk_package_all_key = "select_all_valid_inbound_to_package_30d"
 
                     def _toggle_all_valid_package_moves():
@@ -8193,8 +8213,9 @@ def _render_daily():
                                     "https://dhn.io.vn/order/inbound/", q=_code, orderCode=_code
                                 )
                                 with _move_cols[_day_stt % 2]:
+                                    _stock_state = _bulk_package_status.get((_day, _code), "")
                                     if st.checkbox(
-                                        f"[**{_stt}. {_code}**]({_inbound_url})",
+                                        f"[**{_stt}. {_code}**]({_inbound_url}) · {_stock_state}",
                                         key=f"bulk_valid_package_move_{_day}_{_code}",
                                     ):
                                         _selected_package_moves.append((_day, _code))
@@ -8225,7 +8246,7 @@ def _render_daily():
                             else:
                                 st.error("Không lưu được. Vui lòng kiểm tra kho Gist.")
             else:
-                st.caption("✅ Không có mã Đóng thiếu nào trùng video Khui hoàn chưa nhập kho trong 30 ngày.")
+                st.caption("✅ Không có mã Đóng thiếu nào trùng video Khui hoàn cùng ngày trong 30 ngày.")
 
             _bulk_return_moves = list(_wk.get("extra_package_video_suggestions") or [])
             if _bulk_return_moves:
