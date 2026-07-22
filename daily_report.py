@@ -502,7 +502,7 @@ def _recon_rows(rows, start=0, clip_on=True):
             _tag = _tag_label(r.get("clip_tag"), r.get("clip_tag_id"))
             _ocb = f'<b class="mono-code">{_e(str(_oc))}</b><br>' if _oc else ''
             if _tag:
-                _rsn = f'✓ Không nhập SAPO — {_e(str(_tag))}'
+                _rsn = f'✓ <b style="font-weight:1000">KHÔNG NHẬP SAPO</b> — {_e(str(_tag))}'
                 sapo_cell = (f'{_ocb}<div style="font-size:.82em;color:#475569">'
                              f'🏪 {_e(_short_store_label(r.get("gian_hang")))}</div>'
                              f'<span style="color:#15803d;font-weight:900">{_rsn}</span>')
