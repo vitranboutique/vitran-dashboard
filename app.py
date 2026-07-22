@@ -8195,12 +8195,12 @@ def _render_daily():
                 else:
                     st.error("Không lưu được. Vui lòng kiểm tra kho Gist.")
     if _extra_package_suggestions:
-        st.markdown("**📦 Video Đóng hàng dư**")
+        st.markdown(f"**📦 Video Đóng hàng dư — {len(_extra_package_suggestions)} đơn**")
         _selected_extra_codes = []
         with st.form(f"bulk_extra_to_inbound_{_match_day}"):
-            for _suggestion in _extra_package_suggestions:
+            for _stt, _suggestion in enumerate(_extra_package_suggestions, 1):
                 _extra_code = str(_suggestion.get("code") or "").strip()
-                if st.checkbox(f"**{_extra_code}** · Đóng hàng → Khui hoàn",
+                if st.checkbox(f"**{_stt}. {_extra_code}** · Đóng hàng → Khui hoàn",
                                key=f"select_extra_to_inbound_{_match_day}_{_extra_code}"):
                     _selected_extra_codes.append(_extra_code)
             _submit_selected_extras = st.form_submit_button(
