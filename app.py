@@ -1838,8 +1838,8 @@ def _nv_row_restock(it):
     Lý do KN = 'NV nhập kho sai' cho CẢ bảng; tô vàng (need_kn) đến khi có ghi chú CHUẨN thì thôi
     (khi đó tự rớt khỏi Cần KN). Dùng chung cho bảng 'theo loại' lẫn danh sách Cần KN."""
     _std = _note_is_standard(it.get("ghi_chu", ""))
-    # Đơn CHỈ HOÀN TIỀN (không có hàng hoàn về) → KHÔNG cần video khui → KHÔNG phải lỗi NV: đổi nhãn
-    # + KHÔNG tô vàng / KHÔNG đưa vào Cần KN. Nhờ group theo loại, đơn này tự nằm ở mục "Chỉ hoàn tiền".
+    # Đơn CHỈ HOÀN TIỀN (không có hàng hoàn về) → KHÔNG cần video khui, đổi nhãn (không phải lỗi NV).
+    # NHƯNG vẫn TÔ VÀNG + vào Cần KN khi CHƯA có ghi chú chuẩn — quy tắc: mọi đơn tô vàng đều lên Cần KN.
     _refund = str(it.get("loai_tra_code") or "") == "refund"
     return {
         "order_code": it.get("order_code") or "", "return_code": it.get("return_code") or "",
@@ -1853,7 +1853,7 @@ def _nv_row_restock(it):
         "loai_tra": it.get("loai_tra") or "", "loai_tra_code": it.get("loai_tra_code") or "",
         "sku": it.get("sku") or "", "qty": it.get("sp") or 0, "money": it.get("money") or 0,
         "stock_status": "Đã nhập kho", "return_shipper": it.get("carrier") or "",
-        "need_kn": (False if _refund else (not _std)),  # refund: không tô vàng, không vào Cần KN
+        "need_kn": (not _std),  # tô vàng + vào Cần KN đến khi có ghi chú CHUẨN (kể cả đơn chỉ hoàn tiền)
         "_restock_novideo": True,
     }
 
@@ -10214,12 +10214,9 @@ def _render_returns():
                             _d["note"] = _pool_note[_pv]   # kéo ghi chú (kết luận nếu có; không thì "CẦN KN")
                             break
                 for _d in _rows:
-                    # Đơn chỉ hoàn tiền: KHÔNG cần video → KHÔNG tô vàng / KHÔNG vào Cần KN (khớp nhãn).
-                    # Còn lại: HẾT vàng / rớt Cần KN CHỈ khi ĐÃ KẾT LUẬN (note "CẦN KN" vẫn giữ vàng).
-                    if str(_d.get("loai_tra_code") or "").strip().lower() == "refund":
-                        _d["need_kn"] = False
-                    else:
-                        _d["need_kn"] = not _note_is_concluded(_d.get("note", ""))
+                    # MỌI đơn tô vàng (chưa có ghi chú CHỐT) đều vào Cần KN — KỂ CẢ đơn chỉ hoàn tiền.
+                    # Rớt Cần KN / hết vàng CHỈ khi ĐÃ KẾT LUẬN (note "CẦN KN" vẫn giữ vàng).
+                    _d["need_kn"] = not _note_is_concluded(_d.get("note", ""))
                 _restock_novideo_rows._cache = [dict(r) for r in _rows]
                 return _rows
             _closed_returns_with_waybill_detail = [
