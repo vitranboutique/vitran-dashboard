@@ -452,7 +452,7 @@ def _week_table_html(data):
             ("huy_truoc", "Hủy trước soạn"), ("huy_sau", "Hủy sau soạn"),
             ("shipper_nhan", "Shipper nhận"), ("giao_khach", "Giao khách"),
             # ── HOÀN HÀNG (cam) ──
-            ("hoan_don", "Hoàn (đơn)"), ("hoan_sp", "Hoàn SP"), ("vid_hoan", "Vid hoàn"),
+            ("hoan_don", "Hoàn SAPO"), ("hoan_sp", "Hoàn SP"), ("vid_hoan", "Vid hoàn"),
             ("thieu", "Thiếu SP"), ("tag_hoan", "Tag hoàn"),
             # ── CHỐT đối chiếu video đóng↔khui (đưa lên từ bảng đối chiếu) ──
             ("chot_video", "Chốt video"),
@@ -503,6 +503,41 @@ def _week_table_html(data):
             "Báo cáo A4 có clip khui hàng hoàn nhưng chưa khớp phiếu nhập kho SAPO "
             "và chưa có tag giữ xử lý. Cần kiểm tra nhân viên chưa bấm nhập kho, quay nhầm mục hoặc quay trùng.",
         )
+
+    def _return_sapo_reconcile_badge(row):
+        """Giải thích ngay tại cột Hoàn SAPO vì sao Vid hoàn khác số đơn nhập kho."""
+        if not isinstance(row, dict):
+            return ""
+        try:
+            sapo = int(round(float(row.get("hoan_don") or 0)))
+            videos = int(round(float(row.get("vid_hoan") or 0)))
+        except Exception:
+            return ""
+        tag_text = str(row.get("tag_hoan") or "")
+        tagged_not_stocked = sum(int(x) for x in re.findall(r"×\s*(\d+)", tag_text))
+        raw_gap = videos - sapo
+        if raw_gap == 0 and tagged_not_stocked == 0:
+            return ""
+        if raw_gap > 0:
+            unexplained = max(0, raw_gap - tagged_not_stocked)
+            if unexplained:
+                return _gap_badge(
+                    "⚠", "#b91c1c", "#fee2e2", "video chưa nhập/tag", unexplained,
+                    f"{videos} video hoàn − {sapo} đơn nhập SAPO − {tagged_not_stocked} video có tag "
+                    f"= {unexplained} video chưa được nhập kho hoặc chưa gắn tag xử lý.",
+                )
+            return _gap_badge(
+                "✓", "#166534", "#dcfce7", "có tag", raw_gap,
+                f"KHỚP: {videos} video hoàn = {sapo} đơn nhập SAPO + {raw_gap} video không nhập kho đã có tag: {tag_text}.",
+            )
+        missing_video = sapo + tagged_not_stocked - videos
+        if missing_video > 0:
+            return _gap_badge(
+                "⚠", "#b91c1c", "#fee2e2", "thiếu video", missing_video,
+                f"{sapo} đơn nhập SAPO + {tagged_not_stocked} trường hợp có tag − {videos} video hoàn "
+                f"= thiếu {missing_video} video khui.",
+            )
+        return ""
 
     def _apply_audit_video_badges(out, d):
         audit_row = _audit_by_day.get(str((d or {}).get("iso") or ""))
@@ -755,7 +790,9 @@ def _week_table_html(data):
                 else:
                     bg, _chotc = "#dcfce7", "color:#166534;font-weight:700;"
             cells += (f'<td style="text-align:{al};padding:5px 8px;{_bd}{_lsep(k)}{wtop}{mw}background:{bg};{wt}{_red(k, v)}{_tagclr}{_chotc}">'
-                      f'{v}{_stock_pending_badge(r) if k == "hoan_don" else ""}{_nay}{_badges.get(k, "")}</td>')
+                      f'{v}{_stock_pending_badge(r) if k == "hoan_don" else ""}'
+                      f'{_return_sapo_reconcile_badge(r) if k == "hoan_don" else ""}'
+                      f'{_nay}{_badges.get(k, "")}</td>')
         body += f'<tr>{cells}</tr>'
 
     def _tot_row(label, src, label_bg, rows=None):
@@ -7804,7 +7841,7 @@ def _render_daily():
         try:
             _wk = load_week_summary()
             _bld = getattr(L, "WEEK_SUMMARY_BUILD", "⚠️ CHƯA nạp code mới — cần Reboot")
-            st.caption(f"🔧 Bản dữ liệu: `{_bld}` · cột **Hoàn (đơn)** đếm theo MÃ ĐƠN "
+            st.caption(f"🔧 Bản dữ liệu: `{_bld}` · cột **Hoàn SAPO** đếm theo MÃ ĐƠN "
                        "(nhiều kiện/1 đơn chỉ tính 1) — khớp với 'Đã nhận hàng trả' ở báo cáo A4.")
             if _RELOAD_ERR:
                 st.warning("Không nạp lại được module (đang chạy bản cũ):\n" + _RELOAD_ERR)
