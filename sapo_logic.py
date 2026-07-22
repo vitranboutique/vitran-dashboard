@@ -1422,7 +1422,7 @@ def get_alerts(fetch_json) -> dict:
             "cancel_retrieve_express": cancel_retrieve_express}
 
 
-WEEK_SUMMARY_BUILD = "gom-ma-tra-theo-van-don-hoan-23jul"   # đổi mỗi lần sửa module → biết app đã reboot chưa
+WEEK_SUMMARY_BUILD = "chot-theo-trang-thai-dohana-23jul"   # đổi mỗi lần sửa module → biết app đã reboot chưa
 
 
 def get_week_summary(fetch_json, days: int = 7) -> dict:

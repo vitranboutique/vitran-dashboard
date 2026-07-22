@@ -424,11 +424,19 @@ def _video_audit_chot_html(row=None, chot="", day=""):
     if row is None:
         row = {}
     day = day or row.get("Ngày") or row.get("Ngay") or row.get("iso")
+    _return_pending_sync = str(row.get("Hoàn trạng thái") or "") == "pending_sync"
+    _return_chip = (
+        _video_audit_chip("⏳", row.get("Hoàn thiếu SL"), day, "ret-miss", "#b45309", "#fef3c7",
+                          "Dohana chưa đồng bộ/bắt được các mã này; chưa kết luận thiếu video")
+        if _return_pending_sync else
+        _video_audit_chip("🎥↩-", row.get("Hoàn thiếu SL"), day, "ret-miss", "#b91c1c", "#fee2e2",
+                          "Đã đồng bộ nhưng chưa tìm thấy video khui hoàn")
+    )
     chips = "".join([
         _video_audit_chip("⚠ A4", row.get("A4 chờ xử lý SL"), day, "a4-pending", "#b45309", "#fef3c7", "Mã đang chờ duyệt chuyển trên A4"),
         _video_audit_chip("🎥📦-", row.get("Đóng thiếu SL"), day, "pkg-miss", "#b91c1c", "#fee2e2", "Thiếu video đóng hàng"),
         _video_audit_chip("🎥📦+", row.get("Đóng dư SL"), day, "pkg-extra", "#1d4ed8", "#dbeafe", "Dư video đóng hàng"),
-        _video_audit_chip("🎥↩-", row.get("Hoàn thiếu SL"), day, "ret-miss", "#b91c1c", "#fee2e2", "Thiếu video khui hoàn"),
+        _return_chip,
         _video_audit_chip("🎥↩+", row.get("Hoàn dư SL"), day, "ret-extra", "#1d4ed8", "#dbeafe", "Dư video khui hoàn"),
     ])
     if chips:
@@ -768,7 +776,7 @@ def _week_table_html(data):
 
     def _total_chot_video(rows):
         totals = {"pkg_miss": 0, "pkg_extra": 0, "ret_miss": 0, "ret_extra": 0,
-                  "pending": 0, "a4_pending": 0}
+                  "pending": 0, "sync_pending": 0, "a4_pending": 0}
         for row in rows or []:
             if not isinstance(row, dict):
                 continue
@@ -776,7 +784,10 @@ def _week_table_html(data):
             if isinstance(audit_row, dict):
                 totals["pkg_miss"] += _audit_count(audit_row, "Đóng thiếu SL")
                 totals["pkg_extra"] += _audit_count(audit_row, "Đóng dư SL")
-                totals["ret_miss"] += _audit_count(audit_row, "Hoàn thiếu SL")
+                if str(audit_row.get("Hoàn trạng thái") or "") == "pending_sync":
+                    totals["sync_pending"] += _audit_count(audit_row, "Hoàn thiếu SL")
+                else:
+                    totals["ret_miss"] += _audit_count(audit_row, "Hoàn thiếu SL")
                 totals["ret_extra"] += _audit_count(audit_row, "Hoàn dư SL")
                 totals["a4_pending"] += _audit_count(audit_row, "A4 chờ xử lý SL")
                 continue
@@ -798,6 +809,7 @@ def _week_table_html(data):
             + chip("🎥📦-", totals["pkg_miss"], "#b91c1c", "#fee2e2", "Tổng thiếu video đóng hàng đã chốt.")
             + chip("🎥📦+", totals["pkg_extra"], "#1d4ed8", "#dbeafe", "Tổng dư video đóng hàng đã chốt.")
             + chip("🎥↩-", totals["ret_miss"], "#b91c1c", "#fee2e2", "Tổng thiếu video khui hoàn đã chốt.")
+            + chip("⏳", totals["sync_pending"], "#b45309", "#fef3c7", "Dohana chưa đồng bộ/bắt được; chưa kết luận thiếu video.")
             + chip("🎥↩+", totals["ret_extra"], "#1d4ed8", "#dbeafe", "Tổng dư video khui hoàn đã chốt.")
             + chip("⏳", totals["pending"], "#92400e", "#fef3c7", "Số ngày chưa chốt được do Dohana/API tạm lỗi.")
         )
@@ -1014,6 +1026,7 @@ def _render_week_video_audit(data):
                 "Đóng dư": "",
                 "Hoàn thiếu SL": ret_missing_n,
                 "Hoàn thiếu": "",
+                "Hoàn trạng thái": str(day.get("return_video_status") or ""),
                 "Hoàn dư SL": ret_extra_n,
                 "Hoàn dư": "",
                 "Khớp lộn mục": "",
@@ -1111,8 +1124,8 @@ td.audit-target:target {
       <th style="position:sticky;top:31px;z-index:3;padding:6px 8px;border:1px solid #cbd5e1;background:#dbeafe">Dư SL</th>
       <th style="position:sticky;top:31px;z-index:3;padding:6px 8px;border:1px solid #cbd5e1;background:#dbeafe;min-width:190px">Dư mã</th>
       <th style="position:sticky;top:31px;z-index:3;padding:6px 8px;border:1px solid #cbd5e1;background:#dcfce7;min-width:190px">↪ Đã đẩy vào</th>
-      <th style="position:sticky;top:31px;z-index:3;padding:6px 8px;border:1px solid #cbd5e1;background:#ffedd5">Thiếu SL</th>
-      <th style="position:sticky;top:31px;z-index:3;padding:6px 8px;border:1px solid #cbd5e1;background:#ffedd5;min-width:190px">Thiếu mã</th>
+      <th style="position:sticky;top:31px;z-index:3;padding:6px 8px;border:1px solid #cbd5e1;background:#ffedd5">Chưa khớp SL</th>
+      <th style="position:sticky;top:31px;z-index:3;padding:6px 8px;border:1px solid #cbd5e1;background:#ffedd5;min-width:190px">Chưa khớp mã</th>
       <th style="position:sticky;top:31px;z-index:3;padding:6px 8px;border:1px solid #cbd5e1;background:#ffedd5">Dư SL</th>
       <th style="position:sticky;top:31px;z-index:3;padding:6px 8px;border:1px solid #cbd5e1;background:#ffedd5;min-width:190px">Dư mã</th>
       <th style="position:sticky;top:31px;z-index:3;padding:6px 8px;border:1px solid #cbd5e1;background:#dcfce7;min-width:190px">↪ Đã đẩy vào</th>
@@ -2990,8 +3003,12 @@ def load_week_summary():
                 parts = []
                 if rem_pkg_missing:
                     parts.append(f"Thiếu video đóng: {rem_pkg_missing}")
+                _return_status = str((day or {}).get("return_video_status") or "")
                 if rem_return_missing:
-                    parts.append(f"Thiếu video khui hoàn: {rem_return_missing}")
+                    if _return_status == "pending_sync":
+                        parts.append(f"Dohana chưa đồng bộ: {rem_return_missing}")
+                    else:
+                        parts.append(f"Thiếu video khui hoàn: {rem_return_missing}")
                 if rem_pkg_extra:
                     parts.append(f"Dư video đóng: {rem_pkg_extra}")
                 if rem_inbound_extra:
@@ -3062,6 +3079,7 @@ def load_week_summary():
                     "Đã đẩy vào Đóng": _short_codes(_moved_into_package),
                     "Hoàn thiếu SL": len(rem_return_missing_rows),
                     "Hoàn thiếu": _short_codes(_disp(rem_return_missing_rows, "return")),
+                    "Hoàn trạng thái": _return_status,
                     "Hoàn dư SL": len(rem_inbound_extra_rows),
                     "Hoàn dư": _short_codes(_disp(rem_inbound_extra_rows, "return")),
                     "Hiển thị Hoàn thiếu SL": len(raw_return_missing_rows),
@@ -3710,6 +3728,11 @@ def load_week_summary():
                 # Ngày cũ vẫn đối chiếu bằng MÃ video đã lưu. File Dohana bị xóa không làm mất mã;
                 # chỉ khi A4 không tìm thấy cả mã lưu thì mới kết luận thật sự chưa có video.
                 day["return_blank_video_count"] = len(_return_missing)
+                _return_fresh = _day_video_age(day)[1]
+                day["return_video_status"] = (
+                    "pending_sync" if (_return_missing and (_return_fresh or not _inbound_live_ok))
+                    else ("missing" if _return_missing else "matched")
+                )
                 day["return_blank_sapo_plain_count"] = len(_inbound_extra)
                 day["return_blank_sapo_tagged_count"] = len(_tagged_unmatched_by_day.get(iso, set()))
                 day["return_blank_sapo_tag_notes"] = _tagstr(_tagged_unmatched_notes_by_day.get(iso))
