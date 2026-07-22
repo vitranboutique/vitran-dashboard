@@ -2826,8 +2826,10 @@ def load_week_summary():
                 raw_return_missing_rows = list(return_missing)
                 raw_inbound_extra_rows = _limit_rows(inbound_extra, limits.get("inbound_extra"))
                 _age = _audit_age(iso)
-                p1 = _cross_match_pairs(raw_pkg_missing_rows, raw_inbound_extra_rows, "package", "return")
-                p2 = _cross_match_pairs(raw_return_missing_rows, raw_pkg_extra_rows, "return", "package")
+                # Bảng tổng hợp KHÔNG có quyền tự khớp/bù trừ. Chỉ lần chuyển đã được
+                # người dùng duyệt trên A4 (đã áp vào dữ liệu effective) mới làm thay đổi Chốt.
+                p1 = []
+                p2 = []
                 match_txt = _short_codes([f"{a} ↔ {b}" for a, b in (p1 + p2)])
                 p1_missing = {a for a, _ in p1}
                 p1_extra = {b for _, b in p1}
