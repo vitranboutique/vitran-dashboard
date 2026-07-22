@@ -828,15 +828,14 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
     # ── KẾT LUẬN sai lệch (Phần 2) + lý do có thể ──
     _concl = []
     if _cm > 0:
-        _concl.append(f"<b>{_cm}</b> đơn hoàn THIẾU clip khui hàng")
+        _concl.append(f"🎥 <b>{_cm}</b> đơn hoàn thiếu video")
     if clip_on and unmatched_plain:
-        _concl.append(f"<b>{len(unmatched_plain)}</b> clip khui hàng KHÔNG tag chưa có nhập kho Sapo")
+        _concl.append(f"📥 <b>{len(unmatched_plain)}</b> video chưa nhập Sapo")
     if _sp_thieu > 0:
-        _concl.append(f"<b>{_sp_thieu}</b> SP khách trả THIẾU")
+        _concl.append(f"📦 <b>{_sp_thieu}</b> SP khách trả thiếu")
     if _tag_imported > 0:
-        _concl.append(f"<b>{_tag_imported}</b> đơn ĐÃ nhập kho nhưng clip có tag hư hỏng/thiếu/sai hàng/khách tráo")
-    _hold_note = (f'<div class="wb" style="margin-top:3px;color:#166534">✅ <b>{_tag_hold}</b> clip có tag hư hỏng/thiếu/sai hàng/khách tráo: '
-                  'không nhập kho Sapo là đúng quy trình, giữ xử lý tranh chấp/khiếu nại sàn.</div>'
+        _concl.append(f"🏷️ <b>{_tag_imported}</b> đơn đã nhập Sapo nhưng có tag lỗi")
+    _hold_note = (f'<div class="wb" style="margin-top:3px;color:#166534">🏷️ <b>{_tag_hold}</b> video có tag — giữ xử lý, không nhập Sapo</div>'
                   if _tag_hold else '')
     _moves = rep.get("video_move_summary") or {}
     _move_lines = []
@@ -857,11 +856,8 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
     if _concl:
         concl_box = (
             '<div class="warn" style="background:#fffbeb;border:1px solid #f59e0b;margin:.3em 0 .5em">'
-            '<div class="wh" style="color:#b45309">📌 KẾT LUẬN — SAI LỆCH cần kiểm tra:</div>'
-            '<div class="wb">• ' + '<br>• '.join(_concl) + '</div>'
-            '<div class="wb" style="margin-top:3px;color:#78350f">💡 Lý do có thể: '
-            '<b>sai mã lúc quay</b> · <b>quay nhầm mục</b> (khui hàng ↔ đóng hàng) · '
-            '<b>quay trùng</b> · <b>khách trả thiếu SP</b> · <b>chưa bấm nhập kho trên Sapo</b>.</div>'
+            '<div class="wh" style="color:#b45309">📌 CẦN KIỂM TRA</div>'
+            '<div class="wb">' + '<br>'.join(_concl) + '</div>'
             + _move_note + _hold_note +
             '</div>')
     else:
