@@ -3543,6 +3543,7 @@ def load_week_summary():
                 }
                 if _code and _code in _missing_return_codes:
                     _filtered_extra_package_suggestions.append(dict(_suggestion))
+            data["extra_package_video_candidates"] = [dict(x) for x in (_extra_package_suggestions or [])]
             data["extra_package_video_suggestions"] = _filtered_extra_package_suggestions
 
             def _tagstr(cnt):
@@ -8172,9 +8173,14 @@ def _render_daily():
             x for x in (_match_summary.get("extra_package_video_suggestions") or [])
             if str(x.get("date") or "") == _match_day
         ]
+        _raw_extra_package_candidates = [
+            x for x in (_match_summary.get("extra_package_video_candidates") or [])
+            if str(x.get("date") or "") == _match_day
+        ]
     except Exception:
         _match_suggestions = []
         _extra_package_suggestions = []
+        _raw_extra_package_candidates = []
 
     def _clear_a4_video_caches():
         # Chỉ làm mới dữ liệu video; KHÔNG xóa load_daily_report vì Sapo không đổi
@@ -8286,6 +8292,11 @@ def _render_daily():
                             st.rerun()
                         else:
                             st.warning("Không tìm thấy clip hoặc tag không thay đổi.")
+    elif _raw_extra_package_candidates:
+        st.info(
+            f"ℹ️ Ngày {_pick_date.strftime('%d/%m')}: có {len(_raw_extra_package_candidates)} mã Đóng hàng dư, "
+            "nhưng 0 mã trùng đơn hoàn đang thiếu video — không có mã để chuyển."
+        )
 
     # ---- Xem báo cáo NGÀY CŨ (query lại Sapo + Dohana theo ngày, số đã cố định) ----
     if not _is_today:
