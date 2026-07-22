@@ -3,6 +3,7 @@ daily_report.py — Render BÁO CÁO VẬN HÀNH CUỐI NGÀY (khổ A4) từ ge
 Trả 1 chuỗi HTML (nhúng bằng components.html) gồm nút In A4 + báo cáo bố cục chuyên nghiệp.
 """
 import json
+import re
 from collections import OrderedDict
 from html import escape as _e
 
