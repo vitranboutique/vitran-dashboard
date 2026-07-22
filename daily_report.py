@@ -429,7 +429,7 @@ def _return_sort_key(row):
 
 def _recon_rows(rows, start=0, clip_on=True):
     """Đối chiếu mỗi sự kiện hoàn, nhóm ĐVVC trước rồi đến loại trả hàng."""
-    def _compact_codes(raw, limit=2):
+    def _compact_codes(raw):
         values = []
         for value in re.split(r"\s*[·,;\n]+\s*", str(raw or "")):
             value = value.strip()
@@ -437,10 +437,12 @@ def _recon_rows(rows, start=0, clip_on=True):
                 values.append(value)
         if not values:
             return '<span style="color:#cbd5e1">—</span>'
-        shown = " · ".join(values[:limit])
-        more = len(values) - limit
-        suffix = f' <b style="color:#2563eb">(+{more} mã)</b>' if more > 0 else ""
-        return f'<span class="mono-code" title="{_e(" · ".join(values))}">{_e(shown)}</span>{suffix}'
+        items = "".join(
+            f'<span class="mono-code" style="display:block;white-space:nowrap">{_e(value)}</span>'
+            for value in values
+        )
+        return (f'<div title="{_e(" · ".join(values))}" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));'
+                f'column-gap:7px;row-gap:1px;font-size:.76em;line-height:1.2">{items}</div>')
 
     def _compact_text(raw, max_chars=105):
         text = str(raw or "—").strip() or "—"
