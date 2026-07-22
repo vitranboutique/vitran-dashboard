@@ -19,6 +19,7 @@ import streamlit as st
 
 _API_ROOT = "https://openapi.dhn.io.vn/dpm/v1"
 _BASE = f"{_API_ROOT}/partner/v2/video/search"
+_LEGACY_BASE = f"{_API_ROOT}/partner/video/search"
 _TAG_CACHE = {"ts": 0.0, "map": {}}
 
 
@@ -314,6 +315,7 @@ def _fetch_videos(typ: str, cutoff_date, max_pages: int):
         return None
     headers = {"x-api-key": key}
     vids = []
+    first_page_failed = False
     cursor = None
     seen_cursors = set()
     # p=custom tránh giới hạn mặc định 30 ngày khi app cần đồng bộ 35 ngày.
@@ -345,7 +347,8 @@ def _fetch_videos(typ: str, cutoff_date, max_pages: int):
             break                        # thành công / lỗi khác → thoát vòng thử lại
         if rows is None:                 # vẫn 429 sau 5 lần / lỗi mạng
             if page_no == 0:             # trang ĐẦU fail → Dohana KHÔNG sẵn sàng → trả None
-                return None              # (báo 'tạm không lấy được', KHÔNG nhầm '0 video')
+                first_page_failed = True
+                break
             break                        # trang sau: giữ video đã lấy
         if not rows:
             break
@@ -358,6 +361,32 @@ def _fetch_videos(typ: str, cutoff_date, max_pages: int):
             break
         seen_cursors.add(next_cursor)
         cursor = next_cursor
+    # Giai đoạn Dohana chuyển API (đến 17/08/2026): cursor v2 có lúc đồng bộ chậm hơn
+    # danh sách trên web. Đọc bù trang mới nhất bằng Legacy TRÊN DOMAIN MỚI rồi gộp,
+    # để clip vừa quay không bị báo thiếu oan. Legacy lỗi/bị khóa thì v2 vẫn hoạt động.
+    legacy_rows = None
+    for _try in range(2):
+        _throttle()
+        try:
+            r = requests.get(
+                _LEGACY_BASE,
+                params={"page": 0, "limit": 100, "type": typ, "p": "custom",
+                        "from": from_iso, "to": to_iso},
+                headers=headers,
+                timeout=20,
+            )
+        except Exception:
+            break
+        if r.status_code == 429:
+            _note_rate_limit(r.headers.get("Retry-After") or (2 + _try * 2))
+            continue
+        if r.status_code == 200:
+            legacy_rows = (r.json() or {}).get("data", [])
+        break
+    if legacy_rows is not None:
+        vids += legacy_rows
+    elif first_page_failed:
+        return None                      # cả v2 lẫn Legacy đều lỗi → dùng kho dự phòng
     return list({v.get("id"): v for v in vids}.values())
 
 
