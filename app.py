@@ -3730,7 +3730,13 @@ def load_week_summary():
                 day["return_blank_video_count"] = len(_return_missing)
                 # Không gọi helper hiển thị của _week_table_html tại đây; hàm đó không nằm
                 # trong scope tải dữ liệu và sẽ làm toàn bộ khối video rơi về 0.
-                _return_fresh = str(iso or "") == _today_iso_vn()
+                try:
+                    _return_age_days = (
+                        date.fromisoformat(_today_iso_vn()) - date.fromisoformat(str(iso or ""))
+                    ).days
+                    _return_fresh = 0 <= _return_age_days <= 1
+                except Exception:
+                    _return_fresh = bool(day.get("is_today"))
                 day["return_video_status"] = (
                     # Phải đồng nhất đúng với badge ở ô Video hoàn: chỉ ngày đang đồng bộ
                     # mới là pending_sync. API lỗi chung không được biến lỗi ngày cũ thành "chưa đồng bộ".
