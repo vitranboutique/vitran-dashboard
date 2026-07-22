@@ -470,7 +470,7 @@ def _week_table_html(data):
     _hoan = ("hoan_don", "hoan_sp", "vid_hoan", "thieu", "tag_hoan")                            # HOÀN → CAM
     _redkeys = ("huy_sau", "thieu")   # sau soạn (cần lấy lại) > 0 → tô đỏ. Trước soạn = khách hủy sớm, thường.
     _numkeys = ("soan_sp", "soan", "vid_dong", "huy_truoc", "huy_sau", "shipper_nhan", "giao_khach",
-                "hoan_don", "hoan_sp", "vid_hoan", "thieu")
+                "hoan_don", "hoan_kien", "hoan_sp", "vid_hoan", "thieu")
 
     def _bg(k, kind):                       # kind: head | cell | tot
         if k in _dong:
@@ -646,6 +646,19 @@ def _week_table_html(data):
                     "⚠", "#b91c1c", "#fee2e2", f"TRỄ {_delay_days} NGÀY", _delay_count,
                     f"{_delay_count} phiếu nhập kho trễ {_delay_days} ngày so với lúc quay video.")
         return out
+
+    def _return_parcel_badge(row):
+        """Cho biết bao nhiêu kiện vật lý chứa các mã trả SAPO của ngày."""
+        if not isinstance(row, dict):
+            return ""
+        return_codes = _video_audit_num(row.get("hoan_don"))
+        parcels = _video_audit_num(row.get("hoan_kien"))
+        if parcels <= 0 or parcels == return_codes:
+            return ""
+        return _gap_badge(
+            "📦", "#1e40af", "#dbeafe", "kiện hoàn", parcels,
+            f"{return_codes} mã trả SAPO được sàn gom trong {parcels} vận đơn/kiện hoàn.",
+        )
 
     def _total_gap_badges(rows):
         """Cộng lệch từng ngày; không để ngày dư và ngày thiếu triệt tiêu nhau."""
@@ -834,7 +847,7 @@ def _week_table_html(data):
                 else:
                     bg, _chotc = "#dcfce7", "color:#166534;font-weight:700;"
             cells += (f'<td style="text-align:{al};padding:5px 8px;{_bd}{_lsep(k)}{wtop}{mw}background:{bg};{wt}{_red(k, v)}{_tagclr}{_chotc}">'
-                      f'{v}{_return_sapo_reconcile_badge(r) if k == "hoan_don" else ""}'
+                      f'{v}{(_return_parcel_badge(r) + _return_sapo_reconcile_badge(r)) if k == "hoan_don" else ""}'
                       f'{_nay}{_badges.get(k, "")}</td>')
         body += f'<tr>{cells}</tr>'
 
@@ -1402,16 +1415,23 @@ def _enrich_daily(rep, dvr, inb):
                         _u["tag_id"], _u["tag"] = _hit
     except Exception:
         pass
-    # GỘP các dòng của CÙNG PHIẾU/CÙNG KIỆN. Không dùng riêng mã đơn + VĐ gửi đi:
-    # một đơn có thể phát sinh nhiều phiếu hoàn, mỗi phiếu dùng ĐVVC hoàn khác nhau.
+    # Đếm mã trả trước khi gộp kiện: một vận đơn hoàn có thể chứa nhiều mã trả SAPO.
+    _raw_return_details = list(nk.get("detail", []))
+    nk["so_phieu"] = len({
+        str(_d.get("return_code") or _d.get("track_return") or
+            _d.get("tracking") or _d.get("order_code") or "").strip()
+        for _d in _raw_return_details
+        if (_d.get("return_code") or _d.get("track_return") or
+            _d.get("tracking") or _d.get("order_code"))
+    })
+    # GỘP theo KIỆN VẬT LÝ: cùng vận đơn hoàn chỉ cần một video khui, dù chứa nhiều mã trả.
     _kien, _korder = {}, []
-    for _d in nk.get("detail", []):
-        _return_identity = str(
-            _d.get("return_code") or _d.get("track_return") or
+    for _d in _raw_return_details:
+        _parcel_identity = str(
+            _d.get("track_return") or _d.get("return_code") or
             _d.get("tracking") or _d.get("order_code") or ""
         ).strip()
-        # Một đơn gốc có thể có nhiều phiếu trả. Mã trả là khóa chính, mã đơn chỉ là thông tin phụ.
-        _kk = (_return_identity,)
+        _kk = (_parcel_identity,)
         _g = _kien.get(_kk)
         if _g is None:
             _g = dict(_d)
@@ -1439,14 +1459,7 @@ def _enrich_daily(rep, dvr, inb):
         if _unique_skus:
             _g["sku"] = " · ".join(_unique_skus)
     nk["detail"] = _merged
-    # HOÀN NHẬP KHO đếm theo MÃ TRẢ distinct. Dữ liệu cũ thiếu mã trả mới fallback VĐ hoàn/mã đơn.
-    nk["so_phieu"] = len({
-        str(_d.get("return_code") or _d.get("track_return") or
-            _d.get("tracking") or _d.get("order_code") or "").strip()
-        for _d in _merged
-        if (_d.get("return_code") or _d.get("track_return") or
-            _d.get("tracking") or _d.get("order_code"))
-    })
+    nk["so_kien"] = len(_merged)
     if nk.get("clip_available"):
         nk["clip_co"] = sum(1 for _d in _merged if _d.get("clip"))
     # BẢNG ĐỐI CHIẾU: DỰNG LUÔN LUÔN (kể cả khi Dohana lỗi/429) → đơn trả hàng KHÔNG biến mất;
@@ -3353,11 +3366,12 @@ def load_week_summary():
                     for row in rows or []:
                         if not isinstance(row, dict):
                             continue
-                        _parcel_key = (
-                            str(row.get("order_code") or "").strip(),
-                            str(row.get("track_return") or row.get("return_code") or "").strip(),
-                            str(row.get("tracking") or "").strip(),
-                        )
+                        # Vận đơn hoàn là khóa kiện vật lý. Nhiều mã trả/mã đơn cùng vận đơn
+                        # được gộp thành một kiện và chỉ cần một clip khui.
+                        _parcel_key = (str(
+                            row.get("track_return") or row.get("return_code") or
+                            row.get("tracking") or row.get("order_code") or ""
+                        ).strip(),)
                         _return_groups_by_day[str(dd)][_parcel_key].append(row)
                 # Compatibility fallback for a cached response created before structured
                 # A4 rows were added. A fresh cache uses the branch above.
@@ -3369,6 +3383,9 @@ def load_week_summary():
                                     "label": str(label), "codes": _label_codes(label),
                                     "order_code": _label_order_key(label),
                                 })
+                _return_parcel_count_by_day = {
+                    str(dd): len(groups) for dd, groups in _return_groups_by_day.items()
+                }
 
                 _return_label_by_code = {}
                 _exact_used_by_day = _Dd(set)
@@ -3634,6 +3651,7 @@ def load_week_summary():
             )
             for day in data.get("days", []):
                 iso = day.get("iso")
+                day["hoan_kien"] = int(_return_parcel_count_by_day.get(str(iso or ""), 0))
                 day["video_a4_pending_pkg"] = int(_pending_pkg_by_day.get(str(iso or ""), 0))
                 day["video_a4_pending_ret"] = int(_pending_ret_by_day.get(str(iso or ""), 0))
                 _day_overrides = _type_overrides_by_day.get(str(iso or ""), []) or []
@@ -3736,6 +3754,10 @@ def load_week_summary():
                 m["vid_hoan_raw"] = _msum(vhoan)
                 m["vid_hoan_matched"] = _msum(_matched_vhoan)
                 m["vid_hoan"] = m["vid_hoan_matched"]
+                m["hoan_kien"] = sum(
+                    int(count or 0) for dd, count in _return_parcel_count_by_day.items()
+                    if str(dd)[:7] == _mpref
+                )
                 m["tag_dong"], m["tag_hoan"] = _mtag(tdong), _mtag(thoan)
             # Keep the detailed audit table aligned with A4 when today's package
             # video count is overridden by A4's matched/missing-code recon.

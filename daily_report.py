@@ -718,9 +718,10 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
     _shop_orders = OrderedDict()
     for _d in nk_detail:
         _shop = str(_d.get("gian_hang") or "Chưa xác định")
-        _return_identity = str(_d.get("return_code") or _d.get("track_return") or
-                               _d.get("order_code") or id(_d))
-        _shop_orders.setdefault(_shop, set()).add(_return_identity)
+        _return_codes = [x.strip() for x in re.split(r"\s*[·,;\n]+\s*", str(_d.get("return_code") or "")) if x.strip()]
+        if not _return_codes:
+            _return_codes = [str(_d.get("track_return") or _d.get("order_code") or id(_d))]
+        _shop_orders.setdefault(_shop, set()).update(_return_codes)
     _shop_counts = sorted(
         ((_shop, len(_orders)) for _shop, _orders in _shop_orders.items()),
         key=lambda item: (-item[1], item[0].lower()),
@@ -808,8 +809,9 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
     _sp_sub = (f"Đã nhập kho {_sp_nhap}"
                + (f' · <span style="color:#dc2626;font-weight:800">Thiếu {_sp_thieu}</span>' if _sp_thieu else ""))
     r_kpis_html = (
-        f'<div class="kpi"><div class="l">📥 Hoàn nhập kho hôm nay</div>'
+        f'<div class="kpi"><div class="l">📥 Mã trả nhập kho hôm nay</div>'
         f'<div class="v">{nk.get("so_phieu", 0)}</div>'
+        f'<div class="l" style="margin-top:3px;font-weight:700">{nk.get("so_kien", len(nk_detail))} kiện hoàn</div>'
         f'<div class="l" style="margin-top:3px;font-weight:700">{nk.get("so_sp", 0)} SP'
         f'{(" · " + nk_src) if nk_src else ""}</div></div>'
         f'<div class="kpi"><div class="l">📦 Tổng SL SP hoàn</div>'
