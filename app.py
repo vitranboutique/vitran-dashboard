@@ -1298,11 +1298,31 @@ def _enrich_daily(rep, dvr, inb):
         nk["clip_total"] = inb.get("total", 0)
         # Mã đã được duyệt chuyển loại trên A4 là ĐÃ XỬ LÝ. Nếu chưa khớp được
         # một phiếu SAPO cụ thể, không đưa nó trở lại cảnh báo đỏ "chưa nhập SAPO".
-        _approved_moved = {
-            c for c in inb.get("today_codes", set())
-            if bool((meta.get(c) or {}).get("type_overridden"))
-        }
-        nk["clip_unmatched"] = sorted(inb.get("today_codes", set()) - consumed - _approved_moved)
+        _rep_iso = ""
+        try:
+            _dm = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})$", str(rep.get("date") or "").strip())
+            if _dm:
+                _rep_iso = f"{int(_dm.group(3)):04d}-{int(_dm.group(2)):02d}-{int(_dm.group(1)):02d}"
+        except Exception:
+            _rep_iso = ""
+        _approved_norm = set()
+        try:
+            _approved_norm = {
+                _ascii_code(x.get("code"))
+                for x in picklog.read_video_type_overrides()
+                if str(x.get("date") or "") == _rep_iso
+                and str(x.get("source_type") or "") == "package"
+                and str(x.get("type") or "") == "inbound"
+                and _ascii_code(x.get("code"))
+            }
+        except Exception:
+            _approved_norm = set()
+        _unmatched_raw = inb.get("today_codes", set()) - consumed
+        nk["clip_unmatched"] = sorted(
+            c for c in _unmatched_raw
+            if not bool((meta.get(c) or {}).get("type_overridden"))
+            and _ascii_code(c) not in _approved_norm
+        )
         # Kèm TAG (vd Khách tráo!) + thời lượng/giờ cho clip dư — đơn có tag thường bị giữ lại
         # xử lý tranh chấp nên KHÔNG nhập kho (đúng quy trình) → cần hiện rõ tag để theo dõi.
         nk["clip_unmatched_detail"] = [
