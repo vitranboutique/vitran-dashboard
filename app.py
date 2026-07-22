@@ -3268,7 +3268,8 @@ def load_week_summary():
                         "date": str(_dd), "code": str(_code),
                         "from_type": "package", "to_type": "inbound",
                     })
-            data["extra_package_video_suggestions"] = _extra_package_suggestions
+            # Chưa đưa lên A4 ở đây. Phải chờ đối chiếu đơn hoàn bên dưới để chỉ giữ
+            # mã Đóng dư đồng thời trùng đúng một đơn hoàn đang thiếu video.
 
             # Vid hoàn phải là clip KHỚP đơn hoàn, không phải tổng clip inbound thô.
             # Nếu đếm thô, video quay dư/sai mã/ngày có thể che mất các đơn thật sự chưa quay.
@@ -3524,6 +3525,25 @@ def load_week_summary():
                 _matched_vhoan = {}
                 _return_missing_by_day = {}
                 _inbound_extra_by_day = {}
+
+            # Gợi ý chuyển Đóng hàng → Khui hoàn chỉ khi thỏa ĐỒNG THỜI:
+            #   (1) mã đang dư thật ở video Đóng hàng;
+            #   (2) cùng ngày có đơn nhập hàng hoàn thiếu video chứa chính mã đó.
+            # Các mã Đóng dư không trùng đơn hoàn thiếu vẫn nằm trong báo cáo dư, nhưng
+            # tuyệt đối không hiện nút chuyển để tránh nhân viên chuyển nhầm hàng loạt.
+            _filtered_extra_package_suggestions = []
+            for _suggestion in (_extra_package_suggestions or []):
+                _dd = str(_suggestion.get("date") or "")
+                _code = _ascii_code(_suggestion.get("code"))
+                _missing_return_codes = {
+                    _ascii_code(_candidate)
+                    for _label in (_return_missing_by_day.get(_dd, []) or [])
+                    for _candidate in _codes_from_item(_label)
+                    if _ascii_code(_candidate)
+                }
+                if _code and _code in _missing_return_codes:
+                    _filtered_extra_package_suggestions.append(dict(_suggestion))
+            data["extra_package_video_suggestions"] = _filtered_extra_package_suggestions
 
             def _tagstr(cnt):
                 return " · ".join(f"{n} ×{c}" for n, c in cnt.items()) if cnt else ""
