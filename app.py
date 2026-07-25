@@ -4609,8 +4609,9 @@ def _render_detail_search_table(rows):
             colors[(r.get("parsed") or {}).get("colorCode") or ""].append(r)
         for ci, (_color, sizes) in enumerate(colors.items()):
             for si, r in enumerate(sizes):
+                _grp_start = (ci == 0 and si == 0)   # dòng ĐẦU của 1 nhóm mã (vd CVBC)
                 border = ""
-                if si == 0 and ci == 0 and pi > 0:
+                if _grp_start and pi > 0:
                     border = "border-top:3px solid #475569;"
                 elif si == 0 and ci > 0:
                     border = "border-top:2px dashed #94a3b8;"
@@ -4635,7 +4636,8 @@ def _render_detail_search_table(rows):
                 key = _esc((str(r.get("sku") or "") + " " + str((r.get("parsed") or {}).get("productCode") or "")
                             + " " + str(r.get("productName") or "")).upper())
                 tds = "".join(f'<td data-s="{_esc(str(sv))}" style="padding:3px 8px;border-bottom:1px solid rgba(148,163,184,.16);white-space:nowrap;{border}{stl}">{_esc(str(v))}</td>' for v, stl, sv in vals)
-                body.append(f'<tr data-i="{_ri}" data-k="{key}">{tds}</tr>')
+                _cls = ' class="grp"' if _grp_start else ''
+                body.append(f'<tr data-i="{_ri}" data-g="{_esc(str(_code))}"{_cls} data-k="{key}">{tds}</tr>')
                 _ri += 1
     thead = "".join(
         f'<th onclick="skuSort({i},this)" title="Bấm để sắp xếp tăng/giảm dần"'
@@ -4644,7 +4646,7 @@ def _render_detail_search_table(rows):
         for i, h in enumerate(headers))
     _font = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif"
     html = (f'<div style="font-family:{_font};color:#1e293b">'
-            '<style>#skutbl.sorted td{border-top:none !important}#skutbl th:hover{background:#3f4d63}</style>'
+            '<style>#skutbl.sorted td{border-top:none !important}#skutbl.sorted tr.grp>td{border-top:2px solid #64748b !important}#skutbl th:hover{background:#3f4d63}</style>'
             '<div style="display:flex;gap:8px;align-items:center;margin:0 0 6px">'
             '<input id="q" placeholder="Gõ SKU / mã… lọc ngay khi gõ" oninput="flt()" '
             f'style="flex:1;box-sizing:border-box;padding:9px 12px;font-size:15px;font-family:{_font};border:1px solid #cbd5e1;border-radius:6px">'
@@ -4661,10 +4663,16 @@ def _render_detail_search_table(rows):
             'function skuSort(i,th){var tb=document.getElementById("tb");'
             'var rs=Array.prototype.slice.call(tb.querySelectorAll("tr"));'
             '_sd=(_sc===i&&_sd===1)?-1:1;_sc=i;'
-            'rs.sort(function(a,b){var x=a.children[i].getAttribute("data-s"),y=b.children[i].getAttribute("data-s");'
-            'var nx=parseFloat(x),ny=parseFloat(y),num=!isNaN(nx)&&!isNaN(ny)&&/^-?[0-9.]+$/.test(x)&&/^-?[0-9.]+$/.test(y);'
-            'if(num)return (nx-ny)*_sd;return (x<y?-1:x>y?1:0)*_sd;});'
-            'rs.forEach(function(r){tb.appendChild(r);});'
+            # JS: gom theo NHÓM MÃ (data-g), tính TỔNG cột của cả nhóm, rồi xếp CÁC NHÓM theo tổng
+            'var gs=[],gm={};'
+            'rs.forEach(function(r){var g=r.getAttribute("data-g");'
+            'if(!(g in gm)){gm[g]={k:g,rows:[],sum:0,num:true};gs.push(gm[g]);}'
+            'var s=r.children[i].getAttribute("data-s"),nx=parseFloat(s);'
+            'if(isNaN(nx)||!/^-?[0-9.]+$/.test(s))gm[g].num=false;else gm[g].sum+=nx;'
+            'gm[g].rows.push(r);});'
+            'var numeric=gs.every(function(g){return g.num;});'
+            'gs.sort(function(a,b){if(numeric)return (a.sum-b.sum)*_sd;return (a.k<b.k?-1:a.k>b.k?1:0)*_sd;});'
+            'gs.forEach(function(g){g.rows.forEach(function(r){tb.appendChild(r);});});'
             'document.getElementById("skutbl").classList.add("sorted");'
             'document.querySelectorAll("#skutbl .ar").forEach(function(s){s.textContent="";});'
             'th.querySelector(".ar").textContent=_sd===1?" ▲":" ▼";}'
