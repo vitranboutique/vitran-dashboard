@@ -4589,7 +4589,20 @@ def _render_detail_search_table(rows):
     for r in rows:
         prods.setdefault((r.get("parsed") or {}).get("productCode") or r.get("sku"), []).append(r)
     headers = ["SKU", "Chất liệu", "Size", "Tồn đầu", "Nhập NCC", "Nhập hoàn", "Bán kỳ", "Tồn cuối", "Đủ bán", "Cần SX"]
+    _size_ord = {"XS": 0, "S": 1, "M": 2, "L": 3, "XL": 4, "XXL": 5, "2XL": 6, "3XL": 7}
+
+    def _covnum(r):
+        c = _sku_cover(r)
+        try:
+            c = float(c)
+        except (TypeError, ValueError):
+            return -1.0
+        if c != c or c in (float("inf"), float("-inf")):
+            return 99999.0
+        return c
+
     body = []
+    _ri = 0
     for pi, (_code, items) in enumerate(prods.items()):
         colors = defaultdict(list)
         for r in items:
@@ -4603,34 +4616,65 @@ def _render_detail_search_table(rows):
                     border = "border-top:2px dashed #94a3b8;"
                 cov = _cover_text(r.get("endingStock"), r.get("avgMonthlyOut"), _sku_cover(r))
                 need = int(round(float(r.get("needQty") or 0)))
+                _sku = r.get("sku") or ""
+                _fam = r.get("family") or ""
+                _sz = (r.get("parsed") or {}).get("size") or "-"
+                # (giá trị hiển thị, style, GIÁ TRỊ SẮP XẾP) — sort số theo trị thật, size theo thứ tự S<M<L<XL
                 vals = [
-                    (r.get("sku") or "", "font-weight:600;"),
-                    (r.get("family") or "", ""),
-                    ((r.get("parsed") or {}).get("size") or "-", ""),
-                    (f"{int(round(r.get('openingStock') or 0)):,}", ""),
-                    (f"{int(round(r.get('inNCC') or 0)):,}", ""),
-                    (f"{int(round(r.get('inReturn') or 0)):,}", ""),
-                    (f"{int(round(r.get('totalOut') or 0)):,}", ""),
-                    (f"{int(round(r.get('endingStock') or 0)):,}", ""),
-                    (cov, _style_cover(cov)),
-                    (str(need), _style_need(need)),
+                    (_sku, "font-weight:600;", _sku.upper()),
+                    (_fam, "", _fam.upper()),
+                    (_sz, "", _size_ord.get(str(_sz).upper(), 98)),
+                    (f"{int(round(r.get('openingStock') or 0)):,}", "", int(round(r.get('openingStock') or 0))),
+                    (f"{int(round(r.get('inNCC') or 0)):,}", "", int(round(r.get('inNCC') or 0))),
+                    (f"{int(round(r.get('inReturn') or 0)):,}", "", int(round(r.get('inReturn') or 0))),
+                    (f"{int(round(r.get('totalOut') or 0)):,}", "", int(round(r.get('totalOut') or 0))),
+                    (f"{int(round(r.get('endingStock') or 0)):,}", "", int(round(r.get('endingStock') or 0))),
+                    (cov, _style_cover(cov), _covnum(r)),
+                    (str(need), _style_need(need), need),
                 ]
                 key = _esc((str(r.get("sku") or "") + " " + str((r.get("parsed") or {}).get("productCode") or "")
                             + " " + str(r.get("productName") or "")).upper())
-                tds = "".join(f'<td style="padding:3px 8px;border-bottom:1px solid rgba(148,163,184,.16);white-space:nowrap;{border}{stl}">{_esc(str(v))}</td>' for v, stl in vals)
-                body.append(f'<tr data-k="{key}">{tds}</tr>')
-    thead = "".join(f'<th style="padding:6px 8px;text-align:left;position:sticky;top:0;background:#334155;color:#fff;white-space:nowrap;z-index:1">{_esc(h)}</th>' for h in headers)
+                tds = "".join(f'<td data-s="{_esc(str(sv))}" style="padding:3px 8px;border-bottom:1px solid rgba(148,163,184,.16);white-space:nowrap;{border}{stl}">{_esc(str(v))}</td>' for v, stl, sv in vals)
+                body.append(f'<tr data-i="{_ri}" data-k="{key}">{tds}</tr>')
+                _ri += 1
+    thead = "".join(
+        f'<th onclick="skuSort({i},this)" title="Bấm để sắp xếp tăng/giảm dần"'
+        ' style="padding:6px 8px;text-align:left;position:sticky;top:0;background:#334155;color:#fff;'
+        f'white-space:nowrap;z-index:1;cursor:pointer;user-select:none">{_esc(h)}<span class="ar" style="color:#fbbf24"></span></th>'
+        for i, h in enumerate(headers))
     _font = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif"
     html = (f'<div style="font-family:{_font};color:#1e293b">'
+            '<style>#skutbl.sorted td{border-top:none !important}#skutbl th:hover{background:#3f4d63}</style>'
+            '<div style="display:flex;gap:8px;align-items:center;margin:0 0 6px">'
             '<input id="q" placeholder="Gõ SKU / mã… lọc ngay khi gõ" oninput="flt()" '
-            f'style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:15px;font-family:{_font};border:1px solid #cbd5e1;border-radius:6px;margin:0 0 6px">'
+            f'style="flex:1;box-sizing:border-box;padding:9px 12px;font-size:15px;font-family:{_font};border:1px solid #cbd5e1;border-radius:6px">'
+            '<button onclick="skuReset()" title="Trả về thứ tự nhóm theo mã SKU" '
+            'style="padding:9px 12px;font-size:13px;border:1px solid #cbd5e1;border-radius:6px;background:#f1f5f9;cursor:pointer;white-space:nowrap">↺ Nhóm lại</button></div>'
             '<div id="cnt" style="font-size:.8rem;color:#64748b;margin-bottom:4px"></div>'
-            '<div style="overflow:auto;max-height:470px"><table style="border-collapse:collapse;width:100%;font-size:.84rem">'
+            '<div style="overflow:auto;max-height:470px"><table id="skutbl" style="border-collapse:collapse;width:100%;font-size:.84rem">'
             '<thead><tr>' + thead + '</tr></thead><tbody id="tb">' + "".join(body) + '</tbody></table></div>'
             '<script>function flt(){var v=document.getElementById("q").value.toUpperCase().trim();'
             'var rs=document.querySelectorAll("#tb tr");var n=0;'
             'rs.forEach(function(r){var m=(!v||r.getAttribute("data-k").indexOf(v)>-1);r.style.display=m?"":"none";if(m)n++;});'
-            'document.getElementById("cnt").textContent=n+" SKU khớp";}flt();</script></div>')
+            'document.getElementById("cnt").textContent=n+" SKU khớp";}'
+            'var _sc=-1,_sd=1;'
+            'function skuSort(i,th){var tb=document.getElementById("tb");'
+            'var rs=Array.prototype.slice.call(tb.querySelectorAll("tr"));'
+            '_sd=(_sc===i&&_sd===1)?-1:1;_sc=i;'
+            'rs.sort(function(a,b){var x=a.children[i].getAttribute("data-s"),y=b.children[i].getAttribute("data-s");'
+            'var nx=parseFloat(x),ny=parseFloat(y),num=!isNaN(nx)&&!isNaN(ny)&&/^-?[0-9.]+$/.test(x)&&/^-?[0-9.]+$/.test(y);'
+            'if(num)return (nx-ny)*_sd;return (x<y?-1:x>y?1:0)*_sd;});'
+            'rs.forEach(function(r){tb.appendChild(r);});'
+            'document.getElementById("skutbl").classList.add("sorted");'
+            'document.querySelectorAll("#skutbl .ar").forEach(function(s){s.textContent="";});'
+            'th.querySelector(".ar").textContent=_sd===1?" ▲":" ▼";}'
+            'function skuReset(){var tb=document.getElementById("tb");'
+            'var rs=Array.prototype.slice.call(tb.querySelectorAll("tr"));'
+            'rs.sort(function(a,b){return (+a.getAttribute("data-i"))-(+b.getAttribute("data-i"));});'
+            'rs.forEach(function(r){tb.appendChild(r);});'
+            'document.getElementById("skutbl").classList.remove("sorted");_sc=-1;_sd=1;'
+            'document.querySelectorAll("#skutbl .ar").forEach(function(s){s.textContent="";});}'
+            'flt();</script></div>')
     components.html(html, height=560, scrolling=True)
 
 
