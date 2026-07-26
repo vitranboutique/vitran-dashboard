@@ -5489,26 +5489,6 @@ def _outcome_bar(stores):
     return fig
 
 
-def _tax_bars(proj, t3, t10):
-    """2 thanh ngưỡng bo tròn, màu theo trạng thái (xanh an toàn / cam sắp / đỏ vượt)."""
-    bars = ""
-    for label, thr in (("3 tỷ", t3), ("10 tỷ", t10)):
-        pct = (proj / thr * 100) if thr else 0
-        w = max(4, min(100, pct))
-        if proj >= thr:
-            col, tag = "#dc2626", f"⛔ Vượt {pct:.0f}%"
-        elif pct >= 80:
-            col, tag = "#d97706", f"⚠️ Sắp {pct:.0f}%"
-        else:
-            col, tag = "#16a34a", f"✅ {pct:.0f}%"
-        bars += (f'<div style="margin:5px 0"><div style="display:flex;justify-content:space-between;'
-                 f'font-size:11.5px;font-weight:700;color:#475569"><span>Ngưỡng {label}</span>'
-                 f'<span style="color:{col}">{tag}</span></div>'
-                 f'<div style="background:#eef1f6;border-radius:20px;height:9px;overflow:hidden;margin-top:2px">'
-                 f'<div style="width:{w}%;height:100%;background:{col};border-radius:20px"></div></div></div>')
-    return bars
-
-
 def _monthly_line(t):
     _mo = t.get("monthly") or []
     _names = [f"T{m['month']}" for m in _mo]
@@ -5528,42 +5508,60 @@ def _monthly_line(t):
     return fig
 
 
-def _tax_treemap(t, plats, shops):
-    """Sơ đồ THÁP (treemap): Toàn shop → Sàn → Gian hàng. Ô to = doanh thu lớn, màu theo ngưỡng thuế.
-    Giá trị Sàn & Tổng = CỘNG DỒN từ các gian hàng con → tháp luôn khớp (branchvalues='total')."""
+def _tax_ladder(t, plats, shops):
+    """Thang tiến độ phân tầng: TỔNG · từng SÀN · từng GIAN HÀNG.
+    Mỗi thanh: phần ĐẬM = thực tế đã đạt, phần NHẠT kéo dài = dự đoán cả năm; 2 vạch dọc = ngưỡng 3 tỷ & 10 tỷ."""
     def _san(nm):
         return nm.rsplit(" - ", 1)[-1] if " - " in nm else nm
+    t3, t10 = t["t3"] / 1e9, t["t10"] / 1e9
+    # xếp tháp: (cấp, nhãn, thực tế tỷ, dự đoán tỷ) — cấp 0=Tổng, 1=Sàn, 2=Gian hàng
+    rows = [(0, "🏢 TỔNG TOÀN SHOP", t["ytd_rev"] / 1e9, t["proj_year"] / 1e9)]
+    for p in plats:
+        rows.append((1, f'🛒 Sàn {p["name"]}', p["ytd"] / 1e9, p["proj"] / 1e9))
+        for s in shops:
+            if _san(s["name"]) == p["name"]:
+                rows.append((2, "└ " + s["name"].replace(" - ", " · "), s["ytd"] / 1e9, s["proj"] / 1e9))
+    scale = max(t10 * 1.1, max((r[3] for r in rows), default=1) * 1.06, 1)
+    p3, p10 = t3 / scale * 100, t10 / scale * 100
 
-    def _leaf_c(v):  # chỉ GIAN HÀNG tô màu ngưỡng — tông dịu
-        return "#db5b52" if v >= 10 else ("#e39a3f" if v >= 3 else "#45a878")
-
-    def _dot(v):
-        return "🔴" if v >= 10 else ("🟠" if v >= 3 else "🟢")
-    leaves = [(s["name"], s["proj"] / 1e9) for s in shops]
-    san_ty = {}
-    for nm, v in leaves:
-        san_ty[_san(nm)] = san_ty.get(_san(nm), 0.0) + v
-    for p in plats:  # giữ cả sàn không có gian con (hiếm)
-        san_ty.setdefault(p["name"], 0.0)
-    sans = list(san_ty)
-    root_ty = sum(san_ty.values())
-    # ids để ghép cha–con; labels để hiển thị (có chấm trạng thái ở SÀN)
-    ids = ["root"] + sans + [nm for nm, _ in leaves]
-    parents = [""] + ["root"] * len(sans) + [_san(nm) for nm, _ in leaves]
-    labels = (["🏢 Toàn shop"] + [f"{s} {_dot(san_ty[s])}" for s in sans]
-              + [nm.replace(" - ", " · ") for nm, _ in leaves])
-    vals = [root_ty] + [san_ty[s] for s in sans] + [v for _, v in leaves]
-    # khung (Tổng, Sàn) = navy thương hiệu; ô gian hàng = màu ngưỡng dịu
-    colors = ["#16233f"] + ["#2b3f63"] * len(sans) + [_leaf_c(v) for _, v in leaves]
-    fig = go.Figure(go.Treemap(
-        ids=ids, labels=labels, parents=parents, values=vals, branchvalues="total",
-        marker=dict(colors=colors, line=dict(width=2, color="#ffffff")),
-        texttemplate="%{label}<br><b>%{value:.2f} tỷ</b>",
-        hovertemplate="%{label}<br>Dự đoán cả năm: %{value:.2f} tỷ<extra></extra>",
-        textfont=dict(color="#ffffff", size=13), textposition="middle center",
-        tiling=dict(pad=3), pathbar=dict(visible=True, thickness=18)))
-    fig.update_layout(height=400, margin=dict(l=2, r=2, t=2, b=2))
-    return fig
+    def _sty(proj):
+        if proj >= t10:
+            return "#d9574e", "rgba(217,87,78,.30)", "🔴", "vượt 10 tỷ"
+        if proj >= t3:
+            return "#e0932f", "rgba(224,147,47,.30)", "🟠", "vượt 3 tỷ"
+        return "#3f9e70", "rgba(63,158,112,.30)", "🟢", "an toàn"
+    html = ['<div style="font-family:inherit">'
+            '<div style="position:relative;height:14px;margin:0 0 4px;font-size:10.5px;color:#64748b">'
+            '<span style="position:absolute;left:0">0₫</span>'
+            f'<span style="position:absolute;left:{p3}%;transform:translateX(-50%);color:#d97706;font-weight:800">3 tỷ</span>'
+            f'<span style="position:absolute;left:{p10}%;transform:translateX(-50%);color:#dc2626;font-weight:800">10 tỷ</span>'
+            '</div>']
+    for lvl, label, ytd, proj in rows:
+        col, colL, dot, tag = _sty(proj)
+        wY = max(0.6, min(100, ytd / scale * 100))
+        wP = max(0.6, min(100, proj / scale * 100))
+        ml = (0, 10, 26)[lvl]
+        fs = (14.5, 13, 12.5)[lvl]
+        fw = (800, 700, 500)[lvl]
+        bh = (18, 15, 13)[lvl]
+        mt = (2, 12, 4)[lvl]
+        namec = ("#16233f", "#1f3a5f", "#334155")[lvl]
+        spine = f"border-left:3px solid {col};padding-left:7px" if lvl == 1 else ("padding-left:6px" if lvl == 2 else "")
+        html.append(
+            f'<div style="margin:{mt}px 0 0 {ml}px;{spine}">'
+            f'<div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:1px 10px">'
+            f'<span style="font-size:{fs}px;font-weight:{fw};color:{namec}">{label}</span>'
+            f'<span style="font-size:12px;color:#475569">Thực tế '
+            f'<b style="color:#16233f">{ytd:.1f} tỷ</b> &nbsp;·&nbsp; 🔮 Dự đoán '
+            f'<b style="color:{col}">{proj:.1f} tỷ</b> &nbsp;{dot} {tag}</span></div>'
+            f'<div style="position:relative;background:#eef1f6;border-radius:6px;height:{bh}px;margin-top:3px;overflow:hidden">'
+            f'<div style="position:absolute;left:0;top:0;height:100%;width:{wP}%;background:{colL}"></div>'
+            f'<div style="position:absolute;left:0;top:0;height:100%;width:{wY}%;background:{col}"></div>'
+            f'<div style="position:absolute;left:{p3}%;top:0;height:100%;width:2px;background:#d97706"></div>'
+            f'<div style="position:absolute;left:{p10}%;top:0;height:100%;width:2px;background:#dc2626"></div>'
+            f'</div></div>')
+    html.append('</div>')
+    return "".join(html)
 
 
 def _render_tax_warning(t):
@@ -5577,20 +5575,16 @@ def _render_tax_warning(t):
     shops = t.get("shops") or []
     plats = t.get("platforms") or []
 
-    # 1) TỔNG toàn shop + 2 thanh ngưỡng bo tròn
-    tc = st.columns([2, 3])
-    tc[0].metric("🏢 TỔNG TOÀN SHOP — 🔮 dự đoán cả năm", _fmt_vnd(t["proj_year"]),
-                 f"thực tế đã đạt ~{_fmt_vnd(t['ytd_rev'])}", delta_color="off")
-    with tc[1]:
-        st.markdown(_tax_bars(t["proj_year"], t["t3"], t["t10"]), unsafe_allow_html=True)
+    # 1) Headline TỔNG toàn shop
+    st.metric("🏢 TỔNG TOÀN SHOP — 🔮 dự đoán cả năm (T1→T12)", _fmt_vnd(t["proj_year"]),
+              f"thực tế đã đạt ~{_fmt_vnd(t['ytd_rev'])}", delta_color="off")
 
-    # 2) Sơ đồ THÁP: Toàn shop → Sàn → Gian hàng (ô to = doanh thu lớn, màu theo ngưỡng)
+    # 2) Thang tiến độ phân tầng: TỔNG · SÀN · GIAN HÀNG — thực tế (đậm) + dự đoán (nhạt) + vạch ngưỡng
     if shops:
-        st.markdown("**🗂️ Sơ đồ THÁP — Toàn shop › Sàn › Gian hàng**")
-        st.caption("Ô CÀNG TO = doanh thu càng lớn.  Ô gian hàng đổi màu theo ngưỡng: 🟢 an toàn (dưới 3 tỷ) · "
-                   "🟠 vượt 3 tỷ · 🔴 vượt 10 tỷ (chấm cạnh tên SÀN = trạng thái của cả sàn).  "
-                   "Bấm vào một SÀN để phóng to xem các gian hàng bên trong.")
-        st.plotly_chart(_tax_treemap(t, plats, shops), width="stretch")
+        st.markdown("**📊 Thực tế đã đạt & dự đoán cả năm — theo Tổng · Sàn · Gian hàng**")
+        st.caption("Mỗi thanh: phần ĐẬM = thực tế đã bán · phần NHẠT kéo dài = dự đoán cả năm.  "
+                   "Hai vạch dọc = ngưỡng thuế 3 tỷ (cam) & 10 tỷ (đỏ) — thanh chạm/qua vạch = sắp/đã vượt.")
+        st.markdown(_tax_ladder(t, plats, shops), unsafe_allow_html=True)
 
     # 3) Bảng: TỔNG + từng SÀN + từng GIAN HÀNG
     def _stt(proj, thr):
@@ -5611,8 +5605,20 @@ def _render_tax_warning(t):
             if _san_of(s["name"]) == p["name"]:
                 _rows.append(_row("🏪 Gian hàng", "└ " + s["name"], s["proj"], s["ytd"]))
     with st.expander("📋 Bảng số liệu chi tiết (Tổng · Sàn · Gian hàng) + doanh thu từng tháng"):
-        st.caption("💡 Xếp sẵn theo tháp: TỔNG → từng SÀN → gian hàng trong sàn.  Bấm tên cột để sắp xếp ↑↓.")
-        st.dataframe(pd.DataFrame(_rows), width="stretch", hide_index=True, column_config={
+        st.caption("💡 Nền phân tầng: 🏢 TỔNG (navy) → 🛒 Sàn (xanh nhạt) → 🏪 Gian hàng (trắng).  "
+                   "Bấm tên cột để sắp xếp ↑↓.")
+
+        def _band(r):
+            c = r["Cấp"]
+            if "TỔNG" in c:
+                s = "background-color:#16233f;color:#ffffff;font-weight:800"
+            elif "Sàn" in c:
+                s = "background-color:#dce4f2;color:#16233f;font-weight:700"
+            else:
+                s = "background-color:#ffffff;color:#334155"
+            return [s] * len(r)
+        st.dataframe(pd.DataFrame(_rows).style.apply(_band, axis=1),
+                     width="stretch", hide_index=True, column_config={
             "🔮 Dự đoán": st.column_config.NumberColumn("🔮 Dự đoán (tỷ)", format="%.2f"),
             "Thực tế đã đạt": st.column_config.NumberColumn("Thực tế (tỷ)", format="%.2f")})
         if t.get("monthly"):
