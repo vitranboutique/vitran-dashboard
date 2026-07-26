@@ -5495,7 +5495,7 @@ def _render_tax_warning(t):
                 '(dự báo cả năm · mùa vụ)'
                 '<span class="ic" title="Mỗi thương hiệu (VITRAN BOUTIQUE / SMOSS / MUN-AI) là 1 pháp nhân nộp '
                 'thuế riêng. Số lớn = DỰ ĐOÁN doanh thu cả năm (theo mùa vụ: 6 tháng 11,12,1,2,3,4 bán gấp đôi); '
-                'dòng dưới = thực tế đã đạt. Thanh màu = so ngưỡng 3 tỷ / 10 tỷ.">&#9432;</span></div>',
+                'dòng dưới = thực tế đã đạt. Biểu đồ lũy kế = mỗi thương hiệu 1 đường, cắt vạch ngang là chạm ngưỡng.">&#9432;</span></div>',
                 unsafe_allow_html=True)
     _peak = ", ".join(str(m) for m in t["peak_months"])
     st.caption(f"Mỗi thương hiệu (VITRAN BOUTIQUE / SMOSS / MUN-AI…) là 1 pháp nhân nộp thuế RIÊNG. "
@@ -5525,13 +5525,51 @@ def _render_tax_warning(t):
         st.markdown("**📈 Doanh thu từng tháng trong năm (T1→T12)** — đường LIỀN xanh = đã qua (thực tế), "
                     "đường ĐỨT đỏ = DỰ ĐOÁN. Thấy rõ tháng cao/thấp: đầu & cuối năm cao, giữa năm thấp.")
         st.plotly_chart(_fig, width="stretch")
-    brands = t.get("brands") or [{"brand": "Toàn shop", "ytd": t["ytd_rev"], "proj": t["proj_year"]}]
+    brands = t.get("brands") or [{"brand": "Toàn shop", "ytd": t["ytd_rev"],
+                                  "proj": t["proj_year"], "share": 1.0}]
+
+    def _thr_tag(proj, thr):
+        pct = (proj / thr * 100) if thr else 0
+        if proj >= thr:
+            return f'<span style="color:#dc2626;font-weight:800">⛔ Vượt ({pct:.0f}%)</span>'
+        if pct >= 80:
+            return f'<span style="color:#d97706;font-weight:800">⚠️ Sắp chạm ({pct:.0f}%)</span>'
+        return f'<span style="color:#16a34a;font-weight:800">✅ An toàn ({pct:.0f}%)</span>'
+
     for b in brands:
         cc = st.columns([2, 3])
         cc[0].metric(f"🏷️ {b['brand']} — 🔮 DỰ ĐOÁN cả năm", _fmt_vnd(b["proj"]),
                      f"thực tế đã đạt ~{_fmt_vnd(b['ytd'])}", delta_color="off")
-        with cc[1]:
-            st.markdown(_tax_bars(b["proj"], t["t3"], t["t10"]), unsafe_allow_html=True)
+        cc[1].markdown(f'<div style="padding-top:16px;font-size:13px;line-height:2">Ngưỡng <b>3 tỷ</b>: '
+                       f'{_thr_tag(b["proj"], t["t3"])}<br>Ngưỡng <b>10 tỷ</b>: '
+                       f'{_thr_tag(b["proj"], t["t10"])}</div>', unsafe_allow_html=True)
+
+    # Biểu đồ LŨY KẾ cả năm theo thương hiệu + đường ngưỡng 3 tỷ / 10 tỷ (thay 2 thanh phẳng)
+    if _mo:
+        _pal = ["#16233f", "#E24B4A", "#16a34a", "#7c3aed", "#0891b2"]
+        _cf = go.Figure()
+        for _bi, b in enumerate(brands):
+            _sh = b.get("share", 1.0)
+            _cum, _s = [], 0.0
+            for m in _mo:
+                _s += m["rev"] * _sh
+                _cum.append(_s / 1e9)
+            _col = _pal[_bi % len(_pal)]
+            _cf.add_trace(go.Scatter(x=_names[:_fp], y=_cum[:_fp], mode="lines",
+                                     name=b["brand"], line=dict(color=_col, width=3)))
+            _cf.add_trace(go.Scatter(x=_names[max(0, _fp - 1):], y=_cum[max(0, _fp - 1):], mode="lines",
+                                     line=dict(color=_col, width=3, dash="dash"), showlegend=False))
+        _cf.add_hline(y=3, line=dict(color="#d97706", width=2, dash="dot"),
+                      annotation_text="Ngưỡng 3 tỷ", annotation_position="top left")
+        _cf.add_hline(y=10, line=dict(color="#dc2626", width=2, dash="dot"),
+                      annotation_text="Ngưỡng 10 tỷ", annotation_position="top left")
+        _cf.update_layout(height=350, margin=dict(l=8, r=8, t=30, b=8),
+                          yaxis=dict(title="tỷ đồng (lũy kế)", rangemode="tozero"),
+                          plot_bgcolor="rgba(0,0,0,0)",
+                          legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0))
+        st.markdown("**📊 Doanh thu LŨY KẾ cả năm theo thương hiệu** — đường cắt vạch ngang = lúc chạm ngưỡng "
+                    "thuế 3 tỷ / 10 tỷ. Đoạn LIỀN = thực tế, ĐỨT = dự đoán.")
+        st.plotly_chart(_cf, width="stretch")
 
 
 def _render_sales():
