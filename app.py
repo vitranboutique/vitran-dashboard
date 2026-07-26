@@ -5471,36 +5471,39 @@ def _hbar(names, values, color):
     return fig
 
 
-def _render_tax_warning(t):
-    st.markdown('<div class="sec sec-orange">⚠️ Cảnh báo ngưỡng thuế — dự báo doanh thu CẢ NĂM (theo mùa vụ)</div>',
-                unsafe_allow_html=True)
-    proj, ytd = t["proj_year"], t["ytd_rev"]
-    c = st.columns(3)
-    c[0].metric(f"Doanh thu {t['year']} đã đạt (ước)", _fmt_vnd(ytd), f"{t['ytd_orders']:,} đơn",
-                delta_color="off")
-    c[1].metric("📈 DỰ BÁO CẢ NĂM", _fmt_vnd(proj))
-    c[2].metric("Tiến độ năm (trọng số mùa vụ)", f"{t['elapsed_w'] / t['total_w'] * 100:.0f}%",
-                f"còn {t['remain_w']:.1f}/{t['total_w']}", delta_color="off")
+def _tax_bars(proj, t3, t10):
     bars = ""
-    for label, thr in (("3 tỷ", t["t3"]), ("10 tỷ", t["t10"])):
+    for label, thr in (("3 tỷ", t3), ("10 tỷ", t10)):
         pct = (proj / thr * 100) if thr else 0
         w = max(2, min(100, pct))
         if proj >= thr:
-            col, tag = "#dc2626", f"⛔ DỰ BÁO VƯỢT ({pct:.0f}% ngưỡng)"
+            col, tag = "#dc2626", f"⛔ VƯỢT ({pct:.0f}%)"
         elif pct >= 80:
             col, tag = "#d97706", f"⚠️ SẮP CHẠM ({pct:.0f}%)"
         else:
             col, tag = "#16a34a", f"✅ An toàn ({pct:.0f}%)"
-        bars += (f'<div style="margin:6px 0"><div style="display:flex;justify-content:space-between;'
-                 f'font-size:13px;font-weight:700"><span>Ngưỡng {label}</span>'
+        bars += (f'<div style="margin:2px 0 5px"><div style="display:flex;justify-content:space-between;'
+                 f'font-size:12px;font-weight:700"><span>Ngưỡng {label}</span>'
                  f'<span style="color:{col}">{tag}</span></div>'
-                 f'<div style="background:#e5e7eb;border-radius:6px;height:14px;overflow:hidden;margin-top:2px">'
+                 f'<div style="background:#e5e7eb;border-radius:6px;height:12px;overflow:hidden;margin-top:2px">'
                  f'<div style="width:{w}%;height:100%;background:{col}"></div></div></div>')
-    st.markdown(bars, unsafe_allow_html=True)
+    return bars
+
+
+def _render_tax_warning(t):
+    st.markdown('<div class="sec sec-orange">⚠️ Cảnh báo ngưỡng thuế theo TỪNG THƯƠNG HIỆU '
+                '(dự báo cả năm · mùa vụ)</div>', unsafe_allow_html=True)
     _peak = ", ".join(str(m) for m in t["peak_months"])
-    st.caption("📌 Dự báo = doanh thu đã đạt ÷ trọng số đã qua × trọng số cả năm. Mùa vụ: 6 tháng cao điểm "
-               f"(tháng {_peak}) bán GẤP ĐÔI 6 tháng còn lại. Doanh thu năm ước theo SỐ ĐƠN (Sapo) × giá trị "
-               "TB/đơn gần đây — là con số CẢNH BÁO SỚM, không phải quyết toán thuế.")
+    st.caption(f"Mỗi thương hiệu (VITRAN BOUTIQUE / SMOSS / MUN-AI…) là 1 pháp nhân nộp thuế RIÊNG. "
+               f"Dự báo cả năm = doanh thu đã đạt ÷ trọng số mùa vụ đã qua × cả năm — 6 tháng cao điểm "
+               f"(tháng {_peak}) bán GẤP ĐÔI. Ước theo số đơn × TB/đơn, là con số CẢNH BÁO SỚM.")
+    brands = t.get("brands") or [{"brand": "Toàn shop", "ytd": t["ytd_rev"], "proj": t["proj_year"]}]
+    for b in brands:
+        cc = st.columns([2, 3])
+        cc[0].metric(f"🏷️ {b['brand']}", _fmt_vnd(b["proj"]),
+                     f"đã đạt ~{_fmt_vnd(b['ytd'])}", delta_color="off")
+        with cc[1]:
+            st.markdown(_tax_bars(b["proj"], t["t3"], t["t10"]), unsafe_allow_html=True)
 
 
 def _render_sales():
@@ -5542,18 +5545,24 @@ def _render_sales():
     if sa.get("truncated"):
         st.caption("⚠️ Dữ liệu rất lớn — đã lấy tối đa số trang cho phép; số liệu mang tính ước tính.")
 
-    st.markdown('<div class="sec sec-orange">Doanh thu theo GIAN HÀNG</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sec sec-orange">Doanh thu theo GIAN HÀNG — kèm số đơn & TB/đơn</div>',
+                unsafe_allow_html=True)
     _stores = sa["stores"]
     if _stores:
-        cols = st.columns(min(len(_stores), 5))
-        for i, s in enumerate(_stores[:5]):
-            cols[i].metric(s["name"], _fmt_vnd(s["cur"]), _d(s["pct"]))
         st.plotly_chart(_hbar([s["name"] for s in _stores], [s["cur"] for s in _stores], "#E24B4A"),
                         width="stretch")
+        _sdf = pd.DataFrame([{
+            "Gian hàng": s["name"], "Doanh thu": _fmt_vnd(s["cur"]),
+            "± % vs kỳ trước": (f"{s['pct']:+.1f}%" if s["pct"] is not None else "—"),
+            "Số đơn": f"{s['orders']:,}", "TB/đơn": _fmt_vnd(s["aov"])} for s in _stores])
+        st.dataframe(_sdf, width="stretch", hide_index=True)
 
-    st.markdown('<div class="sec sec-orange">Doanh thu theo NHÓM SKU — thế mạnh sản phẩm</div>',
+    st.markdown('<div class="sec sec-orange">Doanh thu theo NHÓM SKU — thế mạnh sản phẩm TỪNG GIAN HÀNG</div>',
                 unsafe_allow_html=True)
-    _g = sa["groups"]
+    _sg = sa.get("store_groups") or {}
+    _shop = st.selectbox("Xem theo gian hàng", ["🏬 Tất cả gian hàng"] + [s["name"] for s in _stores],
+                         key="sales_shop")
+    _g = sa["groups"] if _shop.startswith("🏬") else _sg.get(_shop, [])
     if _g:
         _top = _g[:15]
         st.plotly_chart(_hbar([x["name"] for x in _top], [x["cur"] for x in _top], "#16a34a"),
@@ -5564,6 +5573,8 @@ def _render_sales():
             "± % vs kỳ trước": (f"{x['pct']:+.1f}%" if x["pct"] is not None else "—")}
             for x in _g])
         st.dataframe(_tbl, width="stretch", hide_index=True)
+    else:
+        st.caption("Gian hàng này chưa có doanh thu trong kỳ.")
 
     _render_tax_warning(sa["tax"])
 

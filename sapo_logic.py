@@ -3155,6 +3155,9 @@ def _sales_fetch_range(fetch_json, start, end, max_pages=280):
     cmax = end.isoformat() + "T23:59:59+07:00"
     total, orders_n = 0.0, 0
     by_store, by_grp = defaultdict(float), defaultdict(float)
+    store_orders = defaultdict(int)                       # số đơn / gian hàng
+    by_brand = defaultdict(float)                         # doanh thu / thương hiệu (pháp nhân thuế)
+    store_grp = defaultdict(lambda: defaultdict(float))   # doanh thu {gian hàng: {nhóm SKU: đ}}
     truncated = False
     for p in range(1, max_pages + 1):
         rows = fetch_json("/admin/orders.json", limit=250, page=p,
@@ -3173,7 +3176,10 @@ def _sales_fetch_range(fetch_json, start, end, max_pages=280):
             total += net
             orders_n += 1
             store = (o.get("channel_definition") or {}).get("branch_name") or o.get("source_name") or "Khác"
+            brand = store.rsplit(" - ", 1)[0] if " - " in store else store   # bỏ đuôi sàn → thương hiệu
             by_store[store] += net
+            store_orders[store] += 1
+            by_brand[brand] += net
             ratio = (net / tp) if tp > 0 else 1.0        # phân bổ tiền hoàn theo tỉ lệ cho từng SKU
             for li in (o.get("line_items") or []):
                 if parse_sku:
@@ -3181,12 +3187,15 @@ def _sales_fetch_range(fetch_json, start, end, max_pages=280):
                 else:
                     grp = str(li.get("sku") or "?").split("-")[0] or "?"
                 amt = float(li.get("discounted_total")
-                            or ((li.get("price") or 0) * (li.get("quantity") or 0)))
-                by_grp[grp] += amt * ratio
+                            or ((li.get("price") or 0) * (li.get("quantity") or 0))) * ratio
+                by_grp[grp] += amt
+                store_grp[store][grp] += amt
         if p == max_pages and rows:
             truncated = True
     return {"total": total, "orders": orders_n,
-            "by_store": dict(by_store), "by_grp": dict(by_grp), "truncated": truncated}
+            "by_store": dict(by_store), "by_grp": dict(by_grp),
+            "store_orders": dict(store_orders), "by_brand": dict(by_brand),
+            "store_grp": {k: dict(v) for k, v in store_grp.items()}, "truncated": truncated}
 
 
 def get_sales_analysis(fetch_json, period="thangnay"):
@@ -3239,6 +3248,33 @@ def get_sales_analysis(fetch_json, period="thangnay"):
            "elapsed_w": elapsed_w, "total_w": total_w, "remain_w": total_w - elapsed_w,
            "peak_months": sorted(PEAK), "year": today.year,
            "t3": 3_000_000_000, "t10": 10_000_000_000}
+    # Cảnh báo thuế THEO TỪNG THƯƠNG HIỆU (mỗi TH ~ 1 pháp nhân nộp thuế riêng) — phân bổ YTD
+    # toàn shop theo TỈ TRỌNG doanh thu kỳ hiện tại của thương hiệu (ước lượng, khỏi tải cả năm).
+    bc = cur["by_brand"]
+    tot_bc = sum(bc.values()) or 1.0
+    tax["brands"] = [{
+        "brand": b, "cur": rev, "share": rev / tot_bc,
+        "ytd": ytd_rev * (rev / tot_bc),
+        "proj": (ytd_rev * (rev / tot_bc) / elapsed_w * total_w) if elapsed_w else 0.0,
+    } for b, rev in sorted(bc.items(), key=lambda x: -x[1])]
+
+    # doanh thu / gian hàng kèm SỐ ĐƠN + GIÁ TRỊ TB/ĐƠN
+    stores = []
+    for k in set(cur["by_store"]) | set(prev["by_store"]):
+        c, p = cur["by_store"].get(k, 0.0), prev["by_store"].get(k, 0.0)
+        n = cur["store_orders"].get(k, 0)
+        stores.append({"name": k, "cur": c, "prev": p, "pct": _pct(c, p),
+                       "orders": n, "aov": (c / n if n else 0.0)})
+    stores.sort(key=lambda x: -x["cur"])
+
+    # doanh thu NHÓM SKU theo TỪNG gian hàng (current vs prev)
+    store_groups = {}
+    for st in set(cur["store_grp"]) | set(prev["store_grp"]):
+        cg, pg = cur["store_grp"].get(st, {}), prev["store_grp"].get(st, {})
+        lst = [{"name": g, "cur": cg.get(g, 0.0), "prev": pg.get(g, 0.0),
+                "pct": _pct(cg.get(g, 0.0), pg.get(g, 0.0))} for g in set(cg) | set(pg)]
+        lst.sort(key=lambda x: -x["cur"])
+        store_groups[st] = lst
 
     return {
         "period": period, "clabel": clabel, "plabel": plabel,
@@ -3246,8 +3282,9 @@ def get_sales_analysis(fetch_json, period="thangnay"):
         "prev_range": (ps.strftime("%d/%m/%y"), pe.strftime("%d/%m/%y")),
         "total": cur["total"], "prev_total": prev["total"], "total_pct": _pct(cur["total"], prev["total"]),
         "orders": cur["orders"], "prev_orders": prev["orders"], "orders_pct": _pct(cur["orders"], prev["orders"]),
-        "stores": _merge(cur["by_store"], prev["by_store"]),
+        "stores": stores,
         "groups": _merge(cur["by_grp"], prev["by_grp"], topn=25),
+        "store_groups": store_groups,
         "truncated": cur.get("truncated") or prev.get("truncated"),
         "tax": tax,
     }
