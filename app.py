@@ -5586,6 +5586,12 @@ def _render_tax_warning(t):
                    "Hai vạch dọc = ngưỡng thuế 3 tỷ (cam) & 10 tỷ (đỏ) — thanh chạm/qua vạch = sắp/đã vượt.")
         st.markdown(_tax_ladder(t, plats, shops), unsafe_allow_html=True)
 
+    # 2b) Biểu đồ doanh thu 12 tháng — hình dạng mùa vụ đằng sau con số dự đoán
+    if t.get("monthly"):
+        st.markdown("**📈 Doanh thu từng tháng trong năm** (xanh = thực tế đã bán · đỏ nét đứt = dự đoán) "
+                    "— để biết tháng nào cao, tháng nào thấp.")
+        st.plotly_chart(_monthly_line(t), width="stretch")
+
     # 3) Bảng: TỔNG + từng SÀN + từng GIAN HÀNG
     def _stt(proj, thr):
         return "⛔ Vượt" if proj >= thr else ("⚠️ Sắp chạm" if proj >= thr * 0.8 else "✅ An toàn")
@@ -5604,7 +5610,7 @@ def _render_tax_warning(t):
         for s in shops:
             if _san_of(s["name"]) == p["name"]:
                 _rows.append(_row("🏪 Gian hàng", "└ " + s["name"], s["proj"], s["ytd"]))
-    with st.expander("📋 Bảng số liệu chi tiết (Tổng · Sàn · Gian hàng) + doanh thu từng tháng"):
+    with st.expander("📋 Bảng số liệu chi tiết (Tổng · Sàn · Gian hàng)"):
         st.caption("💡 Nền phân tầng: 🏢 TỔNG (navy) → 🛒 Sàn (xanh nhạt) → 🏪 Gian hàng (trắng).  "
                    "Bấm tên cột để sắp xếp ↑↓.")
 
@@ -5621,10 +5627,6 @@ def _render_tax_warning(t):
                      width="stretch", hide_index=True, column_config={
             "🔮 Dự đoán": st.column_config.NumberColumn("🔮 Dự đoán (tỷ)", format="%.2f"),
             "Thực tế đã đạt": st.column_config.NumberColumn("Thực tế (tỷ)", format="%.2f")})
-        if t.get("monthly"):
-            st.markdown("**📈 Doanh thu từng tháng trong năm** (xanh = thực tế đã bán · đỏ nét đứt = dự đoán) "
-                        "— để biết tháng nào cao, tháng nào thấp.")
-            st.plotly_chart(_monthly_line(t), width="stretch")
 
 
 def _render_sales():
