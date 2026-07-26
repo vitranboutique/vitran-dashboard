@@ -5501,6 +5501,18 @@ def _render_tax_warning(t):
     st.caption(f"Mỗi thương hiệu (VITRAN BOUTIQUE / SMOSS / MUN-AI…) là 1 pháp nhân nộp thuế RIÊNG. "
                f"Dự báo cả năm = doanh thu đã đạt ÷ trọng số mùa vụ đã qua × cả năm — 6 tháng cao điểm "
                f"(tháng {_peak}) bán GẤP ĐÔI. Ước theo số đơn × TB/đơn, là con số CẢNH BÁO SỚM.")
+    _mo = t.get("monthly") or []
+    if _mo:
+        _names = [f"T{m['month']}" for m in _mo]
+        _vals = [m["rev"] for m in _mo]
+        _cols = ["#16233f" if m["actual"] else "#E24B4A" for m in _mo]
+        _fig = go.Figure(go.Bar(x=_names, y=_vals, marker_color=_cols,
+                                text=[_fmt_vnd(v) for v in _vals], textposition="outside", cliponaxis=False))
+        _fig.update_layout(height=300, margin=dict(l=8, r=8, t=26, b=8),
+                           yaxis=dict(visible=False), plot_bgcolor="rgba(0,0,0,0)", showlegend=False)
+        st.markdown("**📅 Doanh thu 12 tháng trong năm (T1→T12)** — 🟦 xanh đậm = tháng đã qua (thực tế ước tính) · "
+                    "🟥 đỏ = DỰ ĐOÁN. Cao điểm 11,12,1,2,3,4 dự đoán bán gấp đôi.")
+        st.plotly_chart(_fig, width="stretch")
     brands = t.get("brands") or [{"brand": "Toàn shop", "ytd": t["ytd_rev"], "proj": t["proj_year"]}]
     for b in brands:
         cc = st.columns([2, 3])

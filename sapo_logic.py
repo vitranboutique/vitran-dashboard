@@ -3307,9 +3307,22 @@ def get_sales_analysis(fetch_json, period="thangnay"):
     elapsed_w += _w(today.month) * (today.day / dim)
     total_w = sum(_w(m) for m in range(1, 13))          # = 18
     proj_year = (ytd_rev / elapsed_w * total_w) if elapsed_w else 0.0
+    # Doanh thu TỪNG THÁNG cả năm (T1..T12): tháng ĐÃ QUA = thực tế ước (count×AOV);
+    # tháng HIỆN TẠI + TƯƠNG LAI = DỰ ĐOÁN (base × trọng số mùa vụ). base = doanh thu / trọng số đã qua.
+    base_w = (ytd_rev / elapsed_w) if elapsed_w else 0.0
+    monthly = []
+    for mo in range(1, 13):
+        if mo < today.month:
+            _ld = calendar.monthrange(today.year, mo)[1]
+            a = today.replace(month=mo, day=1).isoformat() + "T00:00:00+07:00"
+            b = today.replace(month=mo, day=_ld).isoformat() + "T23:59:59+07:00"
+            rev, actual = _count(a, b) * aov, True
+        else:
+            rev, actual = base_w * _w(mo), False
+        monthly.append({"month": mo, "rev": rev, "actual": actual, "peak": mo in PEAK})
     tax = {"ytd_rev": ytd_rev, "ytd_orders": ytd_cnt, "aov": aov, "proj_year": proj_year,
            "elapsed_w": elapsed_w, "total_w": total_w, "remain_w": total_w - elapsed_w,
-           "peak_months": sorted(PEAK), "year": today.year,
+           "peak_months": sorted(PEAK), "year": today.year, "monthly": monthly,
            "t3": 3_000_000_000, "t10": 10_000_000_000}
     # Cảnh báo thuế THEO TỪNG THƯƠNG HIỆU (mỗi TH ~ 1 pháp nhân nộp thuế riêng) — phân bổ YTD
     # toàn shop theo TỈ TRỌNG doanh thu kỳ hiện tại của thương hiệu (ước lượng, khỏi tải cả năm).
