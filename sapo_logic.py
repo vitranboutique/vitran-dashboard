@@ -3113,6 +3113,146 @@ def demo_payload() -> dict:
     return {"pending": pending, "cancelled": cancelled, "returns": returns}
 
 
+# ───────────────────── Phân tích bán hàng (doanh thu) ─────────────────────
+def _sales_period_range(period, today):
+    """(cur_start, cur_end, prev_start, prev_end, nhãn_kỳ, nhãn_kỳ_trước) — kỳ trước = CÙNG độ dài."""
+    if period == "1tuan":
+        cs, ce = today - timedelta(days=6), today
+        ps, pe = cs - timedelta(days=7), cs - timedelta(days=1)
+        return cs, ce, ps, pe, "7 ngày qua", "7 ngày trước đó"
+    if period == "1thang":
+        cs, ce = today - timedelta(days=29), today
+        ps, pe = cs - timedelta(days=30), cs - timedelta(days=1)
+        return cs, ce, ps, pe, "30 ngày qua", "30 ngày trước đó"
+    if period == "thangnay":
+        cs, ce = today.replace(day=1), today
+        pe0 = cs - timedelta(days=1)                     # ngày cuối tháng trước
+        ps = pe0.replace(day=1)
+        try:
+            pe = pe0.replace(day=today.day)             # cùng mốc ngày tháng trước
+        except ValueError:
+            pe = pe0
+        return cs, ce, ps, pe, f"Tháng {today.month}/{today.year}", f"Tháng {pe0.month}/{pe0.year}"
+    # namnay (mặc định) — YTD, so cùng kỳ năm trước
+    cs, ce = today.replace(month=1, day=1), today
+    ps = cs.replace(year=today.year - 1)
+    try:
+        pe = today.replace(year=today.year - 1)
+    except ValueError:
+        pe = today.replace(year=today.year - 1, day=28)
+    return cs, ce, ps, pe, f"Năm {today.year}", f"Năm {today.year - 1}"
+
+
+def _sales_fetch_range(fetch_json, start, end, max_pages=280):
+    """Doanh thu NET (đã trừ đơn HỦY + tiền HOÀN) trong [start,end]: tổng, theo gian hàng, theo nhóm SKU.
+    NET = total_price − total_refunded, bỏ đơn cancelled. Nhóm SKU = productCode (parse_sku)."""
+    from collections import defaultdict
+    try:
+        from sapo_tools import parse_sku
+    except Exception:
+        parse_sku = None
+    cmin = start.isoformat() + "T00:00:00+07:00"
+    cmax = end.isoformat() + "T23:59:59+07:00"
+    total, orders_n = 0.0, 0
+    by_store, by_grp = defaultdict(float), defaultdict(float)
+    truncated = False
+    for p in range(1, max_pages + 1):
+        rows = fetch_json("/admin/orders.json", limit=250, page=p,
+                          created_on_min=cmin, created_on_max=cmax).get("orders", [])
+        if not rows:
+            break
+        for o in rows:
+            d = _vn_date_of(o.get("created_on"))
+            if not d or d < start or d > end:
+                continue
+            if o.get("cancelled_on") or o.get("status") == "cancelled":
+                continue
+            tp = float(o.get("total_price") or 0)
+            rf = float(o.get("total_refunded") or 0)
+            net = tp - rf
+            total += net
+            orders_n += 1
+            store = (o.get("channel_definition") or {}).get("branch_name") or o.get("source_name") or "Khác"
+            by_store[store] += net
+            ratio = (net / tp) if tp > 0 else 1.0        # phân bổ tiền hoàn theo tỉ lệ cho từng SKU
+            for li in (o.get("line_items") or []):
+                if parse_sku:
+                    grp = parse_sku(li.get("sku")).get("productCode") or "?"
+                else:
+                    grp = str(li.get("sku") or "?").split("-")[0] or "?"
+                amt = float(li.get("discounted_total")
+                            or ((li.get("price") or 0) * (li.get("quantity") or 0)))
+                by_grp[grp] += amt * ratio
+        if p == max_pages and rows:
+            truncated = True
+    return {"total": total, "orders": orders_n,
+            "by_store": dict(by_store), "by_grp": dict(by_grp), "truncated": truncated}
+
+
+def get_sales_analysis(fetch_json, period="thangnay"):
+    """PHÂN TÍCH DOANH THU NET (đã trừ đơn hủy + tiền hoàn) theo GIAN HÀNG & NHÓM SKU,
+    so với CÙNG KỲ TRƯỚC (%), + dự báo doanh thu cả năm theo MÙA VỤ để cảnh báo ngưỡng
+    thuế 3 tỷ / 10 tỷ. period: '1tuan' | '1thang' | 'thangnay' | 'namnay'."""
+    import calendar
+    today = (_now_utc() + timedelta(hours=7)).date()
+    cs, ce, ps, pe, clabel, plabel = _sales_period_range(period, today)
+    cur = _sales_fetch_range(fetch_json, cs, ce)
+    prev = _sales_fetch_range(fetch_json, ps, pe)
+
+    def _pct(c, p):
+        if not p:
+            return None if not c else 100.0
+        return (c - p) / p * 100.0
+
+    def _merge(cd, pd, topn=None):
+        out = [{"name": k, "cur": cd.get(k, 0.0), "prev": pd.get(k, 0.0),
+                "pct": _pct(cd.get(k, 0.0), pd.get(k, 0.0))} for k in set(cd) | set(pd)]
+        out.sort(key=lambda x: -x["cur"])
+        return out[:topn] if topn else out
+
+    # ── DỰ BÁO THUẾ: doanh thu cả năm theo mùa vụ (tháng 11,12,1,2,3,4 bán GẤP ĐÔI) ──
+    def _count(a, b):
+        try:
+            return int(fetch_json("/admin/orders/count.json",
+                                  created_on_min=a, created_on_max=b).get("count", 0))
+        except Exception:
+            return 0
+    PEAK = {11, 12, 1, 2, 3, 4}
+    _w = lambda m: 2 if m in PEAK else 1
+    # AOV net = doanh thu net / SỐ ĐƠN đặt (count gồm cả hủy) — dùng ước lượng YTD nhanh, khỏi tải cả năm
+    aov_rev, aov_days = cur["total"], (ce - cs).days + 1
+    if aov_days < 20:
+        _a = _sales_fetch_range(fetch_json, today - timedelta(days=29), today)
+        aov_rev, aov_days = _a["total"], 30
+    gcnt = _count((today - timedelta(days=aov_days - 1)).isoformat() + "T00:00:00+07:00",
+                  today.isoformat() + "T23:59:59+07:00")
+    aov = (aov_rev / gcnt) if gcnt else 0.0
+    y0 = today.replace(month=1, day=1)
+    ytd_cnt = _count(y0.isoformat() + "T00:00:00+07:00", today.isoformat() + "T23:59:59+07:00")
+    ytd_rev = ytd_cnt * aov
+    elapsed_w = sum(_w(m) for m in range(1, today.month))
+    dim = calendar.monthrange(today.year, today.month)[1]
+    elapsed_w += _w(today.month) * (today.day / dim)
+    total_w = sum(_w(m) for m in range(1, 13))          # = 18
+    proj_year = (ytd_rev / elapsed_w * total_w) if elapsed_w else 0.0
+    tax = {"ytd_rev": ytd_rev, "ytd_orders": ytd_cnt, "aov": aov, "proj_year": proj_year,
+           "elapsed_w": elapsed_w, "total_w": total_w, "remain_w": total_w - elapsed_w,
+           "peak_months": sorted(PEAK), "year": today.year,
+           "t3": 3_000_000_000, "t10": 10_000_000_000}
+
+    return {
+        "period": period, "clabel": clabel, "plabel": plabel,
+        "cur_range": (cs.strftime("%d/%m/%y"), ce.strftime("%d/%m/%y")),
+        "prev_range": (ps.strftime("%d/%m/%y"), pe.strftime("%d/%m/%y")),
+        "total": cur["total"], "prev_total": prev["total"], "total_pct": _pct(cur["total"], prev["total"]),
+        "orders": cur["orders"], "prev_orders": prev["orders"], "orders_pct": _pct(cur["orders"], prev["orders"]),
+        "stores": _merge(cur["by_store"], prev["by_store"]),
+        "groups": _merge(cur["by_grp"], prev["by_grp"], topn=25),
+        "truncated": cur.get("truncated") or prev.get("truncated"),
+        "tax": tax,
+    }
+
+
 if __name__ == "__main__":
     # Smoke test: in nhanh payload demo
     import json

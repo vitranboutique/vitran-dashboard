@@ -1768,6 +1768,11 @@ def load_overview():
     return L.get_overview(make_fetch_json(build_session()))
 
 
+@st.cache_data(ttl=900, show_spinner="Đang phân tích doanh thu từ Sapo…")
+def load_sales(period):
+    return L.get_sales_analysis(make_fetch_json(build_session()), period=period)
+
+
 @st.cache_data(ttl=120, show_spinner="Đang kéo đơn cần nhặt từ Sapo…")
 def load_picking():
     return L.get_picking(make_fetch_json(build_session()))
@@ -5444,6 +5449,125 @@ if _page == PAGE_PRICE:
 
 
 # ════════════════ TRANG TỔNG QUAN ĐIỀU HÀNH ════════════════
+def _fmt_vnd(x):
+    x = float(x or 0)
+    if abs(x) >= 1e9:
+        return f"{x / 1e9:.2f} tỷ"
+    if abs(x) >= 1e6:
+        return f"{x / 1e6:.1f} tr"
+    return f"{x:,.0f}đ"
+
+
+def _hbar(names, values, color):
+    """Biểu đồ cột NGANG (plotly) — nhóm nhiều nhất ở trên."""
+    fig = go.Figure(go.Bar(x=values, y=names, orientation="h", marker_color=color,
+                           text=[_fmt_vnd(v) for v in values], textposition="auto",
+                           cliponaxis=False))
+    fig.update_layout(height=max(180, 26 * len(names) + 60),
+                      margin=dict(l=8, r=8, t=10, b=8),
+                      yaxis=dict(autorange="reversed"),
+                      xaxis=dict(visible=False),
+                      plot_bgcolor="rgba(0,0,0,0)", showlegend=False)
+    return fig
+
+
+def _render_tax_warning(t):
+    st.markdown('<div class="sec sec-orange">⚠️ Cảnh báo ngưỡng thuế — dự báo doanh thu CẢ NĂM (theo mùa vụ)</div>',
+                unsafe_allow_html=True)
+    proj, ytd = t["proj_year"], t["ytd_rev"]
+    c = st.columns(3)
+    c[0].metric(f"Doanh thu {t['year']} đã đạt (ước)", _fmt_vnd(ytd), f"{t['ytd_orders']:,} đơn",
+                delta_color="off")
+    c[1].metric("📈 DỰ BÁO CẢ NĂM", _fmt_vnd(proj))
+    c[2].metric("Tiến độ năm (trọng số mùa vụ)", f"{t['elapsed_w'] / t['total_w'] * 100:.0f}%",
+                f"còn {t['remain_w']:.1f}/{t['total_w']}", delta_color="off")
+    bars = ""
+    for label, thr in (("3 tỷ", t["t3"]), ("10 tỷ", t["t10"])):
+        pct = (proj / thr * 100) if thr else 0
+        w = max(2, min(100, pct))
+        if proj >= thr:
+            col, tag = "#dc2626", f"⛔ DỰ BÁO VƯỢT ({pct:.0f}% ngưỡng)"
+        elif pct >= 80:
+            col, tag = "#d97706", f"⚠️ SẮP CHẠM ({pct:.0f}%)"
+        else:
+            col, tag = "#16a34a", f"✅ An toàn ({pct:.0f}%)"
+        bars += (f'<div style="margin:6px 0"><div style="display:flex;justify-content:space-between;'
+                 f'font-size:13px;font-weight:700"><span>Ngưỡng {label}</span>'
+                 f'<span style="color:{col}">{tag}</span></div>'
+                 f'<div style="background:#e5e7eb;border-radius:6px;height:14px;overflow:hidden;margin-top:2px">'
+                 f'<div style="width:{w}%;height:100%;background:{col}"></div></div></div>')
+    st.markdown(bars, unsafe_allow_html=True)
+    _peak = ", ".join(str(m) for m in t["peak_months"])
+    st.caption("📌 Dự báo = doanh thu đã đạt ÷ trọng số đã qua × trọng số cả năm. Mùa vụ: 6 tháng cao điểm "
+               f"(tháng {_peak}) bán GẤP ĐÔI 6 tháng còn lại. Doanh thu năm ước theo SỐ ĐƠN (Sapo) × giá trị "
+               "TB/đơn gần đây — là con số CẢNH BÁO SỚM, không phải quyết toán thuế.")
+
+
+def _render_sales():
+    _l, _r = st.columns([3, 1])
+    _l.title("💰 Phân tích bán hàng")
+    _l.caption("Doanh thu NET — đã trừ đơn hủy + tiền hoàn · nguồn: Sapo")
+    _vn = datetime.now(timezone.utc) + timedelta(hours=7)
+    _r.metric("Cập nhật (giờ VN)", _vn.strftime("%H:%M"), _vn.strftime("%d/%m/%Y"))
+    if not credential_present():
+        st.warning("⚠️ Trang này cần kết nối Sapo (LIVE).")
+        return
+    _PERIODS = {"📅 1 tuần": "1tuan", "🗓️ 1 tháng": "1thang",
+                "📆 Tháng này": "thangnay", "🎯 Năm này": "namnay"}
+    _pick = st.radio("Khoảng thời gian", list(_PERIODS), horizontal=True,
+                     label_visibility="collapsed", key="sales_period")
+    period = _PERIODS[_pick]
+    if st.button("🔄 Tải lại số liệu", key="sales_reload"):
+        st.cache_data.clear()
+        st.rerun()
+    if period == "namnay":
+        st.info("🎯 “Năm này” tải nhiều dữ liệu (cả năm) — lần đầu có thể chờ ~1–2 phút, sau đó nhanh.")
+    try:
+        sa = load_sales(period)
+    except Exception as e:
+        st.error(f"❌ Lỗi phân tích doanh thu: `{e}`")
+        return
+
+    def _d(pct):
+        return f"{pct:+.1f}% vs kỳ trước" if pct is not None else "— (kỳ trước = 0)"
+
+    st.markdown(f'<div class="sec sec-orange">Doanh thu · {sa["clabel"]} '
+                f'({sa["cur_range"][0]}–{sa["cur_range"][1]}) — so với {sa["plabel"]} '
+                f'({sa["prev_range"][0]}–{sa["prev_range"][1]})</div>', unsafe_allow_html=True)
+    k = st.columns(3)
+    k[0].metric("💵 Doanh thu NET", _fmt_vnd(sa["total"]), _d(sa["total_pct"]))
+    k[1].metric("🧾 Số đơn thành công", f"{sa['orders']:,}", _d(sa["orders_pct"]))
+    _aov = sa["total"] / sa["orders"] if sa["orders"] else 0
+    k[2].metric("📊 Giá trị TB/đơn", _fmt_vnd(_aov))
+    if sa.get("truncated"):
+        st.caption("⚠️ Dữ liệu rất lớn — đã lấy tối đa số trang cho phép; số liệu mang tính ước tính.")
+
+    st.markdown('<div class="sec sec-orange">Doanh thu theo GIAN HÀNG</div>', unsafe_allow_html=True)
+    _stores = sa["stores"]
+    if _stores:
+        cols = st.columns(min(len(_stores), 5))
+        for i, s in enumerate(_stores[:5]):
+            cols[i].metric(s["name"], _fmt_vnd(s["cur"]), _d(s["pct"]))
+        st.plotly_chart(_hbar([s["name"] for s in _stores], [s["cur"] for s in _stores], "#E24B4A"),
+                        width="stretch")
+
+    st.markdown('<div class="sec sec-orange">Doanh thu theo NHÓM SKU — thế mạnh sản phẩm</div>',
+                unsafe_allow_html=True)
+    _g = sa["groups"]
+    if _g:
+        _top = _g[:15]
+        st.plotly_chart(_hbar([x["name"] for x in _top], [x["cur"] for x in _top], "#16a34a"),
+                        width="stretch")
+        _tbl = pd.DataFrame([{
+            "Nhóm SKU": x["name"], "Doanh thu": _fmt_vnd(x["cur"]),
+            "Kỳ trước": _fmt_vnd(x["prev"]),
+            "± % vs kỳ trước": (f"{x['pct']:+.1f}%" if x["pct"] is not None else "—")}
+            for x in _g])
+        st.dataframe(_tbl, width="stretch", hide_index=True)
+
+    _render_tax_warning(sa["tax"])
+
+
 def _render_overview():
     _l, _r = st.columns([3, 1])
     _l.title("🛍️ VITRAN BOUTIQUE")
@@ -11855,7 +11979,15 @@ def load_snap():
 
 # ═════════════ TRANG RIÊNG: TỔNG QUAN ĐIỀU HÀNH (chỉ chủ shop + zenzen197) ═════════════
 if _page == PAGE_OVERVIEW:
-    _render_overview()
+    _ov_tab = st.radio(
+        "Tab tổng quan điều hành",
+        ["📊 Tổng quan điều hành", "💰 Phân tích bán hàng"],
+        horizontal=True, label_visibility="collapsed", key="ov_active_tab",
+    )
+    if _ov_tab.startswith("💰"):
+        _render_sales()
+    else:
+        _render_overview()
     st.stop()
 
 # ═════════════ TRANG VẬN HÀNH: Báo cáo cuối ngày + Đơn trả + Phiếu nhặt (tab ngang) ═════════════
