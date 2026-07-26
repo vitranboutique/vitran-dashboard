@@ -5528,30 +5528,33 @@ def _monthly_line(t):
     return fig
 
 
-def _cumulative_chart(t, shops):
-    _mo = t.get("monthly") or []
-    _names = [f"T{m['month']}" for m in _mo]
-    _fp = next((i for i, m in enumerate(_mo) if not m["actual"]), len(_mo))
-    _pal = ["#16233f", "#E24B4A", "#16a34a", "#7c3aed", "#0891b2", "#db2777"]
-    fig = go.Figure()
-    for bi, s in enumerate(shops):
-        sh = s.get("share", 1.0)
-        cum, acc = [], 0.0
-        for m in _mo:
-            acc += m["rev"] * sh
-            cum.append(acc / 1e9)
-        col = _pal[bi % len(_pal)]
-        fig.add_trace(go.Scatter(x=_names[:_fp], y=cum[:_fp], mode="lines", name=s["name"],
-                                 line=dict(color=col, width=2.5)))
-        fig.add_trace(go.Scatter(x=_names[max(0, _fp - 1):], y=cum[max(0, _fp - 1):], mode="lines",
-                                 line=dict(color=col, width=2.5, dash="dash"), showlegend=False))
-    fig.add_hline(y=3, line=dict(color="#d97706", width=2, dash="dot"),
-                  annotation_text="3 tỷ", annotation_position="top left")
-    fig.add_hline(y=10, line=dict(color="#dc2626", width=2, dash="dot"),
-                  annotation_text="10 tỷ", annotation_position="top left")
-    fig.update_layout(height=300, margin=dict(l=8, r=8, t=8, b=8),
-                      yaxis=dict(title="tỷ (lũy kế)", rangemode="tozero"),
-                      plot_bgcolor="rgba(0,0,0,0)", legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0))
+def _tax_treemap(t, plats, shops):
+    """Sơ đồ THÁP (treemap): Toàn shop → Sàn → Gian hàng. Ô to = doanh thu lớn, màu theo ngưỡng thuế.
+    Giá trị Sàn & Tổng = CỘNG DỒN từ các gian hàng con → tháp luôn khớp (branchvalues='total')."""
+    def _san(nm):
+        return nm.rsplit(" - ", 1)[-1] if " - " in nm else nm
+
+    def _c(v):
+        return "#dc2626" if v >= 10 else ("#f59e0b" if v >= 3 else "#16a34a")
+    leaves = [(s["name"], s["proj"] / 1e9) for s in shops]
+    san_ty = {}
+    for nm, v in leaves:
+        san_ty[_san(nm)] = san_ty.get(_san(nm), 0.0) + v
+    for p in plats:  # giữ cả sàn không có gian con (hiếm)
+        san_ty.setdefault(p["name"], 0.0)
+    sans = list(san_ty)
+    root_ty = sum(san_ty.values())
+    labels = ["Toàn shop"] + sans + [nm for nm, _ in leaves]
+    parents = [""] + ["Toàn shop"] * len(sans) + [_san(nm) for nm, _ in leaves]
+    vals = [root_ty] + [san_ty[s] for s in sans] + [v for _, v in leaves]
+    colors = ["#475569"] + [_c(san_ty[s]) for s in sans] + [_c(v) for _, v in leaves]
+    fig = go.Figure(go.Treemap(
+        labels=labels, parents=parents, values=vals, branchvalues="total",
+        marker=dict(colors=colors, line=dict(width=1, color="#fff")),
+        texttemplate="%{label}<br><b>%{value:.2f} tỷ</b>",
+        hovertemplate="%{label}<br>Dự đoán cả năm: %{value:.2f} tỷ<extra></extra>",
+        textfont=dict(color="#fff", size=13), tiling=dict(pad=2)))
+    fig.update_layout(height=380, margin=dict(l=2, r=2, t=2, b=2))
     return fig
 
 
@@ -5573,43 +5576,40 @@ def _render_tax_warning(t):
     with tc[1]:
         st.markdown(_tax_bars(t["proj_year"], t["t3"], t["t10"]), unsafe_allow_html=True)
 
-    # 2) Biểu đồ CỘT dự đoán cả năm theo GIAN HÀNG + vạch ngưỡng 3 tỷ / 10 tỷ
+    # 2) Sơ đồ THÁP: Toàn shop → Sàn → Gian hàng (ô to = doanh thu lớn, màu theo ngưỡng)
     if shops:
-        _bf = go.Figure(go.Bar(y=[s["name"] for s in shops], x=[s["proj"] / 1e9 for s in shops],
-                               orientation="h", marker_color="#16233f",
-                               text=[_fmt_vnd(s["proj"]) for s in shops], textposition="auto", cliponaxis=False))
-        _bf.add_vline(x=3, line=dict(color="#d97706", width=2, dash="dot"), annotation_text="3 tỷ")
-        _bf.add_vline(x=10, line=dict(color="#dc2626", width=2, dash="dot"), annotation_text="10 tỷ")
-        _bf.update_layout(height=max(170, 30 * len(shops) + 60), margin=dict(l=8, r=8, t=12, b=8),
-                          yaxis=dict(autorange="reversed"), xaxis=dict(title="tỷ đồng (dự đoán cả năm)"),
-                          plot_bgcolor="rgba(0,0,0,0)", showlegend=False)
-        st.markdown("**📊 Dự đoán cả năm theo GIAN HÀNG** — cột vượt qua vạch = vượt ngưỡng thuế.")
-        st.plotly_chart(_bf, width="stretch")
+        st.markdown("**🗂️ Sơ đồ THÁP — Toàn shop › Sàn › Gian hàng**")
+        st.caption("Ô CÀNG TO = doanh thu càng lớn.  Màu: 🟢 an toàn (dưới 3 tỷ) · 🟠 đã vượt 3 tỷ · 🔴 đã vượt 10 tỷ.  "
+                   "Bấm vào ô một SÀN để phóng to xem các gian hàng bên trong.")
+        st.plotly_chart(_tax_treemap(t, plats, shops), width="stretch")
 
     # 3) Bảng: TỔNG + từng SÀN + từng GIAN HÀNG
     def _stt(proj, thr):
         return "⛔ Vượt" if proj >= thr else ("⚠️ Sắp chạm" if proj >= thr * 0.8 else "✅ An toàn")
 
+    def _san_of(nm):
+        return nm.rsplit(" - ", 1)[-1] if " - " in nm else nm
+
     def _row(cap, name, proj, ytd):
         return {"Cấp": cap, "Tên": name, "🔮 Dự đoán": round(proj / 1e9, 2),
                 "Thực tế đã đạt": round(ytd / 1e9, 2), "Ngưỡng 3 tỷ": _stt(proj, t["t3"]),
                 "Ngưỡng 10 tỷ": _stt(proj, t["t10"])}
+    # xếp theo THÁP: TỔNG → từng SÀN → các GIAN HÀNG thuộc sàn đó
     _rows = [_row("🏢 TỔNG", "Toàn shop", t["proj_year"], t["ytd_rev"])]
-    _rows += [_row("🛒 Sàn", p["name"], p["proj"], p["ytd"]) for p in plats]
-    _rows += [_row("🏪 Gian hàng", s["name"], s["proj"], s["ytd"]) for s in shops]
-    with st.expander("📋 Bảng chi tiết (Tổng · Sàn · Gian hàng) + biểu đồ xu hướng năm"):
-        st.caption("💡 Bấm tên cột để sắp xếp ↑↓.")
+    for p in plats:
+        _rows.append(_row("🛒 Sàn", p["name"], p["proj"], p["ytd"]))
+        for s in shops:
+            if _san_of(s["name"]) == p["name"]:
+                _rows.append(_row("🏪 Gian hàng", "└ " + s["name"], s["proj"], s["ytd"]))
+    with st.expander("📋 Bảng số liệu chi tiết (Tổng · Sàn · Gian hàng) + doanh thu từng tháng"):
+        st.caption("💡 Xếp sẵn theo tháp: TỔNG → từng SÀN → gian hàng trong sàn.  Bấm tên cột để sắp xếp ↑↓.")
         st.dataframe(pd.DataFrame(_rows), width="stretch", hide_index=True, column_config={
             "🔮 Dự đoán": st.column_config.NumberColumn("🔮 Dự đoán (tỷ)", format="%.2f"),
             "Thực tế đã đạt": st.column_config.NumberColumn("Thực tế (tỷ)", format="%.2f")})
         if t.get("monthly"):
-            cA, cB = st.columns(2)
-            with cA:
-                st.markdown("**📈 Doanh thu từng tháng** (xanh = thực tế · đỏ = dự đoán)")
-                st.plotly_chart(_monthly_line(t), width="stretch")
-            with cB:
-                st.markdown("**📊 Lũy kế cả năm theo gian hàng vs ngưỡng**")
-                st.plotly_chart(_cumulative_chart(t, shops), width="stretch")
+            st.markdown("**📈 Doanh thu từng tháng trong năm** (xanh = thực tế đã bán · đỏ nét đứt = dự đoán) "
+                        "— để biết tháng nào cao, tháng nào thấp.")
+            st.plotly_chart(_monthly_line(t), width="stretch")
 
 
 def _render_sales():
