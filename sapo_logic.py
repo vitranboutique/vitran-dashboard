@@ -3158,6 +3158,9 @@ def _sales_fetch_range(fetch_json, start, end, max_pages=280):
     store_orders = defaultdict(int)                       # số đơn / gian hàng
     by_brand = defaultdict(float)                         # doanh thu / thương hiệu (pháp nhân thuế)
     store_grp = defaultdict(lambda: defaultdict(float))   # doanh thu {gian hàng: {nhóm SKU: đ}}
+    by_grp_qty = defaultdict(int)                         # SỐ LƯỢNG bán / nhóm SKU
+    store_qty = defaultdict(int)                          # SỐ LƯỢNG bán / gian hàng
+    store_grp_qty = defaultdict(lambda: defaultdict(int)) # SỐ LƯỢNG {gian hàng: {nhóm SKU}}
     truncated = False
     for p in range(1, max_pages + 1):
         rows = fetch_json("/admin/orders.json", limit=250, page=p,
@@ -3186,16 +3189,23 @@ def _sales_fetch_range(fetch_json, start, end, max_pages=280):
                     grp = parse_sku(li.get("sku")).get("productCode") or "?"
                 else:
                     grp = str(li.get("sku") or "?").split("-")[0] or "?"
+                qty = int(round(li.get("quantity") or 0))
                 amt = float(li.get("discounted_total")
                             or ((li.get("price") or 0) * (li.get("quantity") or 0))) * ratio
                 by_grp[grp] += amt
                 store_grp[store][grp] += amt
+                by_grp_qty[grp] += qty
+                store_qty[store] += qty
+                store_grp_qty[store][grp] += qty
         if p == max_pages and rows:
             truncated = True
     return {"total": total, "orders": orders_n,
             "by_store": dict(by_store), "by_grp": dict(by_grp),
             "store_orders": dict(store_orders), "by_brand": dict(by_brand),
-            "store_grp": {k: dict(v) for k, v in store_grp.items()}, "truncated": truncated}
+            "store_grp": {k: dict(v) for k, v in store_grp.items()},
+            "by_grp_qty": dict(by_grp_qty), "store_qty": dict(store_qty),
+            "store_grp_qty": {k: dict(v) for k, v in store_grp_qty.items()},
+            "truncated": truncated}
 
 
 def get_sales_analysis(fetch_json, period="thangnay"):
@@ -3213,9 +3223,14 @@ def get_sales_analysis(fetch_json, period="thangnay"):
             return None if not c else 100.0
         return (c - p) / p * 100.0
 
-    def _merge(cd, pd, topn=None):
-        out = [{"name": k, "cur": cd.get(k, 0.0), "prev": pd.get(k, 0.0),
-                "pct": _pct(cd.get(k, 0.0), pd.get(k, 0.0))} for k in set(cd) | set(pd)]
+    def _merge(cd, pd, qd=None, topn=None):
+        out = []
+        for k in set(cd) | set(pd):
+            row = {"name": k, "cur": cd.get(k, 0.0), "prev": pd.get(k, 0.0),
+                   "pct": _pct(cd.get(k, 0.0), pd.get(k, 0.0))}
+            if qd is not None:
+                row["qty"] = qd.get(k, 0)
+            out.append(row)
         out.sort(key=lambda x: -x["cur"])
         return out[:topn] if topn else out
 
@@ -3264,15 +3279,18 @@ def get_sales_analysis(fetch_json, period="thangnay"):
         c, p = cur["by_store"].get(k, 0.0), prev["by_store"].get(k, 0.0)
         n = cur["store_orders"].get(k, 0)
         stores.append({"name": k, "cur": c, "prev": p, "pct": _pct(c, p),
-                       "orders": n, "aov": (c / n if n else 0.0)})
+                       "orders": n, "aov": (c / n if n else 0.0),
+                       "qty": cur["store_qty"].get(k, 0)})
     stores.sort(key=lambda x: -x["cur"])
 
-    # doanh thu NHÓM SKU theo TỪNG gian hàng (current vs prev)
+    # doanh thu + SỐ LƯỢNG bán NHÓM SKU theo TỪNG gian hàng (current vs prev)
     store_groups = {}
     for st in set(cur["store_grp"]) | set(prev["store_grp"]):
         cg, pg = cur["store_grp"].get(st, {}), prev["store_grp"].get(st, {})
+        cq = cur["store_grp_qty"].get(st, {})
         lst = [{"name": g, "cur": cg.get(g, 0.0), "prev": pg.get(g, 0.0),
-                "pct": _pct(cg.get(g, 0.0), pg.get(g, 0.0))} for g in set(cg) | set(pg)]
+                "pct": _pct(cg.get(g, 0.0), pg.get(g, 0.0)), "qty": cq.get(g, 0)}
+               for g in set(cg) | set(pg)]
         lst.sort(key=lambda x: -x["cur"])
         store_groups[st] = lst
 
@@ -3283,7 +3301,7 @@ def get_sales_analysis(fetch_json, period="thangnay"):
         "total": cur["total"], "prev_total": prev["total"], "total_pct": _pct(cur["total"], prev["total"]),
         "orders": cur["orders"], "prev_orders": prev["orders"], "orders_pct": _pct(cur["orders"], prev["orders"]),
         "stores": stores,
-        "groups": _merge(cur["by_grp"], prev["by_grp"], topn=25),
+        "groups": _merge(cur["by_grp"], prev["by_grp"], cur["by_grp_qty"], topn=25),
         "store_groups": store_groups,
         "truncated": cur.get("truncated") or prev.get("truncated"),
         "tax": tax,
