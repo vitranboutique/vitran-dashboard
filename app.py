@@ -5534,8 +5534,11 @@ def _tax_treemap(t, plats, shops):
     def _san(nm):
         return nm.rsplit(" - ", 1)[-1] if " - " in nm else nm
 
-    def _c(v):
-        return "#dc2626" if v >= 10 else ("#f59e0b" if v >= 3 else "#16a34a")
+    def _leaf_c(v):  # chỉ GIAN HÀNG tô màu ngưỡng — tông dịu
+        return "#db5b52" if v >= 10 else ("#e39a3f" if v >= 3 else "#45a878")
+
+    def _dot(v):
+        return "🔴" if v >= 10 else ("🟠" if v >= 3 else "🟢")
     leaves = [(s["name"], s["proj"] / 1e9) for s in shops]
     san_ty = {}
     for nm, v in leaves:
@@ -5544,17 +5547,22 @@ def _tax_treemap(t, plats, shops):
         san_ty.setdefault(p["name"], 0.0)
     sans = list(san_ty)
     root_ty = sum(san_ty.values())
-    labels = ["Toàn shop"] + sans + [nm for nm, _ in leaves]
-    parents = [""] + ["Toàn shop"] * len(sans) + [_san(nm) for nm, _ in leaves]
+    # ids để ghép cha–con; labels để hiển thị (có chấm trạng thái ở SÀN)
+    ids = ["root"] + sans + [nm for nm, _ in leaves]
+    parents = [""] + ["root"] * len(sans) + [_san(nm) for nm, _ in leaves]
+    labels = (["🏢 Toàn shop"] + [f"{s} {_dot(san_ty[s])}" for s in sans]
+              + [nm.replace(" - ", " · ") for nm, _ in leaves])
     vals = [root_ty] + [san_ty[s] for s in sans] + [v for _, v in leaves]
-    colors = ["#475569"] + [_c(san_ty[s]) for s in sans] + [_c(v) for _, v in leaves]
+    # khung (Tổng, Sàn) = navy thương hiệu; ô gian hàng = màu ngưỡng dịu
+    colors = ["#16233f"] + ["#2b3f63"] * len(sans) + [_leaf_c(v) for _, v in leaves]
     fig = go.Figure(go.Treemap(
-        labels=labels, parents=parents, values=vals, branchvalues="total",
-        marker=dict(colors=colors, line=dict(width=1, color="#fff")),
+        ids=ids, labels=labels, parents=parents, values=vals, branchvalues="total",
+        marker=dict(colors=colors, line=dict(width=2, color="#ffffff")),
         texttemplate="%{label}<br><b>%{value:.2f} tỷ</b>",
         hovertemplate="%{label}<br>Dự đoán cả năm: %{value:.2f} tỷ<extra></extra>",
-        textfont=dict(color="#fff", size=13), tiling=dict(pad=2)))
-    fig.update_layout(height=380, margin=dict(l=2, r=2, t=2, b=2))
+        textfont=dict(color="#ffffff", size=13), textposition="middle center",
+        tiling=dict(pad=3), pathbar=dict(visible=True, thickness=18)))
+    fig.update_layout(height=400, margin=dict(l=2, r=2, t=2, b=2))
     return fig
 
 
@@ -5579,8 +5587,9 @@ def _render_tax_warning(t):
     # 2) Sơ đồ THÁP: Toàn shop → Sàn → Gian hàng (ô to = doanh thu lớn, màu theo ngưỡng)
     if shops:
         st.markdown("**🗂️ Sơ đồ THÁP — Toàn shop › Sàn › Gian hàng**")
-        st.caption("Ô CÀNG TO = doanh thu càng lớn.  Màu: 🟢 an toàn (dưới 3 tỷ) · 🟠 đã vượt 3 tỷ · 🔴 đã vượt 10 tỷ.  "
-                   "Bấm vào ô một SÀN để phóng to xem các gian hàng bên trong.")
+        st.caption("Ô CÀNG TO = doanh thu càng lớn.  Ô gian hàng đổi màu theo ngưỡng: 🟢 an toàn (dưới 3 tỷ) · "
+                   "🟠 vượt 3 tỷ · 🔴 vượt 10 tỷ (chấm cạnh tên SÀN = trạng thái của cả sàn).  "
+                   "Bấm vào một SÀN để phóng to xem các gian hàng bên trong.")
         st.plotly_chart(_tax_treemap(t, plats, shops), width="stretch")
 
     # 3) Bảng: TỔNG + từng SÀN + từng GIAN HÀNG
