@@ -5489,104 +5489,125 @@ def _outcome_bar(stores):
 
 
 def _tax_bars(proj, t3, t10):
+    """2 thanh ngưỡng bo tròn, màu theo trạng thái (xanh an toàn / cam sắp / đỏ vượt)."""
     bars = ""
     for label, thr in (("3 tỷ", t3), ("10 tỷ", t10)):
         pct = (proj / thr * 100) if thr else 0
-        w = max(2, min(100, pct))
+        w = max(4, min(100, pct))
         if proj >= thr:
-            col, tag = "#dc2626", f"⛔ VƯỢT ({pct:.0f}%)"
+            col, tag = "#dc2626", f"⛔ Vượt {pct:.0f}%"
         elif pct >= 80:
-            col, tag = "#d97706", f"⚠️ SẮP CHẠM ({pct:.0f}%)"
+            col, tag = "#d97706", f"⚠️ Sắp {pct:.0f}%"
         else:
-            col, tag = "#16a34a", f"✅ An toàn ({pct:.0f}%)"
-        bars += (f'<div style="margin:2px 0 5px"><div style="display:flex;justify-content:space-between;'
-                 f'font-size:12px;font-weight:700"><span>Ngưỡng {label}</span>'
+            col, tag = "#16a34a", f"✅ {pct:.0f}%"
+        bars += (f'<div style="margin:5px 0"><div style="display:flex;justify-content:space-between;'
+                 f'font-size:11.5px;font-weight:700;color:#475569"><span>Ngưỡng {label}</span>'
                  f'<span style="color:{col}">{tag}</span></div>'
-                 f'<div style="background:#e5e7eb;border-radius:6px;height:12px;overflow:hidden;margin-top:2px">'
-                 f'<div style="width:{w}%;height:100%;background:{col}"></div></div></div>')
+                 f'<div style="background:#eef1f6;border-radius:20px;height:9px;overflow:hidden;margin-top:2px">'
+                 f'<div style="width:{w}%;height:100%;background:{col};border-radius:20px"></div></div></div>')
     return bars
 
 
-def _render_tax_warning(t):
-    st.markdown('<div class="sec sec-orange">⚠️ Cảnh báo ngưỡng thuế theo TỪNG THƯƠNG HIỆU '
-                '(dự báo cả năm · mùa vụ)'
-                '<span class="ic" title="Mỗi thương hiệu (VITRAN BOUTIQUE / SMOSS / MUN-AI) là 1 pháp nhân nộp '
-                'thuế riêng. Số lớn = DỰ ĐOÁN doanh thu cả năm (theo mùa vụ: 6 tháng 11,12,1,2,3,4 bán gấp đôi); '
-                'dòng dưới = thực tế đã đạt. Biểu đồ lũy kế = mỗi thương hiệu 1 đường, cắt vạch ngang là chạm ngưỡng.">&#9432;</span></div>',
-                unsafe_allow_html=True)
-    _peak = ", ".join(str(m) for m in t["peak_months"])
-    st.caption(f"Mỗi thương hiệu (VITRAN BOUTIQUE / SMOSS / MUN-AI…) là 1 pháp nhân nộp thuế RIÊNG. "
-               f"Dự báo cả năm = doanh thu đã đạt ÷ trọng số mùa vụ đã qua × cả năm — 6 tháng cao điểm "
-               f"(tháng {_peak}) bán GẤP ĐÔI. Ước theo số đơn × TB/đơn, là con số CẢNH BÁO SỚM.")
+def _monthly_line(t):
     _mo = t.get("monthly") or []
-    if _mo:
-        _names = [f"T{m['month']}" for m in _mo]
-        _vals = [m["rev"] / 1e9 for m in _mo]                 # tỷ đồng
-        _fp = next((i for i, m in enumerate(_mo) if not m["actual"]), len(_mo))  # tháng dự đoán đầu tiên
-        _fig = go.Figure()
-        _ai = list(range(0, _fp))
-        if _ai:                                               # đường LIỀN = tháng đã qua (thực tế)
-            _fig.add_trace(go.Scatter(
-                x=[_names[i] for i in _ai], y=[_vals[i] for i in _ai], name="Thực tế",
-                mode="lines+markers+text", line=dict(color="#16233f", width=3), marker=dict(size=8),
-                text=[f"{_vals[i]:.1f}" for i in _ai], textposition="top center"))
-        _pi = list(range(max(0, _fp - 1), len(_mo)))          # đường ĐỨT đỏ = dự đoán (nối từ điểm thực tế cuối)
-        _fig.add_trace(go.Scatter(
-            x=[_names[i] for i in _pi], y=[_vals[i] for i in _pi], name="Dự đoán",
-            mode="lines+markers+text", line=dict(color="#E24B4A", width=3, dash="dash"), marker=dict(size=8),
-            text=[(f"{_vals[i]:.1f}" if i >= _fp else "") for i in _pi], textposition="top center"))
-        _fig.update_layout(height=340, margin=dict(l=8, r=8, t=30, b=8),
-                           yaxis=dict(title="tỷ đồng", rangemode="tozero"),
-                           plot_bgcolor="rgba(0,0,0,0)",
-                           legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0))
-        st.markdown("**📈 Doanh thu từng tháng trong năm (T1→T12)** — đường LIỀN xanh = đã qua (thực tế), "
-                    "đường ĐỨT đỏ = DỰ ĐOÁN. Thấy rõ tháng cao/thấp: đầu & cuối năm cao, giữa năm thấp.")
-        st.plotly_chart(_fig, width="stretch")
-    brands = t.get("brands") or [{"brand": "Toàn shop", "ytd": t["ytd_rev"],
-                                  "proj": t["proj_year"], "share": 1.0}]
+    _names = [f"T{m['month']}" for m in _mo]
+    _vals = [m["rev"] / 1e9 for m in _mo]
+    _fp = next((i for i, m in enumerate(_mo) if not m["actual"]), len(_mo))
+    fig = go.Figure()
+    _ai = list(range(0, _fp))
+    if _ai:
+        fig.add_trace(go.Scatter(x=[_names[i] for i in _ai], y=[_vals[i] for i in _ai], name="Thực tế",
+                                 mode="lines+markers", line=dict(color="#16233f", width=3), marker=dict(size=7)))
+    _pi = list(range(max(0, _fp - 1), len(_mo)))
+    fig.add_trace(go.Scatter(x=[_names[i] for i in _pi], y=[_vals[i] for i in _pi], name="Dự đoán",
+                             mode="lines+markers", line=dict(color="#E24B4A", width=3, dash="dash"), marker=dict(size=7)))
+    fig.update_layout(height=300, margin=dict(l=8, r=8, t=8, b=8),
+                      yaxis=dict(title="tỷ đồng", rangemode="tozero"),
+                      plot_bgcolor="rgba(0,0,0,0)", legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0))
+    return fig
 
-    def _thr_tag(proj, thr):
-        pct = (proj / thr * 100) if thr else 0
-        if proj >= thr:
-            return f'<span style="color:#dc2626;font-weight:800">⛔ Vượt ({pct:.0f}%)</span>'
-        if pct >= 80:
-            return f'<span style="color:#d97706;font-weight:800">⚠️ Sắp chạm ({pct:.0f}%)</span>'
-        return f'<span style="color:#16a34a;font-weight:800">✅ An toàn ({pct:.0f}%)</span>'
 
-    for b in brands:
-        cc = st.columns([2, 3])
-        cc[0].metric(f"🏷️ {b['brand']} — 🔮 DỰ ĐOÁN cả năm", _fmt_vnd(b["proj"]),
-                     f"thực tế đã đạt ~{_fmt_vnd(b['ytd'])}", delta_color="off")
-        cc[1].markdown(f'<div style="padding-top:16px;font-size:13px;line-height:2">Ngưỡng <b>3 tỷ</b>: '
-                       f'{_thr_tag(b["proj"], t["t3"])}<br>Ngưỡng <b>10 tỷ</b>: '
-                       f'{_thr_tag(b["proj"], t["t10"])}</div>', unsafe_allow_html=True)
+def _cumulative_chart(t, shops):
+    _mo = t.get("monthly") or []
+    _names = [f"T{m['month']}" for m in _mo]
+    _fp = next((i for i, m in enumerate(_mo) if not m["actual"]), len(_mo))
+    _pal = ["#16233f", "#E24B4A", "#16a34a", "#7c3aed", "#0891b2", "#db2777"]
+    fig = go.Figure()
+    for bi, s in enumerate(shops):
+        sh = s.get("share", 1.0)
+        cum, acc = [], 0.0
+        for m in _mo:
+            acc += m["rev"] * sh
+            cum.append(acc / 1e9)
+        col = _pal[bi % len(_pal)]
+        fig.add_trace(go.Scatter(x=_names[:_fp], y=cum[:_fp], mode="lines", name=s["name"],
+                                 line=dict(color=col, width=2.5)))
+        fig.add_trace(go.Scatter(x=_names[max(0, _fp - 1):], y=cum[max(0, _fp - 1):], mode="lines",
+                                 line=dict(color=col, width=2.5, dash="dash"), showlegend=False))
+    fig.add_hline(y=3, line=dict(color="#d97706", width=2, dash="dot"),
+                  annotation_text="3 tỷ", annotation_position="top left")
+    fig.add_hline(y=10, line=dict(color="#dc2626", width=2, dash="dot"),
+                  annotation_text="10 tỷ", annotation_position="top left")
+    fig.update_layout(height=300, margin=dict(l=8, r=8, t=8, b=8),
+                      yaxis=dict(title="tỷ (lũy kế)", rangemode="tozero"),
+                      plot_bgcolor="rgba(0,0,0,0)", legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0))
+    return fig
 
-    # Biểu đồ LŨY KẾ cả năm theo thương hiệu + đường ngưỡng 3 tỷ / 10 tỷ (thay 2 thanh phẳng)
-    if _mo:
-        _pal = ["#16233f", "#E24B4A", "#16a34a", "#7c3aed", "#0891b2"]
-        _cf = go.Figure()
-        for _bi, b in enumerate(brands):
-            _sh = b.get("share", 1.0)
-            _cum, _s = [], 0.0
-            for m in _mo:
-                _s += m["rev"] * _sh
-                _cum.append(_s / 1e9)
-            _col = _pal[_bi % len(_pal)]
-            _cf.add_trace(go.Scatter(x=_names[:_fp], y=_cum[:_fp], mode="lines",
-                                     name=b["brand"], line=dict(color=_col, width=3)))
-            _cf.add_trace(go.Scatter(x=_names[max(0, _fp - 1):], y=_cum[max(0, _fp - 1):], mode="lines",
-                                     line=dict(color=_col, width=3, dash="dash"), showlegend=False))
-        _cf.add_hline(y=3, line=dict(color="#d97706", width=2, dash="dot"),
-                      annotation_text="Ngưỡng 3 tỷ", annotation_position="top left")
-        _cf.add_hline(y=10, line=dict(color="#dc2626", width=2, dash="dot"),
-                      annotation_text="Ngưỡng 10 tỷ", annotation_position="top left")
-        _cf.update_layout(height=350, margin=dict(l=8, r=8, t=30, b=8),
-                          yaxis=dict(title="tỷ đồng (lũy kế)", rangemode="tozero"),
-                          plot_bgcolor="rgba(0,0,0,0)",
-                          legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0))
-        st.markdown("**📊 Doanh thu LŨY KẾ cả năm theo thương hiệu** — đường cắt vạch ngang = lúc chạm ngưỡng "
-                    "thuế 3 tỷ / 10 tỷ. Đoạn LIỀN = thực tế, ĐỨT = dự đoán.")
-        st.plotly_chart(_cf, width="stretch")
+
+def _render_tax_warning(t):
+    st.markdown('<div class="sec sec-orange">⚠️ Cảnh báo ngưỡng thuế — dự đoán cả năm (T1→T12): TỔNG · từng SÀN · từng GIAN HÀNG'
+                '<span class="ic" title="Mỗi SÀN và mỗi GIAN HÀNG tính RIÊNG (không gộp VITRAN). Dự đoán cả năm = '
+                'doanh thu đã đạt ÷ trọng số mùa vụ đã qua × cả năm (6 tháng 11,12,1,2,3,4 bán gấp đôi). Ước theo '
+                'số đơn × TB/đơn — CẢNH BÁO SỚM.">&#9432;</span></div>', unsafe_allow_html=True)
+    _peak = ", ".join(str(m) for m in t["peak_months"])
+    st.caption(f"Dự đoán cả năm (tháng 1→12) theo mùa vụ: 6 tháng cao điểm (tháng {_peak}) bán GẤP ĐÔI. "
+               "Con số ước tính để CẢNH BÁO SỚM, không phải quyết toán thuế.")
+    shops = t.get("shops") or []
+    plats = t.get("platforms") or []
+
+    # 1) TỔNG toàn shop + 2 thanh ngưỡng bo tròn
+    tc = st.columns([2, 3])
+    tc[0].metric("🏢 TỔNG TOÀN SHOP — 🔮 dự đoán cả năm", _fmt_vnd(t["proj_year"]),
+                 f"thực tế đã đạt ~{_fmt_vnd(t['ytd_rev'])}", delta_color="off")
+    with tc[1]:
+        st.markdown(_tax_bars(t["proj_year"], t["t3"], t["t10"]), unsafe_allow_html=True)
+
+    # 2) Biểu đồ CỘT dự đoán cả năm theo GIAN HÀNG + vạch ngưỡng 3 tỷ / 10 tỷ
+    if shops:
+        _bf = go.Figure(go.Bar(y=[s["name"] for s in shops], x=[s["proj"] / 1e9 for s in shops],
+                               orientation="h", marker_color="#16233f",
+                               text=[_fmt_vnd(s["proj"]) for s in shops], textposition="auto", cliponaxis=False))
+        _bf.add_vline(x=3, line=dict(color="#d97706", width=2, dash="dot"), annotation_text="3 tỷ")
+        _bf.add_vline(x=10, line=dict(color="#dc2626", width=2, dash="dot"), annotation_text="10 tỷ")
+        _bf.update_layout(height=max(170, 30 * len(shops) + 60), margin=dict(l=8, r=8, t=12, b=8),
+                          yaxis=dict(autorange="reversed"), xaxis=dict(title="tỷ đồng (dự đoán cả năm)"),
+                          plot_bgcolor="rgba(0,0,0,0)", showlegend=False)
+        st.markdown("**📊 Dự đoán cả năm theo GIAN HÀNG** — cột vượt qua vạch = vượt ngưỡng thuế.")
+        st.plotly_chart(_bf, width="stretch")
+
+    # 3) Bảng: TỔNG + từng SÀN + từng GIAN HÀNG
+    def _stt(proj, thr):
+        return "⛔ Vượt" if proj >= thr else ("⚠️ Sắp chạm" if proj >= thr * 0.8 else "✅ An toàn")
+
+    def _row(cap, name, proj, ytd):
+        return {"Cấp": cap, "Tên": name, "🔮 Dự đoán cả năm": _fmt_vnd(proj),
+                "Thực tế đã đạt": _fmt_vnd(ytd), "Ngưỡng 3 tỷ": _stt(proj, t["t3"]),
+                "Ngưỡng 10 tỷ": _stt(proj, t["t10"])}
+    _rows = [_row("🏢 TỔNG", "Toàn shop", t["proj_year"], t["ytd_rev"])]
+    _rows += [_row("🛒 Sàn", p["name"], p["proj"], p["ytd"]) for p in plats]
+    _rows += [_row("🏪 Gian hàng", s["name"], s["proj"], s["ytd"]) for s in shops]
+    st.markdown("**Chi tiết dự đoán: TỔNG · từng SÀN · từng GIAN HÀNG**")
+    st.dataframe(pd.DataFrame(_rows), width="stretch", hide_index=True)
+
+    # 4) 2 biểu đồ đường cạnh nhau: tháng (mùa vụ) + lũy kế (chạm ngưỡng)
+    if t.get("monthly"):
+        cA, cB = st.columns(2)
+        with cA:
+            st.markdown("**📈 Doanh thu từng tháng** (xanh = thực tế · đỏ = dự đoán)")
+            st.plotly_chart(_monthly_line(t), width="stretch")
+        with cB:
+            st.markdown("**📊 Lũy kế cả năm theo gian hàng vs ngưỡng**")
+            st.plotly_chart(_cumulative_chart(t, shops), width="stretch")
 
 
 def _render_sales():

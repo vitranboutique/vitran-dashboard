@@ -3324,15 +3324,23 @@ def get_sales_analysis(fetch_json, period="thangnay"):
            "elapsed_w": elapsed_w, "total_w": total_w, "remain_w": total_w - elapsed_w,
            "peak_months": sorted(PEAK), "year": today.year, "monthly": monthly,
            "t3": 3_000_000_000, "t10": 10_000_000_000}
-    # Cảnh báo thuế THEO TỪNG THƯƠNG HIỆU (mỗi TH ~ 1 pháp nhân nộp thuế riêng) — phân bổ YTD
-    # toàn shop theo TỈ TRỌNG doanh thu kỳ hiện tại của thương hiệu (ước lượng, khỏi tải cả năm).
-    bc = cur["by_brand"]
-    tot_bc = sum(bc.values()) or 1.0
-    tax["brands"] = [{
-        "brand": b, "cur": rev, "share": rev / tot_bc,
-        "ytd": ytd_rev * (rev / tot_bc),
-        "proj": (ytd_rev * (rev / tot_bc) / elapsed_w * total_w) if elapsed_w else 0.0,
-    } for b, rev in sorted(bc.items(), key=lambda x: -x[1])]
+    # Cảnh báo thuế: dự đoán cả năm ở 3 CẤP — TỔNG + từng SÀN + từng GIAN HÀNG (mỗi sàn/gian hàng
+    # tính riêng, KHÔNG gộp VITRAN). Phân bổ YTD theo TỈ TRỌNG doanh thu kỳ (ước lượng, khỏi tải cả năm).
+    from collections import defaultdict as _dd
+    bs = cur["by_store"]
+    tot_s = sum(bs.values()) or 1.0
+
+    def _proj(sh):
+        return (ytd_rev * sh / elapsed_w * total_w) if elapsed_w else 0.0
+    tax["shops"] = [{"name": k, "cur": v, "share": v / tot_s,
+                     "ytd": ytd_rev * v / tot_s, "proj": _proj(v / tot_s)}
+                    for k, v in sorted(bs.items(), key=lambda x: -x[1])]
+    _plat = _dd(float)
+    for k, v in bs.items():
+        _plat[k.rsplit(" - ", 1)[-1] if " - " in k else k] += v
+    tax["platforms"] = [{"name": k, "cur": v, "share": v / tot_s,
+                         "ytd": ytd_rev * v / tot_s, "proj": _proj(v / tot_s)}
+                        for k, v in sorted(_plat.items(), key=lambda x: -x[1])]
 
     # doanh thu / gian hàng kèm SỐ ĐƠN + GIÁ TRỊ TB/ĐƠN
     stores = []
