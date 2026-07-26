@@ -5597,18 +5597,16 @@ def _render_tax_warning(t):
     _rows = [_row("🏢 TỔNG", "Toàn shop", t["proj_year"], t["ytd_rev"])]
     _rows += [_row("🛒 Sàn", p["name"], p["proj"], p["ytd"]) for p in plats]
     _rows += [_row("🏪 Gian hàng", s["name"], s["proj"], s["ytd"]) for s in shops]
-    st.markdown("**Chi tiết dự đoán: TỔNG · từng SÀN · từng GIAN HÀNG**")
-    st.dataframe(pd.DataFrame(_rows), width="stretch", hide_index=True)
-
-    # 4) 2 biểu đồ đường cạnh nhau: tháng (mùa vụ) + lũy kế (chạm ngưỡng)
-    if t.get("monthly"):
-        cA, cB = st.columns(2)
-        with cA:
-            st.markdown("**📈 Doanh thu từng tháng** (xanh = thực tế · đỏ = dự đoán)")
-            st.plotly_chart(_monthly_line(t), width="stretch")
-        with cB:
-            st.markdown("**📊 Lũy kế cả năm theo gian hàng vs ngưỡng**")
-            st.plotly_chart(_cumulative_chart(t, shops), width="stretch")
+    with st.expander("📋 Bảng chi tiết (Tổng · Sàn · Gian hàng) + biểu đồ xu hướng năm"):
+        st.dataframe(pd.DataFrame(_rows), width="stretch", hide_index=True)
+        if t.get("monthly"):
+            cA, cB = st.columns(2)
+            with cA:
+                st.markdown("**📈 Doanh thu từng tháng** (xanh = thực tế · đỏ = dự đoán)")
+                st.plotly_chart(_monthly_line(t), width="stretch")
+            with cB:
+                st.markdown("**📊 Lũy kế cả năm theo gian hàng vs ngưỡng**")
+                st.plotly_chart(_cumulative_chart(t, shops), width="stretch")
 
 
 def _render_sales():
@@ -5673,12 +5671,9 @@ def _render_sales():
     qc[3].metric("🚫 Giao hàng thất bại", f"{q.get('fail_rate', 0):.1f}%",
                  f"{q.get('fail_n', 0):,} đơn · {_fmt_vnd(q.get('fail_val', 0))}", delta_color="off",
                  help="Phiếu trả loại 'giao thất bại' (không giao được, hoàn về shop) ÷ tổng đơn đặt. Kèm số tiền.")
-    st.caption("👇 Chi tiết chất lượng THEO TỪNG GIAN HÀNG (chuyển đổi/hủy/trả/thất bại) xem ở mục "
-               "“Theo gian hàng” ngay bên dưới — biểu đồ + bảng gộp.")
-
-    st.markdown('<div class="sec sec-orange">Theo GIAN HÀNG (tên shop × sàn) — doanh thu &amp; chất lượng'
-                '<span class="ic" title="Mỗi dòng = 1 gian hàng (thương hiệu × sàn TMĐT). Biểu đồ trên = '
-                'doanh thu; biểu đồ chồng = cơ cấu đơn (chuyển đổi/hủy/thất bại); bảng = số liệu đầy đủ.">'
+    st.markdown('<div class="sec sec-orange">Theo GIAN HÀNG (tên shop × sàn)'
+                '<span class="ic" title="Mỗi gian hàng = thương hiệu × sàn TMĐT. Biểu đồ trái = doanh thu; '
+                'phải = cơ cấu đơn (chuyển đổi/hủy/thất bại). Số liệu đầy đủ trong bảng thu gọn bên dưới.">'
                 '&#9432;</span></div>', unsafe_allow_html=True)
     _stores = sa["stores"]
     if _stores:
@@ -5690,22 +5685,17 @@ def _render_sales():
         with _cB:
             st.markdown("**📊 Cơ cấu đơn** (✅CĐ · ❌hủy · 🚫thất bại)")
             st.plotly_chart(_outcome_bar(_stores), width="stretch")
-        # MỘT bảng gộp: doanh thu + đơn + chất lượng
-        _sdf = pd.DataFrame([{
-            "Gian hàng": s["name"], "Doanh thu": _fmt_vnd(s["cur"]),
-            "±%": (f"{s['pct']:+.1f}%" if s["pct"] is not None else "—"),
-            "Số đơn": f"{s['orders']:,}", "SL bán": f"{s.get('qty', 0):,}", "TB/đơn": _fmt_vnd(s["aov"]),
-            "✅ CĐ": f"{s.get('conv_rate', 0):.0f}%",
-            "❌ Hủy": f"{s.get('cancel_rate', 0):.0f}%·{_fmt_vnd(s.get('cancel_val', 0))}",
-            "↩️ Trả": f"{s.get('refund_rate', 0):.0f}%·{_fmt_vnd(s.get('refund_val', 0))}",
-            "🚫 TB": f"{s.get('fail_rate', 0):.0f}%·{_fmt_vnd(s.get('fail_val', 0))}"}
-            for s in _stores])
-        st.dataframe(_sdf, width="stretch", hide_index=True)
-
-    st.markdown('<div class="sec sec-orange">Doanh thu theo NHÓM SKU — thế mạnh sản phẩm TỪNG GIAN HÀNG'
-                '<span class="ic" title="Doanh thu &amp; SL bán theo nhóm mã SKU (productCode). Bấm TAB để '
-                'xem riêng từng gian hàng — thấy shop nào mạnh sản phẩm nào.">&#9432;</span></div>',
-                unsafe_allow_html=True)
+        with st.expander("📋 Xem bảng số liệu đầy đủ theo gian hàng (doanh thu · đơn · chất lượng)"):
+            _sdf = pd.DataFrame([{
+                "Gian hàng": s["name"], "Doanh thu": _fmt_vnd(s["cur"]),
+                "±%": (f"{s['pct']:+.1f}%" if s["pct"] is not None else "—"),
+                "Số đơn": f"{s['orders']:,}", "SL bán": f"{s.get('qty', 0):,}", "TB/đơn": _fmt_vnd(s["aov"]),
+                "✅ CĐ": f"{s.get('conv_rate', 0):.0f}%",
+                "❌ Hủy": f"{s.get('cancel_rate', 0):.0f}%·{_fmt_vnd(s.get('cancel_val', 0))}",
+                "↩️ Trả": f"{s.get('refund_rate', 0):.0f}%·{_fmt_vnd(s.get('refund_val', 0))}",
+                "🚫 TB": f"{s.get('fail_rate', 0):.0f}%·{_fmt_vnd(s.get('fail_val', 0))}"}
+                for s in _stores])
+            st.dataframe(_sdf, width="stretch", hide_index=True)
 
     def _sku_block(g):
         if not g:
@@ -5714,21 +5704,15 @@ def _render_sales():
         _top = g[:15]
         st.plotly_chart(_hbar([x["name"] for x in _top], [x["cur"] for x in _top], "#16a34a"),
                         width="stretch")
-        _tbl = pd.DataFrame([{
-            "Nhóm SKU": x["name"], "Doanh thu": _fmt_vnd(x["cur"]),
-            "SL bán": f"{x.get('qty', 0):,}", "Kỳ trước": _fmt_vnd(x["prev"]),
-            "± % vs kỳ trước": (f"{x['pct']:+.1f}%" if x["pct"] is not None else "—")}
-            for x in g])
-        st.dataframe(_tbl, width="stretch", hide_index=True)
 
-    # Tab NGANG cho từng gian hàng (client-side, KHÔNG tải lại trang) + tab "Tất cả"
-    _sg = sa.get("store_groups") or {}
-    _tabs = st.tabs(["🏬 Tất cả"] + [s["name"] for s in _stores])
-    with _tabs[0]:
-        _sku_block(sa["groups"])
-    for _i, _s in enumerate(_stores, start=1):
-        with _tabs[_i]:
-            _sku_block(_sg.get(_s["name"], []))
+    with st.expander("🏷️ Doanh thu theo NHÓM SKU — thế mạnh sản phẩm từng gian hàng (bấm mở)"):
+        _sg = sa.get("store_groups") or {}
+        _tabs = st.tabs(["🏬 Tất cả"] + [s["name"] for s in _stores])
+        with _tabs[0]:
+            _sku_block(sa["groups"])
+        for _i, _s in enumerate(_stores, start=1):
+            with _tabs[_i]:
+                _sku_block(_sg.get(_s["name"], []))
 
     _render_tax_warning(sa["tax"])
 
