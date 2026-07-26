@@ -5471,6 +5471,23 @@ def _hbar(names, values, color):
     return fig
 
 
+def _outcome_bar(stores):
+    """Cột chồng NGANG: cơ cấu đơn mỗi gian hàng (✅ chuyển đổi · ❌ hủy · 🚫 giao thất bại ≈ 100%)."""
+    names = [s["name"] for s in stores]
+    fig = go.Figure()
+    for label, key, col in (("✅ Chuyển đổi", "conv_rate", "#16a34a"),
+                            ("❌ Hủy", "cancel_rate", "#dc2626"),
+                            ("🚫 Giao thất bại", "fail_rate", "#d97706")):
+        fig.add_trace(go.Bar(y=names, x=[s.get(key, 0) for s in stores], name=label,
+                             orientation="h", marker_color=col,
+                             text=[f"{s.get(key, 0):.0f}%" for s in stores], textposition="inside"))
+    fig.update_layout(barmode="stack", height=max(150, 34 * len(names) + 60),
+                      margin=dict(l=8, r=8, t=8, b=8), yaxis=dict(autorange="reversed"),
+                      xaxis=dict(title="% đơn", range=[0, 100]), plot_bgcolor="rgba(0,0,0,0)",
+                      legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0))
+    return fig
+
+
 def _tax_bars(proj, t3, t10):
     bars = ""
     for label, thr in (("3 tỷ", t3), ("10 tỷ", t10)):
@@ -5634,28 +5651,33 @@ def _render_sales():
     qc[3].metric("🚫 Giao hàng thất bại", f"{q.get('fail_rate', 0):.1f}%",
                  f"{q.get('fail_n', 0):,} đơn · {_fmt_vnd(q.get('fail_val', 0))}", delta_color="off",
                  help="Phiếu trả loại 'giao thất bại' (không giao được, hoàn về shop) ÷ tổng đơn đặt. Kèm số tiền.")
-    _sq = pd.DataFrame([{
-        "Gian hàng": s["name"], "Đơn đặt": f"{s.get('placed', 0):,}",
-        "✅ Chuyển đổi": f"{s.get('conv_rate', 0):.1f}%",
-        "❌ Hủy": f"{s.get('cancel_rate', 0):.1f}% · {_fmt_vnd(s.get('cancel_val', 0))}",
-        "↩️ Trả hàng": f"{s.get('refund_rate', 0):.1f}% · {_fmt_vnd(s.get('refund_val', 0))}",
-        "🚫 Giao thất bại": f"{s.get('fail_rate', 0):.1f}% · {_fmt_vnd(s.get('fail_val', 0))}"}
-        for s in sa["stores"]])
-    st.markdown("**Chi tiết theo từng gian hàng:**")
-    st.dataframe(_sq, width="stretch", hide_index=True)
+    st.caption("👇 Chi tiết chất lượng THEO TỪNG GIAN HÀNG (chuyển đổi/hủy/trả/thất bại) xem ở mục "
+               "“Theo gian hàng” ngay bên dưới — biểu đồ + bảng gộp.")
 
-    st.markdown('<div class="sec sec-orange">Doanh thu theo GIAN HÀNG — kèm số đơn · SL bán · TB/đơn'
-                '<span class="ic" title="Doanh thu NET mỗi gian hàng; Số đơn (đã trừ hủy); SL bán = số sản '
-                'phẩm; TB/đơn = doanh thu ÷ số đơn.">&#9432;</span></div>', unsafe_allow_html=True)
+    st.markdown('<div class="sec sec-orange">Theo GIAN HÀNG (tên shop × sàn) — doanh thu &amp; chất lượng'
+                '<span class="ic" title="Mỗi dòng = 1 gian hàng (thương hiệu × sàn TMĐT). Biểu đồ trên = '
+                'doanh thu; biểu đồ chồng = cơ cấu đơn (chuyển đổi/hủy/thất bại); bảng = số liệu đầy đủ.">'
+                '&#9432;</span></div>', unsafe_allow_html=True)
     _stores = sa["stores"]
     if _stores:
-        st.plotly_chart(_hbar([s["name"] for s in _stores], [s["cur"] for s in _stores], "#E24B4A"),
-                        width="stretch")
+        _cA, _cB = st.columns(2)
+        with _cA:
+            st.markdown("**💵 Doanh thu**")
+            st.plotly_chart(_hbar([s["name"] for s in _stores], [s["cur"] for s in _stores], "#E24B4A"),
+                            width="stretch")
+        with _cB:
+            st.markdown("**📊 Cơ cấu đơn** (✅CĐ · ❌hủy · 🚫thất bại)")
+            st.plotly_chart(_outcome_bar(_stores), width="stretch")
+        # MỘT bảng gộp: doanh thu + đơn + chất lượng
         _sdf = pd.DataFrame([{
             "Gian hàng": s["name"], "Doanh thu": _fmt_vnd(s["cur"]),
-            "± % vs kỳ trước": (f"{s['pct']:+.1f}%" if s["pct"] is not None else "—"),
-            "Số đơn": f"{s['orders']:,}", "SL bán": f"{s.get('qty', 0):,}",
-            "TB/đơn": _fmt_vnd(s["aov"])} for s in _stores])
+            "±%": (f"{s['pct']:+.1f}%" if s["pct"] is not None else "—"),
+            "Số đơn": f"{s['orders']:,}", "SL bán": f"{s.get('qty', 0):,}", "TB/đơn": _fmt_vnd(s["aov"]),
+            "✅ CĐ": f"{s.get('conv_rate', 0):.0f}%",
+            "❌ Hủy": f"{s.get('cancel_rate', 0):.0f}%·{_fmt_vnd(s.get('cancel_val', 0))}",
+            "↩️ Trả": f"{s.get('refund_rate', 0):.0f}%·{_fmt_vnd(s.get('refund_val', 0))}",
+            "🚫 TB": f"{s.get('fail_rate', 0):.0f}%·{_fmt_vnd(s.get('fail_val', 0))}"}
+            for s in _stores])
         st.dataframe(_sdf, width="stretch", hide_index=True)
 
     st.markdown('<div class="sec sec-orange">Doanh thu theo NHÓM SKU — thế mạnh sản phẩm TỪNG GIAN HÀNG'
