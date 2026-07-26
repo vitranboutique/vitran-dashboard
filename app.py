@@ -5575,9 +5575,16 @@ def _render_tax_warning(t):
     shops = t.get("shops") or []
     plats = t.get("platforms") or []
 
-    # 1) Headline TỔNG toàn shop
-    st.metric("🏢 TỔNG TOÀN SHOP — 🔮 dự đoán cả năm (T1→T12)", _fmt_vnd(t["proj_year"]),
-              f"thực tế đã đạt ~{_fmt_vnd(t['ytd_rev'])}", delta_color="off")
+    # 1) Headline TỔNG toàn shop + biểu đồ doanh thu 12 tháng nằm cạnh
+    hc1, hc2 = st.columns([1, 2], gap="medium")
+    with hc1:
+        st.metric("🏢 TỔNG TOÀN SHOP — 🔮 dự đoán cả năm (T1→T12)", _fmt_vnd(t["proj_year"]),
+                  f"thực tế đã đạt ~{_fmt_vnd(t['ytd_rev'])}", delta_color="off")
+        st.caption("Biểu đồ bên phải: doanh thu từng tháng — 6 tháng cao điểm (11,12,1,2,3,4) bán gấp đôi.")
+    with hc2:
+        if t.get("monthly"):
+            st.markdown("**📈 Doanh thu từng tháng** (🔵 thực tế · 🔴 nét đứt = dự đoán)")
+            st.plotly_chart(_monthly_line(t), width="stretch")
 
     # 2) Thang tiến độ phân tầng: TỔNG · SÀN · GIAN HÀNG — thực tế (đậm) + dự đoán (nhạt) + vạch ngưỡng
     if shops:
@@ -5585,12 +5592,6 @@ def _render_tax_warning(t):
         st.caption("Mỗi thanh: phần ĐẬM = thực tế đã bán · phần NHẠT kéo dài = dự đoán cả năm.  "
                    "Hai vạch dọc = ngưỡng thuế 3 tỷ (cam) & 10 tỷ (đỏ) — thanh chạm/qua vạch = sắp/đã vượt.")
         st.markdown(_tax_ladder(t, plats, shops), unsafe_allow_html=True)
-
-    # 2b) Biểu đồ doanh thu 12 tháng — hình dạng mùa vụ đằng sau con số dự đoán
-    if t.get("monthly"):
-        st.markdown("**📈 Doanh thu từng tháng trong năm** (xanh = thực tế đã bán · đỏ nét đứt = dự đoán) "
-                    "— để biết tháng nào cao, tháng nào thấp.")
-        st.plotly_chart(_monthly_line(t), width="stretch")
 
     # 3) Bảng: TỔNG + từng SÀN + từng GIAN HÀNG
     def _stt(proj, thr):
