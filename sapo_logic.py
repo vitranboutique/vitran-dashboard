@@ -3161,6 +3161,7 @@ def _sales_fetch_range(fetch_json, start, end, max_pages=280):
     by_grp_qty = defaultdict(int)                         # SỐ LƯỢNG bán / nhóm SKU
     store_qty = defaultdict(int)                          # SỐ LƯỢNG bán / gian hàng
     store_grp_qty = defaultdict(lambda: defaultdict(int)) # SỐ LƯỢNG {gian hàng: {nhóm SKU}}
+    placed_n, gross_val, cancelled_n, cancelled_val = 0, 0.0, 0, 0.0   # đơn ĐẶT (gồm hủy) + đơn HỦY
     truncated = False
     for p in range(1, max_pages + 1):
         rows = fetch_json("/admin/orders.json", limit=250, page=p,
@@ -3171,9 +3172,13 @@ def _sales_fetch_range(fetch_json, start, end, max_pages=280):
             d = _vn_date_of(o.get("created_on"))
             if not d or d < start or d > end:
                 continue
-            if o.get("cancelled_on") or o.get("status") == "cancelled":
-                continue
             tp = float(o.get("total_price") or 0)
+            placed_n += 1
+            gross_val += tp
+            if o.get("cancelled_on") or o.get("status") == "cancelled":
+                cancelled_n += 1
+                cancelled_val += tp
+                continue
             rf = float(o.get("total_refunded") or 0)
             net = tp - rf
             total += net
@@ -3205,7 +3210,33 @@ def _sales_fetch_range(fetch_json, start, end, max_pages=280):
             "store_grp": {k: dict(v) for k, v in store_grp.items()},
             "by_grp_qty": dict(by_grp_qty), "store_qty": dict(store_qty),
             "store_grp_qty": {k: dict(v) for k, v in store_grp_qty.items()},
+            "placed_n": placed_n, "gross_val": gross_val,
+            "cancelled_n": cancelled_n, "cancelled_val": cancelled_val,
             "truncated": truncated}
+
+
+def _sales_returns_period(fetch_json, start, end, max_pages=60):
+    """Phiếu trả TẠO trong [start,end], gộp theo return_type: số phiếu + số tiền (total_price).
+    return_type: return_and_refund (trả hàng hoàn tiền) / delivery_failed (giao thất bại) / refund."""
+    from collections import defaultdict
+    cmin = start.isoformat() + "T00:00:00+07:00"
+    cmax = end.isoformat() + "T23:59:59+07:00"
+    cnt, val = defaultdict(int), defaultdict(float)
+    for p in range(1, max_pages + 1):
+        rows = fetch_json("/admin/order_returns.json", limit=250, page=p,
+                          created_on_min=cmin, created_on_max=cmax).get("order_returns", [])
+        if not rows:
+            break
+        for x in rows:
+            d = _vn_date_of(x.get("created_on"))
+            if not d or d < start or d > end:
+                continue
+            if x.get("status") == "canceled":            # phiếu trả đã hủy → bỏ
+                continue
+            rt = x.get("return_type") or "other"
+            cnt[rt] += 1
+            val[rt] += float(x.get("total_price") or 0)
+    return {"cnt": dict(cnt), "val": dict(val)}
 
 
 def get_sales_analysis(fetch_json, period="thangnay"):
@@ -3294,6 +3325,22 @@ def get_sales_analysis(fetch_json, period="thangnay"):
         lst.sort(key=lambda x: -x["cur"])
         store_groups[st] = lst
 
+    # ── CHẤT LƯỢNG ĐƠN: chuyển đổi / hủy / trả hàng hoàn tiền / giao thất bại (kỳ hiện tại) ──
+    ret_b = _sales_returns_period(fetch_json, cs, ce)
+    placed = cur["placed_n"]
+    _r = lambda n: (n / placed * 100) if placed else 0.0
+    df_n = ret_b["cnt"].get("delivery_failed", 0)
+    rr_n = ret_b["cnt"].get("return_and_refund", 0)
+    conv_n = max(0, placed - cur["cancelled_n"] - df_n)   # giao thành công = đặt − hủy − giao thất bại
+    quality = {
+        "placed": placed, "placed_val": cur["gross_val"],
+        "conv_n": conv_n, "conv_rate": _r(conv_n),
+        "cancel_n": cur["cancelled_n"], "cancel_rate": _r(cur["cancelled_n"]), "cancel_val": cur["cancelled_val"],
+        "refund_n": rr_n, "refund_rate": _r(rr_n), "refund_val": ret_b["val"].get("return_and_refund", 0.0),
+        "fail_n": df_n, "fail_rate": _r(df_n), "fail_val": ret_b["val"].get("delivery_failed", 0.0),
+        "refundonly_n": ret_b["cnt"].get("refund", 0), "refundonly_val": ret_b["val"].get("refund", 0.0),
+    }
+
     return {
         "period": period, "clabel": clabel, "plabel": plabel,
         "cur_range": (cs.strftime("%d/%m/%y"), ce.strftime("%d/%m/%y")),
@@ -3303,6 +3350,7 @@ def get_sales_analysis(fetch_json, period="thangnay"):
         "stores": stores,
         "groups": _merge(cur["by_grp"], prev["by_grp"], cur["by_grp_qty"], topn=25),
         "store_groups": store_groups,
+        "quality": quality,
         "truncated": cur.get("truncated") or prev.get("truncated"),
         "tax": tax,
     }

@@ -5545,6 +5545,21 @@ def _render_sales():
     if sa.get("truncated"):
         st.caption("⚠️ Dữ liệu rất lớn — đã lấy tối đa số trang cho phép; số liệu mang tính ước tính.")
 
+    st.markdown('<div class="sec sec-orange">Chất lượng đơn hàng — tỉ lệ & số tiền</div>',
+                unsafe_allow_html=True)
+    q = sa.get("quality") or {}
+    st.caption(f"Trên tổng **{q.get('placed', 0):,} đơn ĐẶT** trong kỳ (gồm cả đơn hủy). "
+               "Trả hàng hoàn tiền & giao thất bại đếm theo phiếu trả TẠO trong kỳ.")
+    qc = st.columns(4)
+    qc[0].metric("✅ Tỉ lệ chuyển đổi", f"{q.get('conv_rate', 0):.1f}%",
+                 f"{q.get('conv_n', 0):,} đơn giao thành công", delta_color="off")
+    qc[1].metric("❌ Tỉ lệ hủy đơn", f"{q.get('cancel_rate', 0):.1f}%",
+                 f"{q.get('cancel_n', 0):,} đơn · {_fmt_vnd(q.get('cancel_val', 0))}", delta_color="off")
+    qc[2].metric("↩️ Trả hàng hoàn tiền", f"{q.get('refund_rate', 0):.1f}%",
+                 f"{q.get('refund_n', 0):,} đơn · {_fmt_vnd(q.get('refund_val', 0))}", delta_color="off")
+    qc[3].metric("🚫 Giao hàng thất bại", f"{q.get('fail_rate', 0):.1f}%",
+                 f"{q.get('fail_n', 0):,} đơn · {_fmt_vnd(q.get('fail_val', 0))}", delta_color="off")
+
     st.markdown('<div class="sec sec-orange">Doanh thu theo GIAN HÀNG — kèm số đơn · SL bán · TB/đơn</div>',
                 unsafe_allow_html=True)
     _stores = sa["stores"]
