@@ -5504,14 +5504,26 @@ def _render_tax_warning(t):
     _mo = t.get("monthly") or []
     if _mo:
         _names = [f"T{m['month']}" for m in _mo]
-        _vals = [m["rev"] for m in _mo]
-        _cols = ["#16233f" if m["actual"] else "#E24B4A" for m in _mo]
-        _fig = go.Figure(go.Bar(x=_names, y=_vals, marker_color=_cols,
-                                text=[_fmt_vnd(v) for v in _vals], textposition="outside", cliponaxis=False))
-        _fig.update_layout(height=300, margin=dict(l=8, r=8, t=26, b=8),
-                           yaxis=dict(visible=False), plot_bgcolor="rgba(0,0,0,0)", showlegend=False)
-        st.markdown("**📅 Doanh thu 12 tháng trong năm (T1→T12)** — 🟦 xanh đậm = tháng đã qua (thực tế ước tính) · "
-                    "🟥 đỏ = DỰ ĐOÁN. Cao điểm 11,12,1,2,3,4 dự đoán bán gấp đôi.")
+        _vals = [m["rev"] / 1e9 for m in _mo]                 # tỷ đồng
+        _fp = next((i for i, m in enumerate(_mo) if not m["actual"]), len(_mo))  # tháng dự đoán đầu tiên
+        _fig = go.Figure()
+        _ai = list(range(0, _fp))
+        if _ai:                                               # đường LIỀN = tháng đã qua (thực tế)
+            _fig.add_trace(go.Scatter(
+                x=[_names[i] for i in _ai], y=[_vals[i] for i in _ai], name="Thực tế",
+                mode="lines+markers+text", line=dict(color="#16233f", width=3), marker=dict(size=8),
+                text=[f"{_vals[i]:.1f}" for i in _ai], textposition="top center"))
+        _pi = list(range(max(0, _fp - 1), len(_mo)))          # đường ĐỨT đỏ = dự đoán (nối từ điểm thực tế cuối)
+        _fig.add_trace(go.Scatter(
+            x=[_names[i] for i in _pi], y=[_vals[i] for i in _pi], name="Dự đoán",
+            mode="lines+markers+text", line=dict(color="#E24B4A", width=3, dash="dash"), marker=dict(size=8),
+            text=[(f"{_vals[i]:.1f}" if i >= _fp else "") for i in _pi], textposition="top center"))
+        _fig.update_layout(height=340, margin=dict(l=8, r=8, t=30, b=8),
+                           yaxis=dict(title="tỷ đồng", rangemode="tozero"),
+                           plot_bgcolor="rgba(0,0,0,0)",
+                           legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0))
+        st.markdown("**📈 Doanh thu từng tháng trong năm (T1→T12)** — đường LIỀN xanh = đã qua (thực tế), "
+                    "đường ĐỨT đỏ = DỰ ĐOÁN. Thấy rõ tháng cao/thấp: đầu & cuối năm cao, giữa năm thấp.")
         st.plotly_chart(_fig, width="stretch")
     brands = t.get("brands") or [{"brand": "Toàn shop", "ytd": t["ytd_rev"], "proj": t["proj_year"]}]
     for b in brands:
