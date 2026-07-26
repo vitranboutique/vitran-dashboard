@@ -5575,18 +5575,14 @@ def _render_tax_warning(t):
     shops = t.get("shops") or []
     plats = t.get("platforms") or []
 
-    # 1) Headline TỔNG toàn shop + biểu đồ doanh thu 12 tháng nằm cạnh
-    hc1, hc2 = st.columns([1, 2], gap="medium")
-    with hc1:
-        st.metric("🏢 TỔNG TOÀN SHOP — 🔮 dự đoán cả năm (T1→T12)", _fmt_vnd(t["proj_year"]),
-                  f"thực tế đã đạt ~{_fmt_vnd(t['ytd_rev'])}", delta_color="off")
-        st.caption("Biểu đồ bên phải: doanh thu từng tháng — 6 tháng cao điểm (11,12,1,2,3,4) bán gấp đôi.")
-    with hc2:
-        if t.get("monthly"):
-            st.markdown("**📈 Doanh thu từng tháng** (🔵 thực tế · 🔴 nét đứt = dự đoán)")
-            st.plotly_chart(_monthly_line(t), width="stretch")
+    # 1) Headline TỔNG + biểu đồ doanh thu 12 tháng NGAY TRÊN thang tiến độ
+    st.metric("🏢 TỔNG TOÀN SHOP — 🔮 dự đoán cả năm (T1→T12)", _fmt_vnd(t["proj_year"]),
+              f"thực tế đã đạt ~{_fmt_vnd(t['ytd_rev'])}", delta_color="off")
+    if t.get("monthly"):
+        st.markdown("**📈 Doanh thu từng tháng** (🔵 thực tế · 🔴 nét đứt = dự đoán · 6 tháng cao điểm 11,12,1,2,3,4 bán gấp đôi)")
+        st.plotly_chart(_monthly_line(t), width="stretch")
 
-    # 2) Thang tiến độ phân tầng: TỔNG · SÀN · GIAN HÀNG — thực tế (đậm) + dự đoán (nhạt) + vạch ngưỡng
+    # 2) Thang tiến độ phân tầng: TỔNG · SÀN · GIAN HÀNG (thanh TỔNG nằm ngay dưới biểu đồ trên)
     if shops:
         st.markdown("**📊 Thực tế đã đạt & dự đoán cả năm — theo Tổng · Sàn · Gian hàng**")
         st.caption("Mỗi thanh: phần ĐẬM = thực tế đã bán · phần NHẠT kéo dài = dự đoán cả năm.  "
