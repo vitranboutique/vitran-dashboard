@@ -5591,14 +5591,17 @@ def _render_tax_warning(t):
         return "⛔ Vượt" if proj >= thr else ("⚠️ Sắp chạm" if proj >= thr * 0.8 else "✅ An toàn")
 
     def _row(cap, name, proj, ytd):
-        return {"Cấp": cap, "Tên": name, "🔮 Dự đoán cả năm": _fmt_vnd(proj),
-                "Thực tế đã đạt": _fmt_vnd(ytd), "Ngưỡng 3 tỷ": _stt(proj, t["t3"]),
+        return {"Cấp": cap, "Tên": name, "🔮 Dự đoán": round(proj / 1e9, 2),
+                "Thực tế đã đạt": round(ytd / 1e9, 2), "Ngưỡng 3 tỷ": _stt(proj, t["t3"]),
                 "Ngưỡng 10 tỷ": _stt(proj, t["t10"])}
     _rows = [_row("🏢 TỔNG", "Toàn shop", t["proj_year"], t["ytd_rev"])]
     _rows += [_row("🛒 Sàn", p["name"], p["proj"], p["ytd"]) for p in plats]
     _rows += [_row("🏪 Gian hàng", s["name"], s["proj"], s["ytd"]) for s in shops]
     with st.expander("📋 Bảng chi tiết (Tổng · Sàn · Gian hàng) + biểu đồ xu hướng năm"):
-        st.dataframe(pd.DataFrame(_rows), width="stretch", hide_index=True)
+        st.caption("💡 Bấm tên cột để sắp xếp ↑↓.")
+        st.dataframe(pd.DataFrame(_rows), width="stretch", hide_index=True, column_config={
+            "🔮 Dự đoán": st.column_config.NumberColumn("🔮 Dự đoán (tỷ)", format="%.2f"),
+            "Thực tế đã đạt": st.column_config.NumberColumn("Thực tế (tỷ)", format="%.2f")})
         if t.get("monthly"):
             cA, cB = st.columns(2)
             with cA:
@@ -5685,17 +5688,26 @@ def _render_sales():
         with _cB:
             st.markdown("**📊 Cơ cấu đơn** (✅CĐ · ❌hủy · 🚫thất bại)")
             st.plotly_chart(_outcome_bar(_stores), width="stretch")
-        with st.expander("📋 Xem bảng số liệu đầy đủ theo gian hàng (doanh thu · đơn · chất lượng)"):
+        with st.expander("📋 Bảng số liệu theo gian hàng — bấm tên cột để sắp xếp ↑↓"):
             _sdf = pd.DataFrame([{
-                "Gian hàng": s["name"], "Doanh thu": _fmt_vnd(s["cur"]),
-                "±%": (f"{s['pct']:+.1f}%" if s["pct"] is not None else "—"),
-                "Số đơn": f"{s['orders']:,}", "SL bán": f"{s.get('qty', 0):,}", "TB/đơn": _fmt_vnd(s["aov"]),
-                "✅ CĐ": f"{s.get('conv_rate', 0):.0f}%",
-                "❌ Hủy": f"{s.get('cancel_rate', 0):.0f}%·{_fmt_vnd(s.get('cancel_val', 0))}",
-                "↩️ Trả": f"{s.get('refund_rate', 0):.0f}%·{_fmt_vnd(s.get('refund_val', 0))}",
-                "🚫 TB": f"{s.get('fail_rate', 0):.0f}%·{_fmt_vnd(s.get('fail_val', 0))}"}
+                "Gian hàng": s["name"],
+                "Doanh thu": round(s["cur"] / 1e6, 1),
+                "±% kỳ trước": (round(s["pct"], 1) if s["pct"] is not None else None),
+                "Số đơn": s["orders"], "SL bán": s.get("qty", 0),
+                "TB/đơn": round(s["aov"] / 1000),
+                "✅ Chuyển đổi": round(s.get("conv_rate", 0), 1),
+                "❌ Hủy": round(s.get("cancel_rate", 0), 1),
+                "↩️ Trả hàng": round(s.get("refund_rate", 0), 1),
+                "🚫 Giao TB": round(s.get("fail_rate", 0), 1)}
                 for s in _stores])
-            st.dataframe(_sdf, width="stretch", hide_index=True)
+            st.dataframe(_sdf, width="stretch", hide_index=True, column_config={
+                "Doanh thu": st.column_config.NumberColumn("Doanh thu (tr)", format="%.1f"),
+                "±% kỳ trước": st.column_config.NumberColumn(format="%+.1f%%"),
+                "TB/đơn": st.column_config.NumberColumn("TB/đơn (k)", format="%.0f"),
+                "✅ Chuyển đổi": st.column_config.NumberColumn(format="%.1f%%"),
+                "❌ Hủy": st.column_config.NumberColumn(format="%.1f%%"),
+                "↩️ Trả hàng": st.column_config.NumberColumn(format="%.1f%%"),
+                "🚫 Giao TB": st.column_config.NumberColumn(format="%.1f%%")})
 
     def _sku_block(g):
         if not g:
