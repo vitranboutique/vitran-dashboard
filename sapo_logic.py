@@ -3256,7 +3256,7 @@ def _sales_returns_period(fetch_json, start, end, max_pages=60):
             "store_val": {k: dict(v) for k, v in store_val.items()}}
 
 
-def get_sales_analysis(fetch_json, period="thangnay"):
+def get_sales_analysis(fetch_json, period="thangnay", _v=None):
     """PHÂN TÍCH DOANH THU NET (đã trừ đơn hủy + tiền hoàn) theo GIAN HÀNG & NHÓM SKU,
     so với CÙNG KỲ TRƯỚC (%), + dự báo doanh thu cả năm theo MÙA VỤ để cảnh báo ngưỡng
     thuế 3 tỷ / 10 tỷ. period: '1tuan' | '1thang' | 'thangnay' | 'namnay'."""

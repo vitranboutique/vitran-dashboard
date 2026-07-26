@@ -1770,7 +1770,8 @@ def load_overview():
 
 @st.cache_data(ttl=900, show_spinner="Đang phân tích doanh thu từ Sapo…")
 def load_sales(period):
-    return L.get_sales_analysis(make_fetch_json(build_session()), period=period)
+    _cache_ver = "2026-07-27-tax-3level"   # ĐỔI chuỗi này mỗi khi sửa get_sales_analysis → BUST cache cũ
+    return L.get_sales_analysis(make_fetch_json(build_session()), period=period, _v=_cache_ver)
 
 
 @st.cache_data(ttl=120, show_spinner="Đang kéo đơn cần nhặt từ Sapo…")
