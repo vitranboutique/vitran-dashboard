@@ -5492,7 +5492,11 @@ def _tax_bars(proj, t3, t10):
 
 def _render_tax_warning(t):
     st.markdown('<div class="sec sec-orange">⚠️ Cảnh báo ngưỡng thuế theo TỪNG THƯƠNG HIỆU '
-                '(dự báo cả năm · mùa vụ)</div>', unsafe_allow_html=True)
+                '(dự báo cả năm · mùa vụ)'
+                '<span class="ic" title="Mỗi thương hiệu (VITRAN BOUTIQUE / SMOSS / MUN-AI) là 1 pháp nhân nộp '
+                'thuế riêng. Số lớn = DỰ ĐOÁN doanh thu cả năm (theo mùa vụ: 6 tháng 11,12,1,2,3,4 bán gấp đôi); '
+                'dòng dưới = thực tế đã đạt. Thanh màu = so ngưỡng 3 tỷ / 10 tỷ.">&#9432;</span></div>',
+                unsafe_allow_html=True)
     _peak = ", ".join(str(m) for m in t["peak_months"])
     st.caption(f"Mỗi thương hiệu (VITRAN BOUTIQUE / SMOSS / MUN-AI…) là 1 pháp nhân nộp thuế RIÊNG. "
                f"Dự báo cả năm = doanh thu đã đạt ÷ trọng số mùa vụ đã qua × cả năm — 6 tháng cao điểm "
@@ -5538,30 +5542,49 @@ def _render_sales():
                 f'({sa["cur_range"][0]}–{sa["cur_range"][1]}) — so với {sa["plabel"]} '
                 f'({sa["prev_range"][0]}–{sa["prev_range"][1]})</div>', unsafe_allow_html=True)
     k = st.columns(3)
-    k[0].metric("💵 Doanh thu NET", _fmt_vnd(sa["total"]), _d(sa["total_pct"]))
-    k[1].metric("🧾 Số đơn thành công", f"{sa['orders']:,}", _d(sa["orders_pct"]))
+    k[0].metric("💵 Doanh thu NET", _fmt_vnd(sa["total"]), _d(sa["total_pct"]),
+                help="Tiền khách THỰC TRẢ = đã trừ giảm giá + đơn hủy + tiền hoàn; CHƯA trừ phí sàn & thuế.")
+    k[1].metric("🧾 Số đơn (đã trừ hủy)", f"{sa['orders']:,}", _d(sa["orders_pct"]),
+                help="Số đơn KHÔNG bị hủy — doanh thu net chia cho số này = TB/đơn. KHÁC “đơn giao thành công” "
+                     "ở mục Chất lượng: số đó còn trừ thêm đơn GIAO THẤT BẠI (nên nhỏ hơn).")
     _aov = sa["total"] / sa["orders"] if sa["orders"] else 0
-    k[2].metric("📊 Giá trị TB/đơn", _fmt_vnd(_aov))
+    k[2].metric("📊 Giá trị TB/đơn", _fmt_vnd(_aov),
+                help="Doanh thu NET ÷ số đơn (đã trừ hủy).")
     if sa.get("truncated"):
         st.caption("⚠️ Dữ liệu rất lớn — đã lấy tối đa số trang cho phép; số liệu mang tính ước tính.")
 
-    st.markdown('<div class="sec sec-orange">Chất lượng đơn hàng — tỉ lệ & số tiền</div>',
-                unsafe_allow_html=True)
+    st.markdown('<div class="sec sec-orange">Chất lượng đơn hàng — tỉ lệ & số tiền'
+                '<span class="ic" title="Tỉ lệ trên tổng đơn ĐẶT trong kỳ (gồm cả đơn hủy). '
+                'Chuyển đổi = đặt − hủy − giao thất bại. Trả hàng &amp; giao thất bại lấy đúng theo '
+                'return_type của phiếu trả (tạo trong kỳ).">&#9432;</span></div>', unsafe_allow_html=True)
     q = sa.get("quality") or {}
-    st.caption(f"Trên tổng **{q.get('placed', 0):,} đơn ĐẶT** trong kỳ (gồm cả đơn hủy). "
-               "Trả hàng hoàn tiền & giao thất bại đếm theo phiếu trả TẠO trong kỳ.")
+    st.caption(f"Trên tổng **{q.get('placed', 0):,} đơn ĐẶT** trong kỳ (gồm cả đơn hủy).")
     qc = st.columns(4)
     qc[0].metric("✅ Tỉ lệ chuyển đổi", f"{q.get('conv_rate', 0):.1f}%",
-                 f"{q.get('conv_n', 0):,} đơn giao thành công", delta_color="off")
+                 f"{q.get('conv_n', 0):,} đơn giao thành công", delta_color="off",
+                 help="Đơn GIAO THÀNH CÔNG (đặt − hủy − giao thất bại) ÷ tổng đơn đặt.")
     qc[1].metric("❌ Tỉ lệ hủy đơn", f"{q.get('cancel_rate', 0):.1f}%",
-                 f"{q.get('cancel_n', 0):,} đơn · {_fmt_vnd(q.get('cancel_val', 0))}", delta_color="off")
+                 f"{q.get('cancel_n', 0):,} đơn · {_fmt_vnd(q.get('cancel_val', 0))}", delta_color="off",
+                 help="Đơn BỊ HỦY ÷ tổng đơn đặt. Kèm tổng giá trị đơn hủy.")
     qc[2].metric("↩️ Trả hàng hoàn tiền", f"{q.get('refund_rate', 0):.1f}%",
-                 f"{q.get('refund_n', 0):,} đơn · {_fmt_vnd(q.get('refund_val', 0))}", delta_color="off")
+                 f"{q.get('refund_n', 0):,} đơn · {_fmt_vnd(q.get('refund_val', 0))}", delta_color="off",
+                 help="Phiếu trả loại 'trả hàng hoàn tiền' (khách nhận rồi trả) ÷ tổng đơn đặt. Kèm số tiền.")
     qc[3].metric("🚫 Giao hàng thất bại", f"{q.get('fail_rate', 0):.1f}%",
-                 f"{q.get('fail_n', 0):,} đơn · {_fmt_vnd(q.get('fail_val', 0))}", delta_color="off")
+                 f"{q.get('fail_n', 0):,} đơn · {_fmt_vnd(q.get('fail_val', 0))}", delta_color="off",
+                 help="Phiếu trả loại 'giao thất bại' (không giao được, hoàn về shop) ÷ tổng đơn đặt. Kèm số tiền.")
+    _sq = pd.DataFrame([{
+        "Gian hàng": s["name"], "Đơn đặt": f"{s.get('placed', 0):,}",
+        "✅ Chuyển đổi": f"{s.get('conv_rate', 0):.1f}%",
+        "❌ Hủy": f"{s.get('cancel_rate', 0):.1f}% · {_fmt_vnd(s.get('cancel_val', 0))}",
+        "↩️ Trả hàng": f"{s.get('refund_rate', 0):.1f}% · {_fmt_vnd(s.get('refund_val', 0))}",
+        "🚫 Giao thất bại": f"{s.get('fail_rate', 0):.1f}% · {_fmt_vnd(s.get('fail_val', 0))}"}
+        for s in sa["stores"]])
+    st.markdown("**Chi tiết theo từng gian hàng:**")
+    st.dataframe(_sq, width="stretch", hide_index=True)
 
-    st.markdown('<div class="sec sec-orange">Doanh thu theo GIAN HÀNG — kèm số đơn · SL bán · TB/đơn</div>',
-                unsafe_allow_html=True)
+    st.markdown('<div class="sec sec-orange">Doanh thu theo GIAN HÀNG — kèm số đơn · SL bán · TB/đơn'
+                '<span class="ic" title="Doanh thu NET mỗi gian hàng; Số đơn (đã trừ hủy); SL bán = số sản '
+                'phẩm; TB/đơn = doanh thu ÷ số đơn.">&#9432;</span></div>', unsafe_allow_html=True)
     _stores = sa["stores"]
     if _stores:
         st.plotly_chart(_hbar([s["name"] for s in _stores], [s["cur"] for s in _stores], "#E24B4A"),
@@ -5573,7 +5596,9 @@ def _render_sales():
             "TB/đơn": _fmt_vnd(s["aov"])} for s in _stores])
         st.dataframe(_sdf, width="stretch", hide_index=True)
 
-    st.markdown('<div class="sec sec-orange">Doanh thu theo NHÓM SKU — thế mạnh sản phẩm TỪNG GIAN HÀNG</div>',
+    st.markdown('<div class="sec sec-orange">Doanh thu theo NHÓM SKU — thế mạnh sản phẩm TỪNG GIAN HÀNG'
+                '<span class="ic" title="Doanh thu &amp; SL bán theo nhóm mã SKU (productCode). Bấm TAB để '
+                'xem riêng từng gian hàng — thấy shop nào mạnh sản phẩm nào.">&#9432;</span></div>',
                 unsafe_allow_html=True)
 
     def _sku_block(g):

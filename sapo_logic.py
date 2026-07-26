@@ -3162,6 +3162,9 @@ def _sales_fetch_range(fetch_json, start, end, max_pages=280):
     store_qty = defaultdict(int)                          # SỐ LƯỢNG bán / gian hàng
     store_grp_qty = defaultdict(lambda: defaultdict(int)) # SỐ LƯỢNG {gian hàng: {nhóm SKU}}
     placed_n, gross_val, cancelled_n, cancelled_val = 0, 0.0, 0, 0.0   # đơn ĐẶT (gồm hủy) + đơn HỦY
+    store_placed = defaultdict(int)                       # đơn ĐẶT / gian hàng (gồm hủy)
+    store_cancelled_n = defaultdict(int)                  # đơn HỦY / gian hàng
+    store_cancelled_val = defaultdict(float)              # giá trị đơn hủy / gian hàng
     truncated = False
     for p in range(1, max_pages + 1):
         rows = fetch_json("/admin/orders.json", limit=250, page=p,
@@ -3173,17 +3176,20 @@ def _sales_fetch_range(fetch_json, start, end, max_pages=280):
             if not d or d < start or d > end:
                 continue
             tp = float(o.get("total_price") or 0)
+            store = (o.get("channel_definition") or {}).get("branch_name") or o.get("source_name") or "Khác"
             placed_n += 1
             gross_val += tp
+            store_placed[store] += 1
             if o.get("cancelled_on") or o.get("status") == "cancelled":
                 cancelled_n += 1
                 cancelled_val += tp
+                store_cancelled_n[store] += 1
+                store_cancelled_val[store] += tp
                 continue
             rf = float(o.get("total_refunded") or 0)
             net = tp - rf
             total += net
             orders_n += 1
-            store = (o.get("channel_definition") or {}).get("branch_name") or o.get("source_name") or "Khác"
             brand = store.rsplit(" - ", 1)[0] if " - " in store else store   # bỏ đuôi sàn → thương hiệu
             by_store[store] += net
             store_orders[store] += 1
@@ -3212,6 +3218,8 @@ def _sales_fetch_range(fetch_json, start, end, max_pages=280):
             "store_grp_qty": {k: dict(v) for k, v in store_grp_qty.items()},
             "placed_n": placed_n, "gross_val": gross_val,
             "cancelled_n": cancelled_n, "cancelled_val": cancelled_val,
+            "store_placed": dict(store_placed), "store_cancelled_n": dict(store_cancelled_n),
+            "store_cancelled_val": dict(store_cancelled_val),
             "truncated": truncated}
 
 
@@ -3222,6 +3230,8 @@ def _sales_returns_period(fetch_json, start, end, max_pages=60):
     cmin = start.isoformat() + "T00:00:00+07:00"
     cmax = end.isoformat() + "T23:59:59+07:00"
     cnt, val = defaultdict(int), defaultdict(float)
+    store_cnt = defaultdict(lambda: defaultdict(int))     # {gian hàng: {return_type: số phiếu}}
+    store_val = defaultdict(lambda: defaultdict(float))   # {gian hàng: {return_type: số tiền}}
     for p in range(1, max_pages + 1):
         rows = fetch_json("/admin/order_returns.json", limit=250, page=p,
                           created_on_min=cmin, created_on_max=cmax).get("order_returns", [])
@@ -3234,9 +3244,16 @@ def _sales_returns_period(fetch_json, start, end, max_pages=60):
             if x.get("status") == "canceled":            # phiếu trả đã hủy → bỏ
                 continue
             rt = x.get("return_type") or "other"
+            amt = float(x.get("total_price") or 0)
             cnt[rt] += 1
-            val[rt] += float(x.get("total_price") or 0)
-    return {"cnt": dict(cnt), "val": dict(val)}
+            val[rt] += amt
+            store = (((x.get("order") or {}).get("channel_definition") or {}).get("branch_name")
+                     or x.get("order_source") or "Khác")
+            store_cnt[store][rt] += 1
+            store_val[store][rt] += amt
+    return {"cnt": dict(cnt), "val": dict(val),
+            "store_cnt": {k: dict(v) for k, v in store_cnt.items()},
+            "store_val": {k: dict(v) for k, v in store_val.items()}}
 
 
 def get_sales_analysis(fetch_json, period="thangnay"):
@@ -3340,6 +3357,19 @@ def get_sales_analysis(fetch_json, period="thangnay"):
         "fail_n": df_n, "fail_rate": _r(df_n), "fail_val": ret_b["val"].get("delivery_failed", 0.0),
         "refundonly_n": ret_b["cnt"].get("refund", 0), "refundonly_val": ret_b["val"].get("refund", 0.0),
     }
+    # chất lượng đơn THEO TỪNG gian hàng (gắn vào từng store)
+    for s in stores:
+        nm = s["name"]
+        sp = cur["store_placed"].get(nm, 0)
+        scn = cur["store_cancelled_n"].get(nm, 0)
+        rc, rv = ret_b["store_cnt"].get(nm, {}), ret_b["store_val"].get(nm, {})
+        s_df, s_rr = rc.get("delivery_failed", 0), rc.get("return_and_refund", 0)
+        _sr = (lambda n: (n / sp * 100) if sp else 0.0)
+        s["placed"] = sp
+        s["conv_rate"] = _sr(max(0, sp - scn - s_df))
+        s["cancel_rate"], s["cancel_val"] = _sr(scn), cur["store_cancelled_val"].get(nm, 0.0)
+        s["refund_rate"], s["refund_val"] = _sr(s_rr), rv.get("return_and_refund", 0.0)
+        s["fail_rate"], s["fail_val"] = _sr(s_df), rv.get("delivery_failed", 0.0)
 
     return {
         "period": period, "clabel": clabel, "plabel": plabel,
