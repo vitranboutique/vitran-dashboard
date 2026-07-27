@@ -5648,10 +5648,14 @@ def _render_sales():
                 f'({sa["prev_range"][0]}–{sa["prev_range"][1]})</div>', unsafe_allow_html=True)
     k = st.columns(3)
     k[0].metric("💵 Doanh thu NET", _fmt_vnd(sa["total"]), _d(sa["total_pct"]),
-                help="Tiền khách THỰC TRẢ = đã trừ giảm giá + đơn hủy + tiền hoàn; CHƯA trừ phí sàn & thuế.")
+                help="Tiền khách THỰC TRẢ (đã trừ giảm giá + đơn hủy + tiền hoàn), CHƯA trừ phí sàn & thuế. "
+                     "Tính theo NGÀY TẠO ĐƠN — gồm cả đơn ĐÃ GIAO lẫn ĐANG GIAO. "
+                     "Là số CHƯA ĐỐI SOÁT (không phải tiền thật về ví sau đối soát).")
     k[1].metric("🧾 Số đơn (đã trừ hủy)", f"{sa['orders']:,}", _d(sa["orders_pct"]),
-                help="Số đơn KHÔNG bị hủy — doanh thu net chia cho số này = TB/đơn. KHÁC “đơn giao thành công” "
-                     "ở mục Chất lượng: số đó còn trừ thêm đơn GIAO THẤT BẠI (nên nhỏ hơn).")
+                help="Số đơn KHÔNG bị hủy (trừ đơn có trạng thái HỦY, dù hủy trước hay sau giao). "
+                     "Đơn TRẢ HÀNG sau giao VẪN tính là 1 đơn (chỉ trừ tiền hoàn khỏi doanh thu). "
+                     "Doanh thu net ÷ số này = TB/đơn. KHÁC “đơn giao thành công” ở mục Chất lượng "
+                     "(số đó còn trừ thêm đơn GIAO THẤT BẠI nên nhỏ hơn).")
     _aov = sa["total"] / sa["orders"] if sa["orders"] else 0
     k[2].metric("📊 Giá trị TB/đơn", _fmt_vnd(_aov),
                 help="Doanh thu NET ÷ số đơn (đã trừ hủy).")
@@ -5676,7 +5680,9 @@ def _render_sales():
                  help="Phiếu trả loại 'trả hàng hoàn tiền' (khách nhận rồi trả) ÷ tổng đơn đặt. Kèm số tiền.")
     qc[3].metric("🚫 Giao hàng thất bại", f"{q.get('fail_rate', 0):.1f}%",
                  f"{q.get('fail_n', 0):,} đơn · {_fmt_vnd(q.get('fail_val', 0))}", delta_color="off",
-                 help="Phiếu trả loại 'giao thất bại' (không giao được, hoàn về shop) ÷ tổng đơn đặt. Kèm số tiền.")
+                 help="CHỈ đếm phiếu trả loại 'giao thất bại' (hoàn về shop) ÷ tổng đơn đặt. "
+                      "Con số này THẤP HƠN thực tế: đơn hủy do giao lỗi, đơn TikTok kiểu closed+returned, "
+                      "hoặc bị ghi thành 'trả hàng hoàn tiền' đều KHÔNG nằm ở đây.")
     st.markdown('<div class="sec sec-orange">Theo GIAN HÀNG (tên shop × sàn)'
                 '<span class="ic" title="Mỗi gian hàng = thương hiệu × sàn TMĐT. Biểu đồ trái = doanh thu; '
                 'phải = cơ cấu đơn (chuyển đổi/hủy/thất bại). Số liệu đầy đủ trong bảng thu gọn bên dưới.">'
