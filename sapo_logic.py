@@ -3165,6 +3165,9 @@ def _sales_fetch_range(fetch_json, start, end, max_pages=280):
     store_placed = defaultdict(int)                       # đơn ĐẶT / gian hàng (gồm hủy)
     store_cancelled_n = defaultdict(int)                  # đơn HỦY / gian hàng
     store_cancelled_val = defaultdict(float)              # giá trị đơn hủy / gian hàng
+    processing_n = shipping_n = delivered_n = 0           # luồng giao: chờ giao / đang giao / đã giao
+    settled_n, settled_val = 0, 0.0                       # đơn đã ĐỐI SOÁT (settled_on)
+    paid_n, paid_val = 0, 0.0                             # đơn đã NHẬN TIỀN (financial_status=paid)
     truncated = False
     for p in range(1, max_pages + 1):
         rows = fetch_json("/admin/orders.json", limit=250, page=p,
@@ -3190,6 +3193,21 @@ def _sales_fetch_range(fetch_json, start, end, max_pages=280):
             net = tp - rf
             total += net
             orders_n += 1
+            # luồng giao hàng + đối soát (chỉ đơn CHƯA hủy)
+            _ff = o.get("fulfillments") or []
+            _ss = str((_ff[0].get("shipment_status") if _ff else "") or "").lower()
+            if _ss == "delivered":
+                delivered_n += 1
+            elif _ss == "delivering":
+                shipping_n += 1
+            elif _ss not in ("returning", "returned"):
+                processing_n += 1                        # pending / chưa có vận đơn = đang xử lý, chờ giao
+            if o.get("settled_on"):
+                settled_n += 1
+                settled_val += net
+            if str(o.get("financial_status") or "").lower() == "paid":
+                paid_n += 1
+                paid_val += net
             brand = store.rsplit(" - ", 1)[0] if " - " in store else store   # bỏ đuôi sàn → thương hiệu
             by_store[store] += net
             store_orders[store] += 1
@@ -3220,6 +3238,9 @@ def _sales_fetch_range(fetch_json, start, end, max_pages=280):
             "cancelled_n": cancelled_n, "cancelled_val": cancelled_val,
             "store_placed": dict(store_placed), "store_cancelled_n": dict(store_cancelled_n),
             "store_cancelled_val": dict(store_cancelled_val),
+            "processing_n": processing_n, "shipping_n": shipping_n, "delivered_n": delivered_n,
+            "settled_n": settled_n, "settled_val": settled_val,
+            "paid_n": paid_n, "paid_val": paid_val,
             "truncated": truncated}
 
 
@@ -3230,6 +3251,7 @@ def _sales_returns_period(fetch_json, start, end, max_pages=60):
     cmin = start.isoformat() + "T00:00:00+07:00"
     cmax = end.isoformat() + "T23:59:59+07:00"
     cnt, val = defaultdict(int), defaultdict(float)
+    won_n, won_val = 0, 0.0                               # phiếu trả bị HỦY = kháng nghị THẮNG (đòi lại được)
     store_cnt = defaultdict(lambda: defaultdict(int))     # {gian hàng: {return_type: số phiếu}}
     store_val = defaultdict(lambda: defaultdict(float))   # {gian hàng: {return_type: số tiền}}
     for p in range(1, max_pages + 1):
@@ -3241,17 +3263,19 @@ def _sales_returns_period(fetch_json, start, end, max_pages=60):
             d = _vn_date_of(x.get("created_on"))
             if not d or d < start or d > end:
                 continue
-            if x.get("status") == "canceled":            # phiếu trả đã hủy → bỏ
+            amt = float(x.get("total_price") or 0)
+            if x.get("status") == "canceled":            # phiếu trả bị hủy = kháng nghị THẮNG (đòi lại được)
+                won_n += 1
+                won_val += amt
                 continue
             rt = x.get("return_type") or "other"
-            amt = float(x.get("total_price") or 0)
             cnt[rt] += 1
             val[rt] += amt
             store = (((x.get("order") or {}).get("channel_definition") or {}).get("branch_name")
                      or x.get("order_source") or "Khác")
             store_cnt[store][rt] += 1
             store_val[store][rt] += amt
-    return {"cnt": dict(cnt), "val": dict(val),
+    return {"cnt": dict(cnt), "val": dict(val), "won_n": won_n, "won_val": won_val,
             "store_cnt": {k: dict(v) for k, v in store_cnt.items()},
             "store_val": {k: dict(v) for k, v in store_val.items()}}
 
@@ -3377,6 +3401,9 @@ def get_sales_analysis(fetch_json, period="thangnay", _v=None):
         "refund_n": rr_n, "refund_rate": _r(rr_n), "refund_val": ret_b["val"].get("return_and_refund", 0.0),
         "fail_n": df_n, "fail_rate": _r(df_n), "fail_val": ret_b["val"].get("delivery_failed", 0.0),
         "refundonly_n": ret_b["cnt"].get("refund", 0), "refundonly_val": ret_b["val"].get("refund", 0.0),
+        # khiếu nại đơn trả: THUA = phiếu trả còn hiệu lực (mất tiền) · THẮNG = phiếu trả bị hủy (đòi lại được)
+        "lost_n": sum(ret_b["cnt"].values()), "lost_val": sum(ret_b["val"].values()),
+        "won_n": ret_b.get("won_n", 0), "won_val": ret_b.get("won_val", 0.0),
     }
     # chất lượng đơn THEO TỪNG gian hàng (gắn vào từng store)
     for s in stores:
@@ -3402,6 +3429,12 @@ def get_sales_analysis(fetch_json, period="thangnay", _v=None):
         "groups": _merge(cur["by_grp"], prev["by_grp"], cur["by_grp_qty"], topn=25),
         "store_groups": store_groups,
         "quality": quality,
+        "flow": {
+            "processing_n": cur["processing_n"], "shipping_n": cur["shipping_n"],
+            "delivered_n": cur["delivered_n"],
+            "settled_n": cur["settled_n"], "settled_val": cur["settled_val"],
+            "paid_n": cur["paid_n"], "paid_val": cur["paid_val"],
+        },
         "truncated": cur.get("truncated") or prev.get("truncated"),
         "tax": tax,
     }

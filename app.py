@@ -1776,7 +1776,7 @@ def load_overview():
 
 @st.cache_data(ttl=900, show_spinner="Đang phân tích doanh thu từ Sapo…")
 def load_sales(period):
-    _cache_ver = "2026-07-27-tax-3level"   # ĐỔI chuỗi này mỗi khi sửa get_sales_analysis → BUST cache cũ
+    _cache_ver = "2026-07-27-flow-settle"  # ĐỔI chuỗi này mỗi khi sửa get_sales_analysis → BUST cache cũ
     return L.get_sales_analysis(make_fetch_json(build_session()), period=period, _v=_cache_ver)
 
 
@@ -5683,6 +5683,51 @@ def _render_sales():
                  help="CHỈ đếm phiếu trả loại 'giao thất bại' (hoàn về shop) ÷ tổng đơn đặt. "
                       "Con số này THẤP HƠN thực tế: đơn hủy do giao lỗi, đơn TikTok kiểu closed+returned, "
                       "hoặc bị ghi thành 'trả hàng hoàn tiền' đều KHÔNG nằm ở đây.")
+
+    # ── LUỒNG GIAO HÀNG · ĐỐI SOÁT · KHIẾU NẠI + CHI PHÍ nhập tay ──
+    fl = sa.get("flow") or {}
+    st.markdown('<div class="sec sec-orange">Luồng giao hàng · Đối soát · Khiếu nại'
+                '<span class="ic" title="Trạng thái giao lấy theo shipment_status của Sapo; ĐÃ ĐỐI SOÁT/ĐÃ NHẬN TIỀN '
+                'lấy từ settled_on/financial_status. PHÍ SÀN &amp; THUẾ khấu trừ Sapo Open API KHÔNG lấy được — nhập tay '
+                'từ báo cáo Đối soát của sàn.">&#9432;</span></div>', unsafe_allow_html=True)
+    fc = st.columns(3)
+    fc[0].metric("📦 Đang xử lý / chờ giao", f"{fl.get('processing_n', 0):,}",
+                 help="Đơn CHƯA hủy & chưa bàn giao ĐVVC (shipment_status = pending / chưa có vận đơn).")
+    fc[1].metric("🚚 Đang giao", f"{fl.get('shipping_n', 0):,}",
+                 help="Đơn đang trên đường giao (shipment_status = delivering).")
+    fc[2].metric("✅ Đã giao", f"{fl.get('delivered_n', 0):,}",
+                 help="Đơn đã giao xong (shipment_status = delivered). KHÁC 'giao thành công' ở Chất lượng "
+                      "(số đó là ước tính = đặt − hủy − giao thất bại).")
+    sc = st.columns(3)
+    sc[0].metric("🧮 Đã đối soát", f"{fl.get('settled_n', 0):,} đơn", _fmt_vnd(fl.get('settled_val', 0)),
+                 delta_color="off",
+                 help="Đơn có mốc settled_on = sàn ĐÃ CHỐT đối soát (thường trễ 1–2 tuần sau giao). "
+                      "Kèm doanh thu net của nhóm này.")
+    sc[1].metric("💰 Đã nhận tiền", f"{fl.get('paid_n', 0):,} đơn", _fmt_vnd(fl.get('paid_val', 0)),
+                 delta_color="off",
+                 help="Đơn financial_status = paid = tiền ĐÃ VỀ ví. Kèm doanh thu net của nhóm này.")
+    sc[2].metric("⚖️ Khiếu nại đơn trả THUA", f"{q.get('lost_n', 0):,} đơn", f"mất {_fmt_vnd(q.get('lost_val', 0))}",
+                 delta_color="off",
+                 help="Phiếu trả CÒN HIỆU LỰC = không kháng nghị được → mình mất tiền. "
+                      f"Đối lại THẮNG (phiếu trả bị hủy): {q.get('won_n', 0):,} đơn · đòi lại {_fmt_vnd(q.get('won_val', 0))}.")
+
+    with st.expander("💸 Phí sàn & thuế (nhập tay từ báo cáo Đối soát của sàn) → tính THỰC NHẬN"):
+        st.caption("Sapo Open API KHÔNG lấy được phí sàn & thuế khấu trừ. Vào Sapo → Kênh bán hàng → "
+                   "TikTok/Shopee/Lazada → Đối soát thuế / Phiếu đối soát, cộng lại rồi nhập vào đây cho kỳ đang xem.")
+        ec = st.columns(2)
+        _fee = ec[0].number_input("Phí sàn thực (đ) — hoa hồng + phí TT + affiliate",
+                                  min_value=0, step=100000, value=0, key=f"sale_fee_{period}")
+        _tax = ec[1].number_input("Thuế đã khấu trừ (đ) — từ Đối soát thuế",
+                                  min_value=0, step=100000, value=0, key=f"sale_tax_{period}")
+        if not _fee and not _tax:
+            st.info(f"Gợi ý: thuế hàng hóa hộ KD ≈ 1.5% doanh thu ≈ {_fmt_vnd(sa['total'] * 0.015)}. "
+                    "Nhập số THỰC từ đối soát để chính xác.")
+        mc = st.columns(3)
+        mc[0].metric("Doanh thu NET", _fmt_vnd(sa["total"]))
+        mc[1].metric("− Phí sàn − Thuế", f"−{_fmt_vnd(_fee + _tax)}")
+        mc[2].metric("≈ Thực nhận (tạm tính)", _fmt_vnd(sa["total"] - _fee - _tax))
+        st.caption("⚠️ Số nhập tay chỉ lưu trong phiên (tải lại trang về 0). Muốn LƯU cố định thì báo mình thêm.")
+
     st.markdown('<div class="sec sec-orange">Theo GIAN HÀNG (tên shop × sàn)'
                 '<span class="ic" title="Mỗi gian hàng = thương hiệu × sàn TMĐT. Biểu đồ trái = doanh thu; '
                 'phải = cơ cấu đơn (chuyển đổi/hủy/thất bại). Số liệu đầy đủ trong bảng thu gọn bên dưới.">'
