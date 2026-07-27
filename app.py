@@ -5555,9 +5555,16 @@ def _render_tax_warning(t):
     shops = t.get("shops") or []
     plats = t.get("platforms") or []
 
-    # 1) Headline TỔNG toàn shop
-    st.metric("🏢 TỔNG TOÀN SHOP — 🔮 dự đoán cả năm (T1→T12)", _fmt_vnd(t["proj_year"]),
-              f"thực tế đã đạt ~{_fmt_vnd(t['ytd_rev'])}", delta_color="off")
+    # 1) Headline TỔNG + biểu đồ doanh thu 12 tháng nằm KẾ BÊN số tổng
+    hc1, hc2 = st.columns([1, 2], gap="medium")
+    with hc1:
+        st.metric("🏢 TỔNG TOÀN SHOP — 🔮 dự đoán cả năm (T1→T12)", _fmt_vnd(t["proj_year"]),
+                  f"thực tế đã đạt ~{_fmt_vnd(t['ytd_rev'])}", delta_color="off")
+        st.caption("Biểu đồ bên: doanh thu từng tháng — 6 tháng cao điểm (11,12,1,2,3,4) bán gấp đôi.")
+    with hc2:
+        if t.get("monthly"):
+            st.markdown("**📈 Doanh thu từng tháng** (🔵 thực tế · 🔴 nét đứt = dự đoán)")
+            st.plotly_chart(_monthly_line(t), width="stretch")
 
     # 2) MỘT biểu đồ đường-kết-hợp-cột theo GIAN HÀNG: cột = dự đoán, đường = thực tế, 2 vạch 3/10 tỷ
     if shops:
@@ -5600,9 +5607,6 @@ def _render_tax_warning(t):
                      width="stretch", hide_index=True, column_config={
             "🔮 Dự đoán": st.column_config.NumberColumn("🔮 Dự đoán (tỷ)", format="%.2f"),
             "Thực tế đã đạt": st.column_config.NumberColumn("Thực tế (tỷ)", format="%.2f")})
-        if t.get("monthly"):
-            st.markdown("**📈 Doanh thu từng tháng** (xanh = thực tế · đỏ nét đứt = dự đoán) — xem mùa vụ trong năm.")
-            st.plotly_chart(_monthly_line(t), width="stretch")
 
 
 def _render_sales():
