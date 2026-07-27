@@ -1422,7 +1422,7 @@ def get_alerts(fetch_json) -> dict:
             "cancel_retrieve_express": cancel_retrieve_express}
 
 
-WEEK_SUMMARY_BUILD = "loai-ma-chua-dong-bo-khoi-bang-kn-23jul"   # đổi mỗi lần sửa module → biết app đã reboot chưa
+WEEK_SUMMARY_BUILD = "dt-thuc-nhan-tru-don-hoan-28jul"   # đổi mỗi lần sửa module → biết app đã reboot chưa
 
 
 def get_week_summary(fetch_json, days: int = 7) -> dict:
@@ -3394,6 +3394,18 @@ def get_sales_analysis(fetch_json, period="thangnay", _v=None):
 
     # ── CHẤT LƯỢNG ĐƠN: chuyển đổi / hủy / trả hàng hoàn tiền / giao thất bại (kỳ hiện tại) ──
     ret_b = _sales_returns_period(fetch_json, cs, ce)
+    ret_p = _sales_returns_period(fetch_json, ps, pe)     # phiếu trả kỳ TRƯỚC (để so % DT thực nhận)
+    # DT THỰC NHẬN = DT NET − TOÀN BỘ đơn KHÔNG thu được tiền (trả hàng hoàn tiền + chỉ hoàn tiền +
+    # giao thất bại), lấy trọn total_price từ phiếu trả. DT NET chỉ trừ total_refunded (Sapo ghi thiếu),
+    # nên số này mới phản ánh đúng tiền THỰC SỰ giữ lại. Phiếu trả bị hủy (kháng nghị thắng) không tính.
+
+    def _nonearn(rb):
+        return (rb["val"].get("return_and_refund", 0.0)
+                + rb["val"].get("refund", 0.0)
+                + rb["val"].get("delivery_failed", 0.0))
+    net_real_deduct = _nonearn(ret_b)
+    net_real = cur["total"] - net_real_deduct
+    net_real_prev = prev["total"] - _nonearn(ret_p)
     placed = cur["placed_n"]
     _r = lambda n: (n / placed * 100) if placed else 0.0
     df_n = ret_b["cnt"].get("delivery_failed", 0)
@@ -3429,6 +3441,8 @@ def get_sales_analysis(fetch_json, period="thangnay", _v=None):
         "cur_range": (cs.strftime("%d/%m/%y"), ce.strftime("%d/%m/%y")),
         "prev_range": (ps.strftime("%d/%m/%y"), pe.strftime("%d/%m/%y")),
         "total": cur["total"], "prev_total": prev["total"], "total_pct": _pct(cur["total"], prev["total"]),
+        "net_real": net_real, "net_real_prev": net_real_prev,
+        "net_real_pct": _pct(net_real, net_real_prev), "net_real_deduct": net_real_deduct,
         "orders": cur["orders"], "prev_orders": prev["orders"], "orders_pct": _pct(cur["orders"], prev["orders"]),
         "stores": stores,
         "groups": _merge(cur["by_grp"], prev["by_grp"], cur["by_grp_qty"], topn=25),

@@ -5673,18 +5673,25 @@ def _render_sales():
     st.markdown(f'<div class="sec sec-orange">Doanh thu · {sa["clabel"]} '
                 f'({sa["cur_range"][0]}–{sa["cur_range"][1]}) — so với {sa["plabel"]} '
                 f'({sa["prev_range"][0]}–{sa["prev_range"][1]})</div>', unsafe_allow_html=True)
-    k = st.columns(3)
+    k = st.columns(4)
     k[0].metric("💵 Doanh thu NET", _fmt_vnd(sa["total"]), _d(sa["total_pct"]),
                 help="Tiền khách THỰC TRẢ (đã trừ giảm giá + đơn hủy + tiền hoàn), CHƯA trừ phí sàn & thuế. "
                      "Tính theo NGÀY TẠO ĐƠN — gồm cả đơn ĐÃ GIAO lẫn ĐANG GIAO. "
-                     "Là số CHƯA ĐỐI SOÁT (không phải tiền thật về ví sau đối soát).")
-    k[1].metric("🧾 Số đơn (đã trừ hủy)", f"{sa['orders']:,}", _d(sa["orders_pct"]),
+                     "Là số CHƯA ĐỐI SOÁT (không phải tiền thật về ví sau đối soát). "
+                     "CHỈ trừ total_refunded (Sapo thường ghi thiếu) — xem 💰 DT thực nhận để trừ TRỌN đơn hoàn.")
+    k[1].metric("💰 DT thực nhận", _fmt_vnd(sa["net_real"]), _d(sa["net_real_pct"]),
+                help="DT NET đã TRỪ TOÀN BỘ đơn KHÔNG thu được tiền trong kỳ: trả hàng hoàn tiền + chỉ "
+                     "hoàn tiền + giao thất bại — lấy TRỌN giá trị phiếu trả (không chỉ total_refunded như DT "
+                     f"NET). Kỳ này trừ thêm {_fmt_vnd(sa.get('net_real_deduct', 0))} so với DT NET. "
+                     "Đây là tiền THỰC SỰ giữ lại (vẫn chưa trừ phí sàn & thuế). Phiếu trả bị hủy (kháng "
+                     "nghị THẮNG) không bị trừ.")
+    k[2].metric("🧾 Số đơn (đã trừ hủy)", f"{sa['orders']:,}", _d(sa["orders_pct"]),
                 help="Số đơn KHÔNG bị hủy (trừ đơn có trạng thái HỦY, dù hủy trước hay sau giao). "
                      "Đơn TRẢ HÀNG sau giao VẪN tính là 1 đơn (chỉ trừ tiền hoàn khỏi doanh thu). "
                      "Doanh thu net ÷ số này = TB/đơn. KHÁC “đơn giao thành công” ở mục Chất lượng "
                      "(số đó còn trừ thêm đơn GIAO THẤT BẠI nên nhỏ hơn).")
     _aov = sa["total"] / sa["orders"] if sa["orders"] else 0
-    k[2].metric("📊 Giá trị TB/đơn", _fmt_vnd(_aov),
+    k[3].metric("📊 Giá trị TB/đơn", _fmt_vnd(_aov),
                 help="Doanh thu NET ÷ số đơn (đã trừ hủy).")
     if sa.get("truncated"):
         st.caption("⚠️ Dữ liệu rất lớn — đã lấy tối đa số trang cho phép; số liệu mang tính ước tính.")
@@ -5750,13 +5757,17 @@ def _render_sales():
                                   min_value=0, step=100000, value=0, key=f"sale_fee_{period}")
         _tax = ec[1].number_input("Thuế đã khấu trừ (đ) — từ Đối soát thuế",
                                   min_value=0, step=100000, value=0, key=f"sale_tax_{period}")
+        _base = sa.get("net_real", sa["total"])          # nền = DT thực nhận (đã trừ đơn hoàn) cho chuẩn
         if not _fee and not _tax:
-            st.info(f"Gợi ý: thuế hàng hóa hộ KD ≈ 1.5% doanh thu ≈ {_fmt_vnd(sa['total'] * 0.015)}. "
+            st.info(f"Gợi ý: thuế hàng hóa hộ KD ≈ 1.5% doanh thu ≈ {_fmt_vnd(_base * 0.015)}. "
                     "Nhập số THỰC từ đối soát để chính xác.")
         mc = st.columns(3)
-        mc[0].metric("Doanh thu NET", _fmt_vnd(sa["total"]))
+        mc[0].metric("💰 DT thực nhận", _fmt_vnd(_base),
+                     help="DT NET đã trừ TRỌN đơn hoàn (trả hàng + chỉ hoàn tiền + giao thất bại). "
+                          "Dùng làm nền để trừ tiếp phí sàn & thuế.")
         mc[1].metric("− Phí sàn − Thuế", f"−{_fmt_vnd(_fee + _tax)}")
-        mc[2].metric("≈ Thực nhận (tạm tính)", _fmt_vnd(sa["total"] - _fee - _tax))
+        mc[2].metric("≈ Thực nhận cuối", _fmt_vnd(_base - _fee - _tax),
+                     help="DT thực nhận − phí sàn − thuế = tiền cuối cùng giữ lại (tạm tính theo số nhập tay).")
         st.caption("⚠️ Số nhập tay chỉ lưu trong phiên (tải lại trang về 0). Muốn LƯU cố định thì báo mình thêm.")
 
     st.markdown('<div class="sec sec-orange">Theo GIAN HÀNG (tên shop × sàn)'
