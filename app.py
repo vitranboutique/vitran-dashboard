@@ -5508,60 +5508,40 @@ def _monthly_line(t):
     return fig
 
 
-def _tax_ladder(t, plats, shops):
-    """Thang tiến độ phân tầng: TỔNG · từng SÀN · từng GIAN HÀNG.
-    Mỗi thanh: phần ĐẬM = thực tế đã đạt, phần NHẠT kéo dài = dự đoán cả năm; 2 vạch dọc = ngưỡng 3 tỷ & 10 tỷ."""
-    def _san(nm):
-        return nm.rsplit(" - ", 1)[-1] if " - " in nm else nm
-    t3, t10 = t["t3"] / 1e9, t["t10"] / 1e9
-    # xếp tháp: (cấp, nhãn, thực tế tỷ, dự đoán tỷ) — cấp 0=Tổng, 1=Sàn, 2=Gian hàng
-    rows = [(0, "🏢 TỔNG TOÀN SHOP", t["ytd_rev"] / 1e9, t["proj_year"] / 1e9)]
-    for p in plats:
-        rows.append((1, f'🛒 Sàn {p["name"]}', p["ytd"] / 1e9, p["proj"] / 1e9))
-        for s in shops:
-            if _san(s["name"]) == p["name"]:
-                rows.append((2, "└ " + s["name"].replace(" - ", " · "), s["ytd"] / 1e9, s["proj"] / 1e9))
-    scale = max(t10 * 1.1, max((r[3] for r in rows), default=1) * 1.06, 1)
-    p3, p10 = t3 / scale * 100, t10 / scale * 100
+def _tax_shop_combo(t, shops):
+    """MỘT biểu đồ 'đường kết hợp cột' theo GIAN HÀNG (gọn):
+    CỘT = 🔮 dự đoán cả năm (màu theo ngưỡng) · ĐƯỜNG = thực tế đã đạt · 2 vạch ngang = ngưỡng 3 tỷ & 10 tỷ."""
+    _SAN_AB = {"Tiktokshop": "TTS", "Shopee": "SP", "Lazada": "LZ"}
 
-    def _sty(proj):
-        if proj >= t10:
-            return "#d9574e", "rgba(217,87,78,.30)", "🔴", "vượt 10 tỷ"
-        if proj >= t3:
-            return "#e0932f", "rgba(224,147,47,.30)", "🟠", "vượt 3 tỷ"
-        return "#3f9e70", "rgba(63,158,112,.30)", "🟢", "an toàn"
-    html = ['<div style="font-family:inherit">'
-            '<div style="position:relative;height:14px;margin:0 0 4px;font-size:10.5px;color:#64748b">'
-            '<span style="position:absolute;left:0">0₫</span>'
-            f'<span style="position:absolute;left:{p3}%;transform:translateX(-50%);color:#d97706;font-weight:800">3 tỷ</span>'
-            f'<span style="position:absolute;left:{p10}%;transform:translateX(-50%);color:#dc2626;font-weight:800">10 tỷ</span>'
-            '</div>']
-    for lvl, label, ytd, proj in rows:
-        col, colL, dot, tag = _sty(proj)
-        wY = max(0.6, min(100, ytd / scale * 100))
-        wP = max(0.6, min(100, proj / scale * 100))
-        ml = (0, 10, 26)[lvl]
-        fs = (14.5, 13, 12.5)[lvl]
-        fw = (800, 700, 500)[lvl]
-        bh = (18, 15, 13)[lvl]
-        mt = (2, 12, 4)[lvl]
-        namec = ("#16233f", "#1f3a5f", "#334155")[lvl]
-        spine = f"border-left:3px solid {col};padding-left:7px" if lvl == 1 else ("padding-left:6px" if lvl == 2 else "")
-        html.append(
-            f'<div style="margin:{mt}px 0 0 {ml}px;{spine}">'
-            f'<div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:1px 10px">'
-            f'<span style="font-size:{fs}px;font-weight:{fw};color:{namec}">{label}</span>'
-            f'<span style="font-size:12px;color:#475569">Thực tế '
-            f'<b style="color:#16233f">{ytd:.1f} tỷ</b> &nbsp;·&nbsp; 🔮 Dự đoán '
-            f'<b style="color:{col}">{proj:.1f} tỷ</b> &nbsp;{dot} {tag}</span></div>'
-            f'<div style="position:relative;background:#eef1f6;border-radius:6px;height:{bh}px;margin-top:3px;overflow:hidden">'
-            f'<div style="position:absolute;left:0;top:0;height:100%;width:{wP}%;background:{colL}"></div>'
-            f'<div style="position:absolute;left:0;top:0;height:100%;width:{wY}%;background:{col}"></div>'
-            f'<div style="position:absolute;left:{p3}%;top:0;height:100%;width:2px;background:#d97706"></div>'
-            f'<div style="position:absolute;left:{p10}%;top:0;height:100%;width:2px;background:#dc2626"></div>'
-            f'</div></div>')
-    html.append('</div>')
-    return "".join(html)
+    def _short(nm):
+        parts = nm.rsplit(" - ", 1)
+        brand = parts[0].replace(" BOUTIQUE", "").replace(" - ", "-").strip()
+        san = _SAN_AB.get(parts[1], parts[1]) if len(parts) == 2 else ""
+        return f"{brand}<br>{san}" if san else brand
+    t3, t10 = t["t3"] / 1e9, t["t10"] / 1e9
+    labels = [_short(s["name"]) for s in shops]
+    proj = [s["proj"] / 1e9 for s in shops]
+    ytd = [s["ytd"] / 1e9 for s in shops]
+
+    def _c(v):
+        return "#d9574e" if v >= t10 else ("#e0932f" if v >= t3 else "#3f9e70")
+    fig = go.Figure()
+    fig.add_trace(go.Bar(x=labels, y=proj, marker_color=[_c(v) for v in proj],
+                         name="🔮 Dự đoán cả năm", text=[f"{v:.1f}" for v in proj],
+                         textposition="outside", cliponaxis=False,
+                         hovertemplate="%{x}<br>Dự đoán %{y:.2f} tỷ<extra></extra>"))
+    fig.add_trace(go.Scatter(x=labels, y=ytd, mode="lines+markers", name="Thực tế đã đạt",
+                             line=dict(color="#16233f", width=2.5),
+                             marker=dict(size=8, color="#16233f", line=dict(color="#fff", width=1)),
+                             hovertemplate="%{x}<br>Thực tế %{y:.2f} tỷ<extra></extra>"))
+    fig.add_hline(y=t3, line=dict(color="#d97706", width=1.5, dash="dot"),
+                  annotation_text="ngưỡng 3 tỷ", annotation_position="top left")
+    fig.add_hline(y=t10, line=dict(color="#dc2626", width=1.5, dash="dot"),
+                  annotation_text="ngưỡng 10 tỷ", annotation_position="top left")
+    fig.update_layout(height=300, margin=dict(l=6, r=6, t=28, b=6), plot_bgcolor="rgba(0,0,0,0)",
+                      yaxis=dict(title="tỷ đồng", rangemode="tozero"), bargap=0.45,
+                      legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0))
+    return fig
 
 
 def _render_tax_warning(t):
@@ -5575,19 +5555,15 @@ def _render_tax_warning(t):
     shops = t.get("shops") or []
     plats = t.get("platforms") or []
 
-    # 1) Headline TỔNG + biểu đồ doanh thu 12 tháng NGAY TRÊN thang tiến độ
+    # 1) Headline TỔNG toàn shop
     st.metric("🏢 TỔNG TOÀN SHOP — 🔮 dự đoán cả năm (T1→T12)", _fmt_vnd(t["proj_year"]),
               f"thực tế đã đạt ~{_fmt_vnd(t['ytd_rev'])}", delta_color="off")
-    if t.get("monthly"):
-        st.markdown("**📈 Doanh thu từng tháng** (🔵 thực tế · 🔴 nét đứt = dự đoán · 6 tháng cao điểm 11,12,1,2,3,4 bán gấp đôi)")
-        st.plotly_chart(_monthly_line(t), width="stretch")
 
-    # 2) Thang tiến độ phân tầng: TỔNG · SÀN · GIAN HÀNG (thanh TỔNG nằm ngay dưới biểu đồ trên)
+    # 2) MỘT biểu đồ đường-kết-hợp-cột theo GIAN HÀNG: cột = dự đoán, đường = thực tế, 2 vạch 3/10 tỷ
     if shops:
-        st.markdown("**📊 Thực tế đã đạt & dự đoán cả năm — theo Tổng · Sàn · Gian hàng**")
-        st.caption("Mỗi thanh: phần ĐẬM = thực tế đã bán · phần NHẠT kéo dài = dự đoán cả năm.  "
-                   "Hai vạch dọc = ngưỡng thuế 3 tỷ (cam) & 10 tỷ (đỏ) — thanh chạm/qua vạch = sắp/đã vượt.")
-        st.markdown(_tax_ladder(t, plats, shops), unsafe_allow_html=True)
+        st.markdown("**📊 Dự đoán & thực tế theo gian hàng** — cột = 🔮 dự đoán cả năm (màu theo ngưỡng) · "
+                    "đường = thực tế đã đạt · 2 vạch ngang = ngưỡng 3 tỷ & 10 tỷ (cột vượt vạch = vượt ngưỡng).")
+        st.plotly_chart(_tax_shop_combo(t, shops), width="stretch")
 
     # 3) Bảng: TỔNG + từng SÀN + từng GIAN HÀNG
     def _stt(proj, thr):
@@ -5624,6 +5600,9 @@ def _render_tax_warning(t):
                      width="stretch", hide_index=True, column_config={
             "🔮 Dự đoán": st.column_config.NumberColumn("🔮 Dự đoán (tỷ)", format="%.2f"),
             "Thực tế đã đạt": st.column_config.NumberColumn("Thực tế (tỷ)", format="%.2f")})
+        if t.get("monthly"):
+            st.markdown("**📈 Doanh thu từng tháng** (xanh = thực tế · đỏ nét đứt = dự đoán) — xem mùa vụ trong năm.")
+            st.plotly_chart(_monthly_line(t), width="stretch")
 
 
 def _render_sales():
