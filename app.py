@@ -1711,7 +1711,7 @@ elif _cc_role == "shop":                    # máy shop: CHỈ thấy trang hi�
     _opts = [PAGE_QRSHOP]
     _default = PAGE_QRSHOP
 elif _cc_role == "admin":
-    _opts = [PAGE_OPS, PAGE_TIKTOK_INBOX, PAGE_PRODUCTION, PAGE_PRICE, PAGE_TTKH, PAGE_QRSHOP, PAGE_QLCC]
+    _opts = [PAGE_OPS, PAGE_TIKTOK_INBOX, PAGE_PRODUCTION, PAGE_PRICE, PAGE_TTKH, PAGE_QRSHOP, PAGE_QLCC, PAGE_COSTS]
     _default = PAGE_OPS
 else:
     _opts = [PAGE_OPS, PAGE_PRODUCTION, PAGE_PRICE, PAGE_TTKH]
