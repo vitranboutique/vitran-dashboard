@@ -5615,6 +5615,33 @@ def _render_tax_warning(t):
             "Thực tế đã đạt": st.column_config.NumberColumn("Thực tế (tỷ)", format="%.2f")})
 
 
+def _quality_bar(q):
+    """Thanh cơ cấu 100%: ✅ Chuyển đổi + ❌ Hủy + 🚫 Giao thất bại lấp đầy 100%;
+    ↩️ Trả hàng hoàn tiền = 1 lát NẰM TRONG khúc ✅ Chuyển đổi (không cộng thêm)."""
+    conv = max(0.0, q.get("conv_rate", 0.0))
+    canc = max(0.0, q.get("cancel_rate", 0.0))
+    fail = max(0.0, q.get("fail_rate", 0.0))
+    refund = max(0.0, q.get("refund_rate", 0.0))
+
+    def seg(w, col, txt):
+        inner = f'<span style="font-size:12px;font-weight:800;color:#fff;white-space:nowrap">{txt}</span>' if w >= 9 else ""
+        return (f'<div title="{txt}" style="width:{w}%;background:{col};display:flex;align-items:center;'
+                f'justify-content:center;overflow:hidden">{inner}</div>')
+    bar1 = ('<div style="display:flex;height:32px;border-radius:7px;overflow:hidden">'
+            + seg(conv, "#16a34a", f"✅ Chuyển đổi {conv:.0f}%")
+            + seg(canc, "#dc2626", f"❌ Hủy {canc:.0f}%")
+            + seg(fail, "#e0932f", f"🚫 {fail:.0f}%") + '</div>')
+    rp = (refund / conv * 100) if conv else 0
+    bar2 = (f'<div style="width:{conv}%;margin-top:4px">'
+            f'<div style="display:flex;height:16px;border-radius:5px;overflow:hidden;background:#dcfce7">'
+            f'<div style="width:{rp}%;background:#2563eb;display:flex;align-items:center;justify-content:center;overflow:hidden">'
+            f'<span style="font-size:10px;font-weight:700;color:#fff;white-space:nowrap">↩️ {refund:.1f}%</span></div>'
+            f'<div style="flex:1;display:flex;align-items:center;padding-left:7px">'
+            f'<span style="font-size:10.5px;color:#15803d;white-space:nowrap">↩️ trả hàng — nằm TRONG ✅ chuyển đổi</span>'
+            f'</div></div></div>')
+    return f'<div style="font-family:inherit;margin:3px 0 2px">{bar1}{bar2}</div>'
+
+
 def _render_sales():
     _l, _r = st.columns([3, 1])
     _l.title("💰 Phân tích bán hàng")
@@ -5683,11 +5710,7 @@ def _render_sales():
                  help="CHỈ đếm phiếu trả loại 'giao thất bại' (hoàn về shop) ÷ tổng đơn đặt. "
                       "Con số này THẤP HƠN thực tế: đơn hủy do giao lỗi, đơn TikTok kiểu closed+returned, "
                       "hoặc bị ghi thành 'trả hàng hoàn tiền' đều KHÔNG nằm ở đây.")
-    st.caption(f"➕ **✅ Chuyển đổi + ❌ Hủy + 🚫 Giao thất bại = 100%** — mỗi đơn thuộc ĐÚNG 1 nhóm "
-               f"({q.get('conv_n', 0):,} + {q.get('cancel_n', 0):,} + {q.get('fail_n', 0):,} = "
-               f"{q.get('placed', 0):,} đơn đặt).  ↩️ **Trả hàng hoàn tiền** ({q.get('refund_n', 0):,} đơn) "
-               "nằm TRONG nhóm ✅ Chuyển đổi (đơn giao xong rồi khách mới trả) → hiện riêng để theo dõi, "
-               "KHÔNG cộng vào 100%.")
+    st.markdown(_quality_bar(q), unsafe_allow_html=True)
 
     # ── LUỒNG GIAO HÀNG · ĐỐI SOÁT · KHIẾU NẠI + CHI PHÍ nhập tay ──
     fl = sa.get("flow") or {}
