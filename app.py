@@ -28,6 +28,7 @@ import dohana
 import daily_report
 import cham_cong
 import cham_cong_ui
+import tiktok_inbox_ui
 from sapo_address import resolve_address
 from sapo_client import (
     SapoAuthError, build_session, credential_present, make_fetch_json,
@@ -1686,6 +1687,7 @@ PAGE_CHAMCONG = "🕘 Chấm công"
 PAGE_LUONG = "💰 Lương của tôi"
 PAGE_QRSHOP = "📲 QR chấm công (shop)"
 PAGE_QLCC = "🛠️ Quản lý chấm công"
+PAGE_TIKTOK_INBOX = "💬 TikTok Inbox"
 PAGE_OPS = "📊 Vận hành"   # tab: Báo cáo cuối ngày + Đơn trả + Phiếu nhặt (CSKH chỉ thấy Báo cáo)
 
 # Phân quyền theo tài khoản.
@@ -1707,13 +1709,15 @@ elif _cc_role == "shop":                    # máy shop: CHỈ thấy trang hi�
     _opts = [PAGE_QRSHOP]
     _default = PAGE_QRSHOP
 elif _cc_role == "admin":
-    _opts = [PAGE_OPS, PAGE_PRODUCTION, PAGE_PRICE, PAGE_TTKH, PAGE_QRSHOP, PAGE_QLCC]
+    _opts = [PAGE_OPS, PAGE_TIKTOK_INBOX, PAGE_PRODUCTION, PAGE_PRICE, PAGE_TTKH, PAGE_QRSHOP, PAGE_QLCC]
     _default = PAGE_OPS
 else:
     _opts = [PAGE_OPS, PAGE_PRODUCTION, PAGE_PRICE, PAGE_TTKH]
     _default = PAGE_OPS
 if _is_owner:                               # chủ shop + zenzen197: thêm trang Tổng quan điều hành
     _opts = [PAGE_OVERVIEW] + _opts
+    if PAGE_TIKTOK_INBOX not in _opts:
+        _opts.insert(1, PAGE_TIKTOK_INBOX)
 if (st.query_params.get("page_ttkh") or st.query_params.get("ttkh_phone")) and PAGE_TTKH in _opts:
     _default = PAGE_TTKH
 _sees_production = PAGE_PRODUCTION in _opts   # kho/admin: hiện cảnh báo việc SX/cắt tay mọi tab
@@ -1730,6 +1734,8 @@ if _page == PAGE_QRSHOP:
     cham_cong_ui.render_shop_qr(); st.stop()
 if _page == PAGE_QLCC:
     cham_cong_ui.render_admin(); st.stop()
+if _page == PAGE_TIKTOK_INBOX:
+    tiktok_inbox_ui.render(); st.stop()
 
 
 # ── Biểu đồ dùng chung ──
