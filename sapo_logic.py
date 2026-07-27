@@ -3166,6 +3166,7 @@ def _sales_fetch_range(fetch_json, start, end, max_pages=280):
     store_cancelled_n = defaultdict(int)                  # đơn HỦY / gian hàng
     store_cancelled_val = defaultdict(float)              # giá trị đơn hủy / gian hàng
     processing_n = shipping_n = delivered_n = 0           # luồng giao: chờ giao / đang giao / đã giao
+    processing_val = shipping_val = delivered_val = 0.0   # doanh thu net theo luồng giao
     settled_n, settled_val = 0, 0.0                       # đơn đã ĐỐI SOÁT (settled_on)
     paid_n, paid_val = 0, 0.0                             # đơn đã NHẬN TIỀN (financial_status=paid)
     truncated = False
@@ -3198,10 +3199,13 @@ def _sales_fetch_range(fetch_json, start, end, max_pages=280):
             _ss = str((_ff[0].get("shipment_status") if _ff else "") or "").lower()
             if _ss == "delivered":
                 delivered_n += 1
+                delivered_val += net
             elif _ss == "delivering":
                 shipping_n += 1
+                shipping_val += net
             elif _ss not in ("returning", "returned"):
                 processing_n += 1                        # pending / chưa có vận đơn = đang xử lý, chờ giao
+                processing_val += net
             if o.get("settled_on"):
                 settled_n += 1
                 settled_val += net
@@ -3239,6 +3243,7 @@ def _sales_fetch_range(fetch_json, start, end, max_pages=280):
             "store_placed": dict(store_placed), "store_cancelled_n": dict(store_cancelled_n),
             "store_cancelled_val": dict(store_cancelled_val),
             "processing_n": processing_n, "shipping_n": shipping_n, "delivered_n": delivered_n,
+            "processing_val": processing_val, "shipping_val": shipping_val, "delivered_val": delivered_val,
             "settled_n": settled_n, "settled_val": settled_val,
             "paid_n": paid_n, "paid_val": paid_val,
             "truncated": truncated}
@@ -3432,6 +3437,8 @@ def get_sales_analysis(fetch_json, period="thangnay", _v=None):
         "flow": {
             "processing_n": cur["processing_n"], "shipping_n": cur["shipping_n"],
             "delivered_n": cur["delivered_n"],
+            "processing_val": cur["processing_val"], "shipping_val": cur["shipping_val"],
+            "delivered_val": cur["delivered_val"],
             "settled_n": cur["settled_n"], "settled_val": cur["settled_val"],
             "paid_n": cur["paid_n"], "paid_val": cur["paid_val"],
         },

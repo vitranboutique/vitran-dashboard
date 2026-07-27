@@ -1776,7 +1776,7 @@ def load_overview():
 
 @st.cache_data(ttl=900, show_spinner="Đang phân tích doanh thu từ Sapo…")
 def load_sales(period):
-    _cache_ver = "2026-07-27-flow-settle"  # ĐỔI chuỗi này mỗi khi sửa get_sales_analysis → BUST cache cũ
+    _cache_ver = "2026-07-27-flow-val"     # ĐỔI chuỗi này mỗi khi sửa get_sales_analysis → BUST cache cũ
     return L.get_sales_analysis(make_fetch_json(build_session()), period=period, _v=_cache_ver)
 
 
@@ -5683,6 +5683,11 @@ def _render_sales():
                  help="CHỈ đếm phiếu trả loại 'giao thất bại' (hoàn về shop) ÷ tổng đơn đặt. "
                       "Con số này THẤP HƠN thực tế: đơn hủy do giao lỗi, đơn TikTok kiểu closed+returned, "
                       "hoặc bị ghi thành 'trả hàng hoàn tiền' đều KHÔNG nằm ở đây.")
+    st.caption(f"➕ **✅ Chuyển đổi + ❌ Hủy + 🚫 Giao thất bại = 100%** — mỗi đơn thuộc ĐÚNG 1 nhóm "
+               f"({q.get('conv_n', 0):,} + {q.get('cancel_n', 0):,} + {q.get('fail_n', 0):,} = "
+               f"{q.get('placed', 0):,} đơn đặt).  ↩️ **Trả hàng hoàn tiền** ({q.get('refund_n', 0):,} đơn) "
+               "nằm TRONG nhóm ✅ Chuyển đổi (đơn giao xong rồi khách mới trả) → hiện riêng để theo dõi, "
+               "KHÔNG cộng vào 100%.")
 
     # ── LUỒNG GIAO HÀNG · ĐỐI SOÁT · KHIẾU NẠI + CHI PHÍ nhập tay ──
     fl = sa.get("flow") or {}
@@ -5691,13 +5696,16 @@ def _render_sales():
                 'lấy từ settled_on/financial_status. PHÍ SÀN &amp; THUẾ khấu trừ Sapo Open API KHÔNG lấy được — nhập tay '
                 'từ báo cáo Đối soát của sàn.">&#9432;</span></div>', unsafe_allow_html=True)
     fc = st.columns(3)
-    fc[0].metric("📦 Đang xử lý / chờ giao", f"{fl.get('processing_n', 0):,}",
-                 help="Đơn CHƯA hủy & chưa bàn giao ĐVVC (shipment_status = pending / chưa có vận đơn).")
-    fc[1].metric("🚚 Đang giao", f"{fl.get('shipping_n', 0):,}",
-                 help="Đơn đang trên đường giao (shipment_status = delivering).")
-    fc[2].metric("✅ Đã giao", f"{fl.get('delivered_n', 0):,}",
-                 help="Đơn đã giao xong (shipment_status = delivered). KHÁC 'giao thành công' ở Chất lượng "
-                      "(số đó là ước tính = đặt − hủy − giao thất bại).")
+    fc[0].metric("📦 Đang xử lý / chờ giao", f"{fl.get('processing_n', 0):,} đơn",
+                 _fmt_vnd(fl.get('processing_val', 0)), delta_color="off",
+                 help="Đơn CHƯA hủy & chưa bàn giao ĐVVC (shipment_status = pending / chưa có vận đơn). Kèm doanh thu net.")
+    fc[1].metric("🚚 Đang giao", f"{fl.get('shipping_n', 0):,} đơn",
+                 _fmt_vnd(fl.get('shipping_val', 0)), delta_color="off",
+                 help="Đơn đang trên đường giao (shipment_status = delivering). Kèm doanh thu net.")
+    fc[2].metric("✅ Đã giao", f"{fl.get('delivered_n', 0):,} đơn",
+                 _fmt_vnd(fl.get('delivered_val', 0)), delta_color="off",
+                 help="Đơn đã giao xong (shipment_status = delivered). Kèm doanh thu net. KHÁC 'giao thành công' ở "
+                      "Chất lượng (số đó là ước tính = đặt − hủy − giao thất bại).")
     sc = st.columns(3)
     sc[0].metric("🧮 Đã đối soát", f"{fl.get('settled_n', 0):,} đơn", _fmt_vnd(fl.get('settled_val', 0)),
                  delta_color="off",
