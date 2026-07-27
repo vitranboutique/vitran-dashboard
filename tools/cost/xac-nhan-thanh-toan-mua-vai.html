@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Bảng xác nhận thanh toán mua vải</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    padding: 20px;
+    color: #000;
+    font-size: 14px;
+  }
+
+  h2 {
+    text-align: center;
+    margin: 18px 0 22px 0;
+    font-size: 20px;
+    font-weight: bold;
+  }
+
+  h3 {
+    text-align: center;
+    margin: 4px 0;
+    font-size: 14px;
+    font-weight: normal;
+  }
+
+  h4 {
+    text-align: center;
+    margin: 2px 0 12px 0;
+    font-size: 13px;
+    font-weight: normal;
+  }
+
+  .info-block, .form-row, .toolbar {
+    margin-bottom: 12px;
+  }
+
+  .form-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+
+  input, select, button {
+    padding: 8px;
+    font-size: 14px;
+  }
+
+  input, select {
+    min-width: 140px;
+  }
+
+  button {
+    cursor: pointer;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 12px;
+  }
+
+  th, td {
+    border: 1px solid #000;
+    padding: 6px;
+    text-align: center;
+    vertical-align: middle;
+  }
+
+  th {
+    font-weight: bold;
+  }
+
+  .right {
+    text-align: right;
+  }
+
+  .signature {
+    width: 100%;
+    margin-top: 50px;
+    border: none;
+  }
+
+  .signature td {
+    border: none;
+    text-align: center;
+    width: 50%;
+    padding-top: 30px;
+  }
+
+  .signature strong {
+    font-weight: bold;
+  }
+
+  .no-print {
+    display: block;
+  }
+
+  .quarter-line {
+    font-weight: bold;
+    margin: 12px 0;
+    text-align: center;
+  }
+
+  .small-note {
+    font-size: 12px;
+    color: #555;
+  }
+
+  @media print {
+    @page {
+      size: A4;
+      margin: 12mm;
+    }
+
+    .no-print {
+      display: none !important;
+    }
+
+    body {
+      padding: 0;
+    }
+  }
+</style>
+</head>
+<body>
+
+  <h3>HỘ KINH DOANH VITRAN BOUTIQUE</h3>
+  <h4>Số 6 Đường 32, Phường An Lạc, Quận Bình Tân, TP.HCM</h4>
+  <h2>BẢNG XÁC NHẬN THANH TOÁN MUA VẢI</h2>
+
+  <div class="info-block">
+    <div><strong>Người chuyển tiền:</strong> <span id="senderNameText"></span></div>
+    <div><strong>Số tài khoản người gửi:</strong> <span id="senderAccText"></span></div>
+    <div><strong>Ngân hàng người gửi:</strong> <span id="senderBankText"></span></div>
+  </div>
+
+  <div class="form-row no-print">
+    <input type="text" id="senderName" placeholder="Tên người chuyển tiền">
+    <input type="text" id="senderAcc" placeholder="STK người gửi">
+    <select id="senderBank">
+      <option value="">-- Chọn ngân hàng người gửi --</option>
+      <option>Vietcombank</option>
+      <option>BIDV</option>
+      <option>VietinBank</option>
+      <option>Agribank</option>
+      <option>Techcombank</option>
+      <option>MB Bank</option>
+      <option>ACB</option>
+      <option>VPBank</option>
+      <option>Sacombank</option>
+      <option>TPBank</option>
+      <option>SHB</option>
+      <option>OCB</option>
+      <option>Eximbank</option>
+      <option>HDBank</option>
+      <option>SeABank</option>
+      <option>Nam A Bank</option>
+      <option>VIB</option>
+      <option>MSB</option>
+      <option>SCB</option>
+      <option>ABBANK</option>
+      <option>Bac A Bank</option>
+      <option>PVcomBank</option>
+      <option>BaoViet Bank</option>
+      <option>Cake</option>
+      <option>Ubank</option>
+      <option>Woori Bank</option>
+      <option>Shinhan Bank</option>
+      <option>HSBC</option>
+      <option>Standard Chartered</option>
+      <option>CIMB</option>
+      <option>Citibank</option>
+      <option>DBS Bank</option>
+      <option>Public Bank</option>
+      <option>Hong Leong Bank</option>
+      <option>Khác</option>
+    </select>
+    <button type="button" onclick="saveSenderInfo()">Lưu thông tin người gửi</button>
+  </div>
+
+  <div class="quarter-line">Quý: <span id="quarterText"></span></div>
+
+  <div class="form-row no-print">
+    <input type="date" id="date">
+    <input type="text" id="transactionCode" placeholder="Số/Mã giao dịch">
+    <input type="text" id="amountDisplay" placeholder="Số tiền" inputmode="numeric">
+    <select id="bank">
+      <option value="">-- Chọn ngân hàng người nhận --</option>
+      <option>Vietcombank</option>
+      <option>BIDV</option>
+      <option>VietinBank</option>
+      <option>Agribank</option>
+      <option>Techcombank</option>
+      <option>MB Bank</option>
+      <option>ACB</option>
+      <option>VPBank</option>
+      <option>Sacombank</option>
+      <option>TPBank</option>
+      <option>SHB</option>
+      <option>OCB</option>
+      <option>Eximbank</option>
+      <option>HDBank</option>
+      <option>SeABank</option>
+      <option>Nam A Bank</option>
+      <option>VIB</option>
+      <option>MSB</option>
+      <option>SCB</option>
+      <option>ABBANK</option>
+      <option>Bac A Bank</option>
+      <option>PVcomBank</option>
+      <option>BaoViet Bank</option>
+      <option>Cake</option>
+      <option>Ubank</option>
+      <option>Woori Bank</option>
+      <option>Shinhan Bank</option>
+      <option>HSBC</option>
+      <option>Standard Chartered</option>
+      <option>CIMB</option>
+      <option>Citibank</option>
+      <option>DBS Bank</option>
+      <option>Public Bank</option>
+      <option>Hong Leong Bank</option>
+      <option>Khác</option>
+    </select>
+    <input type="text" id="receiver" placeholder="Tên người nhận">
+    <input type="text" id="account" placeholder="STK người nhận">
+    <input type="text" id="content" placeholder="Nội dung">
+    <button type="button" onclick="addRow()">Thêm dòng</button>
+    <button type="button" onclick="exportExcel()">Xuất Excel</button>
+    <button type="button" onclick="window.print()">In A4</button>
+  </div>
+
+  <div class="small-note no-print">
+    Khi nhập ngày, hệ thống tự xác định quý: 1-2-3 là quý 1, 4-5-6 là quý 2, 7-8-9 là quý 3, 10-11-12 là quý 4.
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Ngày</th>
+        <th>Số/Mã giao dịch</th>
+        <th>Số tiền</th>
+        <th>Ngân hàng</th>
+        <th>Tên người nhận</th>
+        <th>STK người nhận</th>
+        <th>Nội dung</th>
+        <th class="no-print">Xóa</th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+    <tfoot>
+      <tr>
+        <th colspan="2">Tổng cộng</th>
+        <th id="totalAmount">0</th>
+        <th colspan="5"></th>
+      </tr>
+    </tfoot>
+  </table>
+
+  <table class="signature">
+    <tr>
+      <td>
+        <strong>Người lập biểu</strong><br><br><br><br>
+        (Ký, ghi rõ họ tên)
+      </td>
+      <td>
+        <strong>Đại diện hộ kinh doanh</strong><br><br><br><br>
+        (Ký, ghi rõ họ tên)
+      </td>
+    </tr>
+  </table>
+
+<script>
+  let data = [];
+  let currentQuarter = null;
+
+  function saveSenderInfo() {
+    const senderName = document.getElementById('senderName').value.trim();
+    const senderAcc = document.getElementById('senderAcc').value.trim();
+    const senderBank = document.getElementById('senderBank').value.trim();
+
+    document.getElementById('senderNameText').textContent = senderName;
+    document.getElementById('senderAccText').textContent = senderAcc;
+    document.getElementById('senderBankText').textContent = senderBank;
+  }
+
+  function getQuarterFromDate(dateStr) {
+    const date = new Date(dateStr);
+    const month = date.getMonth() + 1;
+    if (month >= 1 && month <= 3) return 1;
+    if (month >= 4 && month <= 6) return 2;
+    if (month >= 7 && month <= 9) return 3;
+    return 4;
+  }
+
+  function formatDateVN(dateStr) {
+    const d = new Date(dateStr);
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${day}/${month}/${year}`;
+  }
+
+  function formatMoneyVN(value) {
+    const num = Number(value || 0);
+    return num.toLocaleString('vi-VN');
+  }
+
+  function parseMoney(value) {
+    return Number(String(value).replace(/\./g, '').replace(/,/g, '').trim()) || 0;
+  }
+
+  const amountDisplay = document.getElementById('amountDisplay');
+  amountDisplay.addEventListener('input', function () {
+    const raw = this.value.replace(/\D/g, '');
+    if (!raw) {
+      this.value = '';
+      return;
+    }
+    this.value = Number(raw).toLocaleString('vi-VN');
+  });
+
+  function clearEntryInputs() {
+    document.getElementById('date').value = '';
+    document.getElementById('transactionCode').value = '';
+    document.getElementById('amountDisplay').value = '';
+    document.getElementById('bank').value = '';
+    document.getElementById('receiver').value = '';
+    document.getElementById('account').value = '';
+    document.getElementById('content').value = '';
+    document.getElementById('date').focus();
+  }
+
+  function addRow() {
+    const date = document.getElementById('date').value;
+    const transactionCode = document.getElementById('transactionCode').value.trim();
+    const amount = parseMoney(document.getElementById('amountDisplay').value);
+    const bank = document.getElementById('bank').value.trim();
+    const receiver = document.getElementById('receiver').value.trim();
+    const account = document.getElementById('account').value.trim();
+    const content = document.getElementById('content').value.trim();
+
+    if (!date || !transactionCode || !amount || !bank || !receiver || !account || !content) {
+      alert('Vui lòng nhập đầy đủ thông tin trước khi thêm dòng.');
+      return;
+    }
+
+    const duplicate = data.some(item => item.transactionCode.toLowerCase() === transactionCode.toLowerCase());
+    if (duplicate) {
+      alert('Mã giao dịch bị trùng. Vui lòng kiểm tra lại.');
+      return;
+    }
+
+    const quarter = getQuarterFromDate(date);
+
+    if (currentQuarter === null) {
+      currentQuarter = quarter;
+      document.getElementById('quarterText').textContent = `Quý ${currentQuarter}`;
+    } else if (currentQuarter !== quarter) {
+      alert(`Bảng này đang là Quý ${currentQuarter}. Không được thêm giao dịch thuộc Quý ${quarter}.`);
+      return;
+    }
+
+    data.push({
+      date,
+      transactionCode,
+      amount,
+      bank,
+      receiver,
+      account,
+      content,
+      quarter
+    });
+
+    renderTable();
+    clearEntryInputs();
+  }
+
+  function deleteRow(index) {
+    data.splice(index, 1);
+
+    if (data.length === 0) {
+      currentQuarter = null;
+      document.getElementById('quarterText').textContent = '';
+    } else {
+      currentQuarter = data[0].quarter;
+      document.getElementById('quarterText').textContent = `Quý ${currentQuarter}`;
+    }
+
+    renderTable();
+  }
+
+  function renderTable() {
+    const tbody = document.getElementById('tbody');
+    tbody.innerHTML = '';
+
+    let total = 0;
+
+    data.forEach((item, index) => {
+      total += item.amount;
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>${formatDateVN(item.date)}</td>
+        <td>${item.transactionCode}</td>
+        <td class="right">${formatMoneyVN(item.amount)}</td>
+        <td>${item.bank}</td>
+        <td>${item.receiver}</td>
+        <td>${item.account}</td>
+        <td>${item.content}</td>
+        <td class="no-print"><button type="button" onclick="deleteRow(${index})">Xóa</button></td>
+      `;
+      tbody.appendChild(row);
+    });
+
+    document.getElementById('totalAmount').textContent = formatMoneyVN(total);
+  }
+
+  function exportExcel() {
+    if (data.length === 0) {
+      alert('Chưa có dữ liệu để xuất.');
+      return;
+    }
+
+    let csv = '\uFEFF';
+    csv += 'Ngày,Số/Mã giao dịch,Số tiền,Ngân hàng,Tên người nhận,STK người nhận,Nội dung,Quý\n';
+
+    data.forEach(item => {
+      csv += [
+        formatDateVN(item.date),
+        `"${item.transactionCode}"`,
+        item.amount,
+        `"${item.bank}"`,
+        `"${item.receiver}"`,
+        `"${item.account}"`,
+        `"${item.content}"`,
+        `Quý ${item.quarter}`
+      ].join(',') + '\n';
+    });
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'bang_xac_nhan_thanh_toan_mua_vai.csv';
+    link.click();
+  }
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+      const target = document.activeElement;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'SELECT')) {
+        e.preventDefault();
+        addRow();
+      }
+    }
+  });
+</script>
+
+</body>
+</html>

@@ -795,6 +795,39 @@ def remove_khui_manual_match(ret: str) -> bool:
     return _write_gist_file(_KHUI_MATCH_FILE, {"matches": matches})
 
 
+# ── CHI PHÍ ĐẦU VÀO: mua vải (bảng kê) · thanh toán mua vải · thanh toán gia công ──
+# Người dùng nhập trong 3 công cụ HTML (nhúng iframe), bấm "Lưu vào chi phí đầu vào" → dán JSON →
+# app ghi 1 bản ghi vào GIST. Mỗi bản ghi: {id, type, date, amount, partner, note, detail, saved_at}.
+_INPUT_COST_FILE = "vitran_input_costs.json"
+
+
+def read_input_costs() -> list:
+    """[{id, type, date, amount, partner, note, detail, saved_at}] — chi phí đầu vào đã lưu."""
+    d = _read_gist_file(_INPUT_COST_FILE)
+    if isinstance(d, dict) and isinstance(d.get("items"), list):
+        return d["items"]
+    return []
+
+
+def add_input_cost(entry: dict) -> bool:
+    """Thêm 1 chi phí đầu vào. Bắt buộc {type}. Tự gắn id + saved_at nếu thiếu."""
+    row = dict(entry or {})
+    if not row.get("type"):
+        return False
+    items = read_input_costs()
+    if not row.get("id"):
+        row["id"] = f"{int(_now_vn().timestamp() * 1000)}"
+    row.setdefault("saved_at", _now_vn().strftime("%Y-%m-%d %H:%M:%S"))
+    items.append(row)
+    return _write_gist_file(_INPUT_COST_FILE, {"items": items})
+
+
+def remove_input_cost(cid: str) -> bool:
+    cid = str(cid or "")
+    items = [x for x in read_input_costs() if str(x.get("id")) != cid]
+    return _write_gist_file(_INPUT_COST_FILE, {"items": items})
+
+
 def read_video_type_overrides() -> list:
     """[{date, code, type}] — sửa loại clip trong app mà không thay dữ liệu gốc Dohana."""
     d = _read_gist_file(_VIDEO_TYPE_OVERRIDE_FILE)

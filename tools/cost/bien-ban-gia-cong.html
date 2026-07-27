@@ -1,0 +1,668 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Biên bản giao nhận & thanh toán gia công (A4)</title>
+  <style>
+    :root { --border:#222; --muted:#666; --danger:#b00020; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:#f2f2f2; }
+    .page{
+      width:210mm; min-height:297mm;
+      margin:12px auto; background:#fff;
+      padding:14mm 12mm;
+      font-family:"Times New Roman", Times, serif;
+      color:#000;
+    }
+    h1{ font-size:16pt; margin:0 0 8px 0; text-align:center; letter-spacing:.2px; }
+    .sub{ text-align:center; font-size:11pt; margin-bottom:10px; }
+
+    .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .box{ border:1px solid var(--border); padding:8px; }
+    .box h2{ font-size:11.5pt; margin:0 0 6px 0; }
+
+    .row{ display:flex; gap:8px; align-items:flex-start; margin:4px 0; }
+    .row label{ width:110px; font-size:11pt; padding-top:6px; }
+    .row .field{ flex:1; min-width:0; }
+
+    input[type="text"], input[type="date"], input[type="datetime-local"], input[type="number"],
+    select, textarea{
+      width:100%;
+      padding:6px 8px;
+      border:1px solid #999;
+      border-radius:4px;
+      font-size:11pt;
+      font-family:"Times New Roman", Times, serif;
+      background:#fff;
+    }
+    textarea{ resize: vertical; min-height: 44px; line-height: 1.25; }
+    input[readonly], textarea[readonly]{ background:#f7f7f7; }
+    input[type="number"]{ text-align:right; }
+
+    .muted{ color:var(--muted); font-size:10.5pt; }
+    .danger{ color:var(--danger); font-size:10.5pt; font-weight:700; }
+
+    table{ width:100%; border-collapse:collapse; margin-top:8px; }
+    th, td{ border:1px solid var(--border); padding:6px; font-size:11pt; }
+    th{ text-align:center; }
+    td.center{ text-align:center; }
+    td.right{ text-align:right; }
+    .nowrap{ white-space:nowrap; }
+
+    .actions{ display:flex; gap:8px; margin:10px 0; flex-wrap:wrap; }
+    button{
+      padding:8px 10px; border:1px solid #333; background:#fff;
+      border-radius:6px; cursor:pointer; font-size:11pt;
+      font-family:"Times New Roman", Times, serif;
+    }
+    button:hover{ background:#f7f7f7; }
+
+    .totals{
+      margin-top:10px; border:1px solid var(--border); padding:8px;
+    }
+    .totals .line{
+      display:flex; justify-content:space-between; gap:10px;
+      padding:4px 0; border-bottom:1px dashed #bbb;
+      font-size:11.5pt;
+    }
+    .totals .line:last-child{ border-bottom:none; }
+    .totals .value{ min-width:75mm; text-align:right; font-variant-numeric:tabular-nums; }
+    .bold{ font-weight:800; }
+
+    .sign{ display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:14px; }
+    .sigbox{ text-align:center; padding-top:8px; }
+    .sigbox .title{ font-weight:700; }
+    .sigbox .hint{ margin-top:60px; font-size:10.5pt; color:var(--muted); }
+
+    @media print{
+      body{ background:#fff; }
+      .page{ margin:0; width:210mm; min-height:297mm; }
+      .actions{ display:none !important; }
+      input, select, textarea{ border:1px solid #000; }
+      textarea{ overflow: visible; }
+    }
+    @page{ size:A4; margin:10mm; }
+  </style>
+</head>
+
+<body>
+  <div class="page">
+    <h1>BIÊN BẢN GIAO NHẬN VÀ THANH TOÁN GIA CÔNG</h1>
+
+    <div class="sub">
+      Hôm nay, ngày
+      <span class="nowrap"><input style="width:55mm; display:inline-block" type="text" id="ngay" placeholder="…/…/20…" /></span>
+      tại:
+      <span class="nowrap"><input style="width:95mm; display:inline-block" type="text" id="tai" placeholder="Địa chỉ..." /></span>
+    </div>
+
+    <div class="grid2">
+      <div class="box">
+        <h2>BÊN A (BÊN ĐẶT GIA CÔNG)</h2>
+
+        <div class="row">
+          <label>Tên HKD</label>
+          <div class="field"><input id="a_ten" type="text" value="VITRAN BOUTIQUE" readonly></div>
+        </div>
+        <div class="row">
+          <label>Đại diện</label>
+          <div class="field"><input id="a_daidien" type="text" value="TRẦN THỊ THÚY VI" readonly></div>
+        </div>
+        <div class="row">
+          <label>CMND/CCCD</label>
+          <div class="field"><input id="a_cccd" type="text" readonly value="079191025624"></div>
+        </div>
+        <div class="row">
+          <label>Địa chỉ</label>
+          <div class="field">
+            <textarea id="a_diachi" readonly>6 đường 32, phường An Lạc, quận Bình Tân, TP.HCM</textarea>
+          </div>
+        </div>
+        <div class="row">
+          <label>Điện thoại</label>
+          <div class="field"><input id="a_sdt" type="text" readonly value="0902470840"></div>
+        </div>
+      </div>
+
+      <div class="box">
+        <h2>BÊN B (BÊN NHẬN GIA CÔNG)</h2>
+
+        <div class="row">
+          <label>Đối tác</label>
+          <div class="field">
+            <select id="partnerSelect">
+              <option value="">-- Chọn đối tác --</option>
+            </select>
+            <div class="muted">Chọn tên đối tác → tự đổ CCCD/địa chỉ/SĐT. Chọn “(Nhập tay)” nếu đối tác mới.</div>
+          </div>
+        </div>
+
+        <div class="row"><label>Họ tên</label><div class="field"><input id="b_ten" type="text" readonly></div></div>
+        <div class="row"><label>CMND/CCCD</label><div class="field"><input id="b_cccd" type="text" readonly></div></div>
+        <div class="row"><label>Địa chỉ</label><div class="field"><textarea id="b_diachi" readonly></textarea></div></div>
+        <div class="row"><label>Điện thoại</label><div class="field"><input id="b_sdt" type="text" readonly></div></div>
+      </div>
+    </div>
+
+    <div class="box" style="margin-top:10px;">
+      <h2>I. THÔNG TIN LÔ HÀNG</h2>
+      <div class="grid2">
+        <div class="row"><label>Ngày giao</label><div class="field"><input id="ngay_giao" type="date"></div></div>
+        <div class="row"><label>Số lô/đợt</label><div class="field"><input id="so_lo" type="text" placeholder="VD: L01-2026 / Đợt 2..." /></div></div>
+      </div>
+
+      <div class="row">
+        <label>Hình thức</label>
+        <div class="field">
+          <select id="hinh_thuc">
+            <option value="">-- Chọn --</option>
+            <option>Trực tiếp</option>
+            <option>Giao xe</option>
+            <option>Giao ship nội bộ</option>
+            <option>Gửi chành xe</option>
+            <option>Khác</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button type="button" id="addSpRowBtn">+ Thêm dòng SKU</button>
+      <button type="button" id="addAdvRowBtn">+ Thêm dòng ứng</button>
+      <button type="button" id="addMatRowBtn">+ Thêm dòng NVL mua hộ</button>
+      <button type="button" id="printBtn">In A4</button>
+    </div>
+
+    <div class="box">
+      <h2>II. CHI TIẾT HÀNG GIAO NHẬN</h2>
+      <table>
+        <thead>
+          <tr>
+            <th style="width:10mm;">STT</th>
+            <th style="width:45mm;">Mã SKU</th>
+            <th style="width:22mm;">SL (SP)</th>
+            <th style="width:30mm;">Đơn giá (VNĐ/SP)</th>
+            <th style="width:20mm;">SL lỗi</th>
+            <th style="width:30mm;">Trừ lỗi (VNĐ)</th>
+            <th style="width:32mm;">Thành tiền (VNĐ)</th>
+            <th style="width:12mm;">Xoá</th>
+          </tr>
+        </thead>
+        <tbody id="spBody"></tbody>
+      </table>
+      <div class="muted">* “Trừ lỗi” = SL lỗi × đơn giá (cùng đơn giá gia công của dòng đó).</div>
+    </div>
+
+    <div class="box" style="margin-top:10px;">
+      <h2>III. ỨNG TIỀN (NẾU CÓ)</h2>
+      <table>
+        <thead>
+          <tr>
+            <th style="width:10mm;">STT</th>
+            <th>Nội dung</th>
+            <th style="width:45mm;">Số tiền (VNĐ)</th>
+            <th style="width:12mm;">Xoá</th>
+          </tr>
+        </thead>
+        <tbody id="advBody"></tbody>
+      </table>
+    </div>
+
+    <div class="box" style="margin-top:10px;">
+      <h2>IV. NVL PHÁT SINH (BÊN B MUA HỘ BÊN A) – THANH TOÁN CHUNG</h2>
+      <table>
+        <thead>
+          <tr>
+            <th style="width:10mm;">STT</th>
+            <th>Nội dung NVL</th>
+            <th style="width:20mm;">SL</th>
+            <th style="width:35mm;">Đơn giá</th>
+            <th style="width:40mm;">Thành tiền (VNĐ)</th>
+            <th style="width:12mm;">Xoá</th>
+          </tr>
+        </thead>
+        <tbody id="matBody"></tbody>
+      </table>
+      <div class="muted">NVL mua hộ sẽ được cộng vào tổng tiền thực nhận.</div>
+    </div>
+
+    <div class="totals">
+      <div class="line">
+        <div><span class="bold">TỔNG SỐ LƯỢNG SP</span></div>
+        <div class="value" id="sumQty">0</div>
+      </div>
+      <div class="line">
+        <div><span class="bold">TỔNG SP LỖI</span></div>
+        <div class="value" id="sumBadQty">0</div>
+      </div>
+      <div class="line">
+        <div><span class="bold">TỔNG TIỀN GIA CÔNG</span></div>
+        <div class="value" id="sumGross">0</div>
+      </div>
+      <div class="line">
+        <div><span class="bold">TỔNG TIỀN TRỪ LỖI</span></div>
+        <div class="value" id="sumDefect">0</div>
+      </div>
+      <div class="line">
+        <div><span class="bold">TỔNG ỨNG</span></div>
+        <div class="value" id="sumAdv">0</div>
+      </div>
+      <div class="line">
+        <div><span class="bold">TỔNG NVL MUA HỘ</span></div>
+        <div class="value" id="sumMat">0</div>
+      </div>
+
+      <div class="line bold" style="font-size:12.5pt;">
+        <div>TỔNG TIỀN THỰC NHẬN</div>
+        <div class="value" id="netPay">0</div>
+      </div>
+      <div class="muted">
+        Công thức: Thực nhận = (Tổng gia công − Trừ lỗi − Tổng ứng) + Tổng NVL mua hộ
+      </div>
+    </div>
+
+    <div class="box" style="margin-top:10px;">
+      <h2>V. THANH TOÁN</h2>
+
+      <div class="row">
+        <label>Phương thức</label>
+        <div class="field">
+          <select id="pttt">
+            <option value="">-- Chọn --</option>
+            <option>Chuyển khoản</option>
+            <option>Tiền mặt</option>
+            <option>Ví điện tử</option>
+            <option>Khác</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row"><label>Số tài khoản</label><div class="field"><input id="stk" type="text" /></div></div>
+      <div class="row"><label>Chủ tài khoản</label><div class="field"><input id="ctk" type="text" /></div></div>
+
+      <div class="row">
+        <label>Thời điểm</label>
+        <div class="field">
+          <input id="tdtt" type="datetime-local" />
+          <div id="payWarn" class="danger" style="display:none; margin-top:4px;">
+            Thời điểm thanh toán phải sau (hoặc bằng) ngày giao gia công.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="box" style="margin-top:10px;">
+      <h2>VI. XÁC NHẬN</h2>
+      <div id="confirmText" style="font-size:11pt; line-height:1.5;">
+        Bên B xác nhận: Đã giao đủ hàng theo biên bản và <b>đã nhận đủ tiền</b> theo phương thức thanh toán: <b>__________</b>.
+        Hai bên không còn khiếu nại nào khác liên quan đến lô hàng này.
+      </div>
+    </div>
+
+    <div class="sign">
+      <div class="sigbox">
+        <div class="title">BÊN A</div>
+        <div class="muted">(Ký, ghi rõ họ tên)</div>
+        <div class="hint">________________________</div>
+      </div>
+      <div class="sigbox">
+        <div class="title">BÊN B</div>
+        <div class="muted">(Ký, ghi rõ họ tên)</div>
+        <div class="hint">________________________</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ===== DỮ LIỆU ĐỐI TÁC (BÊN B) =====
+    const PARTNERS = [
+      { id:"le-van-dat", name:"Lê Văn Đạt", cccd:"095087006139", phone:"0902434652", address:"Ấp Tà Ky, Ninh Hòa, Hồng Dân, Bạc Liêu" },
+      { id:"ngo-thi-kieu-dung", name:"Ngô Thị Kiều Dung", cccd:"079173020302", phone:"0907276118", address:"413/56/19/4 Lê Văn Quới, Bình Trị Đông A, Quận Bình Tân" },
+      { id:"pham-thi-diem-my", name:"Phạm Thị Diễm My", cccd:"094191006616", phone:"0901001024", address:"27/36/75/4 Bùi Tư Toàn, An Lạc, Bình Tân" },
+      { id:"tran-thi-thanh-tuyen", name:"Trần Thị Thanh Tuyền", cccd:"082182011064", phone:"0907881172", address:"2/76, Tổ 9, Ấp An Lợi, Đông Hòa Hiệp, Cái Bè, Tiền Giang" },
+      { id:"le-thanh-hanh-ngoc", name:"Lê Thành Hạnh Ngọc", cccd:"086179000248", phone:"0933885539", address:"985/55 Hương Lộ 2, Bình Trị Đông A, Bình Tân" },
+
+      /* ✅ ĐỐI TÁC MỚI */
+      { id:"luu-thuy-phuong", name:"Lưu Thúy Phượng", cccd:"079184019236", phone:"0904477285", address:"4/3/56/19/19 Lê Văn Quới, P. Bình Trị Đông, Q. Bình Tân" }
+    ];
+
+    // ===== Helpers =====
+    const fmt = (n) => Number(n||0).toLocaleString('vi-VN');
+    const toNum = (v) => { const n = Number(v); return Number.isFinite(n)?n:0; };
+
+    function renumber(tbody){
+      Array.from(tbody.children).forEach((tr, i) => tr.querySelector('.stt').textContent = String(i+1));
+    }
+    function makeInput(type, cls, placeholder=""){
+      const el = document.createElement('input');
+      el.type = type; el.className = cls; el.placeholder = placeholder;
+      if(type === 'number'){ el.min="0"; el.step="1"; }
+      return el;
+    }
+
+    // ===== Partner dropdown + autofill =====
+    const partnerSelect = document.getElementById('partnerSelect');
+    const bTen = document.getElementById('b_ten');
+    const bCccd = document.getElementById('b_cccd');
+    const bDiachi = document.getElementById('b_diachi');
+    const bSdt = document.getElementById('b_sdt');
+
+    function setBReadonly(isReadonly){
+      [bTen, bCccd, bDiachi, bSdt].forEach(el => el.readOnly = isReadonly);
+    }
+    function clearB(){
+      bTen.value = ""; bCccd.value=""; bDiachi.value=""; bSdt.value="";
+    }
+    function initPartners(){
+      const optManual = document.createElement('option');
+      optManual.value = "__manual__";
+      optManual.textContent = "(Nhập tay)";
+      partnerSelect.appendChild(optManual);
+
+      PARTNERS.forEach(p=>{
+        const opt = document.createElement('option');
+        opt.value = p.id;
+        opt.textContent = p.name;
+        partnerSelect.appendChild(opt);
+      });
+    }
+    partnerSelect.addEventListener('change', () => {
+      const v = partnerSelect.value;
+      if(!v){ clearB(); setBReadonly(true); return; }
+      if(v === "__manual__"){ clearB(); setBReadonly(false); return; }
+
+      const p = PARTNERS.find(x => x.id === v);
+      if(!p){ clearB(); setBReadonly(true); return; }
+
+      bTen.value = p.name;
+      bCccd.value = p.cccd;
+      bDiachi.value = p.address;
+      bSdt.value = p.phone;
+      setBReadonly(true);
+    });
+
+    // ===== SP =====
+    const spBody = document.getElementById('spBody');
+
+    function addSpRow(){
+      const tr = document.createElement('tr');
+
+      const tdStt = document.createElement('td');
+      tdStt.className='center stt';
+      tr.appendChild(tdStt);
+
+      const tdSku = document.createElement('td');
+      tdSku.appendChild(makeInput('text','sku','VD: sd-xl'));
+      tr.appendChild(tdSku);
+
+      const tdQty = document.createElement('td');
+      tdQty.className='right';
+      const inQty = makeInput('number','qty');
+      tdQty.appendChild(inQty);
+      tr.appendChild(tdQty);
+
+      const tdUnit = document.createElement('td');
+      tdUnit.className='right';
+      const inUnit = makeInput('number','unit'); inUnit.step="1000";
+      tdUnit.appendChild(inUnit);
+      tr.appendChild(tdUnit);
+
+      const tdBad = document.createElement('td');
+      tdBad.className='right';
+      const inBad = makeInput('number','bad');
+      tdBad.appendChild(inBad);
+      tr.appendChild(tdBad);
+
+      const tdBadMoney = document.createElement('td');
+      tdBadMoney.className='right nowrap';
+      tdBadMoney.dataset.badMoney="1";
+      tdBadMoney.textContent='0';
+      tr.appendChild(tdBadMoney);
+
+      const tdLine = document.createElement('td');
+      tdLine.className='right nowrap';
+      tdLine.dataset.lineTotal="1";
+      tdLine.textContent='0';
+      tr.appendChild(tdLine);
+
+      const tdDel = document.createElement('td');
+      tdDel.className='center';
+      const btn = document.createElement('button');
+      btn.type='button'; btn.textContent='X'; btn.style.padding="4px 8px";
+      btn.onclick = () => { tr.remove(); renumber(spBody); recalcAll(); };
+      tdDel.appendChild(btn);
+      tr.appendChild(tdDel);
+
+      [inQty,inUnit,inBad].forEach(inp => inp.addEventListener('input', () => { recalcSpRow(tr); recalcAll(); }));
+
+      spBody.appendChild(tr);
+      renumber(spBody);
+      recalcSpRow(tr);
+      recalcAll();
+    }
+
+    function recalcSpRow(tr){
+      const qty = toNum(tr.querySelector('input.qty')?.value);
+      const unit = toNum(tr.querySelector('input.unit')?.value);
+      const bad = toNum(tr.querySelector('input.bad')?.value);
+
+      const gross = qty * unit;
+      const badMoney = bad * unit;
+
+      tr.dataset.qty = String(qty);
+      tr.dataset.badqty = String(bad);
+      tr.dataset.gross = String(gross);
+      tr.dataset.badMoneyVal = String(badMoney);
+
+      tr.querySelector('[data-bad-money]').textContent = fmt(badMoney);
+      tr.querySelector('[data-line-total]').textContent = fmt(gross);
+    }
+
+    function sumSp(){
+      let qty=0, badqty=0, gross=0, bad=0;
+      Array.from(spBody.children).forEach(tr=>{
+        qty += toNum(tr.dataset.qty);
+        badqty += toNum(tr.dataset.badqty);
+        gross += toNum(tr.dataset.gross);
+        bad += toNum(tr.dataset.badMoneyVal);
+      });
+      return { qty, badqty, gross, bad };
+    }
+
+    // ===== ADV =====
+    const advBody = document.getElementById('advBody');
+
+    function addAdvRow(){
+      const tr = document.createElement('tr');
+
+      const tdStt = document.createElement('td');
+      tdStt.className='center stt';
+      tr.appendChild(tdStt);
+
+      const tdNote = document.createElement('td');
+      tdNote.appendChild(makeInput('text','advNote','Ứng lần 1 / ...'));
+      tr.appendChild(tdNote);
+
+      const tdAmt = document.createElement('td');
+      tdAmt.className='right';
+      const inAmt = makeInput('number','advAmt'); inAmt.step="1000";
+      tdAmt.appendChild(inAmt);
+      tr.appendChild(tdAmt);
+
+      const tdDel = document.createElement('td');
+      tdDel.className='center';
+      const btn = document.createElement('button');
+      btn.type='button'; btn.textContent='X'; btn.style.padding="4px 8px";
+      btn.onclick = () => { tr.remove(); renumber(advBody); recalcAll(); };
+      tdDel.appendChild(btn);
+      tr.appendChild(tdDel);
+
+      inAmt.addEventListener('input', recalcAll);
+
+      advBody.appendChild(tr);
+      renumber(advBody);
+      recalcAll();
+    }
+
+    function sumAdv(){
+      let s=0;
+      Array.from(advBody.querySelectorAll('input.advAmt')).forEach(i=> s += toNum(i.value));
+      return s;
+    }
+
+    // ===== Materials =====
+    const matBody = document.getElementById('matBody');
+
+    function addMatRow(){
+      const tr = document.createElement('tr');
+
+      const tdStt = document.createElement('td');
+      tdStt.className='center stt';
+      tr.appendChild(tdStt);
+
+      const tdName = document.createElement('td');
+      tdName.appendChild(makeInput('text','matName','VD: dây kéo / nút / chun / ...'));
+      tr.appendChild(tdName);
+
+      const tdQty = document.createElement('td');
+      tdQty.className='right';
+      const inQty = makeInput('number','matQty');
+      tdQty.appendChild(inQty);
+      tr.appendChild(tdQty);
+
+      const tdUnit = document.createElement('td');
+      tdUnit.className='right';
+      const inUnit = makeInput('number','matUnit'); inUnit.step="1000";
+      tdUnit.appendChild(inUnit);
+      tr.appendChild(tdUnit);
+
+      const tdTotal = document.createElement('td');
+      tdTotal.className='right nowrap';
+      tdTotal.dataset.matTotal="1";
+      tdTotal.textContent='0';
+      tr.appendChild(tdTotal);
+
+      const tdDel = document.createElement('td');
+      tdDel.className='center';
+      const btn = document.createElement('button');
+      btn.type='button'; btn.textContent='X'; btn.style.padding="4px 8px";
+      btn.onclick = () => { tr.remove(); renumber(matBody); recalcAll(); };
+      tdDel.appendChild(btn);
+      tr.appendChild(tdDel);
+
+      [inQty,inUnit].forEach(inp => inp.addEventListener('input', () => { recalcMatRow(tr); recalcAll(); }));
+
+      matBody.appendChild(tr);
+      renumber(matBody);
+      recalcMatRow(tr);
+      recalcAll();
+    }
+
+    function recalcMatRow(tr){
+      const q = toNum(tr.querySelector('input.matQty')?.value);
+      const u = toNum(tr.querySelector('input.matUnit')?.value);
+      const t = q*u;
+      tr.dataset.mat = String(t);
+      tr.querySelector('[data-mat-total]').textContent = fmt(t);
+    }
+
+    function sumMat(){
+      let s=0;
+      Array.from(matBody.children).forEach(tr=> s += toNum(tr.dataset.mat));
+      return s;
+    }
+
+    // ===== Payment time constraint =====
+    const ngayGiao = document.getElementById('ngay_giao');
+    const tdtt = document.getElementById('tdtt');
+    const payWarn = document.getElementById('payWarn');
+
+    function applyPayMin(){
+      const d = ngayGiao.value;
+      if(!d){ tdtt.min = ""; validatePayTime(); return; }
+      tdtt.min = d + "T00:00";
+      validatePayTime();
+    }
+    function validatePayTime(){
+      payWarn.style.display = "none";
+      const d = ngayGiao.value;
+      const p = tdtt.value;
+      if(!d || !p) return;
+      const min = new Date(d + "T00:00");
+      const val = new Date(p);
+      if(val < min) payWarn.style.display = "block";
+    }
+    ngayGiao.addEventListener('change', applyPayMin);
+    tdtt.addEventListener('change', validatePayTime);
+    tdtt.addEventListener('input', validatePayTime);
+
+    // ===== Confirm text based on payment method =====
+    const pttt = document.getElementById('pttt');
+    const confirmText = document.getElementById('confirmText');
+    function updateConfirm(){
+      const method = pttt.value || "__________";
+      confirmText.innerHTML =
+        `Bên B xác nhận: Đã giao đủ hàng theo biên bản và <b>đã nhận đủ tiền</b> theo phương thức thanh toán: <b>${method}</b>.
+         Hai bên không còn khiếu nại nào khác liên quan đến lô hàng này.`;
+    }
+    pttt.addEventListener('change', updateConfirm);
+
+    // ===== Totals =====
+    function recalcAll(){
+      const { qty, badqty, gross, bad } = sumSp();
+      document.getElementById('sumQty').textContent = fmt(qty);
+      document.getElementById('sumBadQty').textContent = fmt(badqty);
+      document.getElementById('sumGross').textContent = fmt(gross);
+      document.getElementById('sumDefect').textContent = fmt(bad);
+
+      const adv = sumAdv();
+      document.getElementById('sumAdv').textContent = fmt(adv);
+
+      const mat = sumMat();
+      document.getElementById('sumMat').textContent = fmt(mat);
+
+      // ✅ THỰC NHẬN = (GIA CÔNG - TRỪ LỖI - ỨNG) + NVL
+      const net = (gross - bad - adv) + mat;
+      document.getElementById('netPay').textContent = fmt(net);
+
+      validatePayTime();
+      updateConfirm();
+    }
+
+    // ===== BẮT BUỘC NHẬP SỐ LÔ TRƯỚC KHI IN =====
+    function requireLoHangBeforePrint(){
+      const soLo = document.getElementById('so_lo');
+      const v = (soLo.value || "").trim();
+      if(!v){
+        alert("BẮT BUỘC nhập SỐ LÔ/ĐỢT trước khi in.");
+        soLo.focus();
+        soLo.style.border = "2px solid #b00020";
+        return false;
+      }
+      soLo.style.border = "1px solid #999";
+      return true;
+    }
+
+    document.getElementById('printBtn').addEventListener('click', () => {
+      if(!requireLoHangBeforePrint()) return;
+      window.print();
+    });
+
+    document.getElementById('so_lo').addEventListener('input', (e) => {
+      if((e.target.value || "").trim()) e.target.style.border = "1px solid #999";
+    });
+
+    // ===== Buttons =====
+    document.getElementById('addSpRowBtn').addEventListener('click', addSpRow);
+    document.getElementById('addAdvRowBtn').addEventListener('click', addAdvRow);
+    document.getElementById('addMatRowBtn').addEventListener('click', addMatRow);
+
+    // Init
+    initPartners();
+    setBReadonly(true);
+    updateConfirm();
+    recalcAll();
+  </script>
+</body>
+</html>

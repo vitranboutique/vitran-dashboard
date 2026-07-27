@@ -29,6 +29,7 @@ import daily_report
 import cham_cong
 import cham_cong_ui
 import tiktok_inbox_ui
+import input_costs_ui
 from sapo_address import resolve_address
 from sapo_client import (
     SapoAuthError, build_session, credential_present, make_fetch_json,
@@ -48,7 +49,7 @@ _DOHANA_RETENTION = 25  # file video bị xóa sau khoảng 25 ngày; mã trong 
 # an toàn & nhẹ; KHÔNG reload dohana/picklog (giữ throttle/cache, tránh 429).
 import importlib as _importlib
 _RELOAD_ERR = ""
-for _m in (L, daily_report):
+for _m in (L, daily_report, input_costs_ui):
     try:
         _importlib.reload(_m)
     except Exception as _e:            # lỗi hiếm; giữ bản đang chạy, ghi lại để hiện cảnh báo
@@ -1688,6 +1689,7 @@ PAGE_LUONG = "💰 Lương của tôi"
 PAGE_QRSHOP = "📲 QR chấm công (shop)"
 PAGE_QLCC = "🛠️ Quản lý chấm công"
 PAGE_TIKTOK_INBOX = "💬 TikTok Inbox"
+PAGE_COSTS = "💸 Chi phí đầu vào"   # 3 công cụ mua vải / gia công → lưu chi phí đầu vào (chủ shop + admin)
 PAGE_OPS = "📊 Vận hành"   # tab: Báo cáo cuối ngày + Đơn trả + Phiếu nhặt (CSKH chỉ thấy Báo cáo)
 
 # Phân quyền theo tài khoản.
@@ -1718,6 +1720,8 @@ if _is_owner:                               # chủ shop + zenzen197: thêm tran
     _opts = [PAGE_OVERVIEW] + _opts
     if PAGE_TIKTOK_INBOX not in _opts:
         _opts.insert(1, PAGE_TIKTOK_INBOX)
+    if PAGE_COSTS not in _opts:             # chủ shop: thêm trang Chi phí đầu vào (mua vải / gia công)
+        _opts.append(PAGE_COSTS)
 if (st.query_params.get("page_ttkh") or st.query_params.get("ttkh_phone")) and PAGE_TTKH in _opts:
     _default = PAGE_TTKH
 _sees_production = PAGE_PRODUCTION in _opts   # kho/admin: hiện cảnh báo việc SX/cắt tay mọi tab
@@ -1736,6 +1740,8 @@ if _page == PAGE_QLCC:
     cham_cong_ui.render_admin(); st.stop()
 if _page == PAGE_TIKTOK_INBOX:
     tiktok_inbox_ui.render(); st.stop()
+if _page == PAGE_COSTS:
+    input_costs_ui.render(); st.stop()
 
 
 # ── Biểu đồ dùng chung ──

@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bảng kê mua vải</title>
+<style>
+  @page { size: A4; margin: 10mm; }
+  * { box-sizing: border-box; }
+  body{
+    margin:0;
+    background:#efefef;
+    font-family:"Times New Roman", serif;
+    color:#000;
+  }
+  .toolbar{
+    width:210mm;
+    margin:10px auto;
+    display:flex;
+    gap:8px;
+  }
+  .toolbar button{
+    padding:8px 14px;
+    border:1px solid #777;
+    background:#fff;
+    cursor:pointer;
+    font-family:inherit;
+    font-size:15px;
+  }
+  .page{
+    width:210mm;
+    min-height:297mm;
+    margin:0 auto 10px auto;
+    background:#fff;
+    padding:10mm;
+    page-break-after:always;
+  }
+  .page:last-child{ page-break-after:auto; }
+
+  h1{
+    margin:0;
+    text-align:center;
+    font-size:24px;
+    font-weight:700;
+  }
+  .date-line{
+    margin:5px 0 9px 0;
+    text-align:center;
+    font-size:17px;
+    line-height:1.2;
+  }
+  .date-input{
+    width:52px;
+    border:none;
+    border-bottom:1px solid #000;
+    outline:none;
+    text-align:center;
+    font-family:inherit;
+    font-size:17px;
+    background:transparent;
+  }
+  .date-input.year{ width:72px; }
+
+  .section-title{
+    font-weight:700;
+    font-size:17px;
+    margin:7px 0 2px;
+  }
+  table.meta{
+    width:100%;
+    border-collapse:collapse;
+    table-layout:fixed;
+    margin-bottom:4px;
+  }
+  table.meta td{
+    padding:1px 0;
+    font-size:16px;
+    vertical-align:bottom;
+    line-height:1.18;
+  }
+  table.meta td.label{
+    width:165px;
+    white-space:nowrap;
+  }
+  .line-fill{
+    display:block;
+    min-height:21px;
+    line-height:21px;
+    border-bottom:1px dotted #666;
+    padding-left:4px;
+    white-space:nowrap;
+  }
+  .bold-value{ font-weight:700; }
+
+  table.items{
+    width:100%;
+    border-collapse:collapse;
+    margin-top:6px;
+    table-layout:fixed;
+  }
+  table.items th, table.items td{
+    border:1px solid #000;
+    padding:2px 4px;
+    font-size:15px;
+    vertical-align:top;
+    line-height:1.12;
+  }
+  table.items th{
+    text-align:center;
+    font-weight:700;
+  }
+  .center{ text-align:center; }
+  .money-cell{
+    text-align:right;
+    white-space:nowrap;
+  }
+
+  .stt{ width:6%; }
+  .tenvai{ width:27%; }
+  .mausac{ width:15%; }
+  .soluong{ width:13%; }
+  .dongia{ width:15%; }
+  .thanhtien{ width:16%; }
+  .ghichu{ width:8%; }
+
+  textarea.cell-input,
+  input.cell-input{
+    width:100%;
+    border:none;
+    outline:none;
+    background:transparent;
+    font-family:inherit;
+    font-size:15px;
+    padding:0;
+    line-height:1.12;
+  }
+  textarea.cell-input{
+    resize:none;
+    overflow:hidden;
+    min-height:17px;
+    white-space:pre-wrap;
+    word-break:break-word;
+  }
+  input.cell-input{
+    height:17px;
+  }
+
+  .table-actions{
+    padding:4px 0 1px;
+  }
+  .table-actions button{
+    padding:3px 8px;
+    border:1px solid #888;
+    background:#fff;
+    cursor:pointer;
+    font-family:inherit;
+    font-size:13px;
+    margin-right:6px;
+  }
+
+  .signatures{
+    margin-top:14px;
+    display:flex;
+    justify-content:space-between;
+    gap:36px;
+  }
+  .sign-box{
+    width:42%;
+    text-align:center;
+    font-size:16px;
+  }
+  .sign-title{
+    font-weight:700;
+    margin-bottom:4px;
+  }
+  .sign-space{
+    height:8px;
+  }
+  .sign-note{
+    font-style:italic;
+    margin-top:0;
+  }
+
+  @media print{
+    body{ background:#fff; }
+    .toolbar, .table-actions, #actionsRow{ display:none !important; }
+    .page{
+      width:auto;
+      min-height:auto;
+      margin:0;
+      padding:0;
+      break-after:page;
+    }
+    .page:last-child{ break-after:auto; }
+    tr, td, th { page-break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+  <div class="toolbar">
+    <button onclick="printA4()">In A4</button>
+    <button onclick="saveFormFile()">Lưu file về máy</button>
+  </div>
+
+  <div id="pages"></div>
+
+<script id="saved-data" type="application/json"></script>
+<script>
+  const ROWS_PER_PAGE = 15;
+
+  function formatMoney(num){
+    num = Number(num || 0);
+    if (!num) return '';
+    return Math.round(num).toLocaleString('vi-VN');
+  }
+
+  function parseQty(value){
+    let s = String(value || '').trim();
+    if (!s) return 0;
+    s = s.replace(/\s/g, '');
+    if (s.includes(',') && s.includes('.')) {
+      s = s.replace(/\./g, '').replace(',', '.');
+    } else if (s.includes(',')) {
+      s = s.replace(',', '.');
+    }
+    const n = parseFloat(s);
+    return isNaN(n) ? 0 : n;
+  }
+
+  function parsePrice(value){
+    let s = String(value || '').trim();
+    if (!s) return 0;
+    s = s.replace(/\./g, '').replace(/,/g, '').replace(/\s/g, '');
+    const n = parseFloat(s);
+    return isNaN(n) ? 0 : n;
+  }
+
+  function escapeHtml(text){
+    return String(text || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function autoGrow(el){
+    if (el.tagName !== 'TEXTAREA') return;
+    el.style.height = '17px';
+    el.style.height = Math.max(17, el.scrollHeight) + 'px';
+  }
+
+  function getDefaultState(){
+    return {
+      day: '',
+      month: '',
+      year: '2026',
+      rows: [{name:'', color:'', qty:'', price:'', note:''}]
+    };
+  }
+
+  let state = getDefaultState();
+
+  function rowHasContent(row){
+    return ['name','color','qty','price','note'].some(k => String(row[k] || '').trim() !== '');
+  }
+
+  function rowTotal(row){
+    return parseQty(row.qty) * parsePrice(row.price);
+  }
+
+  function ensureTrailingBlankRow(){
+    if (state.rows.length === 0) {
+      state.rows.push({name:'', color:'', qty:'', price:'', note:''});
+      return;
+    }
+    const last = state.rows[state.rows.length - 1];
+    if (rowHasContent(last)) {
+      state.rows.push({name:'', color:'', qty:'', price:'', note:''});
+    }
+  }
+
+  function getPageChunks(){
+    ensureTrailingBlankRow();
+    const chunks = [];
+    const rows = state.rows.slice();
+    for (let i = 0; i < rows.length; i += ROWS_PER_PAGE) {
+      chunks.push(rows.slice(i, i + ROWS_PER_PAGE));
+    }
+    if (!chunks.length) chunks.push([{name:'', color:'', qty:'', price:'', note:''}]);
+    return chunks;
+  }
+
+  function buildHeader(){
+    return `
+      <h1>BẢNG KÊ MUA VẢI</h1>
+      <div class="date-line">
+        (Ngày <input class="date-input" id="day" inputmode="numeric" value="${escapeHtml(state.day)}">
+        tháng <input class="date-input" id="month" inputmode="numeric" value="${escapeHtml(state.month)}">
+        năm <input class="date-input year" id="year" inputmode="numeric" value="${escapeHtml(state.year || '2026')}">)
+      </div>
+
+      <div class="section-title">Đơn vị mua hàng:</div>
+      <table class="meta">
+        <tr><td class="label">Tên đơn vị</td><td><span class="line-fill bold-value">HKD VITRAN BOUTIQUE</span></td></tr>
+        <tr><td class="label">Người đại diện</td><td><span class="line-fill">TRẦN THỊ THÚY VI</span></td></tr>
+        <tr><td class="label">Địa chỉ</td><td><span class="line-fill">Số 6 Đường 32, Phường An Lạc, Quận Bình Tân, TP.HCM</span></td></tr>
+        <tr><td class="label">Mã số thuế</td><td><span class="line-fill">079191025624</span></td></tr>
+      </table>
+
+      <div class="section-title">Đơn vị bán hàng:</div>
+      <table class="meta">
+        <tr><td class="label">Tên đơn vị</td><td><span class="line-fill bold-value">CTY TNHH MỘT THÀNH VIÊN TM PHÚC SONG THÀNH</span></td></tr>
+        <tr><td class="label">Người đại diện</td><td><span class="line-fill">NGUYỄN THỊ TY</span></td></tr>
+        <tr><td class="label">Địa chỉ</td><td><span class="line-fill">2380 Đường số 1, Phường Bảy Hiền, Quận Tân Bình, TP.HCM</span></td></tr>
+        <tr><td class="label">Mã số thuế</td><td><span class="line-fill">0310303276</span></td></tr>
+      </table>
+    `;
+  }
+
+  function buildTable(chunk, startIndex, isLastPage){
+    const rowsHtml = chunk.map((row, i) => {
+      const globalIndex = startIndex + i;
+      const isBlankTail = globalIndex === state.rows.length - 1 && !rowHasContent(row) && isLastPage;
+      return `
+        <tr data-row-index="${globalIndex}">
+          <td class="center">${globalIndex + 1}</td>
+          <td><textarea rows="1" class="cell-input" data-field="name">${escapeHtml(row.name)}</textarea></td>
+          <td><textarea rows="1" class="cell-input" data-field="color">${escapeHtml(row.color)}</textarea></td>
+          <td><input type="text" class="cell-input" data-field="qty" inputmode="decimal" style="text-align:right" value="${escapeHtml(row.qty)}"></td>
+          <td><input type="text" class="cell-input" data-field="price" inputmode="numeric" style="text-align:right" value="${escapeHtml(row.price)}"></td>
+          <td class="money-cell row-total">${formatMoney(rowTotal(row))}</td>
+          <td><textarea rows="1" class="cell-input" data-field="note">${escapeHtml(row.note)}</textarea></td>
+        </tr>
+        ${isBlankTail ? `
+          <tr id="actionsRow">
+            <td colspan="7">
+              <div class="table-actions">
+                <button type="button" onclick="addManualRow()">Thêm dòng</button>
+                <button type="button" onclick="deleteLastFilledRow()">Xóa dòng cuối</button>
+              </div>
+            </td>
+          </tr>` : ``}
+      `;
+    }).join('');
+
+    const pageTotal = chunk.reduce((sum, row) => sum + rowTotal(row), 0);
+
+    return `
+      <table class="items">
+        <thead>
+          <tr>
+            <th class="stt">STT</th>
+            <th class="tenvai">Tên vải</th>
+            <th class="mausac">Màu sắc</th>
+            <th class="soluong">Số lượng (kg)</th>
+            <th class="dongia">Đơn giá (VND)</th>
+            <th class="thanhtien">Thành tiền (VND)</th>
+            <th class="ghichu">Ghi chú</th>
+          </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+        <tfoot>
+          <tr>
+            <td colspan="5" class="left" style="padding-left:10px;font-weight:700;">Tổng cộng</td>
+            <td class="money-cell" style="font-weight:700;">${formatMoney(pageTotal)}</td>
+            <td></td>
+          </tr>
+        </tfoot>
+      </table>
+    `;
+  }
+
+  function buildSignatures(){
+    return `
+      <div class="signatures">
+        <div class="sign-box">
+          <div class="sign-title">Người lập bảng kê</div>
+          <div class="sign-space"></div>
+          <div class="sign-note">(Ký và ghi rõ họ tên)</div>
+        </div>
+        <div class="sign-box">
+          <div class="sign-title">Người đại diện bên mua</div>
+          <div class="sign-space"></div>
+          <div class="sign-note">(Ký và ghi rõ họ tên)</div>
+        </div>
+      </div>
+    `;
+  }
+
+  function render(){
+    const pages = document.getElementById('pages');
+    const chunks = getPageChunks();
+
+    let startIndex = 0;
+    pages.innerHTML = chunks.map((chunk, pageIdx) => {
+      const html = `
+        <div class="page">
+          ${buildHeader()}
+          ${buildTable(chunk, startIndex, pageIdx === chunks.length - 1)}
+          ${buildSignatures()}
+        </div>
+      `;
+      startIndex += chunk.length;
+      return html;
+    }).join('');
+
+    bindAllInputs();
+    autoGrowAll();
+    mirrorDateToAllPages();
+  }
+
+  function bindAllInputs(){
+    document.querySelectorAll('#pages textarea.cell-input, #pages input.cell-input').forEach(el => {
+      if (el.dataset.bound === '1') return;
+      el.dataset.bound = '1';
+      el.addEventListener('input', onCellInput);
+      el.addEventListener('keydown', handleEnterNavigation);
+    });
+
+    document.querySelectorAll('#pages .date-line').forEach((line) => {
+      const [day, month, year] = line.querySelectorAll('input');
+      [day, month, year].forEach(el => {
+        if (!el || el.dataset.bound === '1') return;
+        el.dataset.bound = '1';
+        el.addEventListener('input', () => {
+          state.day = day.value;
+          state.month = month.value;
+          state.year = year.value;
+          mirrorDateToAllPages();
+        });
+      });
+    });
+  }
+
+  function mirrorDateToAllPages(){
+    document.querySelectorAll('#pages .date-line').forEach(line => {
+      const inputs = line.querySelectorAll('input');
+      if (inputs[0]) inputs[0].value = state.day || '';
+      if (inputs[1]) inputs[1].value = state.month || '';
+      if (inputs[2]) inputs[2].value = state.year || '2026';
+    });
+  }
+
+  function onCellInput(e){
+    const el = e.target;
+    const tr = el.closest('tr[data-row-index]');
+    if (!tr) return;
+
+    const rowIndex = Number(tr.dataset.rowIndex);
+    const field = el.dataset.field;
+
+    if (field === 'price') {
+      const raw = parsePrice(el.value);
+      state.rows[rowIndex][field] = raw ? raw.toLocaleString('vi-VN') : '';
+      el.value = state.rows[rowIndex][field];
+    } else {
+      state.rows[rowIndex][field] = el.value;
+    }
+
+    if (el.tagName === 'TEXTAREA') autoGrow(el);
+
+    ensureTrailingBlankRow();
+    render();
+    focusSameField(rowIndex, field);
+  }
+
+  function focusSameField(rowIndex, field){
+    const row = document.querySelector(`#pages tr[data-row-index="${rowIndex}"]`);
+    if (!row) return;
+    const el = row.querySelector(`[data-field="${field}"]`);
+    if (!el) return;
+    el.focus();
+    const len = el.value ? el.value.length : 0;
+    if (el.setSelectionRange) el.setSelectionRange(len, len);
+  }
+
+  function autoGrowAll(){
+    document.querySelectorAll('textarea.cell-input').forEach(autoGrow);
+  }
+
+  function addManualRow(){
+    state.rows.splice(state.rows.length - 1, 0, {name:'', color:'', qty:'', price:'', note:''});
+    render();
+    focusSameField(state.rows.length - 2, 'name');
+  }
+
+  function deleteLastFilledRow(){
+    for (let i = state.rows.length - 1; i >= 0; i--) {
+      if (rowHasContent(state.rows[i])) {
+        state.rows.splice(i, 1);
+        break;
+      }
+    }
+    ensureTrailingBlankRow();
+    render();
+  }
+
+  function getFocusableFieldsInRow(row){
+    return [
+      row.querySelector('[data-field="name"]'),
+      row.querySelector('[data-field="color"]'),
+      row.querySelector('[data-field="qty"]'),
+      row.querySelector('[data-field="price"]'),
+      row.querySelector('[data-field="note"]')
+    ];
+  }
+
+  function handleEnterNavigation(e){
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+
+    const tr = e.target.closest('tr[data-row-index]');
+    if (!tr) return;
+
+    const rowIndex = Number(tr.dataset.rowIndex);
+    const fields = getFocusableFieldsInRow(tr);
+    const cellIndex = fields.indexOf(e.target);
+
+    if (cellIndex < fields.length - 1) {
+      fields[cellIndex + 1].focus();
+      return;
+    }
+
+    ensureTrailingBlankRow();
+    render();
+
+    const next = document.querySelector(`#pages tr[data-row-index="${rowIndex + 1}"]`);
+    if (next) {
+      const first = next.querySelector('[data-field="name"]');
+      if (first) first.focus();
+    }
+  }
+
+  function collectState(){
+    const firstDateLine = document.querySelector('#pages .date-line');
+    if (firstDateLine) {
+      const [day, month, year] = firstDateLine.querySelectorAll('input');
+      state.day = day?.value || state.day || '';
+      state.month = month?.value || state.month || '';
+      state.year = year?.value || state.year || '2026';
+    }
+    return state;
+  }
+
+  function loadState(obj){
+    state = getDefaultState();
+    if (obj && typeof obj === 'object') {
+      state.day = obj.day || '';
+      state.month = obj.month || '';
+      state.year = obj.year || '2026';
+      if (Array.isArray(obj.rows) && obj.rows.length) {
+        state.rows = obj.rows;
+      }
+    }
+    ensureTrailingBlankRow();
+    render();
+  }
+
+  function saveFormFile(){
+    const current = collectState();
+    const payload = JSON.stringify(current).replace(/</g, '\u003c');
+    const docClone = document.documentElement.cloneNode(true);
+    const dataTag = docClone.querySelector('#saved-data');
+    if (dataTag) dataTag.textContent = payload;
+
+    const html = '<!DOCTYPE html>\n' + docClone.outerHTML;
+    const blob = new Blob([html], {type:'text/html;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'bang-ke-mua-vai-luu-lai.html';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function printA4(){
+    window.print();
+  }
+
+  window.addEventListener('DOMContentLoaded', () => {
+    const saved = document.getElementById('saved-data').textContent.trim();
+    if (saved) {
+      try {
+        loadState(JSON.parse(saved));
+      } catch {
+        loadState(getDefaultState());
+      }
+    } else {
+      loadState(getDefaultState());
+    }
+  });
+</script>
+</body>
+</html>
