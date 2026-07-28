@@ -120,16 +120,18 @@ _CSS = """
     *{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
     .io2col{display:block!important;}
   }
-  /* MÀN HÌNH: 2 bảng I & II nằm cạnh nhau + chữ TO cho dễ đọc (IN A4 vẫn xếp trên–dưới) */
+  /* MÀN HÌNH: phóng TO cả trang cho dễ đọc + 2 bảng I & II nằm 2 cột cạnh nhau.
+     Bỏ khung A4 cố định (height/overflow) để chữ to KHÔNG bị cắt. IN A4 vẫn nguyên bản. */
   @media screen{
+    .page{height:auto;overflow:visible;}
+    .pfit{font-size:16px;}
     .io2col{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start;}
     .io2col>.io2c{min-width:0;}
     .io2col>.io2c.wide{flex:3 1 520px;}
     .io2col>.io2c.narrow{flex:1 1 270px;}
     .io2tbl{overflow-x:auto;}
-    .io2col table{font-size:14.5px;}
+    .io2col table{font-size:15px;}
     .io2col th,.io2col td{padding:.45em .6em;}
-    .io2col .sec{font-size:1.05em;}
   }
 """
 
