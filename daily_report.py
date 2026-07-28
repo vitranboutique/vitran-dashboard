@@ -23,7 +23,7 @@ _CSS = """
   body{font-family:Tahoma,Verdana,'Segoe UI',system-ui,Roboto,Arial,sans-serif;margin:0;background:#e9edf2;color:var(--ink);}
   .toolbar{position:sticky;top:0;background:#e9edf2;padding:8px;text-align:center;z-index:5;}
   .printbtn{background:var(--accent);color:#fff;border:0;border-radius:9px;padding:10px 20px;font-size:14px;font-weight:800;cursor:pointer;box-shadow:0 2px 8px rgba(226,75,74,.4);}
-  .page{width:210mm;min-height:297mm;margin:0 auto 14px;background:#fff;box-sizing:border-box;box-shadow:0 2px 14px rgba(0,0,0,.12);overflow:visible;}
+  .page{width:210mm;height:297mm;margin:0 auto 14px;background:#fff;box-sizing:border-box;box-shadow:0 2px 14px rgba(0,0,0,.12);overflow:hidden;}
   .pfit{padding:9mm 11mm 8mm;font-size:var(--fs,13px);box-sizing:border-box;}
   .page.fixed .pfit{font-size:12px;}
   .hd{display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid var(--navy);padding-bottom:.45em;}
@@ -62,7 +62,7 @@ _CSS = """
   .batchsign .bs-sign{flex:1 1 auto;}
   .batchsign .bs-sign .sign{margin-top:0;}
   .foot{margin-top:.36em;text-align:center;font-size:.73em;color:#9aa3af;border-top:1px solid var(--line);padding-top:.2em;}
-  .page2{page-break-before:always;page:return-portrait;width:210mm;min-height:297mm;}
+  .page2{page-break-before:always;page:return-portrait;width:210mm;height:297mm;}
   .page2 .pfit{padding:7mm 7mm 5mm;}
   .page2 .hd{padding-bottom:.2em;border-bottom-width:2px;}
   .page2 .hd .brand{font-size:1.22em;}
@@ -121,19 +121,15 @@ _CSS = """
   @page return-portrait{size:A4 portrait;margin:0;}
   @media print{
     body{background:#fff;} .toolbar{display:none;}
-    /* KHÔNG khoá cứng cao 297mm khi in → nội dung dư KHÔNG bị cắt; tự giãn & tự sang tờ mới.
-       min-height giữ mỗi trang tối thiểu 1 tờ A4; page2 vẫn ngắt trang trước như cũ. */
-    .page,.page2{box-shadow:none;margin:0;height:auto;min-height:297mm;overflow:visible;}
+    .page{box-shadow:none;margin:0;}
     table,tr,td,th{page-break-inside:avoid;}
     *{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
     .io2col{display:block!important;}
   }
-  /* WYSIWYG: MÀN HÌNH hiển thị Y HỆT bản IN — CÙNG font, CÙNG khổ A4, CÙNG cách rớt dòng.
-     Chỉ khác: màn hình PHÓNG TO đồng đều cho dễ đọc (zoom), in thì 100%. Không đổi font/cột riêng. */
-  @media screen{
-    .page{zoom:1.28;}
-    .io2tbl{overflow-x:auto;}
-  }
+  /* Auto-fit JS tự chỉnh cỡ chữ để mỗi trang vừa 1 tờ A4 → MÀN HÌNH = BẢN IN (WYSIWYG).
+     Không đặt font/zoom riêng cho màn hình (kẻo phá auto-fit). io2col xếp trên–dưới. */
+  .io2col{display:block;}
+  .io2tbl{overflow-x:hidden;}
 """
 
 
@@ -1127,7 +1123,7 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
         # trang .fixed (font cố định, phân trang 30 đơn) → KHÔNG auto-fit
         "if((' '+pg.className+' ').indexOf(' fixed ')>=0)continue;"
         "var ft=pg.querySelector('.pfit');if(!ft)continue;"
-        "var t=pg.clientHeight,lo=8,hi=((' '+pg.className+' ').indexOf(' page2 ')>=0?13.5:24),b=lo;"
+        "var t=pg.clientHeight,lo=8,hi=((' '+pg.className+' ').indexOf(' page2 ')>=0?18:26),b=lo;"
         "for(var k=0;k<18;k++){var m=(lo+hi)/2;ft.style.fontSize=m+'px';"
         "if(ft.scrollHeight<=t){b=m;lo=m;}else{hi=m;}}"
         "ft.style.fontSize=b.toFixed(2)+'px';}}"
