@@ -2262,7 +2262,8 @@ def get_returns_received_today(fetch_json, scan_days: int = 60, max_pages: int =
             price_text = f" · {_vnd(line_total)}"
         else:
             price_text = ""
-        return f"{sku}×{qty}{price_text}", int(line_total or 0)
+        # Tách SỐ LƯỢNG khỏi mã SKU: ' · 📦N' để khỏi nhìn nhầm 'CVBC-NT-M×1' là 1 mã SKU
+        return f"{sku} · 📦{qty}{price_text}", int(line_total or 0)
 
     recv = [x for x in rows if _restocked_today(x)]
     by_source, so_sp, detail = {}, 0, []

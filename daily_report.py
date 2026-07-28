@@ -1072,7 +1072,7 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
               '<th class="l">🎥 Clip khui hàng (Dohana)<br><span style="font-weight:600;font-size:.85em">mã · thời lượng · giờ quay</span></th>'
               '<th class="l">📥 Mã trả · gian hàng<br><span style="font-weight:600;font-size:.85em">mã đơn gốc · giờ nhận · NV nhập kho</span></th>'
               '<th class="l">🚚 Mã vận chuyển<br><span style="font-weight:600;font-size:.85em">VĐ đi · VĐ hoàn</span></th>'
-              '<th class="l">Sản phẩm (SKU × SL)</th>'
+              '<th class="l">🛍️ Sản phẩm<br><span style="font-weight:600;font-size:.85em">SKU · 📦SL · giá</span></th>'
               + '</tr></thead>')
     _legend = ('<div style="font-size:.72em;color:#6b7280;margin:.25em 0 0">🔎 <b>Mã clip</b> = tra trên '
                '<b>app đóng hàng (Dohana)</b>. <b>Mã trả</b> = từng phiếu nhập hoàn trên <b>Sapo</b>; mã đơn gốc chỉ là thông tin phụ. '
@@ -1114,7 +1114,7 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
   <div class="title-sub">Phần 2 — Hàng hoàn nhận về · nhập kho · video khui hàng{_sub}</div>
   {_kpi}
   <div class="sec">A. Đối chiếu Clip khui hàng ↔ Đã nhận hàng trả{_badge}</div>
-  <table class="return-table" style="table-layout:fixed;overflow-wrap:anywhere"><colgroup><col style="width:4%"><col style="width:23%"><col style="width:21%"><col style="width:33%"><col style="width:19%"></colgroup>{_thead}<tbody>{_recon_rows(_chunk, start=_starts[_si], clip_on=clip_on)}</tbody></table>
+  <table class="return-table" style="table-layout:fixed;overflow-wrap:anywhere"><colgroup><col style="width:4%"><col style="width:23%"><col style="width:25%"><col style="width:27%"><col style="width:21%"></colgroup>{_thead}<tbody>{_recon_rows(_chunk, start=_starts[_si], clip_on=clip_on)}</tbody></table>
   {_tail}
   <div class="foot">VITRAN BOUTIQUE · {_pno} — Đơn hàng hoàn trả · {_e(rep["date"])}</div>
 </div></div>"""
