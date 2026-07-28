@@ -121,7 +121,9 @@ _CSS = """
   @page return-portrait{size:A4 portrait;margin:0;}
   @media print{
     body{background:#fff;} .toolbar{display:none;}
-    .page{box-shadow:none;margin:0;}
+    /* KHÔNG khoá cứng cao 297mm khi in → nội dung dư KHÔNG bị cắt; tự giãn & tự sang tờ mới.
+       min-height giữ mỗi trang tối thiểu 1 tờ A4; page2 vẫn ngắt trang trước như cũ. */
+    .page,.page2{box-shadow:none;margin:0;height:auto;min-height:297mm;overflow:visible;}
     table,tr,td,th{page-break-inside:avoid;}
     *{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
     .io2col{display:block!important;}
@@ -272,7 +274,7 @@ def _soan_vid_sub(d):
     _g = str(d.get("soan_gio") or "").strip()
     bits = ['🕒 Soạn: Đợt ' + str(d.get("soan_dot")) + (f' · {_e(_g)}' if _g else '')]
     bits.append(_vid_dong_html(d))
-    return ('<div style="margin:-2px 0 3px 1.7em;font-size:.82em;color:#64748b">'
+    return ('<div style="margin:-3px 0 1px 1.7em;font-size:.78em;line-height:1.15;color:#64748b">'
             + ' &nbsp;·&nbsp; '.join(bits) + '</div>')
 
 
@@ -356,7 +358,7 @@ def _conxot_rows(packed, unpacked, collapse=False):
                 else:   # đã gói mà thiếu video = cam (đáng lưu ý); chưa gói = xám (bình thường)
                     vid = f' · <span style="color:{"#b45309" if need_tick else "#94a3b8"}">📹 chưa có</span>'
                 h += (f'<div class="dline">{box}<b>{_e(str(d.get("name", "?")))}</b>'
-                      f'{tk_html} · {_e(str(d.get("carrier", "")))} · {_e(str(d.get("sku", "")))}{mk}{xn}{vid}</div>')
+                      f'{tk_html} · {_e(str(d.get("sku", "")))}{mk}{xn}{vid}</div>')
             if collapse and len(gitems) > 5:
                 h += (f'<div class="dline" style="color:#b45309;font-style:italic">'
                       f'… còn <b>{len(gitems) - 5} đơn {_e(cr)}</b> (rút gọn cho dễ đọc)</div>')
