@@ -123,12 +123,12 @@ _CSS = """
   /* MÀN HÌNH: phóng TO cả trang cho dễ đọc + 2 bảng I & II nằm 2 cột cạnh nhau.
      Bỏ khung A4 cố định (height/overflow) để chữ to KHÔNG bị cắt. IN A4 vẫn nguyên bản. */
   @media screen{
-    .page{height:auto;overflow:visible;}
+    .page{width:auto;max-width:1500px;height:auto;overflow:visible;}
     .pfit{font-size:16px;}
-    .io2col{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start;}
+    .io2col{display:flex;flex-wrap:nowrap;gap:16px;align-items:flex-start;}
     .io2col>.io2c{min-width:0;}
-    .io2col>.io2c.wide{flex:3 1 520px;}
-    .io2col>.io2c.narrow{flex:1 1 270px;}
+    .io2col>.io2c.wide{flex:1 1 63%;}
+    .io2col>.io2c.narrow{flex:1 1 34%;}
     .io2tbl{overflow-x:auto;}
     .io2col table{font-size:15px;}
     .io2col th,.io2col td{padding:.45em .6em;}
@@ -289,8 +289,10 @@ def _grouped_tick_rows(detail, mark_packed=False, force_pk=False, tick=True):
             nm = _e(str(d.get("name") or "?"))
             tk = str(d.get("tracking") or "")
             tk_html = f' · <span class="vd">{_e(tk)}</span>' if tk and tk != d.get("name") else ""
+            # Trong ô "CẦN LẤY LẠI" (force_pk) khỏi lặp chip — tiêu đề ô đã nói rõ. Chỉ giữ chip ở
+            # nhánh dự phòng (ngày chưa lưu mã phiếu nhặt) để phân biệt đơn đã gói.
             pk = (' <span class="pk">📦 cần lấy lại</span>'
-                  if (force_pk or (mark_packed and d.get("packed"))) else "")
+                  if (mark_packed and d.get("packed")) else "")
             html += (f'<div class="dline">{_box}'
                      f'<b>{nm}</b>{tk_html} · {_e(str(d.get("sku", "")))}{pk}</div>')
             html += _soan_vid_sub(d)
