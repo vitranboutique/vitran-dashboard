@@ -2691,7 +2691,30 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
     try:
         nhap_kho = get_returns_received_today(fetch_json, target_date=today)
     except Exception:
-        nhap_kho = {"so_phieu": 0, "so_sp": 0, "by_source": {}, "cho_xu_ly": 0}
+        nhap_kho = None
+    # LƯU BỀN + KHÔI PHỤC: Sapo API lỗi tạm → nhap_kho rỗng làm clip khui hàng mất chỗ khớp
+    # ("CHƯA XÁC ĐỊNH"). Lấy được thì LƯU snapshot; lỗi/rỗng thì KHÔI PHỤC snapshot đã lưu.
+    def _nk_has(d):
+        return bool(d and (d.get("so_phieu") or d.get("detail") or d.get("all_by_code")))
+
+    def _nk_sig(d):
+        return (None if not d else
+                (d.get("so_phieu") or 0, d.get("so_sp") or 0,
+                 len(d.get("detail") or []), len(d.get("all_by_code") or {})))
+    try:
+        import picklog as _pl
+        _day_iso = today.isoformat()
+        _saved = _pl.read_returns_received(_day_iso)
+        if _nk_has(nhap_kho):
+            if _nk_sig(nhap_kho) != _nk_sig(_saved):     # có thay đổi → lưu bền
+                _pl.save_returns_received(_day_iso, nhap_kho)
+        elif _nk_has(_saved):                            # fetch rỗng/lỗi → khôi phục
+            nhap_kho = _saved
+    except Exception:
+        pass
+    if not nhap_kho:
+        nhap_kho = {"so_phieu": 0, "so_sp": 0, "by_source": {}, "cho_xu_ly": 0,
+                    "detail": [], "all_by_code": {}}
 
     # ── PHỄU: xác nhận → soạn → video → ĐVVC đã nhận → hủy / còn xót ──
     # Đã xác nhận = đơn TẠO VẬN ĐƠN hôm nay, GỒM CẢ đơn đã hủy (3 đơn hủy cũng xác nhận/soạn/

@@ -847,6 +847,33 @@ def remove_input_cost(cid: str) -> bool:
     return _write_gist_file(_INPUT_COST_FILE, {"items": items})
 
 
+# ── ĐƠN HOÀN NHẬP KHO (snapshot theo ngày) — LƯU BỀN để KHÔNG mất khi Sapo API lỗi tạm ──
+# Báo cáo query đơn hoàn LIVE mỗi lần; nếu Sapo trả rỗng/lỗi thì clip khui hàng mất chỗ khớp
+# → "CHƯA XÁC ĐỊNH". Lưu snapshot nhap_kho mỗi lần lấy được để lần sau lỗi thì khôi phục.
+_RETURNS_RECEIVED_FILE = "vitran_returns_received.json"
+
+
+def read_returns_received(day_iso: str):
+    """Snapshot nhap_kho đã lưu của 1 ngày (dict) hoặc None."""
+    d = _read_gist_file(_RETURNS_RECEIVED_FILE)
+    if isinstance(d, dict) and isinstance(d.get("days"), dict):
+        v = d["days"].get(str(day_iso))
+        return v if isinstance(v, dict) else None
+    return None
+
+
+def save_returns_received(day_iso: str, data: dict) -> bool:
+    """Lưu snapshot nhap_kho của 1 ngày; giữ 5 ngày gần nhất. Caller chỉ gọi khi dữ liệu đổi."""
+    if not (day_iso and isinstance(data, dict)):
+        return False
+    cur = _read_gist_file(_RETURNS_RECEIVED_FILE) or {}
+    days = cur.get("days") if isinstance(cur.get("days"), dict) else {}
+    days[str(day_iso)] = data
+    for _k in sorted(days.keys())[:-5]:      # prune: chỉ giữ 5 ngày mới nhất
+        days.pop(_k, None)
+    return _write_gist_file(_RETURNS_RECEIVED_FILE, {"days": days})
+
+
 def read_video_type_overrides() -> list:
     """[{date, code, type}] — sửa loại clip trong app mà không thay dữ liệu gốc Dohana."""
     d = _read_gist_file(_VIDEO_TYPE_OVERRIDE_FILE)
