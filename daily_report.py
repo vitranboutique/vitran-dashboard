@@ -118,6 +118,18 @@ _CSS = """
     .page{box-shadow:none;margin:0;}
     table,tr,td,th{page-break-inside:avoid;}
     *{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    .io2col{display:block!important;}
+  }
+  /* MÀN HÌNH: 2 bảng I & II nằm cạnh nhau + chữ TO cho dễ đọc (IN A4 vẫn xếp trên–dưới) */
+  @media screen{
+    .io2col{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start;}
+    .io2col>.io2c{min-width:0;}
+    .io2col>.io2c.wide{flex:3 1 520px;}
+    .io2col>.io2c.narrow{flex:1 1 270px;}
+    .io2tbl{overflow-x:auto;}
+    .io2col table{font-size:14.5px;}
+    .io2col th,.io2col td{padding:.45em .6em;}
+    .io2col .sec{font-size:1.05em;}
   }
 """
 
@@ -1010,8 +1022,10 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
   {vid_warn}
   {vid_note}
 
+  <div class="io2col">
+   <div class="io2c wide">
   <div class="sec">I. Số lượng đơn theo đơn vị vận chuyển</div>
-  <table>
+  <div class="io2tbl"><table>
     <thead>
       <tr><th rowspan="2" class="l">Đơn vị vận chuyển</th>
         <th rowspan="2">Soạn</th>
@@ -1022,16 +1036,19 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
       <tr><th>Cũ</th><th>Hôm nay</th><th>Trước soạn</th><th>Sau soạn</th><th>Đã gói</th><th>Chưa gói</th></tr>
     </thead>
     <tbody>{_carrier_rows(rep["by_carrier"], t, _video_for_table, _cancel_split)}</tbody>
-  </table>
+  </table></div>
   {sec1_note}
   {lech_html}
-
+   </div>
+   <div class="io2c narrow">
   <div class="sec">II. Số lượng hàng theo đợt soạn</div>
-  <table>
+  <div class="io2tbl"><table>
     <thead><tr><th class="l">Đợt lấy hàng</th><th>Giờ</th><th>Số đơn</th><th>Số SP</th></tr></thead>
     <tbody>{_batch_rows(rep["batches"], rep["tong_don_soan"], rep["tong_sp_soan"])}</tbody>
-  </table>
+  </table></div>
   {sec2_note}
+   </div>
+  </div>
 
   <div class="sec">III. Ghi chú / Sự cố trong ngày</div>
   <div class="note"><span style="color:#9aa3af;font-size:.95em">(Ghi tay: đơn GHN còn lại, hỏa tốc tìm tài xế, đơn lỗi…)</span>
