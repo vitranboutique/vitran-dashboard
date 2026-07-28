@@ -307,8 +307,10 @@ def _conxot_rows(packed, unpacked, collapse=False):
                 box = ('<span class="cbox2"></span> ' if need_tick
                        else '<span style="display:inline-block;width:.85em;margin-right:2px"></span>')
                 mk = ' <span class="pk">📦 lấy lại</span>' if need_tick else ''
+                _xn = str(d.get("xac_nhan_time") or "").strip()
+                xn = f' · <span style="color:#0369a1">🕐 xác nhận {_e(_xn)}</span>' if _xn else ''
                 h += (f'<div class="dline">{box}<b>{_e(str(d.get("name", "?")))}</b>'
-                      f'{tk_html} · {_e(str(d.get("carrier", "")))} · {_e(str(d.get("sku", "")))}{mk}</div>')
+                      f'{tk_html} · {_e(str(d.get("carrier", "")))} · {_e(str(d.get("sku", "")))}{mk}{xn}</div>')
             if collapse and len(gitems) > 5:
                 h += (f'<div class="dline" style="color:#b45309;font-style:italic">'
                       f'… còn <b>{len(gitems) - 5} đơn {_e(cr)}</b> (rút gọn cho dễ đọc)</div>')

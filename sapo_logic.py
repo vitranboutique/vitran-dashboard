@@ -2654,6 +2654,8 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
         if (_vn_date_of(f.get("shipment_created_on")) == today
                 and f.get("shipment_status") == "pending"):
             d = _odet(o)
+            _cf = _parse_vn(f.get("shipment_created_on"))   # xác nhận = lúc TẠO VẬN ĐƠN
+            d["xac_nhan_time"] = _cf.strftime("%H:%M") if _cf else ""
             _cc = carrier(o)
             if f.get("packed_status") == "packed" or _vn_date_of(f.get("packed_on")) == today:
                 con_xot_packed.append(d)
