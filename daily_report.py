@@ -226,15 +226,34 @@ def _huy_rows(detail):
     return body or '<tr><td colspan="5">Không có đơn hủy đã đóng gói.</td></tr>'
 
 
+def _fmt_dur(sec):
+    """Giây → thời lượng gọn: '23s' hoặc '1:05'. Rỗng nếu không có."""
+    try:
+        n = int(sec)
+    except (TypeError, ValueError):
+        return ""
+    if n <= 0:
+        return ""
+    return f"{n // 60}:{n % 60:02d}" if n >= 60 else f"{n}s"
+
+
+def _vid_dong_html(d, warn_color="#b45309"):
+    """'📹 Video đóng: HH:MM · 23s' nếu có, ngược lại 'chưa có' (màu cảnh báo tuỳ ngữ cảnh)."""
+    _vg = str(d.get("vid_dong_gio") or "").strip()
+    if not _vg:
+        return f'📹 Video đóng: <span style="color:{warn_color}">chưa có</span>'
+    _dur = _fmt_dur(d.get("vid_dong_dur"))
+    return '📹 Video đóng: ' + _e(_vg) + (f' · {_dur}' if _dur else '')
+
+
 def _soan_vid_sub(d):
-    """Dòng phụ chi tiết cho đơn ĐÃ SOẠN: soạn Đợt mấy / mấy giờ + video đóng hàng mấy giờ.
+    """Dòng phụ chi tiết cho đơn ĐÃ SOẠN: soạn Đợt mấy / mấy giờ + video đóng hàng mấy giờ · thời lượng.
     Chỉ hiện khi có thông tin soạn (nhóm 'cần lấy lại')."""
     if not d.get("soan_dot"):
         return ""
     _g = str(d.get("soan_gio") or "").strip()
     bits = ['🕒 Soạn: Đợt ' + str(d.get("soan_dot")) + (f' · {_e(_g)}' if _g else '')]
-    _vg = str(d.get("vid_dong_gio") or "").strip()
-    bits.append('📹 Video đóng: ' + (_e(_vg) if _vg else '<span style="color:#b45309">chưa có</span>'))
+    bits.append(_vid_dong_html(d))
     return ('<div style="margin:-2px 0 3px 1.7em;font-size:.82em;color:#64748b">'
             + ' &nbsp;·&nbsp; '.join(bits) + '</div>')
 
@@ -309,8 +328,15 @@ def _conxot_rows(packed, unpacked, collapse=False):
                 mk = ' <span class="pk">📦 lấy lại</span>' if need_tick else ''
                 _xn = str(d.get("xac_nhan_time") or "").strip()
                 xn = f' · <span style="color:#0369a1">🕐 xác nhận {_e(_xn)}</span>' if _xn else ''
+                _vg = str(d.get("vid_dong_gio") or "").strip()
+                if _vg:
+                    _vd = _fmt_dur(d.get("vid_dong_dur"))
+                    vid = (f' · <span style="color:#059669">📹 {_e(_vg)}'
+                           + (f' · {_vd}' if _vd else '') + '</span>')
+                else:   # đã gói mà thiếu video = cam (đáng lưu ý); chưa gói = xám (bình thường)
+                    vid = f' · <span style="color:{"#b45309" if need_tick else "#94a3b8"}">📹 chưa có</span>'
                 h += (f'<div class="dline">{box}<b>{_e(str(d.get("name", "?")))}</b>'
-                      f'{tk_html} · {_e(str(d.get("carrier", "")))} · {_e(str(d.get("sku", "")))}{mk}{xn}</div>')
+                      f'{tk_html} · {_e(str(d.get("carrier", "")))} · {_e(str(d.get("sku", "")))}{mk}{xn}{vid}</div>')
             if collapse and len(gitems) > 5:
                 h += (f'<div class="dline" style="color:#b45309;font-style:italic">'
                       f'… còn <b>{len(gitems) - 5} đơn {_e(cr)}</b> (rút gọn cho dễ đọc)</div>')

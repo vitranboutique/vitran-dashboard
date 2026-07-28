@@ -2232,6 +2232,43 @@ def load_daily_report_archive(date_iso):
         make_fetch_json(build_session()), target_date=_date.fromisoformat(str(date_iso)))
 
 
+def _package_video_map():
+    """map mã (raw + chuẩn hoá bỏ dấu) → (GIỜ 'HH:MM', THỜI LƯỢNG giây) video ĐÓNG HÀNG (Dohana package)."""
+    out = {}
+    try:
+        for _v in picklog.read_dohana_videos() or []:
+            if str(_v.get("type") or "") != "package":
+                continue
+            _t = str(_v.get("time") or "").strip()[:5]
+            if not _t:
+                continue
+            for _k in (str(_v.get("code") or "").strip(), _ascii_code(_v.get("code"))):
+                if _k:
+                    out.setdefault(_k, (_t, _v.get("dur")))
+    except Exception:
+        pass
+    return out
+
+
+def _inject_conxot_video(rep):
+    """Gắn giờ video ĐÓNG HÀNG cho đơn CÒN XÓT LẠI (đã gói & chưa gói), khớp mã VĐ chuẩn hoá.
+    Có video → hiện giờ; chưa có → daily_report tự ghi 'chưa có'."""
+    if not (picklog.configured() and isinstance(rep, dict)):
+        return
+    items = (rep.get("con_xot_packed") or []) + (rep.get("con_xot_unpacked") or [])
+    if not items:
+        return
+    vid_map = _package_video_map()
+    if not vid_map:
+        return
+    for _d in items:
+        _keys = [str(_d.get("tracking") or "").strip(), str(_d.get("name") or "").strip()]
+        _keys += [_ascii_code(_k) for _k in list(_keys) if _k]
+        _hit = next((vid_map[_k] for _k in _keys if _k and _k in vid_map), None)
+        if _hit:
+            _d["vid_dong_gio"], _d["vid_dong_dur"] = _hit[0], _hit[1]
+
+
 def _inject_huy_soan(rep, date_iso):
     """Cắm cờ 'soan' + CHI TIẾT (đợt/giờ soạn, giờ video đóng hàng) cho từng đơn HỦY:
     mã (VĐ/đơn) ∈ mã phiếu nhặt đã lưu ngày đó = ĐÃ SOẠN (cầm hàng ra kho → cần lấy lại).
@@ -2254,20 +2291,8 @@ def _inject_huy_soan(rep, date_iso):
                     soan_map.setdefault(_n, (_idx, _gio))
         if not soan_map:
             return   # ngày chưa lưu mã phiếu nhặt → không tách được (giữ list cũ)
-        # map mã → giờ video ĐÓNG HÀNG (Dohana type=package), giờ rút gọn HH:MM
-        vid_map = {}
-        try:
-            for _v in picklog.read_dohana_videos() or []:
-                if str(_v.get("type") or "") != "package":
-                    continue
-                _t = str(_v.get("time") or "").strip()[:5]
-                if not _t:
-                    continue
-                for _k in (str(_v.get("code") or "").strip(), _ascii_code(_v.get("code"))):
-                    if _k:
-                        vid_map.setdefault(_k, (_t, str(_v.get("date") or "")))
-        except Exception:
-            pass
+        # map mã → giờ video ĐÓNG HÀNG (Dohana type=package)
+        vid_map = _package_video_map()
         for _h in rep["huy_all_detail"]:
             _keys = [str(_h.get("tracking") or "").strip(), str(_h.get("name") or "").strip()]
             _keys += [_ascii_code(_k) for _k in list(_keys) if _k]
@@ -2278,7 +2303,7 @@ def _inject_huy_soan(rep, date_iso):
                 _h["soan_dot"], _h["soan_gio"] = _hit[0], _hit[1]
             _vhit = next((vid_map[_k] for _k in _keys if _k in vid_map), None)
             if _vhit:
-                _h["vid_dong_gio"], _h["vid_dong_date"] = _vhit[0], _vhit[1]
+                _h["vid_dong_gio"], _h["vid_dong_dur"] = _vhit[0], _vhit[1]
         rep["huy_soan_known"] = True
     except Exception:
         pass
@@ -9054,6 +9079,7 @@ def _render_daily():
             _ps = picklog.read_date_summary(_iso)
             _apply_picklog_soan_to_daily(_rep, _ps.get("rows") or [], _dvr, _ps.get("dup_orders") or 0)
         _inject_huy_soan(_rep, _iso)
+        _inject_conxot_video(_rep)
         st.info(f"🗂️ Báo cáo ngày **{_disp}** — query lại từ Sapo, **video lấy từ kho đã lưu** "
                 "(Dohana chỉ giữ ~30 ngày; kho Gist lưu bền cả năm). Ngày trước khi bật lưu có thể trống video.")
         _nrep = f"{_disp} (xem lại)"
@@ -9081,6 +9107,7 @@ def _render_daily():
         _ps = picklog.read_date_summary(_today_iso_vn())
         _apply_picklog_soan_to_daily(_rep, _ps.get("rows") or [], _dvr, _ps.get("dup_orders") or 0)
     _inject_huy_soan(_rep, _today_iso_vn())
+    _inject_conxot_video(_rep)
     _now_vn = datetime.now(timezone.utc) + timedelta(hours=7)
     _nrep = _now_vn.strftime("%H:%M %d/%m/%Y")
     _nrec = len((_rep.get("nhap_kho") or {}).get("recon_rows") or [])
