@@ -125,13 +125,10 @@ _CSS = """
   @media screen{
     .page{height:auto;overflow:visible;}          /* GIỮ khổ A4 (210mm), chỉ bỏ chiều cao cứng */
     .pfit{font-size:16px;}
-    /* 2 bảng nằm NGANG, GỌN trong khổ A4: co đúng bề rộng nội dung + chữ nhỏ vừa đủ để cùng 1 hàng */
-    .io2col{display:flex;flex-wrap:nowrap;gap:10px;align-items:flex-start;justify-content:flex-start;}
-    .io2col>.io2c{min-width:0;}
-    .io2col>.io2c.wide{flex:0 1 auto;}      /* ĐVVC: co lại + cuộn nếu chật */
-    .io2col>.io2c.narrow{flex:0 0 auto;}    /* Đợt: giữ đúng bề rộng, không cuộn */
-    .io2col table{width:auto;font-size:12px;}
-    .io2col th,.io2col td{padding:.24em .46em;}
+    /* 2 bảng xếp TRÊN–DƯỚI, mỗi bảng đủ khổ A4 → HIỆN ĐỦ mọi cột, chữ vừa đọc. Nằm ngang trong A4
+       làm bảng ĐVVC 13 cột bị cắt/cuộn nên bỏ. IN A4 vẫn nguyên bản. */
+    .io2col table{font-size:13px;}
+    .io2col th,.io2col td{padding:.3em .5em;}
     .io2tbl{overflow-x:auto;}
   }
 """
