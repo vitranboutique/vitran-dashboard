@@ -226,6 +226,19 @@ def _huy_rows(detail):
     return body or '<tr><td colspan="5">Không có đơn hủy đã đóng gói.</td></tr>'
 
 
+def _soan_vid_sub(d):
+    """Dòng phụ chi tiết cho đơn ĐÃ SOẠN: soạn Đợt mấy / mấy giờ + video đóng hàng mấy giờ.
+    Chỉ hiện khi có thông tin soạn (nhóm 'cần lấy lại')."""
+    if not d.get("soan_dot"):
+        return ""
+    _g = str(d.get("soan_gio") or "").strip()
+    bits = ['🕒 Soạn: Đợt ' + str(d.get("soan_dot")) + (f' · {_e(_g)}' if _g else '')]
+    _vg = str(d.get("vid_dong_gio") or "").strip()
+    bits.append('📹 Video đóng: ' + (_e(_vg) if _vg else '<span style="color:#b45309">chưa có</span>'))
+    return ('<div style="margin:-2px 0 3px 1.7em;font-size:.82em;color:#64748b">'
+            + ' &nbsp;·&nbsp; '.join(bits) + '</div>')
+
+
 def _grouped_tick_rows(detail, mark_packed=False, force_pk=False, tick=True):
     """Liệt kê đơn GOM THEO ĐVVC, mỗi đơn 1 ô tick + mã đơn + mã VĐ + SKU×SL.
     force_pk=True → mọi đơn đều gắn 'cần lấy lại' (nhóm đã soạn). tick=False → bỏ ô tick."""
@@ -247,6 +260,7 @@ def _grouped_tick_rows(detail, mark_packed=False, force_pk=False, tick=True):
                   if (force_pk or (mark_packed and d.get("packed"))) else "")
             html += (f'<div class="dline">{_box}'
                      f'<b>{nm}</b>{tk_html} · {_e(str(d.get("sku", "")))}{pk}</div>')
+            html += _soan_vid_sub(d)
     return html
 
 

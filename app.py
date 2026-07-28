@@ -2233,20 +2233,52 @@ def load_daily_report_archive(date_iso):
 
 
 def _inject_huy_soan(rep, date_iso):
-    """Cắm cờ 'soan' cho từng đơn HỦY: mã (VĐ/đơn) ∈ mã phiếu nhặt đã lưu ngày đó = ĐÃ SOẠN
-    (cầm hàng ra kho → cần lấy lại). Không có trong phiếu nhặt = hủy sớm, khỏi lấy.
-    Chỉ tách được khi phiếu nhặt ngày đó có lưu mã đơn (từ bản cập nhật này trở đi)."""
+    """Cắm cờ 'soan' + CHI TIẾT (đợt/giờ soạn, giờ video đóng hàng) cho từng đơn HỦY:
+    mã (VĐ/đơn) ∈ mã phiếu nhặt đã lưu ngày đó = ĐÃ SOẠN (cầm hàng ra kho → cần lấy lại).
+    Không có trong phiếu nhặt = hủy sớm, khỏi lấy. Đợt = thứ tự lượt in phiếu trong ngày.
+    Giờ video đóng lấy từ Dohana (type=package) khớp theo mã vận đơn (chuẩn hoá bỏ dấu)."""
     if not (picklog.configured() and isinstance(rep, dict) and rep.get("huy_all_detail")):
         return
     try:
-        _codes = set()
-        for _e in picklog.read_date(date_iso):
-            _codes |= {str(c).strip() for c in (_e.get("codes") or []) if c}
-        if not _codes:
+        # map mã (raw + chuẩn hoá) → (đợt, giờ soạn); đợt = thứ tự lượt in trong ngày
+        soan_map = {}
+        for _idx, _r in enumerate(picklog.read_date(date_iso) or [], 1):
+            _gio = str(_r.get("gio") or "").strip()
+            for _c in (_r.get("codes") or []):
+                _s = str(_c or "").strip()
+                if not _s:
+                    continue
+                soan_map.setdefault(_s, (_idx, _gio))
+                _n = _ascii_code(_s)
+                if _n:
+                    soan_map.setdefault(_n, (_idx, _gio))
+        if not soan_map:
             return   # ngày chưa lưu mã phiếu nhặt → không tách được (giữ list cũ)
+        # map mã → giờ video ĐÓNG HÀNG (Dohana type=package), giờ rút gọn HH:MM
+        vid_map = {}
+        try:
+            for _v in picklog.read_dohana_videos() or []:
+                if str(_v.get("type") or "") != "package":
+                    continue
+                _t = str(_v.get("time") or "").strip()[:5]
+                if not _t:
+                    continue
+                for _k in (str(_v.get("code") or "").strip(), _ascii_code(_v.get("code"))):
+                    if _k:
+                        vid_map.setdefault(_k, (_t, str(_v.get("date") or "")))
+        except Exception:
+            pass
         for _h in rep["huy_all_detail"]:
-            _h["soan"] = bool(str(_h.get("tracking") or "").strip() in _codes
-                              or str(_h.get("name") or "").strip() in _codes)
+            _keys = [str(_h.get("tracking") or "").strip(), str(_h.get("name") or "").strip()]
+            _keys += [_ascii_code(_k) for _k in list(_keys) if _k]
+            _keys = [_k for _k in _keys if _k]
+            _hit = next((soan_map[_k] for _k in _keys if _k in soan_map), None)
+            _h["soan"] = bool(_hit)
+            if _hit:
+                _h["soan_dot"], _h["soan_gio"] = _hit[0], _hit[1]
+            _vhit = next((vid_map[_k] for _k in _keys if _k in vid_map), None)
+            if _vhit:
+                _h["vid_dong_gio"], _h["vid_dong_date"] = _vhit[0], _vhit[1]
         rep["huy_soan_known"] = True
     except Exception:
         pass
