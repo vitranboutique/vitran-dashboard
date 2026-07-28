@@ -55,6 +55,12 @@ _CSS = """
   .sign .role{font-weight:800;color:var(--navy);}
   .sign .hint{color:#9aa3af;font-size:.86em;}
   .sign .space{height:3.2em;}
+  /* Hàng "bảng Đợt (gom nhỏ, trái) + khối chữ ký (phải)" — tiết kiệm chiều cao để lọt 1 tờ A4 */
+  .batchsign{display:flex;gap:20px;align-items:flex-end;}
+  .batchsign .bs-tbl{flex:0 0 auto;}
+  .batchsign .bs-tbl table{width:auto;}
+  .batchsign .bs-sign{flex:1 1 auto;}
+  .batchsign .bs-sign .sign{margin-top:0;}
   .foot{margin-top:.36em;text-align:center;font-size:.73em;color:#9aa3af;border-top:1px solid var(--line);padding-top:.2em;}
   .page2{page-break-before:always;page:return-portrait;width:210mm;height:297mm;}
   .page2 .pfit{padding:7mm 7mm 5mm;}
@@ -1044,10 +1050,13 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
    </div>
    <div class="io2c narrow">
   <div class="sec">II. Số lượng hàng theo đợt soạn</div>
-  <div class="io2tbl"><table>
-    <thead><tr><th class="l">Đợt lấy hàng</th><th>Giờ</th><th>Số đơn</th><th>Số SP</th></tr></thead>
-    <tbody>{_batch_rows(rep["batches"], rep["tong_don_soan"], rep["tong_sp_soan"])}</tbody>
-  </table></div>
+  <div class="batchsign">
+    <div class="bs-tbl"><table>
+      <thead><tr><th class="l">Đợt lấy hàng</th><th>Giờ</th><th>Số đơn</th><th>Số SP</th></tr></thead>
+      <tbody>{_batch_rows(rep["batches"], rep["tong_don_soan"], rep["tong_sp_soan"])}</tbody>
+    </table></div>
+    <div class="bs-sign">{sign1}</div>
+  </div>
   {sec2_note}
    </div>
   </div>
@@ -1056,7 +1065,6 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
   <div class="note"><span style="color:#9aa3af;font-size:.95em">(Ghi tay: đơn GHN còn lại, hỏa tốc tìm tài xế, đơn lỗi…)</span>
     <div class="lines"><div></div></div></div>
 
-  {sign1}
   <div class="foot">VITRAN BOUTIQUE · Trang 1/2 — Vận hành đơn giao đi{_p1note} · {_e(rep["date"])}</div>
 </div></div>"""
 

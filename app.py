@@ -9062,8 +9062,7 @@ def _render_daily():
                                max_value=_vn_today, format="DD/MM/YYYY", key="daily_pick_date")
     _is_today = (_pick_date == _vn_today)
     _disp = _pick_date.strftime("%d/%m/%Y")
-    _sign_on = "none"   # BỎ khối ký ở Trang 1 để trang lọt gọn 1 tờ A4 (theo yêu cầu).
-    #                     Đổi "1" nếu muốn ký lại ở Trang 1, "2" = ký ở Trang 2 (mặt sau).
+    _sign_on = "1"   # ký ở Trang 1 — khối ký nằm CẠNH bảng Đợt (bs-sign) để lọt gọn 1 tờ A4.
 
     # ---- Xem báo cáo NGÀY CŨ (query lại Sapo + Dohana theo ngày, số đã cố định) ----
     if not _is_today:
