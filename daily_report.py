@@ -56,7 +56,7 @@ _CSS = """
   .sign .hint{color:#9aa3af;font-size:.86em;}
   .sign .space{height:3.2em;}
   /* Hàng "bảng Đợt (gom nhỏ, trái) + khối chữ ký (phải)" — tiết kiệm chiều cao để lọt 1 tờ A4 */
-  .batchsign{display:flex;gap:20px;align-items:flex-end;}
+  .batchsign{display:flex;gap:20px;align-items:flex-start;}
   .batchsign .bs-tbl{flex:0 0 auto;}
   .batchsign .bs-tbl table{width:auto;}
   .batchsign .bs-sign{flex:1 1 auto;}
@@ -887,8 +887,7 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
         f'<div class="v">{clip_kpi_v}</div>'
         f'<div class="l" style="margin-top:3px;font-weight:700">{clip_kpi_sub}</div></div>'
         f'<div class="kpi"><div class="l">🏪 Đơn hoàn theo gian hàng</div>'
-        f'<div class="v">{sum(_count for _, _count in _shop_counts)}</div>'
-        f'<div class="l" style="margin-top:3px;font-weight:700">{_shop_summary}</div></div>'
+        f'<div class="l" style="margin-top:5px;font-weight:700;font-size:1.02em;line-height:1.55">{_shop_summary}</div></div>'
     )
     # ── KẾT LUẬN sai lệch (Phần 2) + lý do có thể ──
     _concl = []
@@ -1115,7 +1114,7 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
   <div class="title-sub">Phần 2 — Hàng hoàn nhận về · nhập kho · video khui hàng{_sub}</div>
   {_kpi}
   <div class="sec">A. Đối chiếu Clip khui hàng ↔ Đã nhận hàng trả{_badge}</div>
-  <table class="return-table" style="table-layout:fixed;overflow-wrap:anywhere"><colgroup><col style="width:4%"><col style="width:23%"><col style="width:28%"><col style="width:30%"><col style="width:15%"></colgroup>{_thead}<tbody>{_recon_rows(_chunk, start=_starts[_si], clip_on=clip_on)}</tbody></table>
+  <table class="return-table" style="table-layout:fixed;overflow-wrap:anywhere"><colgroup><col style="width:4%"><col style="width:23%"><col style="width:21%"><col style="width:33%"><col style="width:19%"></colgroup>{_thead}<tbody>{_recon_rows(_chunk, start=_starts[_si], clip_on=clip_on)}</tbody></table>
   {_tail}
   <div class="foot">VITRAN BOUTIQUE · {_pno} — Đơn hàng hoàn trả · {_e(rep["date"])}</div>
 </div></div>"""

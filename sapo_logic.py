@@ -2225,22 +2225,18 @@ def get_returns_received_today(fetch_json, scan_days: int = 60, max_pages: int =
             return 0
 
     def _return_item_label(li):
+        """Trả (nhãn 1 dòng SP, tổng tiền dòng). SL>1 ghi rõ ĐƠN GIÁ/sp · TỔNG dòng để khỏi mập mờ."""
         qty = int(round(li.get("quantity") or 0))
+        q = max(qty, 1)
         sku = li.get("sku") or "N/A"
-        unit = _money(
-            li.get("discounted_price")
-            or li.get("final_price")
-            or li.get("sale_price")
-            or li.get("price_after_discount")
-        )
         line_total = _money(
-            li.get("line_price")
-            or li.get("total_price")
-            or li.get("total")
-            or li.get("subtotal_price")
+            li.get("line_price") or li.get("total_price")
+            or li.get("total") or li.get("subtotal_price")
         )
-        if not unit and line_total and qty:
-            unit = int(round(line_total / qty))
+        unit = _money(
+            li.get("discounted_price") or li.get("final_price")
+            or li.get("sale_price") or li.get("price_after_discount")
+        )
         if not unit:
             original = _money(li.get("original_price") or li.get("base_price") or li.get("price"))
             discount = max(
@@ -2248,9 +2244,25 @@ def get_returns_received_today(fetch_json, scan_days: int = 60, max_pages: int =
                  ("total_discount", "discount_amount", "total_discount_amount", "discount")),
                 default=0,
             )
-            unit = int(round(max(0, original * max(qty, 1) - discount) / max(qty, 1)))
-        price_text = f" · {unit:,.0f}đ".replace(",", ".") if unit else ""
-        return f"{sku}×{qty}{price_text}"
+            if original:
+                unit = int(round(max(0, original * q - discount) / q))
+        # Khớp đơn giá ↔ tổng dòng (tổng = đơn giá × SL); lệch thì TIN tổng dòng, suy ra đơn giá.
+        if line_total and not unit:
+            unit = int(round(line_total / q))
+        elif unit and not line_total:
+            line_total = unit * q
+        elif unit and line_total and abs(unit * q - line_total) > q:
+            unit = int(round(line_total / q))
+
+        def _vnd(n):
+            return f"{n:,.0f}đ".replace(",", ".")
+        if qty > 1 and unit and line_total:
+            price_text = f" · {_vnd(unit)}/sp · {_vnd(line_total)}"
+        elif line_total:
+            price_text = f" · {_vnd(line_total)}"
+        else:
+            price_text = ""
+        return f"{sku}×{qty}{price_text}", int(line_total or 0)
 
     recv = [x for x in rows if _restocked_today(x)]
     by_source, so_sp, detail = {}, 0, []
@@ -2283,7 +2295,12 @@ def get_returns_received_today(fetch_json, scan_days: int = 60, max_pages: int =
         # (NV quét clip theo đúng mã hoàn-về này) → khỏi phải đoán theo ĐVVC.
         codes.update(_TRACK_RE.findall(str(x.get("note") or "")))
         lis = x.get("line_items") or []
-        sku = "; ".join(_return_item_label(li) for li in lis)
+        _parts = [_return_item_label(li) for li in lis]
+        sku = "; ".join(p[0] for p in _parts)
+        if len(_parts) > 1:                          # đơn nhiều SP → thêm TỔNG ĐƠN cho rõ
+            _ord_total = sum(p[1] for p in _parts)
+            if _ord_total:
+                sku += f" · Tổng đơn: {_ord_total:,.0f}đ".replace(",", ".")
         rsn = lis[0].get("return_reason") if lis else None
         rtype = x.get("return_type")
         # Mốc NHẬN hàng trả (restock) rơi vào ngày báo cáo + NV NHẬN HÀNG.
