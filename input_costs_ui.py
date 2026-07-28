@@ -7,8 +7,12 @@ cuối iframe: nút "Lưu vào chi phí đầu vào" đọc dữ liệu từ ch�
 Bản thân file công cụ trên đĩa KHÔNG bị thay đổi (bridge chèn lúc render, nối chuỗi ở Python)."""
 
 import os
+import io
+import re
 import json
+import unicodedata
 
+import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
@@ -20,9 +24,11 @@ _TYPE_LABEL = {
     "mua_vai_ke": "Bảng kê mua vải",
     "thanh_toan_mua_vai": "Thanh toán mua vải",
     "gia_cong": "Thanh toán gia công",
+    "so_quy_chi": "Sổ quỹ (chi)",
     "khac": "Chi phí khác",
 }
-_TYPE_ICON = {"mua_vai_ke": "🧾", "thanh_toan_mua_vai": "💳", "gia_cong": "🧵", "khac": "📌"}
+_TYPE_ICON = {"mua_vai_ke": "🧾", "thanh_toan_mua_vai": "💳", "gia_cong": "🧵",
+              "so_quy_chi": "🏦", "khac": "📌"}
 
 
 def _fmt(n):
@@ -233,6 +239,254 @@ def _tool_tab(typ, fname, height, hint):
         getattr(st, msg[0])(msg[1])
 
 
+# ══════════════ TAB SỔ QUỸ SAPO: nhập file "Xuất file" → lọc phiếu CHI ══════════════
+# Sapo Open API chặn /admin/vouchers.json (403) nên không kéo tự động được → nhập qua file Excel/CSV
+# do user bấm "Xuất file". Bộ đọc tự dò dòng tiêu đề + map cột (có ánh xạ tay dự phòng), chỉ lấy phiếu CHI.
+
+def _norm(s):
+    s = unicodedata.normalize("NFD", str(s or ""))
+    s = "".join(c for c in s if unicodedata.category(c) != "Mn")
+    s = s.replace("đ", "d").replace("Đ", "D")   # NFD KHÔNG tách chữ đ → phải fold tay
+    return re.sub(r"\s+", " ", s).strip().lower()
+
+
+def _num(v):
+    s = str(v if v is not None else "")
+    neg = s.strip().startswith("-") or "(" in s
+    digits = re.sub(r"[^\d]", "", s)
+    if not digits:
+        return 0
+    n = int(digits)
+    return -n if neg else n
+
+
+def _date_str(v):
+    if hasattr(v, "strftime"):
+        try:
+            return v.strftime("%d/%m/%Y")
+        except Exception:
+            pass
+    s = str(v or "").strip()
+    m = re.match(r"(\d{4})-(\d{1,2})-(\d{1,2})", s)
+    if m:
+        return f"{int(m.group(3)):02d}/{int(m.group(2)):02d}/{m.group(1)}"
+    m = re.match(r"(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})", s)
+    if m:
+        return f"{int(m.group(1)):02d}/{int(m.group(2)):02d}/{m.group(3)}"
+    return s
+
+
+_HEADER_HINTS = ["ma phieu", "so tien", "ngay ghi nhan", "ly do thu chi", "loai chung tu",
+                 "dien giai", "tham chieu", "ten doi tuong"]
+_ALIASES = {
+    "ma_phieu": ["ma phieu", "so phieu", "ma chung tu", "so chung tu"],
+    "ngay": ["ngay ghi nhan", "ngay hach toan", "ngay chung tu", "ngay tao", "ngay"],
+    "doi_tuong": ["ten doi tuong", "doi tuong", "khach hang", "nha cung cap", "ncc"],
+    "ly_do": ["ly do thu chi", "ly do", "loai thu chi"],
+    "so_tien": ["so tien", "gia tri", "thanh tien"],
+    "tham_chieu": ["tham chieu", "chung tu goc", "chung tu tham chieu"],
+    "loai_ct": ["loai chung tu", "loai phieu", "phan loai", "phuong thuc"],
+    "dien_giai": ["dien giai", "ghi chu", "noi dung", "mo ta"],
+}
+
+
+def _find_exact(cols, names):
+    for c in cols:
+        if _norm(c) in names:
+            return c
+    return ""
+
+
+def _automap(cols):
+    ncols = [(c, _norm(c)) for c in cols]
+    out = {}
+    for field, aliases in _ALIASES.items():
+        pick = ""
+        for a in aliases:                       # ưu tiên khớp CHÍNH XÁC tên cột
+            for c, nc in ncols:
+                if nc == a:
+                    pick = c
+                    break
+            if pick:
+                break
+        if not pick:                            # rồi mới tới khớp CHỨA
+            for a in aliases:
+                for c, nc in ncols:
+                    if a in nc:
+                        pick = c
+                        break
+                if pick:
+                    break
+        out[field] = pick
+    return out
+
+
+def _read_soquy_table(uploaded):
+    name = (uploaded.name or "").lower()
+    raw = uploaded.getvalue()
+
+    def _read(header):
+        if name.endswith(".csv"):
+            for enc in ("utf-8-sig", "utf-8", "cp1258", "latin-1"):
+                try:
+                    return pd.read_csv(io.BytesIO(raw), header=header, dtype=str, encoding=enc)
+                except Exception:
+                    continue
+            return None
+        try:
+            return pd.read_excel(io.BytesIO(raw), header=header, dtype=str, engine="openpyxl")
+        except Exception:
+            return None
+
+    probe = _read(None)
+    if probe is None or probe.empty:
+        return None
+    header_row, best = 0, -1
+    for i in range(min(15, len(probe))):
+        vals = [_norm(x) for x in probe.iloc[i].tolist()]
+        hits = sum(1 for h in _HEADER_HINTS if any(h in v for v in vals))
+        if hits > best:
+            best, header_row = hits, i
+    df = _read(header_row if best > 0 else 0)
+    if df is None:
+        return None
+    df = df.dropna(how="all")
+    df.columns = [str(c).strip() for c in df.columns]
+    return df
+
+
+def _parse_soquy_rows(df, m, thu_col, chi_col):
+    rows = []
+    for _, r in df.iterrows():
+        def g(f):
+            c = m.get(f)
+            if c and c in r and pd.notna(r[c]):
+                return r[c]
+            return ""
+        ma = str(g("ma_phieu") or "").strip()
+        loai = str(g("loai_ct") or "")
+        nloai = _norm(loai)
+        amt = _num(g("so_tien"))
+        thu_v = _num(r[thu_col]) if (thu_col and thu_col in r) else 0
+        chi_v = _num(r[chi_col]) if (chi_col and chi_col in r) else 0
+        if chi_col or thu_col:                        # file có cột Thu/Chi riêng
+            if chi_v > 0:
+                kind, amount = "chi", chi_v
+            elif thu_v > 0:
+                kind, amount = "thu", thu_v
+            else:
+                kind, amount = "?", abs(amt)
+        elif "chi" in nloai and "thu" not in nloai:   # phân loại theo "Loại chứng từ"
+            kind, amount = "chi", abs(amt)
+        elif "thu" in nloai:
+            kind, amount = "thu", abs(amt)
+        elif amt < 0:
+            kind, amount = "chi", -amt
+        else:
+            kind, amount = "?", abs(amt)
+        date = _date_str(g("ngay"))
+        dt = str(g("doi_tuong") or "").strip()
+        if not ma and not date and not amount:
+            continue
+        if not amount:
+            continue
+        if not ma and _norm(dt).startswith("tong"):   # bỏ dòng tổng cộng
+            continue
+        rows.append({
+            "voucher_code": ma, "date": date, "doi_tuong": dt,
+            "ly_do": str(g("ly_do") or "").strip(), "amount": int(amount),
+            "tham_chieu": str(g("tham_chieu") or "").strip(), "loai_ct": loai.strip(),
+            "dien_giai": str(g("dien_giai") or "").strip(), "kind": kind,
+        })
+    return rows
+
+
+def _do_save_soquy(new_rows):
+    entries = [{
+        "type": "so_quy_chi", "date": r.get("date", ""), "amount": int(r.get("amount") or 0),
+        "partner": r.get("doi_tuong", ""), "note": r.get("ly_do", "") or r.get("dien_giai", ""),
+        "detail": r,
+    } for r in new_rows]
+    ok = picklog.add_input_costs(entries)
+    st.session_state["msg_soquy"] = (("success", f"Đã lưu {len(entries)} phiếu chi từ sổ quỹ Sapo.")
+                                     if ok else ("error", "Lưu thất bại (không ghi được vào kho dữ liệu)."))
+
+
+def _soquy_tab():
+    st.caption("Sapo chặn API sổ quỹ (403) nên nhập qua **file**: trên trang Sổ quỹ Sapo bấm **Xuất file** "
+               "→ tải Excel → kéo lên đây. Em tự lọc **phiếu CHI**, chống trùng theo Mã phiếu.")
+    msg = st.session_state.pop("msg_soquy", None)
+    if msg:
+        getattr(st, msg[0])(msg[1])
+    up = st.file_uploader("File sổ quỹ Sapo (.xlsx / .csv)", type=["xlsx", "xls", "csv"], key="soquy_file")
+    if not up:
+        st.info("Chưa có file. Xuất file từ Sổ quỹ Sapo rồi kéo lên đây.")
+        return
+    df = _read_soquy_table(up)
+    if df is None or df.empty:
+        st.error("Không đọc được file. Đảm bảo là file Excel/CSV xuất từ Sổ quỹ Sapo.")
+        return
+    cols = list(df.columns)
+    m = _automap(cols)
+    thu_col = _find_exact(cols, {"thu", "tien thu", "so tien thu"})
+    chi_col = _find_exact(cols, {"chi", "tien chi", "so tien chi"})
+
+    with st.expander("⚙️ Ánh xạ cột (chỉ mở nếu nhận diện sai)"):
+        opts = ["(không có)"] + cols
+
+        def _sel(label, field):
+            cur = m.get(field, "")
+            idx = opts.index(cur) if cur in opts else 0
+            pick = st.selectbox(label, opts, index=idx, key=f"soqmap_{field}")
+            m[field] = "" if pick == "(không có)" else pick
+        _sel("Cột Số tiền", "so_tien")
+        _sel("Cột Loại chứng từ (phân biệt thu/chi)", "loai_ct")
+        _sel("Cột Ngày", "ngay")
+        _sel("Cột Mã phiếu", "ma_phieu")
+        _sel("Cột Đối tượng", "doi_tuong")
+        _sel("Cột Lý do", "ly_do")
+        _sel("Cột Diễn giải", "dien_giai")
+
+    if not m.get("so_tien") and not (thu_col or chi_col):
+        st.error("Chưa xác định được cột **Số tiền**. Mở '⚙️ Ánh xạ cột' để chọn tay.")
+        st.caption("Các cột trong file: " + ", ".join(cols))
+        return
+
+    allrows = _parse_soquy_rows(df, m, thu_col, chi_col)
+    chi_rows = [r for r in allrows if r["kind"] == "chi"]
+    thu_n = sum(1 for r in allrows if r["kind"] == "thu")
+    unk = [r for r in allrows if r["kind"] == "?"]
+
+    existing = {str((x.get("detail") or {}).get("voucher_code") or "").strip()
+                for x in picklog.read_input_costs() if x.get("type") == "so_quy_chi"}
+    existing.discard("")
+    new_rows = [r for r in chi_rows if r["voucher_code"] and r["voucher_code"] not in existing]
+    new_rows += [r for r in chi_rows if not r["voucher_code"]]     # phiếu không mã: vẫn cho lưu
+    dup_n = sum(1 for r in chi_rows if r["voucher_code"] and r["voucher_code"] in existing)
+
+    st.success(f"Đọc {len(allrows)} dòng · **{len(chi_rows)} phiếu CHI** · {thu_n} phiếu thu (bỏ qua) · "
+               f"{len(unk)} chưa rõ.")
+    c = st.columns(3)
+    c[0].metric("Phiếu CHI mới", f"{len(new_rows)}")
+    c[1].metric("Tổng tiền CHI mới", _fmt(sum(r['amount'] for r in new_rows)) + "đ")
+    c[2].metric("Đã có (bỏ qua)", f"{dup_n}")
+    if unk:
+        st.warning(f"{len(unk)} dòng không phân biệt được thu/chi → KHÔNG lưu. Nếu file dùng cột khác để "
+                   "phân loại thu/chi, chỉnh lại ở '⚙️ Ánh xạ cột'.")
+
+    prev = new_rows if new_rows else chi_rows
+    if prev:
+        st.dataframe(pd.DataFrame([{
+            "Mã phiếu": r["voucher_code"], "Ngày": r["date"], "Đối tượng": r["doi_tuong"],
+            "Lý do": r["ly_do"], "Số tiền": _fmt(r["amount"]) + "đ", "Diễn giải": r["dien_giai"],
+        } for r in prev[:200]]), use_container_width=True, hide_index=True)
+        if len(prev) > 200:
+            st.caption(f"(hiển thị 200/{len(prev)} dòng đầu — vẫn lưu đủ khi bấm)")
+
+    st.button(f"💾 Lưu {len(new_rows)} phiếu CHI vào Chi phí đầu vào", type="primary",
+              disabled=not new_rows, key="soquy_save", on_click=_do_save_soquy, args=(new_rows,))
+
+
 def _saved_tab():
     items = list(picklog.read_input_costs() or [])
     items.sort(key=lambda x: str(x.get("saved_at", "")), reverse=True)
@@ -250,15 +504,14 @@ def _saved_tab():
     by_type = {}
     for x in view:
         by_type[x.get("type")] = by_type.get(x.get("type"), 0) + int(x.get("amount") or 0)
-    m = st.columns(4)
+    present = sorted(by_type.items(), key=lambda kv: -kv[1])
+    m = st.columns(1 + min(4, len(present)))
     m[0].metric("💸 Tổng chi phí đầu vào", _fmt(total_all) + "đ",
                 help="Tổng tất cả chi phí đầu vào đã lưu trong phạm vi lọc.")
-    m[1].metric("🧾 Mua vải (bảng kê)", _fmt(by_type.get("mua_vai_ke", 0)) + "đ")
-    m[2].metric("💳 Thanh toán mua vải", _fmt(by_type.get("thanh_toan_mua_vai", 0)) + "đ")
-    m[3].metric("🧵 Gia công", _fmt(by_type.get("gia_cong", 0)) + "đ")
-    khac = by_type.get("khac", 0)
-    if khac:
-        st.caption(f"📌 Chi phí khác: {_fmt(khac)}đ")
+    for i, (t, v) in enumerate(present[:4]):
+        m[i + 1].metric(f"{_TYPE_ICON.get(t, '📌')} {_TYPE_LABEL.get(t, t)}", _fmt(v) + "đ")
+    if len(present) > 4:
+        st.caption("Khác: " + " · ".join(f"{_TYPE_LABEL.get(t, t)}: {_fmt(v)}đ" for t, v in present[4:]))
 
     st.divider()
     if not view:
@@ -280,6 +533,8 @@ def _saved_tab():
                 _extra = f" · {det.get('count')} dòng vải"
             elif x.get("type") == "gia_cong" and det.get("so_lo"):
                 _extra = f" · lô {det.get('so_lo')}"
+            elif x.get("type") == "so_quy_chi" and det.get("voucher_code"):
+                _extra = f" · {det.get('voucher_code')}"
             c[2].write((x.get("partner") or "—") + _extra + (f" — {x.get('note')}" if x.get("note") else ""))
             c[3].write(f"**{_fmt(x.get('amount'))}đ**")
             c[4].button("🗑️", key=f"del_{cid}", help="Xoá chi phí này", on_click=_do_delete, args=(cid,))
@@ -306,6 +561,7 @@ def render():
         "🧾 Bảng kê mua vải",
         "💳 Thanh toán mua vải",
         "🧵 Thanh toán gia công",
+        "🏦 Sổ quỹ Sapo",
         "📊 Chi phí đã lưu",
     ])
     with tabs[0]:
@@ -318,4 +574,6 @@ def render():
         _tool_tab("gia_cong", "bien-ban-gia-cong.html", 1550,
                   "Biên bản giao nhận & thanh toán gia công. Lưu theo TỔNG TIỀN THỰC NHẬN của bên gia công.")
     with tabs[3]:
+        _soquy_tab()
+    with tabs[4]:
         _saved_tab()

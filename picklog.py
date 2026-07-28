@@ -822,6 +822,25 @@ def add_input_cost(entry: dict) -> bool:
     return _write_gist_file(_INPUT_COST_FILE, {"items": items})
 
 
+def add_input_costs(entries: list) -> bool:
+    """Thêm NHIỀU chi phí cùng lúc, chỉ ghi Gist 1 lần (dùng khi nhập cả file sổ quỹ)."""
+    items = read_input_costs()
+    base = int(_now_vn().timestamp() * 1000)
+    added = 0
+    for entry in entries or []:
+        row = dict(entry or {})
+        if not row.get("type"):
+            continue
+        if not row.get("id"):
+            row["id"] = f"{base}-{len(items)}"
+        row.setdefault("saved_at", _now_vn().strftime("%Y-%m-%d %H:%M:%S"))
+        items.append(row)
+        added += 1
+    if not added:
+        return False
+    return _write_gist_file(_INPUT_COST_FILE, {"items": items})
+
+
 def remove_input_cost(cid: str) -> bool:
     cid = str(cid or "")
     items = [x for x in read_input_costs() if str(x.get("id")) != cid]
