@@ -2352,6 +2352,12 @@ def get_returns_received_today(fetch_json, scan_days: int = 60, max_pages: int =
             "shopee": "Shopee", "shopee2": "Shopee",
         }.get(str(_source).lower(), str(_source).title())
         _branch = _channel.get("branch_name") or _channel.get("main_name") or "VITRAN BOUTIQUE"
+        _ap = [_return_item_label(li) for li in lis]      # (nhãn, tổng dòng) — trả tuple
+        _sku_ab = "; ".join(p[0] for p in _ap)
+        if len(_ap) > 1:
+            _ot = sum(p[1] for p in _ap)
+            if _ot:
+                _sku_ab += f" · Tổng đơn: {_ot:,.0f}đ".replace(",", ".")
         info = {
             "order_code": on or x.get("name"),
             "vd_gui": (fft[0] if fft else None),
@@ -2359,7 +2365,7 @@ def get_returns_received_today(fetch_json, scan_days: int = 60, max_pages: int =
             "track_return": si.get("tracking_number") or "",
             "carrier": _return_dvvc(x),
             "gian_hang": " - ".join(v for v in (_branch, _source_label) if v),
-            "sku": "; ".join(_return_item_label(li) for li in lis),
+            "sku": _sku_ab,
             "loai_tra": _type_vn.get(x.get("return_type"), x.get("return_type") or "—"),
             "loai_tra_code": x.get("return_type"),
         }
