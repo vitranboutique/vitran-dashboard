@@ -23,7 +23,7 @@ _CSS = """
   body{font-family:Tahoma,Verdana,'Segoe UI',system-ui,Roboto,Arial,sans-serif;margin:0;background:#e9edf2;color:var(--ink);}
   .toolbar{position:sticky;top:0;background:#e9edf2;padding:8px;text-align:center;z-index:5;}
   .printbtn{background:var(--accent);color:#fff;border:0;border-radius:9px;padding:10px 20px;font-size:14px;font-weight:800;cursor:pointer;box-shadow:0 2px 8px rgba(226,75,74,.4);}
-  .page{width:210mm;height:297mm;margin:0 auto 14px;background:#fff;box-sizing:border-box;box-shadow:0 2px 14px rgba(0,0,0,.12);overflow:hidden;}
+  .page{width:210mm;min-height:297mm;margin:0 auto 14px;background:#fff;box-sizing:border-box;box-shadow:0 2px 14px rgba(0,0,0,.12);overflow:visible;}
   .pfit{padding:9mm 11mm 8mm;font-size:var(--fs,13px);box-sizing:border-box;}
   .page.fixed .pfit{font-size:12px;}
   .hd{display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid var(--navy);padding-bottom:.45em;}
@@ -62,7 +62,7 @@ _CSS = """
   .batchsign .bs-sign{flex:1 1 auto;}
   .batchsign .bs-sign .sign{margin-top:0;}
   .foot{margin-top:.36em;text-align:center;font-size:.73em;color:#9aa3af;border-top:1px solid var(--line);padding-top:.2em;}
-  .page2{page-break-before:always;page:return-portrait;width:210mm;height:297mm;}
+  .page2{page-break-before:always;page:return-portrait;width:210mm;min-height:297mm;}
   .page2 .pfit{padding:7mm 7mm 5mm;}
   .page2 .hd{padding-bottom:.2em;border-bottom-width:2px;}
   .page2 .hd .brand{font-size:1.22em;}
@@ -128,15 +128,10 @@ _CSS = """
     *{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
     .io2col{display:block!important;}
   }
-  /* MÀN HÌNH: phóng TO cả trang cho dễ đọc + 2 bảng I & II nằm 2 cột cạnh nhau.
-     Bỏ khung A4 cố định (height/overflow) để chữ to KHÔNG bị cắt. IN A4 vẫn nguyên bản. */
+  /* WYSIWYG: MÀN HÌNH hiển thị Y HỆT bản IN — CÙNG font, CÙNG khổ A4, CÙNG cách rớt dòng.
+     Chỉ khác: màn hình PHÓNG TO đồng đều cho dễ đọc (zoom), in thì 100%. Không đổi font/cột riêng. */
   @media screen{
-    .page{height:auto;overflow:visible;}          /* GIỮ khổ A4 (210mm), chỉ bỏ chiều cao cứng */
-    .pfit{font-size:16px;}
-    /* 2 bảng xếp TRÊN–DƯỚI, mỗi bảng đủ khổ A4 → HIỆN ĐỦ mọi cột, chữ vừa đọc. Nằm ngang trong A4
-       làm bảng ĐVVC 13 cột bị cắt/cuộn nên bỏ. IN A4 vẫn nguyên bản. */
-    .io2col table{font-size:13px;}
-    .io2col th,.io2col td{padding:.3em .5em;}
+    .page{zoom:1.28;}
     .io2tbl{overflow-x:auto;}
   }
 """
@@ -319,11 +314,11 @@ def _huy_split_html(huy_all, soan_known):
     _som = [d for d in huy_all if not d.get("soan")]
     h = ""
     if _soan:
-        h += ('<div style="color:#b91c1c;font-weight:800;margin:1px 0 2px">'
+        h += ('<div class="dvgrp" style="color:#b91c1c">'
               f'📦 CẦN LẤY LẠI — đã soạn, đã cầm hàng ra kho ({len(_soan)}) · tick khi đã nhận lại</div>'
               + _grouped_tick_rows(_soan, force_pk=True))
     if _som:
-        h += ('<div style="color:#6b7280;font-weight:800;margin:5px 0 2px">'
+        h += ('<div class="dvgrp" style="color:#6b7280;margin-top:4px">'
               f'⚪ HỦY SỚM — chưa soạn, KHỎI lấy lại ({len(_som)})</div>'
               + _grouped_tick_rows(_som, tick=False))
     return h
@@ -978,8 +973,8 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
     ])
     # 2 ô này 50/50, NẰM NGAY TRÊN bảng chi tiết tương ứng (Hủy ↔ bảng Hủy, Xót ↔ bảng Xót)
     _row2 = "".join([
-        _fbox("❌", "Hủy hôm nay", fn.get("huy"), hot=True, tick=True, tone="huytone"),
-        _fbox("⏳", "Còn xót lại", fn.get("con_xot"), tick=True, tone="xottone"),
+        _fbox("❌", "Hủy hôm nay", fn.get("huy"), hot=True, tone="huytone"),
+        _fbox("⏳", "Còn xót lại", fn.get("con_xot"), tone="xottone"),
     ])
     kpi_html = (f'<div class="kpis k3">{_row_in}</div>'
                 f'<div class="kpis kf3">{_row1}</div>'
