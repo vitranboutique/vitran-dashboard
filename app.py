@@ -3673,6 +3673,37 @@ def load_week_summary():
                     data["khui_manual_matches"] = picklog.read_khui_manual_match()
                 except Exception:
                     data["khui_manual_matches"] = []
+                # ── GỢI Ý KHỚP clip mồ côi ↔ đơn hoàn BÁO THIẾU clip theo ĐƠN GỐC (xử ca -R2) ──
+                # Đơn đóng bị nhập tay ra mã -R2 → clip dính bản gốc (chưa nhập kho), bản R2 (đã nhập
+                # kho) thiếu clip. Cùng ĐƠN GỐC → gợi ý cặp; NV chỉ tick + Xác nhận → lưu (ret=đơn gốc).
+                try:
+                    _miss_by_dg = {}
+                    for _mday, _mlabels in (_return_missing_by_day or {}).items():
+                        for _mlbl in _mlabels:
+                            _dg = _norm(_label_order_key(_mlbl))
+                            if not _dg:
+                                continue
+                            _matra = _label_field(_mlbl, r"(?:Mã trả|Ma tra)\s*:\s*([^|]+)")
+                            _mvd = _label_field(_mlbl, r"(?:VĐ hoàn|VD hoan)\s*:\s*([^|]+)")
+                            _rdisp = (_matra[0] if _matra else (_mvd[0] if _mvd
+                                      else _label_order_key(_mlbl)))
+                            _miss_by_dg.setdefault(_dg, set()).add(str(_rdisp))
+                    _clip_sugg, _seen_sg = [], set()
+                    for _o in _khui_orphans:
+                        _on = _o.get("norm") or _norm(_o.get("code"))
+                        _olbl = _return_label_by_code.get(_on)
+                        _odg = _norm(_label_order_key(_olbl)) if _olbl else ""
+                        if not (_odg and _odg in _miss_by_dg and (_on, _odg) not in _seen_sg):
+                            continue
+                        _seen_sg.add((_on, _odg))
+                        _clip_sugg.append({
+                            "clip_code": str(_o.get("code") or ""), "clip_norm": _on,
+                            "clip_date": _o.get("date"), "clip_dur": _o.get("dur"),
+                            "ret_display": " · ".join(sorted(_miss_by_dg[_odg])),
+                            "don_goc": _label_order_key(_olbl), "don_goc_norm": _odg})
+                    data["clip_don_suggestions"] = _clip_sugg
+                except Exception:
+                    data["clip_don_suggestions"] = []
             except Exception:
                 _matched_vhoan = {}
                 _return_missing_by_day = {}
@@ -8810,6 +8841,47 @@ def _render_daily():
                 _d["ghi_chu"] = _notes.get(_d.get("iso"), "")
             st.markdown(_week_table_html(_wk), unsafe_allow_html=True)
             _render_week_video_audit(_wk)
+            _clip_sugg = list(_wk.get("clip_don_suggestions") or [])
+            if _clip_sugg:
+                with st.expander(f"🤝 Gợi ý khớp clip khui ↔ đơn hoàn (cùng đơn gốc) — {len(_clip_sugg)} cặp",
+                                 expanded=True):
+                    st.caption("Đơn hoàn ĐÃ nhập kho nhưng báo THIẾU clip, và clip mồ côi CÙNG ĐƠN GỐC "
+                               "(vd đơn đóng bị nhập tay ra mã -R2). Tick cặp đúng rồi bấm Xác nhận khớp — "
+                               "clip sẽ gắn sang đơn đã nhập kho.")
+                    _sg_all_key = "sugg_clip_don_all_30d"
+
+                    def _toggle_all_sugg_clip_don():
+                        _v = bool(st.session_state.get(_sg_all_key))
+                        for _i in range(len(_clip_sugg)):
+                            st.session_state[f"sugg_clip_don_{_i}"] = _v
+                    st.checkbox(f"☑️ Chọn tất cả {len(_clip_sugg)} cặp", key=_sg_all_key,
+                                on_change=_toggle_all_sugg_clip_don)
+                    _picked_sugg = []
+                    with st.form("sugg_clip_don_form_30d"):
+                        for _i, _s in enumerate(_clip_sugg):
+                            _dur = f" · {int(_s['clip_dur'])}s" if _s.get("clip_dur") else ""
+                            if st.checkbox(
+                                f"**{_i + 1}.** clip `{_s.get('clip_code')}` ({_s.get('clip_date','')}{_dur}) "
+                                f"↔ đơn hoàn **{_s.get('ret_display','')}** · đơn gốc `{_s.get('don_goc','')}`",
+                                key=f"sugg_clip_don_{_i}",
+                            ):
+                                _picked_sugg.append(_s)
+                        _sg_submit = st.form_submit_button("✅ Xác nhận khớp các cặp đã chọn",
+                                                           use_container_width=True)
+                    if _sg_submit:
+                        if not _picked_sugg:
+                            st.warning("Chưa tick cặp nào.")
+                        else:
+                            _ok = 0
+                            for _s in _picked_sugg:
+                                if picklog.add_khui_manual_match({
+                                    "ret": _s.get("don_goc_norm"), "clip": _s.get("clip_norm"),
+                                    "ret_raw": _s.get("don_goc"), "clip_raw": _s.get("clip_code"),
+                                }):
+                                    _ok += 1
+                            st.cache_data.clear()
+                            st.success(f"Đã xác nhận khớp {_ok}/{len(_picked_sugg)} cặp. Đang tải lại…")
+                            st.rerun()
             _render_khui_manual_match(_wk)
             _bulk_package_moves = list(_wk.get("wrong_side_video_suggestions") or [])
             if _bulk_package_moves:
