@@ -529,6 +529,8 @@ def _recon_rows(rows, start=0, clip_on=True):
         # ── Cột 1: CLIP KHUI HÀNG (Dohana) ──
         if r.get("has_clip"):
             _alt = ' <span style="color:#b45309;font-weight:700">(mã khác)</span>' if r.get("clip_alt") else ""
+            if r.get("clip_manual"):   # clip gắn sang đơn nhờ admin khớp tay (ca đơn -R2) → ghi rõ để dò lại
+                _alt += ' <span style="color:#2563eb;font-weight:800">🔗 khớp tay</span>'
             _cs = []
             if r.get("clip_dur"):
                 _cs.append(f'{r["clip_dur"]}s')
@@ -590,6 +592,13 @@ def _recon_rows(rows, start=0, clip_on=True):
                              f'🏪 {_e(_short_store_label(r.get("gian_hang")))}</div>'
                              f'<span style="color:#15803d;font-weight:900">{_rsn}</span>')
                 sapo_td = ' style="background:#f0fdf4;border:2px solid #16a34a"'
+            elif r.get("clip_manual_dg"):   # admin đã khớp tay clip↔đơn gốc, nhập kho ở ngày khác → KHÔNG báo động
+                _rsn = (f'🔗 Đã khớp tay → đơn gốc <b>{_e(str(r.get("clip_manual_dg")))}</b> '
+                        f'(đã nhập kho ngày khác)')
+                sapo_cell = (f'{_ocb}<div style="font-size:.82em;color:#475569">'
+                             f'🏪 {_e(_short_store_label(r.get("gian_hang")))}</div>'
+                             f'<span style="color:#2563eb;font-weight:800">{_rsn}</span>')
+                sapo_td = ' style="background:#eff6ff"'
             else:
                 _rsn = '✗ CHƯA bấm nhập kho trên Sapo — kiểm tra: quên nhập kho / quay nhầm mục / quay trùng'
                 sapo_cell = (f'{_ocb}<div style="font-size:.82em;color:#475569">'

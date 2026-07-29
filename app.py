@@ -915,7 +915,7 @@ def _render_khui_manual_match(data):
     # LUÔN hiện (kể cả 0 clip mồ côi) để admin khớp tay được cả ca clip DÍNH NHẦM đơn khác
     # (vd đơn đóng bị nhập tay ra mã -R2) — gõ tay mã clip + mã đơn hoàn là khớp.
     with st.expander(f"🔧 Khớp tay clip khui ↔ đơn hoàn — {len(_orphans)} clip mồ côi · {len(_saved_matches)} đã khớp tay",
-                     expanded=bool(_orphans and not _saved_matches)):
+                     expanded=bool(_orphans or _saved_matches)):
         st.caption("Dùng khi NV quay khui nhập MÃ SAI/THIẾU trên Dohana (clip có thật nhưng mã không khớp vận đơn). "
                    "Nối tay xong: đơn HẾT báo 'chưa quay', clip hết 'mồ côi'. Lưu vĩnh viễn trên kho.")
         if _orphans:
@@ -945,7 +945,13 @@ def _render_khui_manual_match(data):
             elif _submit:
                 st.warning("Nhập ĐỦ cả mã clip và mã đơn hoàn.")
         if _saved_matches:
-            st.markdown("**Đã khớp tay (bấm Xóa để bỏ khớp):**")
+            st.markdown(f"**📜 Lịch sử khớp tay ({len(_saved_matches)}) — để dò lại:**")
+            st.dataframe(pd.DataFrame([{
+                "Mã clip (Dohana)": _m.get("clip_raw") or _m.get("clip"),
+                "Đơn hoàn / đơn gốc": _m.get("ret_raw") or _m.get("ret"),
+                "Thời điểm khớp": _m.get("at", ""),
+            } for _m in _saved_matches]), hide_index=True, use_container_width=True)
+            st.caption("Bấm Xóa để bỏ khớp (đơn sẽ báo 'chưa quay' lại, clip thành mồ côi):")
             for _m in _saved_matches:
                 _mc1, _mc2 = st.columns([6, 1])
                 _mc1.markdown(f"• clip `{_m.get('clip_raw') or _m.get('clip')}` ↔ đơn "
@@ -1501,8 +1507,33 @@ def _enrich_daily(rep, dvr, inb):
             "loai_tra_code": d.get("loai_tra_code"), "has_sapo": True,
         })
     _abc = nk.get("all_by_code") or {}
+    # ÁP KHỚP TAY (admin xác nhận ở tab tuần): clip mồ côi thuộc đơn gốc nào → gắn clip sang ĐÚNG
+    # dòng ĐÃ nhập kho của đơn gốc đó & bỏ dòng "CHƯA nhập kho" báo động nhầm (ca đơn đóng nhập tay ra -R2).
+    _manual_by_clip = {}
+    try:
+        for _mm in (picklog.read_khui_manual_match() or []):
+            _rn, _cn = _ascii_code(_mm.get("ret")), _ascii_code(_mm.get("clip"))
+            if _rn and _cn:
+                _manual_by_clip[_cn] = {"dg": _rn, "raw": _mm.get("ret_raw") or _mm.get("ret")}
+    except Exception:
+        _manual_by_clip = {}
     for u in nk.get("clip_unmatched_detail", []):
         info = _abc.get(u.get("code")) or {}   # đơn hoàn CHƯA nhập kho (vd tráo hàng giữ tranh chấp)
+        _mm = _manual_by_clip.get(_ascii_code(u.get("code")))
+        if _mm:
+            # tìm dòng ĐÃ nhập kho của đơn gốc này còn TRỐNG clip → gắn clip vào, bỏ dòng mồ côi
+            _tgt = next((row for row in recon
+                         if row.get("has_sapo") and not row.get("has_clip")
+                         and _mm["dg"] in {_ascii_code(row.get("order_code")),
+                                           _ascii_code(row.get("return_code"))}), None)
+            if _tgt is not None:
+                _tgt.update({
+                    "clip_code": u.get("code"), "clip_time": u.get("recorded"),
+                    "clip_dur": u.get("dur"), "clip_link": u.get("link"),
+                    "clip_tag": u.get("tag"), "clip_tag_id": u.get("tag_id"),
+                    "has_clip": True, "clip_manual": True,
+                })
+                continue
         recon.append({
             "clip_code": u.get("code"), "clip_time": u.get("recorded"),
             "clip_dur": u.get("dur"), "clip_link": u.get("link"),
@@ -1517,6 +1548,8 @@ def _enrich_daily(rep, dvr, inb):
             "nhan_vien": u.get("staff") or "",
             "sku": info.get("sku") or "", "loai_tra": info.get("loai_tra") or "",
             "loai_tra_code": info.get("loai_tra_code") or "", "has_sapo": False,
+            # đã khớp tay nhưng KHÔNG thấy dòng nhập kho hôm nay (nhập kho ngày khác) → hiện khớp, không báo động
+            "clip_manual_dg": (_mm["raw"] if _mm else ""),
         })
     nk["recon_rows"] = recon
     if dvr is not None:
