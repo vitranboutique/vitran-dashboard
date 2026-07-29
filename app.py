@@ -3677,22 +3677,31 @@ def load_week_summary():
                 # Đơn đóng bị nhập tay ra mã -R2 → clip dính bản gốc (chưa nhập kho), bản R2 (đã nhập
                 # kho) thiếu clip. Cùng ĐƠN GỐC → gợi ý cặp; NV chỉ tick + Xác nhận → lưu (ret=đơn gốc).
                 try:
+                    # Map MỌI đơn trả (kể cả CHƯA nhập kho) code→label có "Mã đơn: đơn gốc".
+                    # Clip mồ côi dính bản gốc chưa nhập kho → chỉ map này mới có đơn gốc của nó
+                    # (map _return_label_by_code chỉ chứa đơn ĐÃ nhập kho nên tra hụt → "0 clip có đơn gốc").
+                    _octx = data.get("order_context_by_code") or {}
+                    def _clip_label(_cn):
+                        return _return_label_by_code.get(_cn) or _octx.get(_cn)
                     _miss_by_dg = {}
                     for _mday, _mlabels in (_return_missing_by_day or {}).items():
                         for _mlbl in _mlabels:
                             _dg = _norm(_label_order_key(_mlbl))
                             if not _dg:
                                 continue
-                            _matra = _label_field(_mlbl, r"(?:Mã trả|Ma tra)\s*:\s*([^|]+)")
-                            _mvd = _label_field(_mlbl, r"(?:VĐ hoàn|VD hoan)\s*:\s*([^|]+)")
-                            _rdisp = (_matra[0] if _matra else (_mvd[0] if _mvd
-                                      else _label_order_key(_mlbl)))
+                            # Hiện NGUYÊN mã trả (giữ đuôi -R2) để NV phân biệt với cột đơn gốc;
+                            # _codes_from_item tách "-" làm mất suffix nên lấy raw text.
+                            _mtr = re.search(r"(?:Mã trả|Ma tra)\s*:\s*([^|]+)", _mlbl, flags=re.I)
+                            _mvr = re.search(r"(?:VĐ hoàn|VD hoan)\s*:\s*([^|]+)", _mlbl, flags=re.I)
+                            _matra_raw = (_mtr.group(1).strip() if _mtr else "")
+                            _mvd_raw = (_mvr.group(1).strip() if _mvr else "")
+                            _rdisp = _matra_raw or _mvd_raw or _label_order_key(_mlbl)
                             _miss_by_dg.setdefault(_dg, []).append(
                                 {"day": str(_mday), "ret_display": str(_rdisp)})
                     _clip_sugg, _seen_sg = [], set()
                     for _o in _khui_orphans:
                         _on = _o.get("norm") or _norm(_o.get("code"))
-                        _olbl = _return_label_by_code.get(_on)
+                        _olbl = _clip_label(_on)
                         _odg = _norm(_label_order_key(_olbl)) if _olbl else ""
                         _oday = str(_o.get("date") or "")
                         if not (_odg and _oday and _odg in _miss_by_dg):
@@ -3711,7 +3720,7 @@ def load_week_summary():
                     data["clip_don_suggestions"] = _clip_sugg
                     _orphan_dgs = set()
                     for _o in _khui_orphans:
-                        _olbl2 = _return_label_by_code.get(_o.get("norm") or _norm(_o.get("code")))
+                        _olbl2 = _clip_label(_o.get("norm") or _norm(_o.get("code")))
                         _odg2 = _norm(_label_order_key(_olbl2)) if _olbl2 else ""
                         if _odg2:
                             _orphan_dgs.add(_odg2)
