@@ -1125,7 +1125,7 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
         # trang .fixed (font cố định, phân trang 30 đơn) → KHÔNG auto-fit
         "if((' '+pg.className+' ').indexOf(' fixed ')>=0)continue;"
         "var ft=pg.querySelector('.pfit');if(!ft)continue;"
-        "var t=pg.clientHeight,lo=8,hi=((' '+pg.className+' ').indexOf(' page2 ')>=0?18:26),b=lo;"
+        "var t=pg.clientHeight,lo=8,hi=((' '+pg.className+' ').indexOf(' page2 ')>=0?13.5:24),b=lo;"
         "for(var k=0;k<18;k++){var m=(lo+hi)/2;ft.style.fontSize=m+'px';"
         "if(ft.scrollHeight<=t){b=m;lo=m;}else{hi=m;}}"
         "ft.style.fontSize=b.toFixed(2)+'px';}}"
