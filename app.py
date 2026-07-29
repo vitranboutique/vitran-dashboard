@@ -945,10 +945,14 @@ def _render_khui_manual_match(data):
             elif _submit:
                 st.warning("Nhập ĐỦ cả mã clip và mã đơn hoàn.")
         if _saved_matches:
+            _cdate = (data or {}).get("clip_date_by_code") or {}
+            _rday = (data or {}).get("restock_day_by_code") or {}
             st.markdown(f"**📜 Lịch sử khớp tay ({len(_saved_matches)}) — để dò lại:**")
             st.dataframe(pd.DataFrame([{
                 "Mã clip (Dohana)": _m.get("clip_raw") or _m.get("clip"),
+                "Ngày quay video": _cdate.get(_ascii_code(_m.get("clip") or ""), "—"),
                 "Đơn hoàn / đơn gốc": _m.get("ret_raw") or _m.get("ret"),
+                "Ngày nhập kho Sapo": _rday.get(_ascii_code(_m.get("ret") or ""), "—"),
                 "Thời điểm khớp": _m.get("at", ""),
             } for _m in _saved_matches]), hide_index=True, use_container_width=True)
             st.caption("Bấm Xóa để bỏ khớp (đơn sẽ báo 'chưa quay' lại, clip thành mồ côi):")
@@ -3702,6 +3706,26 @@ def load_week_summary():
                 except Exception:
                     _khui_orphans = []
                 data["khui_orphan_clips"] = _khui_orphans
+                # NGÀY QUAY CLIP (Dohana) + NGÀY NHẬP KHO SAPO — cho bảng lịch sử khớp tay dò lại.
+                _clip_date_by_code = {}
+                for r in inbound_rows:
+                    _cc = _norm(r.get("code"))
+                    _dt = str(r.get("date") or "")
+                    if _cc and _dt and _dt > _clip_date_by_code.get(_cc, ""):
+                        _clip_date_by_code[_cc] = _dt   # giữ ngày quay gần nhất nếu mã trùng
+                data["clip_date_by_code"] = _clip_date_by_code
+                _restock_day_by_code = {}
+                for _dd, _rows in (_structured_returns or {}).items():
+                    for _row in _rows or []:
+                        if not isinstance(_row, dict):
+                            continue
+                        _codes = [_row.get("order_code"), _row.get("return_code"),
+                                  _row.get("track_return"), *(_row.get("codes") or [])]
+                        for _c in _codes:
+                            _cn = _norm(_c)
+                            if _cn:
+                                _restock_day_by_code[_cn] = str(_dd)   # đơn gốc/mã trả/VĐ hoàn → ngày nhập kho
+                data["restock_day_by_code"] = _restock_day_by_code
                 try:
                     data["khui_manual_matches"] = picklog.read_khui_manual_match()
                 except Exception:
