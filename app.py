@@ -3687,23 +3687,40 @@ def load_week_summary():
                             _mvd = _label_field(_mlbl, r"(?:VĐ hoàn|VD hoan)\s*:\s*([^|]+)")
                             _rdisp = (_matra[0] if _matra else (_mvd[0] if _mvd
                                       else _label_order_key(_mlbl)))
-                            _miss_by_dg.setdefault(_dg, set()).add(str(_rdisp))
+                            _miss_by_dg.setdefault(_dg, []).append(
+                                {"day": str(_mday), "ret_display": str(_rdisp)})
                     _clip_sugg, _seen_sg = [], set()
                     for _o in _khui_orphans:
                         _on = _o.get("norm") or _norm(_o.get("code"))
                         _olbl = _return_label_by_code.get(_on)
                         _odg = _norm(_label_order_key(_olbl)) if _olbl else ""
-                        if not (_odg and _odg in _miss_by_dg and (_on, _odg) not in _seen_sg):
+                        _oday = str(_o.get("date") or "")
+                        if not (_odg and _oday and _odg in _miss_by_dg):
                             continue
-                        _seen_sg.add((_on, _odg))
+                        # CHỈ gợi khi CÙNG ĐƠN GỐC *VÀ* CÙNG 1 NGÀY
+                        _same = sorted({m["ret_display"] for m in _miss_by_dg[_odg]
+                                        if m["day"] == _oday})
+                        if not _same or (_on, _odg, _oday) in _seen_sg:
+                            continue
+                        _seen_sg.add((_on, _odg, _oday))
                         _clip_sugg.append({
                             "clip_code": str(_o.get("code") or ""), "clip_norm": _on,
-                            "clip_date": _o.get("date"), "clip_dur": _o.get("dur"),
-                            "ret_display": " · ".join(sorted(_miss_by_dg[_odg])),
-                            "don_goc": _label_order_key(_olbl), "don_goc_norm": _odg})
+                            "clip_date": _oday, "clip_dur": _o.get("dur"),
+                            "ret_display": " · ".join(_same),
+                            "don_goc": _label_order_key(_olbl), "don_goc_norm": _odg, "day": _oday})
                     data["clip_don_suggestions"] = _clip_sugg
+                    _orphan_dgs = set()
+                    for _o in _khui_orphans:
+                        _olbl2 = _return_label_by_code.get(_o.get("norm") or _norm(_o.get("code")))
+                        _odg2 = _norm(_label_order_key(_olbl2)) if _olbl2 else ""
+                        if _odg2:
+                            _orphan_dgs.add(_odg2)
+                    data["clip_don_debug"] = {
+                        "orphans": len(_khui_orphans), "orphans_co_dongoc": len(_orphan_dgs),
+                        "don_thieu_clip": len(_miss_by_dg), "cap_khop": len(_clip_sugg)}
                 except Exception:
                     data["clip_don_suggestions"] = []
+                    data["clip_don_debug"] = {}
             except Exception:
                 _matched_vhoan = {}
                 _return_missing_by_day = {}
@@ -8842,10 +8859,17 @@ def _render_daily():
             st.markdown(_week_table_html(_wk), unsafe_allow_html=True)
             _render_week_video_audit(_wk)
             _clip_sugg = list(_wk.get("clip_don_suggestions") or [])
-            if _clip_sugg:
-                with st.expander(f"🤝 Gợi ý khớp clip khui ↔ đơn hoàn (cùng đơn gốc) — {len(_clip_sugg)} cặp",
-                                 expanded=True):
-                    st.caption("Đơn hoàn ĐÃ nhập kho nhưng báo THIẾU clip, và clip mồ côi CÙNG ĐƠN GỐC "
+            _clip_dbg = _wk.get("clip_don_debug") or {}
+            with st.expander(f"🤝 Gợi ý khớp clip khui ↔ đơn hoàn (cùng đơn gốc + cùng ngày) — {len(_clip_sugg)} cặp",
+                             expanded=bool(_clip_sugg)):
+                if not _clip_sugg:
+                    st.info(f"Chưa gợi được cặp (chỉ gợi khi CÙNG đơn gốc VÀ CÙNG ngày). Chẩn đoán: "
+                            f"{_clip_dbg.get('orphans', 0)} clip mồ côi · "
+                            f"{_clip_dbg.get('orphans_co_dongoc', 0)} clip có đơn gốc · "
+                            f"{_clip_dbg.get('don_thieu_clip', 0)} đơn báo thiếu clip. "
+                            "Đơn cần khớp không hiện → dùng form 🔧 Khớp tay bên dưới.")
+                if _clip_sugg:
+                    st.caption("Đơn hoàn ĐÃ nhập kho nhưng báo THIẾU clip, và clip mồ côi CÙNG ĐƠN GỐC + CÙNG NGÀY "
                                "(vd đơn đóng bị nhập tay ra mã -R2). Tick cặp đúng rồi bấm Xác nhận khớp — "
                                "clip sẽ gắn sang đơn đã nhập kho.")
                     _sg_all_key = "sugg_clip_don_all_30d"
