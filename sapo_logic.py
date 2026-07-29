@@ -2644,6 +2644,8 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
                 ce(carrier(o))["huy"] += 1
                 _hd = _odet(o)
                 _hd["packed"] = (ff.get("packed_status") == "packed")  # đã gói → cần lấy lại hàng
+                _hc = _parse_vn(o.get("cancelled_on"))                 # giờ HỦY
+                _hd["huy_time"] = _hc.strftime("%H:%M") if _hc else ""
                 huy_all_detail.append(_hd)
                 if ff.get("packed_status") == "packed":
                     huy_total += 1

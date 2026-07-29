@@ -290,8 +290,10 @@ def _grouped_tick_rows(detail, mark_packed=False, force_pk=False, tick=True):
             # nhánh dự phòng (ngày chưa lưu mã phiếu nhặt) để phân biệt đơn đã gói.
             pk = (' <span class="pk">📦 cần lấy lại</span>'
                   if (mark_packed and d.get("packed")) else "")
+            _ht = str(d.get("huy_time") or "").strip()
+            _huy_html = f' · <span style="color:#dc2626">❌ hủy {_e(_ht)}</span>' if _ht else ''
             html += (f'<div class="dline">{_box}'
-                     f'<b>{nm}</b>{tk_html} · {_e(str(d.get("sku", "")))}{pk}</div>')
+                     f'<b>{nm}</b>{tk_html} · {_e(str(d.get("sku", "")))}{_huy_html}{pk}</div>')
             html += _soan_vid_sub(d)
     return html
 
