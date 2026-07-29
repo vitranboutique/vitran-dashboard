@@ -912,8 +912,8 @@ def _render_khui_manual_match(data):
     Expander RIÊNG (không lồng trong bảng khớp) → luôn xem/sửa được kể cả khi không còn dòng lệch."""
     _orphans = (data or {}).get("khui_orphan_clips") or []
     _saved_matches = (data or {}).get("khui_manual_matches") or []
-    if not (_orphans or _saved_matches):
-        return
+    # LUÔN hiện (kể cả 0 clip mồ côi) để admin khớp tay được cả ca clip DÍNH NHẦM đơn khác
+    # (vd đơn đóng bị nhập tay ra mã -R2) — gõ tay mã clip + mã đơn hoàn là khớp.
     with st.expander(f"🔧 Khớp tay clip khui ↔ đơn hoàn — {len(_orphans)} clip mồ côi · {len(_saved_matches)} đã khớp tay",
                      expanded=bool(_orphans and not _saved_matches)):
         st.caption("Dùng khi NV quay khui nhập MÃ SAI/THIẾU trên Dohana (clip có thật nhưng mã không khớp vận đơn). "
@@ -8810,6 +8810,7 @@ def _render_daily():
                 _d["ghi_chu"] = _notes.get(_d.get("iso"), "")
             st.markdown(_week_table_html(_wk), unsafe_allow_html=True)
             _render_week_video_audit(_wk)
+            _render_khui_manual_match(_wk)
             _bulk_package_moves = list(_wk.get("wrong_side_video_suggestions") or [])
             if _bulk_package_moves:
                 with st.expander(
