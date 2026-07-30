@@ -915,7 +915,7 @@ def _render_khui_manual_match(data):
     # LUÔN hiện (kể cả 0 clip mồ côi) để admin khớp tay được cả ca clip DÍNH NHẦM đơn khác
     # (vd đơn đóng bị nhập tay ra mã -R2) — gõ tay mã clip + mã đơn hoàn là khớp.
     with st.expander(f"🔧 Khớp tay clip khui ↔ đơn hoàn — {len(_orphans)} clip mồ côi · {len(_saved_matches)} đã khớp tay",
-                     expanded=bool(_orphans or _saved_matches)):
+                     expanded=False):
         st.caption("Dùng khi NV quay khui nhập MÃ SAI/THIẾU trên Dohana (clip có thật nhưng mã không khớp vận đơn). "
                    "Nối tay xong: đơn HẾT báo 'chưa quay', clip hết 'mồ côi'. Lưu vĩnh viễn trên kho.")
         if _orphans:
@@ -1052,10 +1052,10 @@ def _render_week_video_audit(data):
         matrix_rows = _fallback_matrix_rows(data or {})
     rows = matrix_rows or (data or {}).get("video_audit") or []
     if not rows:
-        with st.expander("🔎 Tổng hợp mã thiếu/dư Đóng hàng — 0 dòng", expanded=True):
+        with st.expander("🔎 Tổng hợp mã thiếu/dư Đóng hàng — 0 dòng", expanded=False):
             st.info("Chưa có dòng lệch để đối chiếu mã.")
         return
-    with st.expander(f"🔎 Tổng hợp mã thiếu/dư Đóng hàng — {len(rows)} dòng", expanded=True):
+    with st.expander(f"🔎 Tổng hợp mã thiếu/dư Đóng hàng — {len(rows)} dòng", expanded=False):
         st.markdown("**Bảng tổng hợp — không tự khớp mã**")
         st.caption(
             "Chỉ tổng hợp, không tự khớp. Mọi thao tác chuyển loại thực hiện tại A4; "
@@ -8895,8 +8895,8 @@ def _render_daily():
         return
 
     # ===== Tổng hợp 7 NGÀY QUA (số cố định sau ngày — query lại là ra số cuối) =====
-    # Mở sẵn để bảng tổng hợp và bảng khớp mã bên dưới không bị người dùng bỏ sót.
-    with st.expander("📅 Tổng hợp 30 ngày (1 tháng) — đóng gói & đơn hoàn", expanded=True):
+    # THU GỌN mặc định (user muốn tự mở khi cần) — tiêu đề vẫn đủ để biết có gì bên trong.
+    with st.expander("📅 Tổng hợp 30 ngày (1 tháng) — đóng gói & đơn hoàn", expanded=False):
         if st.button("🔄 Cập nhật video Dohana ngay", key="week_dohana_refresh_btn",
                      help="Dùng khi app đóng hàng đã có clip mới nhưng bảng 30 ngày vẫn báo thiếu; nút này xoá cache và hút lại Dohana."):
             load_week_summary.clear()
@@ -8927,7 +8927,7 @@ def _render_daily():
             _clip_sugg = list(_wk.get("clip_don_suggestions") or [])
             _clip_dbg = _wk.get("clip_don_debug") or {}
             with st.expander(f"🤝 Gợi ý khớp clip khui ↔ đơn hoàn (cùng đơn gốc + cùng ngày) — {len(_clip_sugg)} cặp",
-                             expanded=bool(_clip_sugg)):
+                             expanded=False):
                 if not _clip_sugg:
                     st.info(f"Chưa gợi được cặp (chỉ gợi khi CÙNG đơn gốc VÀ CÙNG ngày). Chẩn đoán: "
                             f"{_clip_dbg.get('orphans', 0)} clip mồ côi · "
