@@ -599,6 +599,15 @@ def _recon_rows(rows, start=0, clip_on=True):
                              f'🏪 {_e(_short_store_label(r.get("gian_hang")))}</div>'
                              f'<span style="color:#2563eb;font-weight:800">{_rsn}</span>')
                 sapo_td = ' style="background:#eff6ff"'
+            elif not _oc:
+                # KHÔNG có đơn gốc = không tìm thấy phiếu trả Sapo nào mang vận đơn này (quét 60 ngày).
+                # Khác hẳn "có phiếu nhưng chưa nhập kho" — nói rõ để admin không đi tìm phiếu không tồn tại.
+                _rsn = ('✗ KHÔNG tìm thấy phiếu trả Sapo khớp vận đơn này '
+                        '— chưa tạo phiếu trả / quay nhầm mã / quay nhầm mục (đóng↔khui) / quay trùng')
+                sapo_cell = (f'<div style="font-size:.82em;color:#475569">'
+                             f'🏪 {_e(_short_store_label(r.get("gian_hang")))}</div>'
+                             f'<span style="color:#dc2626;font-weight:800">{_rsn}</span>')
+                sapo_td = ' style="background:#fef2f2"'
             else:
                 _rsn = '✗ CHƯA bấm nhập kho trên Sapo — kiểm tra: quên nhập kho / quay nhầm mục / quay trùng'
                 sapo_cell = (f'{_ocb}<div style="font-size:.82em;color:#475569">'
