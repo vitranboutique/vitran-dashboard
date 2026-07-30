@@ -573,8 +573,19 @@ def _recon_rows(rows, start=0, clip_on=True):
                 f'⚠️ ĐÃ nhập kho dù clip có tag “{_e(str(_tag))}” — kiểm tra/gỡ nhập kho nếu hàng hư hỏng, thiếu, sai hoặc tráo.</div>'
                 if _tag else '')
             _return_main = str(r.get("return_code") or r.get("track_return") or r.get("order_code") or "?")
+            # Nhiều mã trả (khách trả nhiều đơn trong 1 KIỆN) nối bằng " · " → mono-code nowrap
+            # làm TRÀN CỘT. Tách ra, mỗi mã vẫn liền (nowrap) nhưng cho XUỐNG DÒNG giữa các mã.
+            _rm_codes = [c.strip() for c in _return_main.split(" · ") if c.strip()]
+            if len(_rm_codes) > 1:
+                _return_html = (
+                    '<div style="white-space:normal;line-height:1.5">'
+                    + ' · '.join(f'<b class="mono-code">{_e(c)}</b>' for c in _rm_codes)
+                    + f' <span style="color:#64748b;font-size:.8em;font-weight:700">'
+                    f'({len(_rm_codes)} mã trả)</span></div>')
+            else:
+                _return_html = f'<b class="mono-code">{_e(_return_main)}</b>'
             _order_sub = str(r.get("order_code") or "").strip()
-            sapo_cell = (f'<b class="mono-code">{_e(_return_main)}</b>'
+            sapo_cell = (_return_html
                          + (f'<div style="font-size:.78em;color:#64748b">Đơn gốc: {_e(_order_sub)}</div>'
                             if _order_sub and _order_sub != _return_main else '')
                          + (f'<div style="font-size:.82em;color:#6b7280">{" · ".join(_ss)}</div>'
