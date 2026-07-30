@@ -1475,14 +1475,18 @@ def _enrich_daily(rep, dvr, inb):
                 for _ck in ("clip", "clip_code", "clip_time", "clip_dur", "clip_tag",
                             "clip_tag_id", "clip_altcode", "clip_link", "clip_staff"):
                     _g[_ck] = _d.get(_ck)
+    from collections import Counter as _Counter
     _merged = [_kien[_kk] for _kk in _korder]
     for _g in _merged:
         _unique_ret_codes = list(dict.fromkeys(_g.get("_ret_codes") or []))
-        _unique_skus = list(dict.fromkeys(_g.get("_skus") or []))
         if _unique_ret_codes:
             _g["return_code"] = " · ".join(_unique_ret_codes)
-        if _unique_skus:
-            _g["sku"] = " · ".join(_unique_skus)
+        # KHÔNG ép duy nhất SKU: mỗi mã trả là SP THẬT; gộp trùng (dedup) làm MẤT số lượng
+        # (7 mã trả cùng SKU bị co còn 1). Cùng SKU ở nhiều mã trả → hiện "×N" cho đúng số lượng.
+        _sku_list = [s for s in (_g.get("_skus") or []) if s]
+        if _sku_list:
+            _sku_ct = _Counter(_sku_list)
+            _g["sku"] = " · ".join((f"{_s} ×{_n}" if _n > 1 else _s) for _s, _n in _sku_ct.items())
     nk["detail"] = _merged
     nk["so_kien"] = len(_merged)
     if nk.get("clip_available"):
