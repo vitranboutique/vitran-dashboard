@@ -1570,6 +1570,9 @@ def _enrich_daily(rep, dvr, inb):
         _mm_codes = {_ascii_code(x["code"]) for x in _mm_matched}
         nk["clip_unmatched_detail"] = [u for u in nk.get("clip_unmatched_detail", [])
                                        if _ascii_code(u.get("code")) not in _mm_codes]
+        # Lọc cả danh sách MÃ THÔ (daily_report fallback về list này khi detail rỗng → nếu không lọc vẫn cảnh báo)
+        nk["clip_unmatched"] = [c for c in (nk.get("clip_unmatched") or [])
+                                if _ascii_code(c) not in _mm_codes]
     if dvr is not None:
         vset = set((dvr.get("codes") or {}).keys())
         dgc = rep.get("dong_goi_codes") or set()

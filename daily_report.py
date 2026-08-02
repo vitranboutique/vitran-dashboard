@@ -796,7 +796,11 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
     clip_co = nk.get("clip_co", 0)
     clip_total = nk.get("clip_total", 0)
     unmatched = nk.get("clip_unmatched") or []
-    unmatched_detail = nk.get("clip_unmatched_detail") or [{"code": c} for c in unmatched]
+    # Dùng detail nếu KEY có (kể cả rỗng do đã khớp tay hết) — chỉ fallback khi thiếu key,
+    # nếu không list rỗng bị coi là falsy → fallback về mã thô → cảnh báo lại clip đã khớp.
+    unmatched_detail = nk.get("clip_unmatched_detail")
+    if unmatched_detail is None:
+        unmatched_detail = [{"code": c} for c in unmatched]
     unmatched_tagged = [u for u in unmatched_detail if _tag_label(u.get("tag"), u.get("tag_id"))]
     unmatched_plain = [u for u in unmatched_detail if not _tag_label(u.get("tag"), u.get("tag_id"))]
     _manual_matched = nk.get("clip_manual_matched") or []   # clip admin đã khớp tay → báo "đã khớp", không cảnh báo
