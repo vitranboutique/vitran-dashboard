@@ -1098,7 +1098,8 @@ def _render_week_video_audit(data):
         with st.expander("🔎 Tổng hợp mã thiếu/dư Đóng hàng — 0 dòng", expanded=False):
             st.info("Chưa có dòng lệch để đối chiếu mã.")
         return
-    with st.expander(f"🔎 Tổng hợp mã thiếu/dư Đóng hàng — {len(rows)} dòng", expanded=False):
+    with st.expander(f"🔎 Tổng hợp mã thiếu/dư Đóng hàng — {len(rows)} dòng",
+                     expanded=bool(st.session_state.get("_focus_lech"))):   # bấm số lệch ở băng → mở sẵn
         st.markdown("**Bảng tổng hợp — không tự khớp mã**")
         st.caption(
             "Chỉ tổng hợp, không tự khớp. Mọi thao tác chuyển loại thực hiện tại A4; "
@@ -1824,6 +1825,13 @@ if _is_owner:                               # chủ shop + zenzen197: thêm tran
         _opts.append(PAGE_COSTS)
 if (st.query_params.get("page_ttkh") or st.query_params.get("ttkh_phone")) and PAGE_TTKH in _opts:
     _default = PAGE_TTKH
+# Bấm 1 việc trong băng "Việc cần làm" → mở TAB MỚI ở đúng trang cần xử lý (link ?goto=...).
+_goto = str(st.query_params.get("goto") or "").strip().lower()
+if _goto == "lech" and PAGE_OPS in _opts:
+    _default = PAGE_OPS
+    st.session_state["_focus_lech"] = True   # mở sẵn mục "Tổng hợp mã thiếu/dư" khi vào từ băng
+elif _goto == "pick" and PAGE_PRODUCTION in _opts:
+    _default = PAGE_PRODUCTION
 _sees_production = PAGE_PRODUCTION in _opts   # kho/admin: hiện cảnh báo việc SX/cắt tay mọi tab
 _idx = _opts.index(_default) if _default in _opts else 0
 _page = st.sidebar.radio("Trang", _opts, index=_idx)
@@ -5707,25 +5715,28 @@ def _render_todo_banner(is_cskh, is_kho, is_boss):
         _snap = _todo_counts_snapshot()
     except Exception:
         return
-    _items = []
+    _items = []  # (icon, text_html, color, goto_slug)
     if is_cskh or is_boss:
         _n = _snap.get("lech")
         if _n:
-            _items.append(("🔺", f"<b>{_n}</b> số lệch cần kiểm ở Báo cáo cuối ngày", "#b45309"))
+            _items.append(("🔺", f"<b>{_n}</b> số lệch cần kiểm ở Báo cáo cuối ngày", "#b45309", "lech"))
     if is_kho or is_boss:
         _n = _snap.get("pick")
         if _n:
-            _items.append(("📦", f"<b>{_n}</b> đơn cần nhặt (phiếu nhặt hàng)", "#1d4ed8"))
+            _items.append(("📦", f"<b>{_n}</b> đơn cần nhặt (phiếu nhặt hàng)", "#1d4ed8", "pick"))
     if not _items:
         return
     _who = str(CUR_USER or "").split("@")[0].replace("<", "").replace(">", "")
-    _rows = "".join(f'<div style="padding:3px 0;color:{c};font-size:1.02em">{ic} {txt}</div>'
-                    for ic, txt, c in _items)
+    _rows = "".join(
+        f'<a href="?goto={g}" target="_blank" rel="noopener" '
+        f'style="display:block;padding:4px 0;color:{c};font-size:1.02em;text-decoration:none">'
+        f'{ic} {txt} <span style="font-size:.78em;opacity:.65;text-decoration:underline">↗ mở tab xử lý</span></a>'
+        for ic, txt, c, g in _items)
     st.markdown(
         '<div style="border:2px solid #f59e0b;background:#fffbeb;border-radius:10px;'
         'padding:10px 14px;margin:0 0 12px 0">'
         f'<div style="font-weight:900;color:#92400e;margin-bottom:4px">📋 Việc cần làm của {_who} '
-        '<span style="font-weight:600;color:#a16207;font-size:.82em">— tự mất khi làm xong</span></div>'
+        '<span style="font-weight:600;color:#a16207;font-size:.82em">— bấm để mở tab xử lý · tự mất khi xong</span></div>'
         f'{_rows}</div>', unsafe_allow_html=True)
 
 
@@ -9007,7 +9018,8 @@ def _render_daily():
 
     # ===== Tổng hợp 7 NGÀY QUA (số cố định sau ngày — query lại là ra số cuối) =====
     # THU GỌN mặc định (user muốn tự mở khi cần) — tiêu đề vẫn đủ để biết có gì bên trong.
-    with st.expander("📅 Tổng hợp 30 ngày (1 tháng) — đóng gói & đơn hoàn", expanded=False):
+    with st.expander("📅 Tổng hợp 30 ngày (1 tháng) — đóng gói & đơn hoàn",
+                     expanded=bool(st.session_state.get("_focus_lech"))):   # bấm số lệch ở băng → mở sẵn
         if st.button("🔄 Cập nhật video Dohana ngay", key="week_dohana_refresh_btn",
                      help="Dùng khi app đóng hàng đã có clip mới nhưng bảng 30 ngày vẫn báo thiếu; nút này xoá cache và hút lại Dohana."):
             load_week_summary.clear()
