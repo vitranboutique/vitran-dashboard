@@ -1525,10 +1525,13 @@ def _enrich_daily(rep, dvr, inb):
                 _manual_by_clip[_cn] = {"dg": _rn, "raw": _mm.get("ret_raw") or _mm.get("ret")}
     except Exception:
         _manual_by_clip = {}
-    for u in nk.get("clip_unmatched_detail", []):
+    _mm_matched = []   # clip đã khớp tay → loại khỏi cảnh báo tóm tắt, báo riêng "đã khớp tay"
+    for u in list(nk.get("clip_unmatched_detail", [])):
         info = _abc.get(u.get("code")) or {}   # đơn hoàn CHƯA nhập kho (vd tráo hàng giữ tranh chấp)
         _mm = _manual_by_clip.get(_ascii_code(u.get("code")))
         if _mm:
+            _mm_matched.append({"code": u.get("code"), "don_goc": _mm["raw"],
+                                "dur": u.get("dur"), "recorded": u.get("recorded")})
             # tìm dòng ĐÃ nhập kho của đơn gốc này còn TRỐNG clip → gắn clip vào, bỏ dòng mồ côi
             _tgt = next((row for row in recon
                          if row.get("has_sapo") and not row.get("has_clip")
@@ -1560,6 +1563,13 @@ def _enrich_daily(rep, dvr, inb):
             "clip_manual_dg": (_mm["raw"] if _mm else ""),
         })
     nk["recon_rows"] = recon
+    # Clip ĐÃ KHỚP TAY: loại khỏi 'clip_unmatched_detail' để bộ đếm/cảnh báo TÓM TẮT (khớp/lệch,
+    # "video chưa nhập Sapo") KHÔNG báo động nữa; xuất riêng để báo cáo hiện rõ "đã khớp tay".
+    nk["clip_manual_matched"] = _mm_matched
+    if _mm_matched:
+        _mm_codes = {_ascii_code(x["code"]) for x in _mm_matched}
+        nk["clip_unmatched_detail"] = [u for u in nk.get("clip_unmatched_detail", [])
+                                       if _ascii_code(u.get("code")) not in _mm_codes]
     if dvr is not None:
         vset = set((dvr.get("codes") or {}).keys())
         dgc = rep.get("dong_goi_codes") or set()

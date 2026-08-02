@@ -799,6 +799,7 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
     unmatched_detail = nk.get("clip_unmatched_detail") or [{"code": c} for c in unmatched]
     unmatched_tagged = [u for u in unmatched_detail if _tag_label(u.get("tag"), u.get("tag_id"))]
     unmatched_plain = [u for u in unmatched_detail if not _tag_label(u.get("tag"), u.get("tag_id"))]
+    _manual_matched = nk.get("clip_manual_matched") or []   # clip admin đã khớp tay → báo "đã khớp", không cảnh báo
     clip_on = nk.get("clip_available", False)
     n_ret = len(nk_detail)
     _shop_orders = OrderedDict()
@@ -821,7 +822,8 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
     # Bảng đối chiếu (clip ↔ nhận hàng trả) + tóm tắt cột trống
     recon = nk.get("recon_rows") or []
     _cm = sum(1 for r in recon if not r.get("has_clip"))
-    _sm = sum(1 for r in recon if (not r.get("has_sapo")) and (not _tag_label(r.get("clip_tag"), r.get("clip_tag_id"))))
+    _sm = sum(1 for r in recon if (not r.get("has_sapo")) and (not _tag_label(r.get("clip_tag"), r.get("clip_tag_id")))
+              and (not r.get("clip_manual_dg")))   # clip đã khớp tay (nhập kho ngày khác) không tính "chưa nhập kho"
     _tag_hold = sum(1 for r in recon if (not r.get("has_sapo")) and _tag_label(r.get("clip_tag"), r.get("clip_tag_id")))
     _tag_imported = sum(1 for r in recon if r.get("has_sapo") and _tag_label(r.get("clip_tag"), r.get("clip_tag_id")))
     _tag_hold_txt = f' · {_tag_hold} tag giữ xử lý' if _tag_hold else ''
@@ -842,6 +844,23 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
         clip_note = ('' if ok or not n_ret else
                      f'<div style="font-size:.85em;color:#dc2626;margin-top:.46em;font-weight:700">'
                      f'⚠️ Có {n_ret - clip_co} đơn hoàn THIẾU clip khui hàng — cần kiểm tra/khiếu nại ngay.</div>')
+        _manual_note = ''
+        if _manual_matched:
+            _mm_lines = ""
+            for m in _manual_matched:
+                _mt = []
+                if m.get("dur"):
+                    _mt.append(f'{m["dur"]}s')
+                if m.get("recorded"):
+                    _mt.append(str(m["recorded"]))
+                _mts = (' <span style="color:#1e40af">· ' + _e(" · ".join(_mt)) + '</span>') if _mt else ""
+                _mm_lines += (f'<div class="wc" style="margin-top:2px;color:#1d4ed8">'
+                              f'{_e(str(m.get("code", "")))} → đơn gốc {_e(str(m.get("don_goc", "")))}{_mts}</div>')
+            _manual_note = (
+                '<div class="warn" style="background:#eff6ff;border:1px solid #3b82f6;border-left:5px solid #3b82f6">'
+                f'<div class="wh" style="color:#1d4ed8">🔗 {len(_manual_matched)} clip ĐÃ KHỚP TAY → nối vào đơn gốc (admin xác nhận)</div>'
+                '<div class="wb" style="color:#1e40af">Các clip này đã nối đúng đơn hoàn — KHÔNG còn tính là lệch / chưa nhập kho.</div>'
+                + _mm_lines + '</div>')
         if unmatched_detail:
             def _clip_lines(items, color="#b45309"):
                 _lines = ""
@@ -877,13 +896,15 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
                     '<b>(2)</b> quay nhầm mục (đóng hàng ↔ khui hàng), <b>(3)</b> quay trùng.</div>'
                     + _clip_lines(unmatched_plain)
                     + '</div>')
-            warn_box = _lines
+            warn_box = _lines + _manual_note
         else:
-            warn_box = ''
+            warn_box = _manual_note
 
     clip_kpi_v = clip_total if clip_on else "—"
     if clip_on:
         _clip_parts = [f"khớp {clip_co}"]
+        if _manual_matched:
+            _clip_parts.append(f"khớp tay {len(_manual_matched)}")
         if unmatched_tagged:
             _clip_parts.append(f"tag giữ {len(unmatched_tagged)}")
         if _tag_imported:
