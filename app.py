@@ -5682,9 +5682,57 @@ def _render_shared_sync_sidebar():
             _os.kill(_os.getpid(), _sig.SIGKILL)
 
 
+# ── Băng "VIỆC CẦN LÀM" theo từng NV — hiện ở MỌI trang, tự ĐẾM theo số liệu thật (READ-ONLY).
+#    NV KHÔNG sửa được số; làm xong thật → số về 0 → việc TỰ MẤT. Cache 90s để không chậm mọi trang.
+@st.cache_data(ttl=90, show_spinner=False)
+def _todo_counts_snapshot():
+    snap = {"pick": None, "lech": None}
+    try:
+        snap["pick"] = int((load_picking() or {}).get("total") or 0)
+    except Exception:
+        pass
+    try:
+        _wk_td = load_week_summary()
+        snap["lech"] = len(_wk_td.get("video_audit_matrix") or _wk_td.get("video_audit") or [])
+    except Exception:
+        pass
+    return snap
+
+
+def _render_todo_banner(is_cskh, is_kho, is_boss):
+    """Chỉ NV đó thấy việc của mình. Việc nào count>0 mới hiện; hết việc → băng biến mất."""
+    if not (is_cskh or is_kho or is_boss):
+        return
+    try:
+        _snap = _todo_counts_snapshot()
+    except Exception:
+        return
+    _items = []
+    if is_cskh or is_boss:
+        _n = _snap.get("lech")
+        if _n:
+            _items.append(("🔺", f"<b>{_n}</b> số lệch cần kiểm ở Báo cáo cuối ngày", "#b45309"))
+    if is_kho or is_boss:
+        _n = _snap.get("pick")
+        if _n:
+            _items.append(("📦", f"<b>{_n}</b> đơn cần nhặt (phiếu nhặt hàng)", "#1d4ed8"))
+    if not _items:
+        return
+    _who = str(CUR_USER or "").split("@")[0].replace("<", "").replace(">", "")
+    _rows = "".join(f'<div style="padding:3px 0;color:{c};font-size:1.02em">{ic} {txt}</div>'
+                    for ic, txt, c in _items)
+    st.markdown(
+        '<div style="border:2px solid #f59e0b;background:#fffbeb;border-radius:10px;'
+        'padding:10px 14px;margin:0 0 12px 0">'
+        f'<div style="font-weight:900;color:#92400e;margin-bottom:4px">📋 Việc cần làm của {_who} '
+        '<span style="font-weight:600;color:#a16207;font-size:.82em">— tự mất khi làm xong</span></div>'
+        f'{_rows}</div>', unsafe_allow_html=True)
+
+
 # Popup cảnh báo cố định — hiện ở MỌI trang (kho/admin thêm việc SX/cắt tay)
 render_alert_popup(_sees_production)
 _render_shared_sync_sidebar()
+_render_todo_banner(_is_cskh, _cc_emp == "kho", bool(_is_owner or _cc_role == "admin"))
 
 if _page == PAGE_PRODUCTION:
     _render_production_page()
