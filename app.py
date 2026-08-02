@@ -604,8 +604,12 @@ def _week_table_html(data):
                 continue
             if lech > 0:      # THIẾU (đỏ) — bên này thiếu video, cần quay bù / chuyển tới
                 out[k] = _gap_badge("▼", "#b91c1c", "#fee2e2", "thiếu", abs(lech), tip)
-            else:             # DƯ (xanh) — bên này dư video, có thể quay lộn sang → chuyển đi
-                out[k] = _gap_badge("▲", "#1d4ed8", "#dbeafe", "dư", abs(lech), tip)
+            else:             # "DƯ" gói/giao NHIỀU hơn soạn hôm nay = ĐƠN XÓT HÔM TRƯỚC (cũ) hôm nay mới
+                              # gói/giao — BÌNH THƯỜNG, không phải lỗi. Đổi nhãn "dư"→"đơn cũ" cho khỏi nhầm.
+                out[k] = _gap_badge("▲", "#6d5b1f", "#fef3c7", "đơn cũ", abs(lech),
+                    "Gói/giao NHIỀU hơn soạn hôm nay = ĐƠN XÓT HÔM TRƯỚC (soạn ngày trước, hôm nay mới "
+                    "gói/giao) — chính là 'Cần gửi: Cũ' trên A4. Bình thường, KHÔNG phải lỗi. "
+                    "(Hiếm: video quay lộn sang đơn khác.)")
 
         # HOÀN: dùng đúng số Ô VIDEO TRỐNG của từng dòng đối chiếu A4; không suy từ phép trừ 2 tổng.
         _blank_video = _video_audit_num(d.get("return_blank_video_count"))
