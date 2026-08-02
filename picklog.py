@@ -874,6 +874,27 @@ def save_returns_received(day_iso: str, data: dict) -> bool:
     return _write_gist_file(_RETURNS_RECEIVED_FILE, {"days": days})
 
 
+# ── CHỐT SỐ báo cáo cuối ngày: lưu snapshot HTML + chỉ số mỗi ngày (file riêng theo ngày).
+#    Sau 24h ngày cũ đọc bản chốt này, KHÔNG tính lại → số không đổi. Chủ shop mới chốt-lại được.
+def _daily_frozen_fname(day_iso: str) -> str:
+    return f"vitran_frozen_{day_iso}.json"
+
+
+def read_daily_frozen(day_iso: str):
+    """Bản báo cáo ĐÃ CHỐT của 1 ngày: {html, h, sig, at, groups} hoặc None."""
+    if not day_iso:
+        return None
+    v = _read_gist_file(_daily_frozen_fname(str(day_iso)))
+    return v if isinstance(v, dict) else None
+
+
+def save_daily_frozen(day_iso: str, payload: dict) -> bool:
+    """Lưu (đè) bản chốt của 1 ngày. payload gồm html/h/sig/at (+groups để tra mã đơn)."""
+    if not (day_iso and isinstance(payload, dict) and payload.get("html")):
+        return False
+    return _write_gist_file(_daily_frozen_fname(str(day_iso)), payload)
+
+
 def read_video_type_overrides() -> list:
     """[{date, code, type}] — sửa loại clip trong app mà không thay dữ liệu gốc Dohana."""
     d = _read_gist_file(_VIDEO_TYPE_OVERRIDE_FILE)

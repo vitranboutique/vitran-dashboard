@@ -8873,6 +8873,16 @@ if _page == PAGE_TTKH:
 
 
 # ════════════════ TRANG BÁO CÁO CUỐI NGÀY (A4) ════════════════
+def _daily_sig(rep, dvr):
+    """Chữ ký các con số báo cáo (bỏ mốc giờ) → đổi số mới lưu bản chốt. Ổn định trong TTL cache."""
+    import hashlib as _hl
+    try:
+        return _hl.md5(json.dumps([rep, dvr], sort_keys=True, default=str,
+                                  ensure_ascii=False).encode("utf-8")).hexdigest()
+    except Exception:
+        return ""
+
+
 def _render_daily():
     st.title("📄 Báo cáo vận hành cuối ngày")
     st.caption("Tổng hợp tự động từ Sapo + Dohana — bấm **In báo cáo A4** trong khung để in/lưu PDF.  "
@@ -9326,6 +9336,18 @@ def _render_daily():
     # ---- Xem báo cáo NGÀY CŨ (query lại Sapo + Dohana theo ngày, số đã cố định) ----
     if not _is_today:
         _iso = _pick_date.isoformat()
+        _frozen = picklog.read_daily_frozen(_iso) if picklog.configured() else None
+        # ĐÃ CHỐT (sau 24h) → LUÔN đọc bản chốt, KHÔNG tính lại → số không đổi.
+        # CHỈ chủ shop mới "Chốt lại" (tính đè) — người khác chỉ xem.
+        if _frozen and _frozen.get("html"):
+            _c1, _c2 = st.columns([5, 1])
+            _c1.success(f"🔒 Ngày **{_disp}** — SỐ ĐÃ CHỐT lúc **{_frozen.get('at', '?')}**, không thay đổi.")
+            _relock = bool(_is_owner and _c2.button("🔓 Chốt lại", key=f"relock_{_iso}",
+                                                    help="Chủ shop: tính lại số hiện tại rồi chốt đè."))
+            if not _relock:
+                components.html(_frozen["html"], height=int(_frozen.get("h") or 2200), scrolling=True)
+                return
+        # Chưa có bản chốt (ngày cũ trước khi bật) HOẶC chủ shop bấm "Chốt lại" → tính số hiện tại rồi CHỐT.
         try:
             _rep = load_daily_report_archive(_iso)
         except Exception as e:
@@ -9339,12 +9361,20 @@ def _render_daily():
             _apply_picklog_soan_to_daily(_rep, _ps.get("rows") or [], _dvr, _ps.get("dup_orders") or 0)
         _inject_huy_soan(_rep, _iso)
         _inject_conxot_video(_rep)
-        st.info(f"🗂️ Báo cáo ngày **{_disp}** — query lại từ Sapo, **video lấy từ kho đã lưu** "
-                "(Dohana chỉ giữ ~30 ngày; kho Gist lưu bền cả năm). Ngày trước khi bật lưu có thể trống video.")
-        _nrep = f"{_disp} (xem lại)"
+        _now_hm = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%H:%M %d/%m/%Y")
+        st.warning(f"🗂️ Ngày **{_disp}** chưa có bản chốt — hiện **SỐ HIỆN TẠI**, đóng băng từ giờ "
+                   "(không phải số gốc lúc in). Video lấy từ kho đã lưu.")
+        _nrep = f"{_disp} · chốt {_now_hm}"
         _nrec = len((_rep.get("nhap_kho") or {}).get("recon_rows") or [])
         _h = (1 + max(1, (_nrec + 14) // 15 + 1)) * 1400 + 150   # 1 trang 1 + N tờ trang 2 (~15 đơn/tờ, tờ đầu 10) — nới cho chữ TO trên màn hình
-        components.html(daily_report.report_html(_rep, _dvr, _nrep, sign_on=_sign_on), height=_h, scrolling=True)
+        _html = daily_report.report_html(_rep, _dvr, _nrep, sign_on=_sign_on)
+        components.html(_html, height=_h, scrolling=True)
+        if picklog.configured():   # CHỐT (đóng băng) → lần sau xem không đổi
+            try:
+                picklog.save_daily_frozen(_iso, {"html": _html, "h": _h,
+                                                 "sig": _daily_sig(_rep, _dvr), "at": _nrep})
+            except Exception:
+                pass
         return
 
     # ---- Hôm nay (trực tiếp) ----
@@ -9372,14 +9402,26 @@ def _render_daily():
     _nrec = len((_rep.get("nhap_kho") or {}).get("recon_rows") or [])
     _h = (1 + max(1, (_nrec + 14) // 15 + 1)) * 1400 + 150   # 1 trang 1 + N tờ trang 2 (~15 đơn/tờ, tờ đầu 10) — nới cho chữ TO trên màn hình
     # Còn xót lại LUÔN rút gọn 5 đơn/ĐVVC cho dễ đọc (collapse_xot mặc định True)
+    _html = ""
     try:
-        components.html(daily_report.report_html(_rep, _dvr, _nrep, sign_on=_sign_on),
-                        height=_h, scrolling=True)
+        _html = daily_report.report_html(_rep, _dvr, _nrep, sign_on=_sign_on)
+        components.html(_html, height=_h, scrolling=True)
     except Exception as _e:   # báo cáo A4 lỗi KHÔNG được làm BIẾN MẤT mục đơn trả hàng bên dưới
         import traceback as _tb
         st.error(f"❌ Lỗi dựng báo cáo A4 (mục đơn trả hàng bên dưới vẫn hiển thị): `{_e}`")
         with st.expander("Chi tiết lỗi (gửi Claude để sửa)"):
             st.code(_tb.format_exc())
+    # CHỐT SỐ hôm nay: ĐỔI SỐ MỚI LƯU (bản cuối trong ngày = số cuối ngày; sau 24h ngày cũ đọc bản này).
+    # Dùng session_state để KHÔNG ghi Gist thừa mỗi lần rerun khi số chưa đổi.
+    if _html and picklog.configured():
+        try:
+            _iso_t = _today_iso_vn()
+            _sig = _daily_sig(_rep, _dvr)
+            if st.session_state.get(f"_frozen_sig_{_iso_t}") != _sig:
+                if picklog.save_daily_frozen(_iso_t, {"html": _html, "h": _h, "sig": _sig, "at": _nrep}):
+                    st.session_state[f"_frozen_sig_{_iso_t}"] = _sig
+        except Exception:
+            pass
     return   # HẾT trang "Báo cáo cuối ngày" — mục đơn trả hàng đã TÁCH sang TRANG RIÊNG (sidebar)
 
 
