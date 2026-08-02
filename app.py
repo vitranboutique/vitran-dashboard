@@ -1825,16 +1825,13 @@ if _is_owner:                               # chủ shop + zenzen197: thêm tran
         _opts.append(PAGE_COSTS)
 if (st.query_params.get("page_ttkh") or st.query_params.get("ttkh_phone")) and PAGE_TTKH in _opts:
     _default = PAGE_TTKH
-# Bấm 1 việc trong băng "Việc cần làm" → mở TAB MỚI ở đúng trang cần xử lý (link ?goto=...).
-_goto = str(st.query_params.get("goto") or "").strip().lower()
-if _goto == "lech" and PAGE_OPS in _opts:
-    _default = PAGE_OPS
-    st.session_state["_focus_lech"] = True   # mở sẵn mục "Tổng hợp mã thiếu/dư" khi vào từ băng
-elif _goto == "pick" and PAGE_PRODUCTION in _opts:
-    _default = PAGE_PRODUCTION
 _sees_production = PAGE_PRODUCTION in _opts   # kho/admin: hiện cảnh báo việc SX/cắt tay mọi tab
 _idx = _opts.index(_default) if _default in _opts else 0
-_page = st.sidebar.radio("Trang", _opts, index=_idx)
+# Radio có KEY để băng "Việc cần làm" đổi trang bằng code TRONG CÙNG PHIÊN (st.rerun, KHÔNG reload
+# → KHÔNG mất đăng nhập). Init về _default khi chưa có / role đổi; sau đó giữ lựa chọn của user.
+if st.session_state.get("main_nav") not in _opts:
+    st.session_state["main_nav"] = _default
+_page = st.sidebar.radio("Trang", _opts, key="main_nav")
 st.sidebar.divider()
 
 # ── Trang CHẤM CÔNG (tách riêng — không cần dữ liệu Sapo) ──
@@ -5707,43 +5704,54 @@ def _todo_counts_snapshot():
     return snap
 
 
-def _render_todo_banner(is_cskh, is_kho, is_boss):
-    """Chỉ NV đó thấy việc của mình. Việc nào count>0 mới hiện; hết việc → băng biến mất."""
+def _render_todo_banner(is_cskh, is_kho, is_boss, opts):
+    """Chỉ NV đó thấy việc của mình. Việc nào count>0 mới hiện; hết việc → băng biến mất.
+    Bấm việc → đổi trang+tab TRONG CÙNG PHIÊN (st.rerun, KHÔNG reload → GIỮ đăng nhập) tới đúng chỗ."""
     if not (is_cskh or is_kho or is_boss):
         return
     try:
         _snap = _todo_counts_snapshot()
     except Exception:
         return
-    _items = []  # (icon, text_html, color, goto_slug)
+    # (icon, nhãn, trang đích, tab-vận-hành|None, mở-mục-số-lệch)
+    _items = []
     if is_cskh or is_boss:
         _n = _snap.get("lech")
         if _n:
-            _items.append(("🔺", f"<b>{_n}</b> số lệch cần kiểm ở Báo cáo cuối ngày", "#b45309", "lech"))
+            _items.append(("🔺", f"{_n} số lệch cần kiểm ở Báo cáo cuối ngày",
+                           PAGE_OPS, "📄 Báo cáo cuối ngày", True))
     if is_kho or is_boss:
         _n = _snap.get("pick")
         if _n:
-            _items.append(("📦", f"<b>{_n}</b> đơn cần nhặt (phiếu nhặt hàng)", "#1d4ed8", "pick"))
+            _items.append(("📦", f"{_n} đơn cần nhặt — vào tab Phiếu nhặt hàng",
+                           PAGE_OPS, "🧾 Phiếu nhặt hàng", False))
+    _items = [it for it in _items if it[2] in opts]
     if not _items:
         return
     _who = str(CUR_USER or "").split("@")[0].replace("<", "").replace(">", "")
-    _rows = "".join(
-        f'<a href="?goto={g}" target="_blank" rel="noopener" '
-        f'style="display:block;padding:4px 0;color:{c};font-size:1.02em;text-decoration:none">'
-        f'{ic} {txt} <span style="font-size:.78em;opacity:.65;text-decoration:underline">↗ mở tab xử lý</span></a>'
-        for ic, txt, c, g in _items)
     st.markdown(
-        '<div style="border:2px solid #f59e0b;background:#fffbeb;border-radius:10px;'
-        'padding:10px 14px;margin:0 0 12px 0">'
-        f'<div style="font-weight:900;color:#92400e;margin-bottom:4px">📋 Việc cần làm của {_who} '
-        '<span style="font-weight:600;color:#a16207;font-size:.82em">— bấm để mở tab xử lý · tự mất khi xong</span></div>'
-        f'{_rows}</div>', unsafe_allow_html=True)
+        '<div style="border:2px solid #f59e0b;border-bottom:none;background:#fffbeb;'
+        'border-radius:9px 9px 0 0;padding:8px 14px 6px;margin:0">'
+        f'<span style="font-weight:900;color:#92400e">📋 Việc cần làm của {_who}</span> '
+        '<span style="font-weight:600;color:#a16207;font-size:.82em">— bấm để tới chỗ xử lý · tự mất khi xong</span>'
+        '</div>', unsafe_allow_html=True)
+    # on_click callback: set state TRƯỚC khi rerun (không được sửa key widget sau khi radio đã tạo
+    # trong cùng run) → đổi trang/tab an toàn, cùng phiên, giữ đăng nhập.
+    def _go_task(pg, tab, focus):
+        st.session_state["main_nav"] = pg
+        if tab:
+            st.session_state["ops_active_tab"] = tab
+        st.session_state["_focus_lech"] = bool(focus)
+    for _ic, _lbl, _pg, _tab, _focus in _items:
+        st.button(f"{_ic}  {_lbl}", key=f"todo_btn_{_pg}_{_tab}", use_container_width=True,
+                  on_click=_go_task, args=(_pg, _tab, _focus))
+    st.markdown('<div style="margin-bottom:12px"></div>', unsafe_allow_html=True)
 
 
 # Popup cảnh báo cố định — hiện ở MỌI trang (kho/admin thêm việc SX/cắt tay)
 render_alert_popup(_sees_production)
 _render_shared_sync_sidebar()
-_render_todo_banner(_is_cskh, _cc_emp == "kho", bool(_is_owner or _cc_role == "admin"))
+_render_todo_banner(_is_cskh, _cc_emp == "kho", bool(_is_owner or _cc_role == "admin"), _opts)
 
 if _page == PAGE_PRODUCTION:
     _render_production_page()
