@@ -912,11 +912,54 @@ def _render_khui_manual_match(data):
     Expander RIÊNG (không lồng trong bảng khớp) → luôn xem/sửa được kể cả khi không còn dòng lệch."""
     _orphans = (data or {}).get("khui_orphan_clips") or []
     _saved_matches = (data or {}).get("khui_manual_matches") or []
-    # LUÔN hiện (kể cả 0 clip mồ côi) để admin khớp tay được cả ca clip DÍNH NHẦM đơn khác
-    # (vd đơn đóng bị nhập tay ra mã -R2) — gõ tay mã clip + mã đơn hoàn là khớp.
-    with st.expander(f"🔧 Khớp tay clip khui ↔ đơn hoàn — {len(_orphans)} clip mồ côi · {len(_saved_matches)} đã khớp tay",
+    _clip_sugg = list((data or {}).get("clip_don_suggestions") or [])
+    _clip_dbg = (data or {}).get("clip_don_debug") or {}
+    # GỘP 1 MỤC: gợi ý tự động (cùng đơn gốc + cùng ngày) + gõ tay + lịch sử — cùng 1 việc khớp clip↔đơn.
+    with st.expander(f"🔧 Khớp clip khui ↔ đơn hoàn — {len(_orphans)} mồ côi · {len(_clip_sugg)} gợi ý · {len(_saved_matches)} đã khớp",
                      expanded=False):
-        st.caption("Dùng khi NV quay khui nhập MÃ SAI/THIẾU trên Dohana (clip có thật nhưng mã không khớp vận đơn). "
+        # ── (1) GỢI Ý tự động: CÙNG đơn gốc + CÙNG ngày → tick rồi Xác nhận ──
+        st.markdown("**🤝 Gợi ý khớp (cùng đơn gốc + cùng ngày) — tick rồi Xác nhận:**")
+        if not _clip_sugg:
+            st.info(f"Chưa gợi được cặp. Chẩn đoán: {_clip_dbg.get('orphans', 0)} clip mồ côi · "
+                    f"{_clip_dbg.get('orphans_co_dongoc', 0)} clip có đơn gốc · "
+                    f"{_clip_dbg.get('don_thieu_clip', 0)} đơn báo thiếu clip. Dùng form gõ tay bên dưới.")
+        else:
+            _sg_all_key = "sugg_clip_don_all_30d"
+
+            def _toggle_all_sugg_clip_don():
+                _v = bool(st.session_state.get(_sg_all_key))
+                for _i in range(len(_clip_sugg)):
+                    st.session_state[f"sugg_clip_don_{_i}"] = _v
+            st.checkbox(f"☑️ Chọn tất cả {len(_clip_sugg)} cặp", key=_sg_all_key,
+                        on_change=_toggle_all_sugg_clip_don)
+            _picked_sugg = []
+            with st.form("sugg_clip_don_form_30d"):
+                for _i, _s in enumerate(_clip_sugg):
+                    _dur = f" · {int(_s['clip_dur'])}s" if _s.get("clip_dur") else ""
+                    if st.checkbox(
+                        f"**{_i + 1}.** clip `{_s.get('clip_code')}` ({_s.get('clip_date', '')}{_dur}) "
+                        f"↔ đơn hoàn **{_s.get('ret_display', '')}** · đơn gốc `{_s.get('don_goc', '')}`",
+                        key=f"sugg_clip_don_{_i}",
+                    ):
+                        _picked_sugg.append(_s)
+                _sg_submit = st.form_submit_button("✅ Xác nhận khớp các cặp đã chọn", use_container_width=True)
+            if _sg_submit:
+                if not _picked_sugg:
+                    st.warning("Chưa tick cặp nào.")
+                else:
+                    _ok = 0
+                    for _s in _picked_sugg:
+                        if picklog.add_khui_manual_match({
+                            "ret": _s.get("don_goc_norm"), "clip": _s.get("clip_norm"),
+                            "ret_raw": _s.get("don_goc"), "clip_raw": _s.get("clip_code"),
+                        }):
+                            _ok += 1
+                    st.cache_data.clear()
+                    st.success(f"Đã xác nhận khớp {_ok}/{len(_picked_sugg)} cặp. Đang tải lại…")
+                    st.rerun()
+        st.divider()
+        # ── (2) GÕ TAY khi Dohana nhập mã sai/thiếu (vd clip "3Q" vs vận đơn "GYXVRB3Q") ──
+        st.caption("Gõ tay khi NV quay khui nhập MÃ SAI/THIẾU trên Dohana (clip có thật nhưng mã không khớp vận đơn). "
                    "Nối tay xong: đơn HẾT báo 'chưa quay', clip hết 'mồ côi'. Lưu vĩnh viễn trên kho.")
         if _orphans:
             st.markdown(f"**Clip khui CHƯA khớp đơn nào ({len(_orphans)}) — kể cả mã ngắn/lạ (bị ẩn ở cột Dư):**")
@@ -1756,6 +1799,9 @@ _cc_emp = cham_cong.emp_of(CUR_USER)
 _OWNER_USERS = {"vitran2291@gmail.com", "zenzen197@gmail.com"}
 _is_owner = str(CUR_USER).strip().lower() in _OWNER_USERS
 _is_cskh = (_cc_role == "nv" and _cc_emp != "kho")   # CSKH: KHÔNG thấy tab Đơn trả & Phiếu nhặt
+# Quyền KHỚP MÃ clip↔đơn / chuyển sai vị trí: CHỈ nhân viên KHO + quản lý (admin) + chủ shop.
+# CSKH chỉ XEM báo cáo, KHÔNG được thao tác khớp/sửa mã.
+_can_match_clip = bool(_is_owner or _cc_role == "admin" or _cc_emp == "kho")
 # PAGE_OPS (Vận hành) gồm: Báo cáo cuối ngày (mặc định) + Đơn trả + Phiếu nhặt (tab ngang).
 if _cc_role == "nv":
     _rolepg = [PAGE_PRODUCTION] if _cc_emp == "kho" else [PAGE_TTKH]
@@ -8941,57 +8987,12 @@ def _render_daily():
                 _d["ghi_chu"] = _notes.get(_d.get("iso"), "")
             st.markdown(_week_table_html(_wk), unsafe_allow_html=True)
             _render_week_video_audit(_wk)
-            _clip_sugg = list(_wk.get("clip_don_suggestions") or [])
-            _clip_dbg = _wk.get("clip_don_debug") or {}
-            with st.expander(f"🤝 Gợi ý khớp clip khui ↔ đơn hoàn (cùng đơn gốc + cùng ngày) — {len(_clip_sugg)} cặp",
-                             expanded=False):
-                if not _clip_sugg:
-                    st.info(f"Chưa gợi được cặp (chỉ gợi khi CÙNG đơn gốc VÀ CÙNG ngày). Chẩn đoán: "
-                            f"{_clip_dbg.get('orphans', 0)} clip mồ côi · "
-                            f"{_clip_dbg.get('orphans_co_dongoc', 0)} clip có đơn gốc · "
-                            f"{_clip_dbg.get('don_thieu_clip', 0)} đơn báo thiếu clip. "
-                            "Đơn cần khớp không hiện → dùng form 🔧 Khớp tay bên dưới.")
-                if _clip_sugg:
-                    st.caption("Đơn hoàn ĐÃ nhập kho nhưng báo THIẾU clip, và clip mồ côi CÙNG ĐƠN GỐC + CÙNG NGÀY "
-                               "(vd đơn đóng bị nhập tay ra mã -R2). Tick cặp đúng rồi bấm Xác nhận khớp — "
-                               "clip sẽ gắn sang đơn đã nhập kho.")
-                    _sg_all_key = "sugg_clip_don_all_30d"
-
-                    def _toggle_all_sugg_clip_don():
-                        _v = bool(st.session_state.get(_sg_all_key))
-                        for _i in range(len(_clip_sugg)):
-                            st.session_state[f"sugg_clip_don_{_i}"] = _v
-                    st.checkbox(f"☑️ Chọn tất cả {len(_clip_sugg)} cặp", key=_sg_all_key,
-                                on_change=_toggle_all_sugg_clip_don)
-                    _picked_sugg = []
-                    with st.form("sugg_clip_don_form_30d"):
-                        for _i, _s in enumerate(_clip_sugg):
-                            _dur = f" · {int(_s['clip_dur'])}s" if _s.get("clip_dur") else ""
-                            if st.checkbox(
-                                f"**{_i + 1}.** clip `{_s.get('clip_code')}` ({_s.get('clip_date','')}{_dur}) "
-                                f"↔ đơn hoàn **{_s.get('ret_display','')}** · đơn gốc `{_s.get('don_goc','')}`",
-                                key=f"sugg_clip_don_{_i}",
-                            ):
-                                _picked_sugg.append(_s)
-                        _sg_submit = st.form_submit_button("✅ Xác nhận khớp các cặp đã chọn",
-                                                           use_container_width=True)
-                    if _sg_submit:
-                        if not _picked_sugg:
-                            st.warning("Chưa tick cặp nào.")
-                        else:
-                            _ok = 0
-                            for _s in _picked_sugg:
-                                if picklog.add_khui_manual_match({
-                                    "ret": _s.get("don_goc_norm"), "clip": _s.get("clip_norm"),
-                                    "ret_raw": _s.get("don_goc"), "clip_raw": _s.get("clip_code"),
-                                }):
-                                    _ok += 1
-                            st.cache_data.clear()
-                            st.success(f"Đã xác nhận khớp {_ok}/{len(_picked_sugg)} cặp. Đang tải lại…")
-                            st.rerun()
-            _render_khui_manual_match(_wk)
+            # Khớp clip↔đơn (gợi ý + gõ tay + lịch sử) đã GỘP trong _render_khui_manual_match.
+            # CHỈ kho / quản lý / chủ shop mới thao tác khớp mã; CSKH KHÔNG có quyền.
+            if _can_match_clip:
+                _render_khui_manual_match(_wk)
             _bulk_package_moves = list(_wk.get("wrong_side_video_suggestions") or [])
-            if _bulk_package_moves:
+            if _can_match_clip and _bulk_package_moves:   # chuyển vị trí = khớp mã → chỉ kho/quản lý
                 with st.expander(
                     f"↪️ Mã có thể chuyển Khui hoàn → Đóng hàng — {len(_bulk_package_moves)} mã",
                     expanded=False,
@@ -9074,7 +9075,7 @@ def _render_daily():
                 st.caption("✅ Không có mã Đóng thiếu nào trùng video Khui hoàn cùng ngày trong 30 ngày.")
 
             _bulk_return_moves = list(_wk.get("extra_package_video_suggestions") or [])
-            if _bulk_return_moves:
+            if _can_match_clip and _bulk_return_moves:   # chuyển vị trí = khớp mã → chỉ kho/quản lý
                 with st.expander(
                     f"↪️ Mã có thể chuyển Đóng hàng → Khui hoàn — {len(_bulk_return_moves)} mã",
                     expanded=False,
@@ -9161,7 +9162,7 @@ def _render_daily():
                     or (str(x.get("source_type") or "") == "inbound" and str(x.get("type") or "") == "package")
                 )
             ]
-            if _bulk_undo_moves:
+            if _can_match_clip and _bulk_undo_moves:   # hoàn tác chuyển = khớp mã → chỉ kho/quản lý
                 with st.expander(
                     f"↩️ Hoàn tác chuyển sai — {len(_bulk_undo_moves)} mã",
                     expanded=False,
