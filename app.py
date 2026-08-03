@@ -569,8 +569,9 @@ def _week_table_html(data):
             out["vid_dong"] = _gap_badge("▼", "#b91c1c", "#fee2e2", "thiếu", pkg_missing,
                                          "Số thiếu đã chốt từ bảng khớp mã, không dùng chênh lệch thô Soạn - Video.")
         elif pkg_extra:
-            out["vid_dong"] = _gap_badge("▲", "#1d4ed8", "#dbeafe", "dư", pkg_extra,
-                                         "Số dư đã chốt từ bảng khớp mã, không dùng chênh lệch thô Soạn - Video.")
+            out["vid_dong"] = _gap_badge("▲", "#6d5b1f", "#fef3c7", "đơn cũ", pkg_extra,
+                                         "Đóng gói NHIỀU hơn soạn hôm nay = đơn XÓT HÔM TRƯỚC (soạn ngày trước, "
+                                         "hôm nay mới gói) — bình thường, không phải lỗi.")
 
     def _lech_badge(d):
         """Trả badge lệch cho từng cột cần đối chiếu (▼ thiếu · ▲ dư):
