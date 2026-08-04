@@ -248,31 +248,53 @@ def _norm_hhmm(s):
     return f"{h:02d}:{mm:02d}" if (0 <= h <= 23 and 0 <= mm <= 59) else None
 
 
-def set_check(emp, day_iso, in_hhmm=None, out_hhmm=None):
-    """Admin sửa/điền giờ Vào–Ra cho 1 ngày (khi NV quên chấm). Trống = xóa giờ đó. Trả (ok, msg)."""
+def set_check(emp, day_iso, in_hhmm=None, out_hhmm=None, note="", by="chủ shop"):
+    """Admin đặt/sửa giờ Vào–Ra cho 1 ngày (khi NV quên chấm). Trả (ok, msg).
+    Mỗi field: **None = GIỮ NGUYÊN** (không đụng) · **"" = XÓA** · **"HH:MM"(-ish) = ĐẶT**.
+    Giờ do CHỦ SHOP đặt/sửa (KHÁC giờ NV tự chấm) được ĐÁNH DẤU `in_edit`/`out_edit`
+    (ai bổ sung + lúc nào + ghi chú + giá trị cũ) → hiện ngay tại giờ đó để ĐỐI CHIẾU."""
     import picklog, requests, json
-    in_v, out_v = _norm_hhmm(in_hhmm), _norm_hhmm(out_hhmm)
+
+    def _norm_or_keep(v):
+        return "KEEP" if v is None else _norm_hhmm(v)   # None=giữ; ""=xóa; None-trả-về=gõ sai
+    in_v, out_v = _norm_or_keep(in_hhmm), _norm_or_keep(out_hhmm)
     if in_v is None:
         return False, "❌ Giờ VÀO chưa hiểu — gõ kiểu: 9:30 · 9h30 · 0930."
     if out_v is None:
         return False, "❌ Giờ RA chưa hiểu — gõ kiểu: 18:30 · 18h30 · 1830."
-    if in_v and out_v and _m(out_v) <= _m(in_v):
-        return False, "❌ Giờ RA phải sau giờ VÀO."
     y, mth = int(day_iso[:4]), int(day_iso[5:7])
     fname = _cong_file(y, mth)
     try:
         d = picklog._read_gist_file(fname) or {"records": {}}
         recs = d.setdefault("records", {}).setdefault(emp, {})
         day = recs.setdefault(day_iso, {})
-        if in_v:
-            day["in"] = in_v
-        else:
-            day.pop("in", None); day.pop("in_selfie", None)
-        if out_v:
-            day["out"] = out_v
-        else:
-            day.pop("out", None); day.pop("out_selfie", None)
-        if not day:                       # ngày trống hẳn → bỏ bản ghi
+        old_in, old_out = day.get("in"), day.get("out")
+        eff_in = old_in if in_v == "KEEP" else (in_v or None)     # giờ VÀO sau khi áp
+        eff_out = old_out if out_v == "KEEP" else (out_v or None)  # giờ RA sau khi áp
+        if eff_in and eff_out and _m(eff_out) <= _m(eff_in):
+            return False, "❌ Giờ RA phải sau giờ VÀO."
+        _stamp = _vn_now().strftime("%H:%M %d/%m/%Y")
+        _note = str(note or "").strip()[:200]
+
+        def _apply(kind, val, old):
+            k = kind                       # 'in' | 'out'
+            if val == "KEEP":
+                return
+            if val:                        # ĐẶT giờ
+                day[k] = val
+                if val != old:             # chủ shop bổ sung/sửa → ĐÁNH DẤU tại giờ đó
+                    _e = {"by": by, "at": _stamp}
+                    if _note:
+                        _e["note"] = _note
+                    if old:
+                        _e["old"] = old
+                    day[k + "_edit"] = _e
+            else:                          # XÓA giờ
+                day.pop(k, None); day.pop(k + "_selfie", None); day.pop(k + "_edit", None)
+
+        _apply("in", in_v, old_in)
+        _apply("out", out_v, old_out)
+        if not day:                        # ngày trống hẳn → bỏ bản ghi
             recs.pop(day_iso, None)
         gid = picklog._resolve_gid()
         if not gid:
@@ -281,7 +303,8 @@ def set_check(emp, day_iso, in_hhmm=None, out_hhmm=None):
         r = requests.patch(f"{picklog._API}/gists/{gid}", headers=picklog._hdr(),
                            data=json.dumps(body), timeout=30)
         if r.status_code == 200:
-            return True, f"✅ Đã lưu ngày {day_iso}: Vào {in_v or '—'} · Ra {out_v or '—'}"
+            _m2 = " · đã ghi chú bổ sung tay" if _note else ""
+            return True, f"✅ Đã lưu {day_iso}: Vào {day.get('in', '—')} · Ra {day.get('out', '—')}{_m2}"
         return False, f"❌ Lỗi lưu (mã {r.status_code}). Thử lại."
     except Exception as e:
         return False, f"❌ Lỗi: {str(e)[:60]}"
@@ -305,6 +328,24 @@ def month_records(emp, y, mth):
     return {day: (v.get("in"), v.get("out")) for day, v in recs.items()}
 
 
+def month_edits(emp, y, mth):
+    """{ngày_iso: {'in_edit':..,'out_edit':..}} — giờ do CHỦ SHOP bổ sung tay (để đối chiếu).
+    KHÔNG có key = giờ đó NV tự chấm (hệ thống ghi tự động)."""
+    import picklog
+    d = picklog._read_gist_file(_cong_file(y, mth)) or {}
+    recs = (d.get("records") or {}).get(emp, {})
+    out = {}
+    for day, v in recs.items():
+        e = {}
+        if v.get("in_edit"):
+            e["in_edit"] = v["in_edit"]
+        if v.get("out_edit"):
+            e["out_edit"] = v["out_edit"]
+        if e:
+            out[day] = e
+    return out
+
+
 def month_selfies(emp, y, mth):
     """{ngày_iso: {in,out,in_selfie,out_selfie}} — cho quản lý duyệt."""
     import picklog
@@ -320,6 +361,12 @@ def salary_report(emp_key, y, mth, upto=None):
     rep["ot_hours"] = _ot_h
     rep["ot_pay"] = _ot_pay
     rep["tong"] = rep["tong"] + _ot_pay
+    _ed = month_edits(emp_key, y, mth)            # dấu "chủ shop bổ sung tay" gắn vào từng dòng
+    for r in rep["rows"]:
+        _m2 = _ed.get(r["ngay"])
+        if _m2:
+            r["in_edit"] = _m2.get("in_edit")
+            r["out_edit"] = _m2.get("out_edit")
     return rep
 
 

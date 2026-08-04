@@ -220,6 +220,23 @@ def _salary_block(emp, y, mth, upto, own=False):
     _end = _dt.date(y + (mth == 12), (mth % 12) + 1, 1) - _dt.timedelta(days=1)
     if upto and upto < _end:
         _end = upto
+    import html as _html
+    _mnotes = []                       # gom các giờ chủ shop bổ sung tay → liệt kê dưới bảng để đối chiếu
+
+    def _cell(_t, _ed, _lbl, _kind):
+        """Ô giờ Vào/Ra — nếu do chủ shop bổ sung tay thì gắn ✏️ + 'bổ sung tay' ngay tại đó."""
+        _t = _t or "—"
+        if not _ed:
+            return _t
+        _at, _no, _old = _ed.get("at", ""), _ed.get("note", ""), _ed.get("old", "")
+        _tip = _html.escape(f"Chủ shop bổ sung lúc {_at}"
+                            + (f" — {_no}" if _no else "")
+                            + (f" (giờ cũ {_old})" if _old else ""))
+        _mnotes.append((_lbl, _kind, _t, _no, _at, _old))
+        _vis = _html.escape(_no[:22]) if _no else "bổ sung tay"
+        return (f'{_t} <span title="{_tip}" style="color:#7c3aed">✏️</span>'
+                f'<br><span title="{_tip}" style="color:#7c3aed;font-size:.72em">{_vis}</span>')
+
     _trs = ""
     while _d <= _end:
         _thu = _THU[_d.weekday()]
@@ -240,8 +257,8 @@ def _salary_block(emp, y, mth, upto, own=False):
         _gio = round(_w / 60, 2)
         _ci = _r.get("vao")
         _co = _r.get("ra")
-        _vao = _ci or "—"
-        _ra = _co or "—"
+        _vao = _cell(_ci, _r.get("in_edit"), _lbl, "VÀO")
+        _ra = _cell(_co, _r.get("out_edit"), _lbl, "RA")
         if bool(_ci) != bool(_co):                  # CÓ vào HOẶC ra, THIẾU 1 lần → cần bằng chứng
             _bg, _fg, _tt, _th = "#f5f3ff", "#6d28d9", "⚠️ THIẾU CHẤM — cần bằng chứng", "?"
         elif _w <= 0:                               # KHÔNG chấm gì (vào & ra đều trống) → NGHỈ thật
@@ -262,6 +279,20 @@ def _salary_block(emp, y, mth, upto, own=False):
         '<tr style="background:#1e293b;color:#fff"><th>Ngày</th><th>Vào</th><th>Ra</th>'
         '<th>Giờ</th><th>Thiếu</th><th>Trạng thái</th><th style="text-align:right">Lương ngày</th>'
         f'</tr></thead><tbody>{_trs}</tbody></table></div>', unsafe_allow_html=True)
+    if _mnotes:                        # bảng đối chiếu: giờ do chủ shop bổ sung tay (KHÔNG phải NV tự chấm)
+        _items = "".join(
+            f'<li><b>{_l}</b> · {_k} <b>{_html.escape(_t)}</b>'
+            + (f' — {_html.escape(_no)}' if _no else '')
+            + (f' <span style="color:#94a3b8">(giờ cũ {_html.escape(_old)} · {_html.escape(_at)})</span>'
+               if _old else f' <span style="color:#94a3b8">({_html.escape(_at)})</span>')
+            + '</li>'
+            for (_l, _k, _t, _no, _at, _old) in _mnotes)
+        st.markdown(
+            '<div style="margin-top:8px;padding:8px 12px;background:#faf5ff;border-left:3px solid #7c3aed;'
+            'border-radius:6px;font-size:.82em;color:#5b21b6">'
+            '✏️ <b>Giờ chủ shop bổ sung tay</b> — KHÔNG phải NV tự chấm, để đối chiếu:'
+            f'<ul style="margin:4px 0 0 0;padding-left:18px">{_items}</ul></div>',
+            unsafe_allow_html=True)
 
 
 def render_my_salary(username):
@@ -338,14 +369,17 @@ def render_admin():
         flash = st.session_state.pop("edit_flash", None)
         if flash:
             st.success(flash)
-        st.caption("Khi NV **quên chấm**: chọn NV + ngày, chỉnh **giờ Vào/Ra** (bấm vào ô, có sẵn dấu **:**). "
-                   "Tick **Nghỉ** để xóa cả 2 giờ. Lưu xong bảng lương tự tính lại.")
+        st.caption("Sửa khi NV **quên chấm** / cần **bổ sung tay**. Chỉ **tick giờ cần sửa** — giờ KHÔNG tick sẽ **giữ nguyên**. "
+                   "**Ghi chú** sẽ hiện ngay tại giờ đó (dấu ✏️ *bổ sung tay*) để đối chiếu, vì đây KHÔNG phải NV tự chấm.")
         e = st.selectbox("Nhân viên", list(CC.EMPLOYEES),
                          format_func=lambda k: CC.EMPLOYEES[k]["name"], key="edit_emp")
-        d = st.date_input("Ngày", value=_vn_now().date(), key="edit_day")
+        d = st.date_input("Ngày", value=_vn_now().date(), key="edit_day", format="DD/MM/YYYY")
         day_iso = d.isoformat()
         cur = CC.day_record(e, day_iso)
-        st.info(f"Ngày **{day_iso}** hiện tại — Vào **{cur.get('in') or '—'}** · Ra **{cur.get('out') or '—'}**")
+        _ie, _oe = cur.get("in_edit"), cur.get("out_edit")
+        st.info(f"Ngày **{day_iso}** hiện tại — Vào **{cur.get('in') or '—'}**{' ✏️' if _ie else ''} · "
+                f"Ra **{cur.get('out') or '—'}**{' ✏️' if _oe else ''}"
+                + ("  ·  ✏️ = giờ đã bổ sung tay" if (_ie or _oe) else ""))
 
         def _to_time(hhmm, dft):
             try:
@@ -356,16 +390,27 @@ def render_admin():
         dft_in = _to_time(CC.EMPLOYEES[e]["start"], dtime(9, 30))
         dft_out = _to_time(CC.EMPLOYEES[e]["end"], dtime(18, 30))
         cc1, cc2 = st.columns(2)
+        upd_in = cc1.checkbox("✏️ Sửa giờ VÀO", key=f"edit_uin_{e}_{day_iso}")
         tin = cc1.time_input("Giờ VÀO", value=_to_time(cur.get("in"), dft_in),
-                             step=timedelta(minutes=1), key=f"edit_in_{e}_{day_iso}")
+                             step=timedelta(minutes=1), disabled=not upd_in, key=f"edit_in_{e}_{day_iso}")
+        upd_out = cc2.checkbox("✏️ Sửa giờ RA", key=f"edit_uout_{e}_{day_iso}")
         tout = cc2.time_input("Giờ RA", value=_to_time(cur.get("out"), dft_out),
-                              step=timedelta(minutes=1), key=f"edit_out_{e}_{day_iso}")
+                              step=timedelta(minutes=1), disabled=not upd_out, key=f"edit_out_{e}_{day_iso}")
+        note = st.text_input("Ghi chú bổ sung (vì sao — hiện ngay tại giờ để đối chiếu)",
+                             placeholder="vd: về muộn gói hàng · NV báo quên chấm ra",
+                             key=f"edit_note_{e}_{day_iso}")
         off = st.checkbox("🚫 Đánh NGHỈ ngày này (xóa cả 2 giờ)", key=f"edit_off_{e}_{day_iso}")
         if st.button("💾 Lưu giờ công", type="primary", key="edit_save"):
             if off:
-                ok, msg = CC.set_check(e, day_iso, "", "")
+                ok, msg = CC.set_check(e, day_iso, "", "", note=note)
+            elif not (upd_in or upd_out):
+                ok, msg = False, "⚠️ Chưa chọn giờ nào để sửa — tick '✏️ Sửa giờ VÀO' hoặc '✏️ Sửa giờ RA'."
             else:
-                ok, msg = CC.set_check(e, day_iso, tin.strftime("%H:%M"), tout.strftime("%H:%M"))
+                ok, msg = CC.set_check(
+                    e, day_iso,
+                    tin.strftime("%H:%M") if upd_in else None,     # None = giữ nguyên
+                    tout.strftime("%H:%M") if upd_out else None,
+                    note=note)
             if ok:
                 st.session_state["edit_flash"] = msg     # báo "đã lưu" hiện SAU khi rerun
                 st.rerun()
