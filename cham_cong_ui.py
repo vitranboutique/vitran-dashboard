@@ -369,11 +369,45 @@ def render_admin():
         flash = st.session_state.pop("edit_flash", None)
         if flash:
             st.success(flash)
+        # ⚠️ DỌN giờ lỡ ghi vào NGÀY CHƯA TỚI (chọn nhầm ngày tương lai) — quét tháng này + tháng sau
+        _today = _vn_now().date()
+        _fut, _months = [], {(_today.year, _today.month),
+                             (_today.year + (_today.month == 12), (_today.month % 12) + 1)}
+        for _yy, _mm in _months:
+            for _emp in CC.EMPLOYEES:
+                for _day, (_ci, _co) in CC.month_records(_emp, _yy, _mm).items():
+                    try:
+                        _dd = datetime.fromisoformat(_day).date()
+                    except Exception:
+                        continue
+                    if _dd > _today and (_ci or _co):
+                        _fut.append((_emp, _day, _ci, _co))
+        if _fut:
+            st.error("⚠️ **Có giờ ghi vào NGÀY CHƯA TỚI** (lỡ chọn ngày tương lai) — xóa cho sạch:")
+            for _emp, _day, _ci, _co in sorted(_fut, key=lambda x: (x[1], x[0])):
+                _ca, _cb = st.columns([4, 1])
+                _ca.markdown(f"**{CC.EMPLOYEES[_emp]['name']}** · {_day} · "
+                             f"Vào **{_ci or '—'}** · Ra **{_co or '—'}**")
+                if _cb.button("🗑️ Xóa", key=f"delfut_{_emp}_{_day}", use_container_width=True):
+                    ok, msg = CC.set_check(_emp, _day, "", "")
+                    if ok:
+                        st.session_state["edit_flash"] = f"🗑️ Đã xóa giờ nhầm ngày {_day} — {CC.EMPLOYEES[_emp]['name']}."
+                        st.rerun()
+                    else:
+                        st.error(msg)
+            st.divider()
         st.caption("Sửa khi NV **quên chấm** / cần **bổ sung tay**. Chỉ **tick giờ cần sửa** — giờ KHÔNG tick sẽ **giữ nguyên**. "
                    "**Ghi chú** sẽ hiện ngay tại giờ đó (dấu ✏️ *bổ sung tay*) để đối chiếu, vì đây KHÔNG phải NV tự chấm.")
         e = st.selectbox("Nhân viên", list(CC.EMPLOYEES),
                          format_func=lambda k: CC.EMPLOYEES[k]["name"], key="edit_emp")
-        d = st.date_input("Ngày", value=_vn_now().date(), key="edit_day", format="DD/MM/YYYY")
+        _dv = st.session_state.get("edit_day")   # nếu lỡ còn giữ ngày tương lai → kéo về hôm nay (tránh lỗi max_value)
+        try:
+            if _dv and _dv > _today:
+                st.session_state["edit_day"] = _today
+        except Exception:
+            pass
+        d = st.date_input("Ngày", value=_vn_now().date(), key="edit_day",
+                          max_value=_today, format="DD/MM/YYYY")   # KHÔNG cho chọn ngày chưa tới
         day_iso = d.isoformat()
         cur = CC.day_record(e, day_iso)
         _ie, _oe = cur.get("in_edit"), cur.get("out_edit")

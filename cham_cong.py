@@ -262,6 +262,14 @@ def set_check(emp, day_iso, in_hhmm=None, out_hhmm=None, note="", by="chủ shop
         return False, "❌ Giờ VÀO chưa hiểu — gõ kiểu: 9:30 · 9h30 · 0930."
     if out_v is None:
         return False, "❌ Giờ RA chưa hiểu — gõ kiểu: 18:30 · 18h30 · 1830."
+    # KHÔNG cho ĐẶT giờ vào ngày CHƯA TỚI (tương lai); vẫn cho XÓA ("" cả 2) để dọn bản ghi nhầm
+    _setting = (in_v not in ("KEEP", "")) or (out_v not in ("KEEP", ""))
+    if _setting:
+        try:
+            if date.fromisoformat(day_iso) > _vn_now().date():
+                return False, "❌ Không đặt giờ cho ngày CHƯA TỚI (ngày tương lai)."
+        except Exception:
+            pass
     y, mth = int(day_iso[:4]), int(day_iso[5:7])
     fname = _cong_file(y, mth)
     try:
