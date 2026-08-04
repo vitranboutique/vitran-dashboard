@@ -49,7 +49,7 @@ _DOHANA_RETENTION = 25  # file video bị xóa sau khoảng 25 ngày; mã trong 
 # an toàn & nhẹ; KHÔNG reload dohana/picklog (giữ throttle/cache, tránh 429).
 import importlib as _importlib
 _RELOAD_ERR = ""
-for _m in (L, daily_report, input_costs_ui):
+for _m in (L, daily_report, input_costs_ui, cham_cong, cham_cong_ui):
     try:
         _importlib.reload(_m)
     except Exception as _e:            # lỗi hiếm; giữ bản đang chạy, ghi lại để hiện cảnh báo
