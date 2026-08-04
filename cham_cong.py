@@ -3,7 +3,7 @@ cham_cong.py — Chấm công + TÍNH LƯƠNG tự động cho NV VITRAN (giai �
 
 Quy tắc lương (user chốt 01/07):
 - 2 NV, 30.000đ/GIỜ, 8h/ngày (đã trừ nghỉ trưa 1h). Làm T2–T7, NGHỈ Chủ nhật.
-  · Kho : ca 09:30 → 18:30   · CSKH: ca 10:00 → 19:00
+  · Kho : ca 08:30 → 17:30 (từ 13/7; trước đó 09:30→18:30)   · CSKH: ca 10:00 → 19:00
 - Chấm 2 lần/ngày: Vào (sáng) + Ra (chiều); nghỉ trưa 1h TỰ TRỪ.
 - Về ĐÚNG giờ tan (về sớm bị trừ). Mỗi ngày hụt TỔNG (đi trễ + về sớm) ≤5' → bỏ qua; quá 5' → trừ giờ thực. KHÔNG tăng ca (>8h vẫn 8h).
 - Thiếu ≥4h/ngày → MẤT suất ăn ngày đó. Nghỉ hẳn 1 ngày → 0 lương + 0 ăn (dù có phép hay không).
@@ -22,9 +22,25 @@ CHUYEN_CAN = 500_000
 CHUYEN_CAN_MAX_MISS = 480   # cả tháng nghỉ ≤8h thì được chuyên cần
 
 EMPLOYEES = {
-    "kho":  {"name": "NV Kho",  "start": "09:30", "end": "18:30"},
+    # start/end = ca HIỆN TẠI. "history" = lịch sử đổi ca (mốc 'from' mới nhất ≤ ngày → dùng ca đó)
+    # để KHÔNG tính sai ngày cũ. NV Kho đổi giờ chính thức 08:30→17:30 từ 2026-07-13 (trước: 09:30→18:30).
+    "kho":  {"name": "NV Kho",  "start": "08:30", "end": "17:30",
+             "history": [{"from": "2026-07-13", "start": "08:30", "end": "17:30"},
+                         {"from": "2000-01-01", "start": "09:30", "end": "18:30"}]},
     "cskh": {"name": "NV CSKH", "start": "10:00", "end": "19:00"},
 }
+
+
+def _shift_for(emp_key, d):
+    """(start, end) của NV cho NGÀY d theo lịch sử đổi ca (mốc 'from' mới nhất ≤ d)."""
+    e = EMPLOYEES.get(emp_key) or {}
+    _hist = e.get("history")
+    if _hist and d is not None:
+        _iso = d.isoformat() if hasattr(d, "isoformat") else str(d)
+        for h in sorted(_hist, key=lambda x: str(x.get("from", "")), reverse=True):
+            if _iso >= str(h.get("from", "")):
+                return h.get("start", e.get("start")), h.get("end", e.get("end"))
+    return e.get("start"), e.get("end")
 
 
 def _m(hhmm):
@@ -74,7 +90,8 @@ def calc_month(emp_key, records, y, mth, upto=None):
     rows, tot_sal, tot_meal, tot_miss, days_w, days_off = [], 0, 0, 0, 0, 0
     for d in working_days(y, mth, upto):
         ci, co = records.get(d.isoformat(), (None, None))
-        r = calc_day(e["start"], e["end"], ci, co)
+        _st, _en = _shift_for(emp_key, d)   # ca theo NGÀY (đổi giờ 13/7) → không tính sai ngày cũ
+        r = calc_day(_st, _en, ci, co)
         tot_sal += r["salary"]; tot_meal += r["meal"]; tot_miss += r["missed"]
         if r["worked"] > 0:
             days_w += 1
