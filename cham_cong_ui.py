@@ -167,7 +167,35 @@ def _month_picker(key):
     return y, mth, upto
 
 
-def _salary_block(emp, y, mth, upto):
+def _ot_request_ui(emp, y, mth):
+    """NV xin phép tăng ca (ẨN trong expander) — ghi ngày + giờ + lý do → gửi chủ shop DUYỆT (×1.5)."""
+    _mine = CC.list_ot(emp, y, mth)
+    _n_pend = sum(1 for r in _mine if r.get("status") == "pending")
+    _ttl = "⏱️ Xin phép tăng ca (×1.5 lương giờ)" + (f" — {_n_pend} đơn chờ duyệt" if _n_pend else "")
+    with st.expander(_ttl, expanded=False):
+        st.caption("Ghi NGÀY + SỐ GIỜ tăng ca → gửi. Chủ shop **duyệt** mới tính (×1.5); chưa duyệt = chưa tính.")
+        _today = CC._vn_now().date()
+        with st.form(f"ot_form_{emp}", clear_on_submit=True):
+            c1, c2 = st.columns(2)
+            _od = c1.date_input("Ngày tăng ca", value=_today, max_value=_today, format="DD/MM/YYYY")
+            _oh = c2.number_input("Số giờ tăng ca", min_value=0.5, max_value=12.0, step=0.5, value=1.0)
+            _on = st.text_input("Lý do (ngắn gọn)", placeholder="vd: gói hàng khuyến mãi tối")
+            if st.form_submit_button("📨 Gửi xin duyệt", use_container_width=True):
+                if CC.add_ot_request(emp, _od.isoformat(), _oh, _on):
+                    st.success("Đã gửi. Chờ chủ shop duyệt.")
+                    st.rerun()
+                else:
+                    st.error("Gửi lỗi — kiểm tra lại (số giờ 0.5–12).")
+        if _mine:
+            st.markdown("**Đơn tăng ca tháng này:**")
+            _icon = {"approved": "✅ đã duyệt", "rejected": "❌ từ chối", "pending": "⏳ chờ duyệt"}
+            for r in _mine:
+                _s = _icon.get(r.get("status"), r.get("status"))
+                _no = f" — _{r['note']}_" if r.get("note") else ""
+                st.markdown(f"- **{r['date']}** · {r['hours']}h · {_s}{_no}")
+
+
+def _salary_block(emp, y, mth, upto, own=False):
     rep = CC.salary_report(emp, y, mth, upto)
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Ngày công", rep["days_worked"])
@@ -176,8 +204,13 @@ def _salary_block(emp, y, mth, upto):
               help="Chỉ tính ngày làm T2–T7 (nghỉ hẳn + thiếu giờ). ĐÃ loại Chủ nhật.")
     m4.metric("Chuyên cần", _vnd(rep["chuyen_can"]))
     st.markdown(f"#### 🧾 TỔNG LƯƠNG {mth}/{y}: **{_vnd(rep['tong'])}**")
-    st.caption(f"Lương giờ {_vnd(rep['luong_gio'])} + ăn {_vnd(rep['tien_an'])} "
-               f"+ chuyên cần {_vnd(rep['chuyen_can'])}")
+    _bd = (f"Lương giờ {_vnd(rep['luong_gio'])} + ăn {_vnd(rep['tien_an'])} "
+           f"+ chuyên cần {_vnd(rep['chuyen_can'])}")
+    if rep.get("ot_pay"):
+        _bd += f" + **⏱️ tăng ca {rep.get('ot_hours', 0)}h ×1.5 = {_vnd(rep['ot_pay'])}**"
+    st.markdown(_bd)
+    if own:
+        _ot_request_ui(emp, y, mth)
     # Bảng chi tiết TÔ MÀU: 🛌 Chủ nhật xám (nghỉ lịch, không tính) · ❌ NGHỈ đỏ (ngày làm không đi)
     # · ⚠️ thiếu giờ hổ phách + SỐ PHÚT thiếu · ✅ đủ xanh. Dễ phân biệt, khỏi đọc bảng trắng.
     import datetime as _dt
@@ -238,7 +271,7 @@ def render_my_salary(username):
         return
     st.header(f"💰 Lương của {CC.EMPLOYEES[emp]['name']}")
     y, mth, upto = _month_picker("mysal")
-    _salary_block(emp, y, mth, upto)
+    _salary_block(emp, y, mth, upto, own=True)
 
 
 # ══════════════════ SHOP — HIỆN QR ══════════════════
@@ -274,8 +307,28 @@ def render_shop_qr():
 def render_admin():
     st.header("🛠️ Quản lý chấm công")
     y, mth, upto = _month_picker("adm")
-    tab1, tab_edit, tab2, tab3 = st.tabs(
-        ["💰 Bảng lương 2 NV", "✏️ Sửa giờ công", "📸 Duyệt selfie", "🔗 Link máy NV"])
+    _n_ot = len(CC.list_pending_ot())
+    tab1, tab_edit, tab_ot, tab2, tab3 = st.tabs(
+        ["💰 Bảng lương 2 NV", "✏️ Sửa giờ công",
+         f"⏱️ Duyệt tăng ca{f' ({_n_ot})' if _n_ot else ''}", "📸 Duyệt selfie", "🔗 Link máy NV"])
+    with tab_ot:
+        st.caption("Đơn NV xin tăng ca. **Duyệt** → tính **×1.5** lương giờ vào tháng đó; **Từ chối** → không tính.")
+        _pending = CC.list_pending_ot()
+        if not _pending:
+            st.info("Không có đơn tăng ca chờ duyệt.")
+        for r in _pending:
+            _nv = CC.EMPLOYEES.get(r["emp"], {}).get("name", r["emp"])
+            oc1, oc2, oc3 = st.columns([4, 1, 1])
+            oc1.markdown(f"**{_nv}** · {r['date']} · **{r['hours']}h**"
+                         + (f" — _{r['note']}_" if r.get("note") else "")
+                         + f'<br><span style="color:#94a3b8;font-size:.8em">gửi {r.get("at", "")}</span>',
+                         unsafe_allow_html=True)
+            if oc2.button("✅ Duyệt", key=f"ot_ok_{r['emp']}_{r['id']}", use_container_width=True):
+                CC.set_ot_status(r["emp"], r["id"], "approved")
+                st.rerun()
+            if oc3.button("❌ Từ chối", key=f"ot_no_{r['emp']}_{r['id']}", use_container_width=True):
+                CC.set_ot_status(r["emp"], r["id"], "rejected")
+                st.rerun()
     with tab1:
         for emp in CC.EMPLOYEES:
             st.subheader(CC.EMPLOYEES[emp]["name"])

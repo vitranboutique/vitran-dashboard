@@ -313,8 +313,14 @@ def month_selfies(emp, y, mth):
 
 
 def salary_report(emp_key, y, mth, upto=None):
-    """Báo cáo lương tháng 1 NV (đọc Gist → tính)."""
-    return calc_month(emp_key, month_records(emp_key, y, mth), y, mth, upto)
+    """Báo cáo lương tháng 1 NV (đọc Gist → tính) + TĂNG CA đã duyệt (×1.5)."""
+    rep = calc_month(emp_key, month_records(emp_key, y, mth), y, mth, upto)
+    _ot_h = approved_ot_hours(emp_key, y, mth)
+    _ot_pay = int(round(_ot_h * RATE * 1.5))
+    rep["ot_hours"] = _ot_h
+    rep["ot_pay"] = _ot_pay
+    rep["tong"] = rep["tong"] + _ot_pay
+    return rep
 
 
 def missing_punch_days(emp_key, y, mth, upto=None):
@@ -327,3 +333,74 @@ def missing_punch_days(emp_key, y, mth, upto=None):
         if bool(ci) != bool(co):
             out.append(d.isoformat())
     return out
+
+
+# ═══════════════ XIN PHÉP TĂNG CA → chủ shop DUYỆT → tính ×1.5 ═══════════════
+_OT_FILE = "vitran_tangca.json"   # {emp: [{id,date,hours,note,status,at,approved_at}]}
+
+
+def _ot_read():
+    import picklog
+    d = picklog._read_gist_file(_OT_FILE)
+    return d if isinstance(d, dict) else {}
+
+
+def _ot_write(d):
+    import picklog
+    return picklog._write_gist_file(_OT_FILE, d)
+
+
+def add_ot_request(emp, day_iso, hours, note=""):
+    """NV gửi 1 đơn xin tăng ca (ngày + số giờ). Trạng thái 'pending' chờ duyệt."""
+    if emp not in EMPLOYEES or not day_iso:
+        return False
+    try:
+        hours = round(float(hours), 2)
+    except Exception:
+        return False
+    if hours <= 0 or hours > 12:
+        return False
+    d = _ot_read()
+    lst = d.setdefault(emp, [])
+    lst.append({"id": f"{day_iso}-{len(lst) + 1}", "date": str(day_iso), "hours": hours,
+                "note": str(note or "")[:200], "status": "pending", "at": _vn_now().strftime("%H:%M %d/%m/%Y")})
+    return _ot_write(d)
+
+
+def list_ot(emp, y=None, mth=None):
+    """Đơn tăng ca của 1 NV (lọc theo tháng nếu có), mới nhất trước."""
+    lst = list(_ot_read().get(emp, []))
+    if y and mth:
+        _pfx = f"{y:04d}-{mth:02d}"
+        lst = [r for r in lst if str(r.get("date", "")).startswith(_pfx)]
+    return sorted(lst, key=lambda r: str(r.get("date", "")), reverse=True)
+
+
+def list_pending_ot():
+    """Tất cả đơn tăng ca CHỜ DUYỆT (mọi NV) — cho chủ shop."""
+    out = []
+    for emp, lst in _ot_read().items():
+        for r in (lst or []):
+            if r.get("status") == "pending":
+                out.append({**r, "emp": emp})
+    return sorted(out, key=lambda r: str(r.get("date", "")))
+
+
+def set_ot_status(emp, req_id, status):
+    """Chủ shop duyệt/từ chối 1 đơn (status = approved | rejected)."""
+    if status not in ("approved", "rejected", "pending"):
+        return False
+    d = _ot_read()
+    for r in d.get(emp, []):
+        if r.get("id") == req_id:
+            r["status"] = status
+            r["approved_at"] = _vn_now().strftime("%H:%M %d/%m/%Y")
+            return _ot_write(d)
+    return False
+
+
+def approved_ot_hours(emp, y, mth):
+    """Tổng giờ tăng ca ĐÃ DUYỆT của NV trong tháng (để tính lương ×1.5)."""
+    _pfx = f"{y:04d}-{mth:02d}"
+    return round(sum(float(r.get("hours") or 0) for r in _ot_read().get(emp, [])
+                     if r.get("status") == "approved" and str(r.get("date", "")).startswith(_pfx)), 2)
