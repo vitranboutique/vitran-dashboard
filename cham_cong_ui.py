@@ -172,18 +172,59 @@ def _salary_block(emp, y, mth, upto):
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Ngày công", rep["days_worked"])
     m2.metric("Giờ công", rep["gio_cong"])
-    m3.metric("Nghỉ (giờ)", round(rep["nghi_phut"] / 60, 1))
+    m3.metric("Nghỉ (giờ)", round(rep["nghi_phut"] / 60, 1),
+              help="Chỉ tính ngày làm T2–T7 (nghỉ hẳn + thiếu giờ). ĐÃ loại Chủ nhật.")
     m4.metric("Chuyên cần", _vnd(rep["chuyen_can"]))
     st.markdown(f"#### 🧾 TỔNG LƯƠNG {mth}/{y}: **{_vnd(rep['tong'])}**")
     st.caption(f"Lương giờ {_vnd(rep['luong_gio'])} + ăn {_vnd(rep['tien_an'])} "
                f"+ chuyên cần {_vnd(rep['chuyen_can'])}")
-    df = pd.DataFrame([{
-        "Ngày": r["ngay"], "Vào": r.get("vao") or "—", "Ra": r.get("ra") or "—",
-        "Trạng thái": r["status"],
-        "Giờ công": round(r["worked"] / 60, 2), "Trễ (phút)": r["late"],
-        "Lương ngày": _vnd(r["salary"]), "Tiền ăn": _vnd(r["meal"]),
-    } for r in rep["rows"]])
-    st.dataframe(df, width="stretch", hide_index=True)
+    # Bảng chi tiết TÔ MÀU: 🛌 Chủ nhật xám (nghỉ lịch, không tính) · ❌ NGHỈ đỏ (ngày làm không đi)
+    # · ⚠️ thiếu giờ hổ phách + SỐ PHÚT thiếu · ✅ đủ xanh. Dễ phân biệt, khỏi đọc bảng trắng.
+    import datetime as _dt
+    _THU = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"]
+    _by = {r["ngay"]: r for r in rep["rows"]}
+    _d = _dt.date(y, mth, 1)
+    _end = _dt.date(y + (mth == 12), (mth % 12) + 1, 1) - _dt.timedelta(days=1)
+    if upto and upto < _end:
+        _end = upto
+    _trs = ""
+    while _d <= _end:
+        _thu = _THU[_d.weekday()]
+        _lbl = f"{_d.day:02d}/{mth:02d} {_thu}"
+        if _d.weekday() == 6:                       # CHỦ NHẬT — nghỉ lịch, xám (KHÔNG tính)
+            _trs += (f'<tr style="background:#eef2f7;color:#64748b">'
+                     f'<td><b>{_lbl}</b></td>'
+                     f'<td colspan="5" style="text-align:center">🛌 Chủ nhật — nghỉ, không tính lương</td>'
+                     f'<td style="text-align:right">—</td></tr>')
+            _d += _dt.timedelta(days=1)
+            continue
+        _r = _by.get(_d.isoformat())
+        if not _r:
+            _d += _dt.timedelta(days=1)
+            continue
+        _w = _r.get("worked") or 0
+        _miss = int(_r.get("missed") or 0)
+        _gio = round(_w / 60, 2)
+        _vao = _r.get("vao") or "—"
+        _ra = _r.get("ra") or "—"
+        if _w <= 0:                                 # NGHỈ (ngày làm không đi) → ĐỎ
+            _bg, _fg, _tt, _th = "#fee2e2", "#b91c1c", "❌ NGHỈ", "cả ngày"
+        elif _miss > CC.GRACE_MIN:                  # THIẾU GIỜ → cảnh báo + SỐ PHÚT
+            _bg, _fg, _tt, _th = "#fef3c7", "#92400e", "⚠️ thiếu giờ", f"-{_miss}′"
+        else:                                       # đủ giờ → xanh
+            _bg, _fg, _tt, _th = "#f0fdf4", "#166534", "✅ đủ", "—"
+        _trs += (f'<tr style="background:{_bg};color:{_fg}">'
+                 f'<td><b>{_lbl}</b></td><td>{_vao}</td><td>{_ra}</td>'
+                 f'<td>{_gio}h</td><td style="font-weight:800">{_th}</td>'
+                 f'<td>{_tt}</td><td style="text-align:right">{_vnd(_r["salary"])}</td></tr>')
+        _d += _dt.timedelta(days=1)
+    st.markdown(
+        '<style>.cctbl{border-collapse:collapse;width:100%;font-size:.9em}'
+        '.cctbl td,.cctbl th{padding:4px 8px;border-bottom:1px solid #e5eaf1;text-align:left}</style>'
+        '<div style="overflow-x:auto"><table class="cctbl"><thead>'
+        '<tr style="background:#1e293b;color:#fff"><th>Ngày</th><th>Vào</th><th>Ra</th>'
+        '<th>Giờ</th><th>Thiếu</th><th>Trạng thái</th><th style="text-align:right">Lương ngày</th>'
+        f'</tr></thead><tbody>{_trs}</tbody></table></div>', unsafe_allow_html=True)
 
 
 def render_my_salary(username):
