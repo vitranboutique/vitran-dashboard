@@ -205,9 +205,13 @@ def _salary_block(emp, y, mth, upto):
         _w = _r.get("worked") or 0
         _miss = int(_r.get("missed") or 0)
         _gio = round(_w / 60, 2)
-        _vao = _r.get("vao") or "—"
-        _ra = _r.get("ra") or "—"
-        if _w <= 0:                                 # NGHỈ (ngày làm không đi) → đỏ NHẠT
+        _ci = _r.get("vao")
+        _co = _r.get("ra")
+        _vao = _ci or "—"
+        _ra = _co or "—"
+        if bool(_ci) != bool(_co):                  # CÓ vào HOẶC ra, THIẾU 1 lần → cần bằng chứng
+            _bg, _fg, _tt, _th = "#f5f3ff", "#6d28d9", "⚠️ THIẾU CHẤM — cần bằng chứng", "?"
+        elif _w <= 0:                               # KHÔNG chấm gì (vào & ra đều trống) → NGHỈ thật
             _bg, _fg, _tt, _th = "#fef2f2", "#dc2626", "❌ NGHỈ", "cả ngày"
         elif _miss > CC.GRACE_MIN:                  # THIẾU GIỜ → hổ phách NHẠT + số phút
             _bg, _fg, _tt, _th = "#fffbeb", "#b45309", "⚠️ thiếu giờ", f"-{_miss}′"
