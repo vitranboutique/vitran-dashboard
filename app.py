@@ -1103,6 +1103,32 @@ def _render_week_video_audit(data):
         with st.expander("🔎 Tổng hợp mã thiếu/dư Đóng hàng — 0 dòng", expanded=False):
             st.info("Chưa có dòng lệch để đối chiếu mã.")
         return
+    # ── LÝ DO LỆCH (VISIBLE, khỏi hover): mỗi ngày lệch = 1 dòng ngắn + MÃ ĐƠN ──
+    def _ai(v):
+        try:
+            return int(round(float(v or 0)))
+        except Exception:
+            return 0
+    _rlines = []
+    for _r in rows:
+        _p = []
+        if _ai(_r.get("Đóng thiếu SL")):
+            _p.append(f"đóng <b>THIẾU {_ai(_r.get('Đóng thiếu SL'))}</b> (chưa gói/quay): {_esc(str(_r.get('Đóng thiếu') or '?'))}")
+        if _ai(_r.get("Đóng dư SL")):
+            _p.append(f"đóng dư {_ai(_r.get('Đóng dư SL'))} = <b>đơn cũ</b> hôm trước: {_esc(str(_r.get('Đóng dư') or '?'))}")
+        if _ai(_r.get("Hoàn thiếu SL")):
+            _p.append(f"hoàn <b>THIẾU clip {_ai(_r.get('Hoàn thiếu SL'))}</b>: {_esc(str(_r.get('Hoàn thiếu') or '?'))}")
+        if _ai(_r.get("Hoàn dư SL")):
+            _p.append(f"hoàn dư {_ai(_r.get('Hoàn dư SL'))}: {_esc(str(_r.get('Hoàn dư') or '?'))}")
+        if _p:
+            _rlines.append('<div style="padding:3px 0;border-top:1px solid #fde68a">'
+                           f'<b style="color:#92400e">{_esc(str(_r.get("Ngày") or ""))}</b> — '
+                           + " · ".join(_p) + '</div>')
+    if _rlines:
+        st.markdown('<div style="border:1px solid #f59e0b;background:#fffbeb;border-radius:8px;'
+                    'padding:8px 12px;margin:4px 0 10px 0;font-size:.92em;line-height:1.5">'
+                    '<b style="color:#92400e">🔎 Vì sao lệch (đọc là hiểu — kèm mã đơn):</b>'
+                    + "".join(_rlines) + '</div>', unsafe_allow_html=True)
     with st.expander(f"🔎 Tổng hợp mã thiếu/dư Đóng hàng — {len(rows)} dòng",
                      expanded=bool(st.session_state.get("_focus_lech"))):   # bấm số lệch ở băng → mở sẵn
         st.markdown("**Bảng tổng hợp — không tự khớp mã**")
