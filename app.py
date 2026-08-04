@@ -5740,6 +5740,15 @@ def _todo_counts_snapshot(need_lech, need_pick):
     return snap
 
 
+@st.cache_data(ttl=300, show_spinner=False)
+def _my_missing_punch(emp, y, mth):
+    """Ngày NV chấm thiếu (vào hoặc ra, thiếu 1 lần) tháng này → nhắc lên việc cần làm của chính NV."""
+    try:
+        return cham_cong.missing_punch_days(emp, y, mth) or []
+    except Exception:
+        return []
+
+
 def _render_todo_banner(is_cskh, is_kho, is_boss, opts):
     """Chỉ NV đó thấy việc của mình. Việc nào count>0 mới hiện; hết việc → băng biến mất.
     Bấm việc → đổi trang+tab TRONG CÙNG PHIÊN (st.rerun, KHÔNG reload → GIỮ đăng nhập) tới đúng chỗ."""
@@ -5761,6 +5770,17 @@ def _render_todo_banner(is_cskh, is_kho, is_boss, opts):
         if _n:
             _items.append(("📦", f"{_n} đơn cần nhặt",
                            PAGE_OPS, "🧾 Phiếu nhặt hàng", False))
+    # THIẾU CHẤM CÔNG của CHÍNH NV này (vào/ra thiếu 1 lần) → nhắc + ghi ngắn gọn thiếu ngày nào.
+    if _cc_emp in ("kho", "cskh"):
+        try:
+            _nvn = datetime.now(timezone.utc) + timedelta(hours=7)
+            _mp = _my_missing_punch(_cc_emp, _nvn.year, _nvn.month)
+            if _mp:
+                _dd = ", ".join(f"{x[8:10]}/{x[5:7]}" for x in _mp[:6]) + ("…" if len(_mp) > 6 else "")
+                _items.append(("⏰", f"Thiếu chấm công {len(_mp)} ngày ({_dd}) — bổ sung bằng chứng",
+                               PAGE_LUONG, None, False))
+        except Exception:
+            pass
     _items = [it for it in _items if it[2] in opts]
     if not _items:
         return

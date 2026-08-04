@@ -315,3 +315,15 @@ def month_selfies(emp, y, mth):
 def salary_report(emp_key, y, mth, upto=None):
     """Báo cáo lương tháng 1 NV (đọc Gist → tính)."""
     return calc_month(emp_key, month_records(emp_key, y, mth), y, mth, upto)
+
+
+def missing_punch_days(emp_key, y, mth, upto=None):
+    """Danh sách ngày (iso) NV chấm 1 lần (VÀO hoặc RA) mà THIẾU lần kia → cần bổ sung/bằng chứng.
+    Bỏ Chủ nhật (working_days). Dùng để nhắc lên 'Việc cần làm' của chính NV."""
+    recs = month_records(emp_key, y, mth)
+    out = []
+    for d in working_days(y, mth, upto):
+        ci, co = recs.get(d.isoformat(), (None, None))
+        if bool(ci) != bool(co):
+            out.append(d.isoformat())
+    return out
