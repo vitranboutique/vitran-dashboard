@@ -191,8 +191,8 @@ def _salary_block(emp, y, mth, upto):
     while _d <= _end:
         _thu = _THU[_d.weekday()]
         _lbl = f"{_d.day:02d}/{mth:02d} {_thu}"
-        if _d.weekday() == 6:                       # CHỦ NHẬT — nghỉ lịch, xám (KHÔNG tính)
-            _trs += (f'<tr style="background:#eef2f7;color:#64748b">'
+        if _d.weekday() == 6:                       # CHỦ NHẬT — nghỉ lịch, xám RẤT NHẠT (KHÔNG tính)
+            _trs += (f'<tr style="background:#fafbfc;color:#94a3b8">'
                      f'<td><b>{_lbl}</b></td>'
                      f'<td colspan="5" style="text-align:center">🛌 Chủ nhật — nghỉ, không tính lương</td>'
                      f'<td style="text-align:right">—</td></tr>')
@@ -207,12 +207,12 @@ def _salary_block(emp, y, mth, upto):
         _gio = round(_w / 60, 2)
         _vao = _r.get("vao") or "—"
         _ra = _r.get("ra") or "—"
-        if _w <= 0:                                 # NGHỈ (ngày làm không đi) → ĐỎ
-            _bg, _fg, _tt, _th = "#fee2e2", "#b91c1c", "❌ NGHỈ", "cả ngày"
-        elif _miss > CC.GRACE_MIN:                  # THIẾU GIỜ → cảnh báo + SỐ PHÚT
-            _bg, _fg, _tt, _th = "#fef3c7", "#92400e", "⚠️ thiếu giờ", f"-{_miss}′"
-        else:                                       # đủ giờ → xanh
-            _bg, _fg, _tt, _th = "#f0fdf4", "#166534", "✅ đủ", "—"
+        if _w <= 0:                                 # NGHỈ (ngày làm không đi) → đỏ NHẠT
+            _bg, _fg, _tt, _th = "#fef2f2", "#dc2626", "❌ NGHỈ", "cả ngày"
+        elif _miss > CC.GRACE_MIN:                  # THIẾU GIỜ → hổ phách NHẠT + số phút
+            _bg, _fg, _tt, _th = "#fffbeb", "#b45309", "⚠️ thiếu giờ", f"-{_miss}′"
+        else:                                       # đủ giờ → TRẮNG (khỏi tô), chỉ icon xanh
+            _bg, _fg, _tt, _th = "#ffffff", "#334155", "✅", "—"
         _trs += (f'<tr style="background:{_bg};color:{_fg}">'
                  f'<td><b>{_lbl}</b></td><td>{_vao}</td><td>{_ra}</td>'
                  f'<td>{_gio}h</td><td style="font-weight:800">{_th}</td>'
