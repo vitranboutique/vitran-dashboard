@@ -3237,6 +3237,7 @@ def _sales_fetch_range(fetch_json, start, end, max_pages=280):
     paid_n, paid_val = 0, 0.0                             # đơn đã NHẬN TIỀN (financial_status=paid)
     store_paid_n = defaultdict(int)                       # đơn đã NHẬN TIỀN / gian hàng
     store_paid_val = defaultdict(float)                   # tiền ĐÃ NHẬN (về ví) / gian hàng
+    store_paid_qty = defaultdict(int)                     # SỐ SP đơn đã thanh toán / gian hàng
     truncated = False
     for _seg_s, _seg_e in _month_chunks(start, end):     # QUÉT THEO THÁNG → né chặn 30k đơn/truy vấn
         _cmin = _seg_s.isoformat() + "T00:00:00+07:00"
@@ -3288,6 +3289,8 @@ def _sales_fetch_range(fetch_json, start, end, max_pages=280):
                     paid_val += net
                     store_paid_n[store] += 1
                     store_paid_val[store] += net
+                    store_paid_qty[store] += sum(int(round(li.get("quantity") or 0))
+                                                 for li in (o.get("line_items") or []))
                 brand = store.rsplit(" - ", 1)[0] if " - " in store else store   # bỏ đuôi sàn → thương hiệu
                 by_store[store] += net
                 store_orders[store] += 1
@@ -3320,6 +3323,7 @@ def _sales_fetch_range(fetch_json, start, end, max_pages=280):
             "store_cancelled_val": dict(store_cancelled_val),
             "store_cancelled_qty": dict(store_cancelled_qty),
             "store_paid_n": dict(store_paid_n), "store_paid_val": dict(store_paid_val),
+            "store_paid_qty": dict(store_paid_qty),
             "processing_n": processing_n, "shipping_n": shipping_n, "delivered_n": delivered_n,
             "processing_val": processing_val, "shipping_val": shipping_val, "delivered_val": delivered_val,
             "settled_n": settled_n, "settled_val": settled_val,
@@ -3378,7 +3382,7 @@ def _merge_range_results(parts):
                 "delivered_n", "delivered_val", "settled_n", "settled_val", "paid_n", "paid_val")
     _flat = ("by_store", "by_grp", "store_orders", "by_brand", "by_grp_qty",
              "store_qty", "store_placed", "store_cancelled_n", "store_cancelled_val",
-             "store_cancelled_qty", "store_paid_n", "store_paid_val")
+             "store_cancelled_qty", "store_paid_n", "store_paid_val", "store_paid_qty")
     _nested = ("store_grp", "store_grp_qty")
     out = {k: 0 for k in _scalars}
     for k in _flat:
@@ -3477,8 +3481,8 @@ def _cached_by_month(fetch_json, start, end, gist_prefix, fetch_one, merge_fn):
 
 def _sales_fetch_range_cached(fetch_json, start, end):
     """_sales_fetch_range + cache tháng đã kết thúc (Gist) → 'Năm này' nhanh hơn nhiều sau lần đầu.
-    Prefix có version (v3 = thêm store_cancelled_qty + store_paid) — đổi version khi đổi cấu trúc để tính lại."""
-    return _cached_by_month(fetch_json, start, end, "vitran_srng3", _sales_fetch_range, _merge_range_results)
+    Prefix có version (v4 = thêm store_paid_qty) — đổi version khi đổi cấu trúc để tính lại."""
+    return _cached_by_month(fetch_json, start, end, "vitran_srng4", _sales_fetch_range, _merge_range_results)
 
 
 def _sales_returns_period_cached(fetch_json, start, end):
@@ -3658,9 +3662,14 @@ def get_sales_analysis(fetch_json, period="thangnay", _v=None):
         _ret_qty = rq.get("return_and_refund", 0.0) + rq.get("refund", 0.0) + rq.get("delivery_failed", 0.0)
         s["real_orders"] = max(0, s["orders"] - _ret_ord)
         s["real_qty"] = max(0, s.get("qty", 0) - int(round(_ret_qty)))
-        # ĐÃ NHẬN (về ví) = đơn financial_status=paid của gian hàng
-        s["paid_val"] = cur.get("store_paid_val", {}).get(nm, 0.0)
-        s["paid_n"] = cur.get("store_paid_n", {}).get(nm, 0)
+        # ĐÃ NHẬN (về ví) = đơn financial_status=paid, TRỪ tiếp trả/hoàn/giao thất bại (tiền/đơn/SP THẬT giữ lại)
+        _pv = cur.get("store_paid_val", {}).get(nm, 0.0)      # tiền đã thanh toán (gross)
+        _pn = cur.get("store_paid_n", {}).get(nm, 0)          # đơn đã thanh toán (gross)
+        _pq = cur.get("store_paid_qty", {}).get(nm, 0)        # SP đã thanh toán (gross)
+        s["paid_val"] = max(0.0, _pv - (rv.get("return_and_refund", 0.0)
+                                        + rv.get("refund", 0.0) + rv.get("delivery_failed", 0.0)))
+        s["paid_n"] = max(0, _pn - _ret_ord)
+        s["paid_qty"] = max(0, _pq - int(round(_ret_qty)))
 
     return {
         "period": period, "clabel": clabel, "plabel": plabel,

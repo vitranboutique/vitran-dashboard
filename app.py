@@ -1920,7 +1920,7 @@ def load_overview():
 
 @st.cache_data(ttl=900, show_spinner="Đang phân tích doanh thu từ Sapo…")
 def load_sales(period):
-    _cache_ver = "2026-08-07-paid-col"     # ĐỔI chuỗi này mỗi khi sửa get_sales_analysis → BUST cache cũ
+    _cache_ver = "2026-08-07-paidnet"     # ĐỔI chuỗi này mỗi khi sửa get_sales_analysis → BUST cache cũ
     return L.get_sales_analysis(make_fetch_json(build_session()), period=period, _v=_cache_ver)
 
 
@@ -6058,10 +6058,13 @@ def _render_sales():
     k[3].metric("📊 Giá trị TB/đơn", _fmt_vnd(_aov),
                 help="Doanh thu NET ÷ số đơn (đã trừ hủy).")
     _fl = sa.get("flow") or {}
-    st.info("ℹ️ **Doanh thu & DT thực nhận** tính theo **ngày tạo đơn**, **GỒM cả đơn ĐANG GIAO + chưa thanh toán** "
-            f"— **chưa phải tiền đã về ví**. Tiền **đã thanh toán** (về ví) trong kỳ: **{_fmt_vnd(_fl.get('paid_val', 0))}** "
-            f"({_fl.get('paid_n', 0):,} đơn) · **đã đối soát**: **{_fmt_vnd(_fl.get('settled_val', 0))}** "
-            f"({_fl.get('settled_n', 0):,} đơn). Chi tiết ở mục **Luồng giao hàng · đối soát** bên dưới.")
+    st.markdown(
+        f'<div style="color:#64748b;font-size:.85em">💰 Đã thanh toán (về ví): '
+        f'<b>{_fmt_vnd(_fl.get("paid_val", 0))}</b> · đã đối soát: <b>{_fmt_vnd(_fl.get("settled_val", 0))}</b> '
+        '<span class="ic" title="Doanh thu NET &amp; DT thực nhận tính theo ngày tạo đơn, GỒM cả đơn đang giao + '
+        'chưa thanh toán — chưa phải tiền về ví. Chỉ số ĐÃ THANH TOÁN / ĐÃ ĐỐI SOÁT mới là tiền thật đã về ví '
+        '(vẫn chưa trừ phí sàn &amp; thuế).">&#9432; hai số này khác Doanh thu</span></div>',
+        unsafe_allow_html=True)
     if sa.get("truncated"):
         st.caption("⚠️ Dữ liệu rất lớn — đã lấy tối đa số trang cho phép; số liệu mang tính ước tính.")
 
@@ -6171,11 +6174,15 @@ def _render_sales():
             st.markdown("**📊 Cơ cấu đơn** (✅CĐ · ❌hủy · 🚫thất bại)")
             st.plotly_chart(_outcome_bar(_stores), width="stretch")
         with st.expander("📋 Bảng số liệu theo gian hàng"):
-            st.caption("**Doanh thu** = NET ≈ \"Doanh số\" sàn (đơn·SP tổng) · **Thực nhận** = trừ trả hàng/hoàn "
-                       "tiền, khớp dự báo thuế (đơn·SP còn lại) · **💰 Đã nhận** = tiền ĐÃ THANH TOÁN, về ví (đơn paid).  "
-                       "Ô Hủy/Trả hàng/Giao TB: **số tiền · % (đỏ)** · số đơn·SP (nhỏ dưới).")
-            st.caption("⚠️ **Doanh thu & Thực nhận GỒM cả đơn đang giao + chưa thanh toán** (chưa về túi). "
-                       "Chỉ cột **💰 Đã nhận** mới là tiền đã thật sự thanh toán về ví (vẫn chưa trừ phí sàn/thuế).")
+            st.markdown(
+                '<div style="color:#64748b;font-size:.85em;margin-bottom:2px">'
+                'Doanh thu → Thực nhận → 💰 Đã nhận (về ví) · mỗi cột kèm đơn·SP '
+                '<span class="ic" title="Doanh thu = NET ≈ Doanh số sàn (tất cả đơn chưa hủy). '
+                'Thực nhận = trừ trả hàng/hoàn tiền + giao thất bại (khớp dự báo thuế). '
+                'Đã nhận = tiền đã thanh toán về ví, đã trừ trả/hoàn (tiền THẬT cầm về). '
+                'Doanh thu &amp; Thực nhận GỒM cả đơn đang giao + chưa thanh toán; chỉ Đã nhận mới là tiền về ví. '
+                'Ô Hủy/Trả/Giao TB: số tiền · % (đỏ) · số đơn·SP.">&#9432; chú thích</span></div>',
+                unsafe_allow_html=True)
 
             def _vni(n):
                 return f"{int(n or 0):,}".replace(",", ".")
@@ -6194,7 +6201,7 @@ def _render_sales():
                     f'<td><div class="main" style="color:#0f766e">{s.get("net_real", s["cur"]) / 1e6:.1f}tr</div>'
                     f'<div class="sub">{_vni(s.get("real_orders", s["orders"]))} đơn · {_vni(s.get("real_qty", s.get("qty", 0)))} SP</div></td>'
                     f'<td><div class="main" style="color:#2563eb">{s.get("paid_val", 0) / 1e6:.1f}tr</div>'
-                    f'<div class="sub">{_vni(s.get("paid_n", 0))} đơn</div></td>'
+                    f'<div class="sub">{_vni(s.get("paid_n", 0))} đơn · {_vni(s.get("paid_qty", 0))} SP</div></td>'
                     f'<td>{_vni(round(s["aov"]))}đ</td>'
                     f'<td>{s.get("conv_rate", 0):.1f}%</td>'
                     f'<td>{_loss(s.get("cancel_n"), s.get("cancel_qty"), s.get("cancel_val"), s.get("cancel_rate"))}</td>'
@@ -6208,7 +6215,7 @@ def _render_sales():
             _ttn = sum(s.get("net_real", s["cur"]) for s in _stores)
             _tdon, _tsp = _sum("orders"), _sum("qty")
             _trdon, _trsp = _sum("real_orders"), _sum("real_qty")
-            _tpaid, _tpaidn = _sum("paid_val"), _sum("paid_n")
+            _tpaid, _tpaidn, _tpaidq = _sum("paid_val"), _sum("paid_n"), _sum("paid_qty")
             _taov = (_tdt / _tdon) if _tdon else 0
             _tpl = _sum("placed")
             _trt = lambda n: (n / _tpl * 100) if _tpl else 0
@@ -6220,7 +6227,7 @@ def _render_sales():
                 f'<td><div class="main" style="color:#5eead4">{_ttn / 1e6:.1f}tr</div>'
                 f'<div class="sub" style="color:#cbd5e1">{_vni(_trdon)} đơn · {_vni(_trsp)} SP</div></td>'
                 f'<td><div class="main" style="color:#93c5fd">{_tpaid / 1e6:.1f}tr</div>'
-                f'<div class="sub" style="color:#cbd5e1">{_vni(_tpaidn)} đơn</div></td>'
+                f'<div class="sub" style="color:#cbd5e1">{_vni(_tpaidn)} đơn · {_vni(_tpaidq)} SP</div></td>'
                 f'<td>{_vni(round(_taov))}đ</td>'
                 f'<td>{q.get("conv_rate", 0):.1f}%</td>'
                 f'<td>{_loss(_sum("cancel_n"), _sum("cancel_qty"), _sum("cancel_val"), _trt(_sum("cancel_n")))}</td>'
