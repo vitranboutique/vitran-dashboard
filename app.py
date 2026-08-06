@@ -6149,8 +6149,8 @@ def _render_sales():
             st.markdown("**📊 Cơ cấu đơn** (✅CĐ · ❌hủy · 🚫thất bại)")
             st.plotly_chart(_outcome_bar(_stores), width="stretch")
         with st.expander("📋 Bảng số liệu theo gian hàng"):
-            st.caption("**Doanh thu** = NET ≈ \"Doanh số\" sàn (nhỏ dưới: **số đơn**) · **Thực nhận** = trừ thêm "
-                       "trả hàng/hoàn tiền, khớp **dự báo thuế** (nhỏ dưới: **SL bán**).  "
+            st.caption("**Doanh thu** = NET ≈ \"Doanh số\" sàn · **Thực nhận** = trừ thêm trả hàng/hoàn tiền, "
+                       "khớp **dự báo thuế**.  Nhỏ dưới 2 cột tiền: **số đơn · số lượng SP**.  "
                        "Ô Hủy/Trả hàng/Giao TB: **số tiền** (to) · **số đơn + tỉ lệ** (nhỏ dưới).")
 
             def _vni(n):
@@ -6165,10 +6165,10 @@ def _render_sales():
                 _rows += (
                     f'<tr><td class="nm">{_nm}</td>'
                     f'<td><div class="main">{s["cur"] / 1e6:.1f}tr</div>'
-                    f'<div class="sub">{_vni(s["orders"])} đơn</div></td>'
+                    f'<div class="sub">{_vni(s["orders"])} đơn · {_vni(s.get("qty", 0))} SP</div></td>'
                     f'<td><div class="main" style="color:#0f766e">{s.get("net_real", s["cur"]) / 1e6:.1f}tr</div>'
-                    f'<div class="sub">{_vni(s.get("qty", 0))} SP</div></td>'
-                    f'<td>{round(s["aov"] / 1000)}k</td>'
+                    f'<div class="sub">{_vni(s["orders"])} đơn · {_vni(s.get("qty", 0))} SP</div></td>'
+                    f'<td>{_vni(round(s["aov"]))}đ</td>'
                     f'<td>{s.get("conv_rate", 0):.1f}%</td>'
                     f'<td>{_loss(s.get("cancel_n"), s.get("cancel_val"), s.get("cancel_rate"))}</td>'
                     f'<td>{_loss(s.get("refund_n"), s.get("refund_val"), s.get("refund_rate"))}</td>'
