@@ -6081,15 +6081,13 @@ def _render_sales():
     _l_total = _l_cancel + _l_refund + _l_fail
     _l_shipped = _l_refund + _l_fail        # đã giao/xử lý rồi mới mất (mất thật, gồm cả phí ship/hàng)
     st.markdown(
-        '<div style="background:#fef2f2;border-left:4px solid #dc2626;border-radius:8px;padding:12px 16px;margin:4px 0 10px">'
-        f'<div style="font-size:1.15em;font-weight:800;color:#991b1b">💸 Tổng tiền MẤT ĐI: {_fmt_vnd(_l_total)}</div>'
-        '<div style="color:#7f1d1d;margin-top:5px;line-height:1.7">'
-        f'❌ Đơn hủy <b>{_fmt_vnd(_l_cancel)}</b> ({q.get("cancel_n", 0):,} đơn) &nbsp;·&nbsp; '
-        f'↩️ Trả hàng hoàn tiền <b>{_fmt_vnd(_l_refund)}</b> ({q.get("refund_n", 0):,} đơn) &nbsp;·&nbsp; '
-        f'🚫 Giao thất bại <b>{_fmt_vnd(_l_fail)}</b> ({q.get("fail_n", 0):,} đơn)</div>'
-        '<div style="color:#b91c1c;margin-top:6px;font-size:.9em">'
-        f'→ Trong đó <b>đã giao/xử lý rồi mới mất</b> (trả hàng + giao thất bại, mất thật cả tiền lẫn phí): '
-        f'<b>{_fmt_vnd(_l_shipped)}</b>. Đơn hủy là doanh số hụt (chưa giao hàng).</div></div>',
+        '<div style="background:#fef2f2;border-left:3px solid #dc2626;border-radius:6px;padding:6px 12px;'
+        'margin:2px 0 8px;font-size:.9em;color:#991b1b">'
+        f'💸 <b>Tổng mất đi: {_fmt_vnd(_l_total)}</b> &nbsp;(❌ hủy {_fmt_vnd(_l_cancel)} · '
+        f'↩️ trả {_fmt_vnd(_l_refund)} · 🚫 giao TB {_fmt_vnd(_l_fail)}) '
+        f'<span class="ic" title="Trong đó ĐÃ GIAO/xử lý rồi mới mất (trả hàng + giao thất bại — mất thật cả tiền '
+        f'lẫn phí): {_fmt_vnd(_l_shipped)}. Đơn hủy là doanh số hụt (chưa giao hàng). '
+        'Chi tiết từng gian hàng xem BẢNG bên dưới.">&#9432;</span></div>',
         unsafe_allow_html=True)
     qc = st.columns(4)
     qc[0].metric("✅ Tỉ lệ chuyển đổi", f"{q.get('conv_rate', 0):.1f}%",
@@ -6203,7 +6201,8 @@ def _render_sales():
                     f'<td><div class="main" style="color:#2563eb">{s.get("paid_val", 0) / 1e6:.1f}tr</div>'
                     f'<div class="sub">{_vni(s.get("paid_n", 0))} đơn · {_vni(s.get("paid_qty", 0))} SP</div></td>'
                     f'<td>{_vni(round(s["aov"]))}đ</td>'
-                    f'<td>{s.get("conv_rate", 0):.1f}%</td>'
+                    f'<td><div class="main" style="color:#16a34a">{s.get("conv_rate", 0):.1f}%</div>'
+                    f'<div class="sub">{_vni(s["orders"] - s.get("fail_n", 0))} đơn · {_vni(s.get("qty", 0) - s.get("fail_qty", 0))} SP</div></td>'
                     f'<td>{_loss(s.get("cancel_n"), s.get("cancel_qty"), s.get("cancel_val"), s.get("cancel_rate"))}</td>'
                     f'<td>{_loss(s.get("refund_n"), s.get("refund_qty"), s.get("refund_val"), s.get("refund_rate"))}</td>'
                     f'<td>{_loss(s.get("fail_n"), s.get("fail_qty"), s.get("fail_val"), s.get("fail_rate"))}</td></tr>')
@@ -6229,7 +6228,8 @@ def _render_sales():
                 f'<td><div class="main" style="color:#93c5fd">{_tpaid / 1e6:.1f}tr</div>'
                 f'<div class="sub" style="color:#cbd5e1">{_vni(_tpaidn)} đơn · {_vni(_tpaidq)} SP</div></td>'
                 f'<td>{_vni(round(_taov))}đ</td>'
-                f'<td>{q.get("conv_rate", 0):.1f}%</td>'
+                f'<td><div class="main" style="color:#86efac">{q.get("conv_rate", 0):.1f}%</div>'
+                f'<div class="sub" style="color:#cbd5e1">{_vni(_tdon - _sum("fail_n"))} đơn · {_vni(_tsp - _sum("fail_qty"))} SP</div></td>'
                 f'<td>{_loss(_sum("cancel_n"), _sum("cancel_qty"), _sum("cancel_val"), _trt(_sum("cancel_n")))}</td>'
                 f'<td>{_loss(_sum("refund_n"), _sum("refund_qty"), _sum("refund_val"), _trt(_sum("refund_n")))}</td>'
                 f'<td>{_loss(_sum("fail_n"), _sum("fail_qty"), _sum("fail_val"), _trt(_sum("fail_n")))}</td></tr>')
