@@ -6150,7 +6150,7 @@ def _render_sales():
             st.plotly_chart(_outcome_bar(_stores), width="stretch")
         with st.expander("📋 Bảng số liệu theo gian hàng"):
             st.caption("**Doanh thu** = NET ≈ \"Doanh số\" sàn · **Thực nhận** = trừ thêm trả hàng/hoàn tiền, "
-                       "khớp **dự báo thuế**.  Nhỏ dưới 2 cột tiền: **số đơn · số lượng SP**.  "
+                       "khớp **dự báo thuế**.  Dưới **tên gian hàng**: số đơn · số lượng SP (chung cả gian hàng).  "
                        "Ô Hủy/Trả hàng/Giao TB: **số tiền** (to) · **số đơn + tỉ lệ** (nhỏ dưới).")
 
             def _vni(n):
@@ -6163,11 +6163,10 @@ def _render_sales():
             for s in _stores:
                 _nm = str(s["name"]).replace("&", "&amp;").replace("<", "&lt;")
                 _rows += (
-                    f'<tr><td class="nm">{_nm}</td>'
-                    f'<td><div class="main">{s["cur"] / 1e6:.1f}tr</div>'
+                    f'<tr><td class="nm"><div>{_nm}</div>'
                     f'<div class="sub">{_vni(s["orders"])} đơn · {_vni(s.get("qty", 0))} SP</div></td>'
-                    f'<td><div class="main" style="color:#0f766e">{s.get("net_real", s["cur"]) / 1e6:.1f}tr</div>'
-                    f'<div class="sub">{_vni(s["orders"])} đơn · {_vni(s.get("qty", 0))} SP</div></td>'
+                    f'<td class="main">{s["cur"] / 1e6:.1f}tr</td>'
+                    f'<td class="main" style="color:#0f766e">{s.get("net_real", s["cur"]) / 1e6:.1f}tr</td>'
                     f'<td>{_vni(round(s["aov"]))}đ</td>'
                     f'<td>{s.get("conv_rate", 0):.1f}%</td>'
                     f'<td>{_loss(s.get("cancel_n"), s.get("cancel_val"), s.get("cancel_rate"))}</td>'
@@ -6182,11 +6181,10 @@ def _render_sales():
             _taov = (_tdt / _tdon) if _tdon else 0
             _totrow = (
                 '<tr style="background:#16233f;color:#fff;font-weight:700">'
-                '<td class="nm" style="color:#fff">🧮 TỔNG</td>'
-                f'<td><div class="main">{_tdt / 1e6:.1f}tr</div>'
+                '<td class="nm" style="color:#fff">🧮 TỔNG'
                 f'<div class="sub" style="color:#cbd5e1">{_vni(_tdon)} đơn · {_vni(_tsp)} SP</div></td>'
-                f'<td><div class="main" style="color:#5eead4">{_ttn / 1e6:.1f}tr</div>'
-                f'<div class="sub" style="color:#cbd5e1">{_vni(_tdon)} đơn · {_vni(_tsp)} SP</div></td>'
+                f'<td class="main">{_tdt / 1e6:.1f}tr</td>'
+                f'<td class="main" style="color:#5eead4">{_ttn / 1e6:.1f}tr</td>'
                 f'<td>{_vni(round(_taov))}đ</td>'
                 f'<td>{q.get("conv_rate", 0):.1f}%</td>'
                 f'<td>{_loss(q.get("cancel_n"), q.get("cancel_val"), q.get("cancel_rate"))}</td>'
