@@ -1920,7 +1920,7 @@ def load_overview():
 
 @st.cache_data(ttl=900, show_spinner="Đang phân tích doanh thu từ Sapo…")
 def load_sales(period):
-    _cache_ver = "2026-08-07-paidnet"     # ĐỔI chuỗi này mỗi khi sửa get_sales_analysis → BUST cache cũ
+    _cache_ver = "2026-08-07-placedval"     # ĐỔI chuỗi này mỗi khi sửa get_sales_analysis → BUST cache cũ
     return L.get_sales_analysis(make_fetch_json(build_session()), period=period, _v=_cache_ver)
 
 
@@ -5918,7 +5918,7 @@ def _render_tax_warning(t):
     st.markdown('<div class="sec sec-orange">⚠️ Cảnh báo ngưỡng thuế — dự đoán cả năm (T1→T12): TỔNG · từng SÀN · từng GIAN HÀNG'
                 '<span class="ic" title="Mỗi SÀN và mỗi GIAN HÀNG tính RIÊNG (không gộp VITRAN). THỰC TẾ ĐÃ ĐẠT = '
                 'doanh thu THỰC NHẬN thật (đã trừ đơn hủy + trả hàng/hoàn tiền + giao thất bại), quét ĐỦ đơn cả năm. '
-                'Dự đoán cả năm = thực nhận đã đạt ÷ trọng số mùa vụ đã qua × cả năm (6 tháng 11,12,1,2,3,4 bán gấp đôi).">&#9432;</span></div>', unsafe_allow_html=True)
+                'Dự đoán cả năm = thực bán đã đạt ÷ trọng số mùa vụ đã qua × cả năm (6 tháng 11,12,1,2,3,4 bán gấp đôi).">&#9432;</span></div>', unsafe_allow_html=True)
     _peak = ", ".join(str(m) for m in t["peak_months"])
     st.caption(f"**Thực tế đã đạt = số THẬT** (đã trừ đơn hủy + trả hàng/hoàn tiền). Dự đoán cả năm theo mùa vụ: "
                f"6 tháng cao điểm (tháng {_peak}) bán GẤP ĐÔI — để CẢNH BÁO SỚM, không phải quyết toán thuế.")
@@ -6042,8 +6042,8 @@ def _render_sales():
                 help="Tiền khách THỰC TRẢ (đã trừ giảm giá + đơn hủy + tiền hoàn), CHƯA trừ phí sàn & thuế. "
                      "Tính theo NGÀY TẠO ĐƠN — gồm cả đơn ĐÃ GIAO lẫn ĐANG GIAO. "
                      "Là số CHƯA ĐỐI SOÁT (không phải tiền thật về ví sau đối soát). "
-                     "CHỈ trừ total_refunded (Sapo thường ghi thiếu) — xem 💰 DT thực nhận để trừ TRỌN đơn hoàn.")
-    k[1].metric("💰 DT thực nhận", _fmt_vnd(sa["net_real"]), _d(sa["net_real_pct"]),
+                     "CHỈ trừ total_refunded (Sapo thường ghi thiếu) — xem 💰 DT thực bán để trừ TRỌN đơn hoàn.")
+    k[1].metric("💰 DT thực bán", _fmt_vnd(sa["net_real"]), _d(sa["net_real_pct"]),
                 help="DT NET đã TRỪ TOÀN BỘ đơn KHÔNG thu được tiền trong kỳ: trả hàng hoàn tiền + chỉ "
                      "hoàn tiền + giao thất bại — lấy TRỌN giá trị phiếu trả (không chỉ total_refunded như DT "
                      f"NET). Kỳ này trừ thêm {_fmt_vnd(sa.get('net_real_deduct', 0))} so với DT NET. "
@@ -6061,7 +6061,7 @@ def _render_sales():
     st.markdown(
         f'<div style="color:#64748b;font-size:.85em">💰 Đã thanh toán (về ví): '
         f'<b>{_fmt_vnd(_fl.get("paid_val", 0))}</b> · đã đối soát: <b>{_fmt_vnd(_fl.get("settled_val", 0))}</b> '
-        '<span class="ic" title="Doanh thu NET &amp; DT thực nhận tính theo ngày tạo đơn, GỒM cả đơn đang giao + '
+        '<span class="ic" title="Doanh thu NET &amp; DT thực bán tính theo ngày tạo đơn, GỒM cả đơn đang giao + '
         'chưa thanh toán — chưa phải tiền về ví. Chỉ số ĐÃ THANH TOÁN / ĐÃ ĐỐI SOÁT mới là tiền thật đã về ví '
         '(vẫn chưa trừ phí sàn &amp; thuế).">&#9432; hai số này khác Doanh thu</span></div>',
         unsafe_allow_html=True)
@@ -6130,17 +6130,17 @@ def _render_sales():
                                   min_value=0, step=100000, value=0, key=f"sale_fee_{period}")
         _tax = ec[1].number_input("Thuế đã khấu trừ (đ) — từ Đối soát thuế",
                                   min_value=0, step=100000, value=0, key=f"sale_tax_{period}")
-        _base = sa.get("net_real", sa["total"])          # nền = DT thực nhận (đã trừ đơn hoàn) cho chuẩn
+        _base = sa.get("net_real", sa["total"])          # nền = DT thực bán (đã trừ đơn hoàn) cho chuẩn
         if not _fee and not _tax:
             st.info(f"Gợi ý: thuế hàng hóa hộ KD ≈ 1.5% doanh thu ≈ {_fmt_vnd(_base * 0.015)}. "
                     "Nhập số THỰC từ đối soát để chính xác.")
         mc = st.columns(3)
-        mc[0].metric("💰 DT thực nhận", _fmt_vnd(_base),
+        mc[0].metric("💰 DT thực bán", _fmt_vnd(_base),
                      help="DT NET đã trừ TRỌN đơn hoàn (trả hàng + chỉ hoàn tiền + giao thất bại). "
                           "Dùng làm nền để trừ tiếp phí sàn & thuế.")
         mc[1].metric("− Phí sàn − Thuế", f"−{_fmt_vnd(_fee + _tax)}")
-        mc[2].metric("≈ Thực nhận cuối", _fmt_vnd(_base - _fee - _tax),
-                     help="DT thực nhận − phí sàn − thuế = tiền cuối cùng giữ lại (tạm tính theo số nhập tay).")
+        mc[2].metric("≈ Thực bán cuối", _fmt_vnd(_base - _fee - _tax),
+                     help="DT thực bán − phí sàn − thuế = tiền cuối cùng giữ lại (tạm tính theo số nhập tay).")
         st.caption("⚠️ Số nhập tay chỉ lưu trong phiên (tải lại trang về 0). Muốn LƯU cố định thì báo mình thêm.")
 
     st.markdown('<div class="sec sec-orange">Theo GIAN HÀNG (tên shop × sàn)'
@@ -6160,11 +6160,11 @@ def _render_sales():
         with st.expander("📋 Bảng số liệu theo gian hàng"):
             st.markdown(
                 '<div style="color:#64748b;font-size:.85em;margin-bottom:2px">'
-                'Doanh thu → Thực nhận → 💰 Đã nhận (về ví) · mỗi cột kèm đơn·SP '
+                'Doanh thu → Thực bán → 💰 Đã nhận (về ví) · mỗi cột kèm đơn·SP '
                 '<span class="ic" title="Doanh thu = NET ≈ Doanh số sàn (tất cả đơn chưa hủy). '
-                'Thực nhận = trừ trả hàng/hoàn tiền + giao thất bại (khớp dự báo thuế). '
+                'Thực bán = trừ trả hàng/hoàn tiền + giao thất bại (khớp dự báo thuế). '
                 'Đã nhận = tiền đã thanh toán về ví, đã trừ trả/hoàn (tiền THẬT cầm về). '
-                'Doanh thu &amp; Thực nhận GỒM cả đơn đang giao + chưa thanh toán; chỉ Đã nhận mới là tiền về ví. '
+                'Doanh thu &amp; Thực bán GỒM cả đơn đang giao + chưa thanh toán; chỉ Đã nhận mới là tiền về ví. '
                 'Ô Hủy/Trả/Giao TB: số tiền · % (đỏ) · số đơn·SP.">&#9432; chú thích</span></div>',
                 unsafe_allow_html=True)
 
@@ -6195,7 +6195,7 @@ def _render_sales():
                 _nm = str(s["name"]).replace("&", "&amp;").replace("<", "&lt;")
                 _rows += (
                     f'<tr><td class="nm"><div>{_nm}</div>'
-                    f'<div class="sub">{_vni(s.get("placed", s["orders"]))} đơn đặt</div></td>'
+                    f'<div class="sub">{_vni(s.get("placed", s["orders"]))} đơn đặt · {s.get("placed_val", 0) / 1e6:.0f}tr</div></td>'
                     f'<td><div class="main">{s["cur"] / 1e6:.1f}tr</div>'
                     f'<div class="sub">{_vni(s["orders"])} đơn · {_vni(s.get("qty", 0))} SP</div></td>'
                     f'<td><div class="main" style="color:#0f766e">{s.get("net_real", s["cur"]) / 1e6:.1f}tr</div>'
@@ -6223,7 +6223,7 @@ def _render_sales():
             _trt = lambda n: (n / _tpl * 100) if _tpl else 0
             _totrow = (
                 '<tr style="background:#16233f;color:#fff;font-weight:700">'
-                f'<td class="nm" style="color:#fff">🧮 TỔNG<div class="sub" style="color:#cbd5e1">{_vni(_tpl)} đơn đặt</div></td>'
+                f'<td class="nm" style="color:#fff">🧮 TỔNG<div class="sub" style="color:#cbd5e1">{_vni(_tpl)} đơn đặt · {_sum("placed_val") / 1e6:.0f}tr</div></td>'
                 f'<td><div class="main">{_tdt / 1e6:.1f}tr</div>'
                 f'<div class="sub" style="color:#cbd5e1">{_vni(_tdon)} đơn · {_vni(_tsp)} SP</div></td>'
                 f'<td><div class="main" style="color:#5eead4">{_ttn / 1e6:.1f}tr</div>'
@@ -6244,16 +6244,16 @@ def _render_sales():
                 '.ghtbl td.nm,.ghtbl th.nm{text-align:left;font-weight:600}'
                 '.ghtbl .main{font-weight:700}.ghtbl .sub{font-size:.74em;color:#94a3b8}</style>'
                 '<div style="overflow-x:auto"><table class="ghtbl"><thead><tr>'
-                '<th class="nm">Gian hàng <span title="Dưới tên = TỔNG ĐƠN ĐẶT (mẫu số của các % CĐ/Hủy/Trả/Giao)" style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
-                '<th>Doanh thu <span title="NET ≈ Doanh số sàn. ĐÃ TRỪ đơn hủy (KHÔNG gồm đơn hủy) + tiền hoàn. NHƯNG vẫn gồm đơn đang giao + chưa thanh toán (chưa phải tiền về ví). Số nhỏ: đơn (đã trừ hủy) · SP." style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
-                '<th>Thực nhận <span title="Doanh thu TRỪ trả hàng/hoàn tiền + giao thất bại (khớp dự báo thuế). Vẫn gồm đơn đang giao. Số nhỏ: đơn · SP còn lại." style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
-                '<th>💰 Đã nhận <span title="Tiền ĐÃ THANH TOÁN về ví, đã trừ trả/hoàn = tiền THẬT cầm về (chưa trừ phí sàn/thuế). Số nhỏ: đơn · SP đã nhận." style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
-                '<th>TB/đơn <span title="Doanh thu NET ÷ số đơn (đã trừ hủy) = giá trị trung bình mỗi đơn." style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
-                '<th>✅ CĐ <span title="Tỉ lệ chuyển đổi = đơn GIAO THÀNH CÔNG ÷ TỔNG ĐƠN ĐẶT. Số nhỏ: số đơn · SP giao thành công." style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
-                '<th>❌ Hủy <span title="Tỉ lệ = đơn hủy ÷ TỔNG ĐƠN ĐẶT. Số tiền = giá trị đơn hủy. Số nhỏ: đơn · SP." style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
-                '<th>↩️ Trả hàng <span title="Tỉ lệ = phiếu trả hàng hoàn tiền ÷ TỔNG ĐƠN ĐẶT. Số tiền hoàn. Số nhỏ: đơn · SP." style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
-                '<th>🚫 Giao TB <span title="Tỉ lệ = giao thất bại (hoàn về shop) ÷ TỔNG ĐƠN ĐẶT. Số nhỏ: đơn · SP." style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
-                '<th>💸 Tổng mất <span title="= Hủy + Trả hàng + Giao thất bại. Số nhỏ: đơn · SP, và tách từng loại (❌ hủy · ↩️ trả · 🚫 giao)." style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
+                '<th class="nm">Gian hàng <span title="Đơn đặt = đơn bán được + đơn hủy" style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
+                '<th>Doanh thu <span title="= Σ tiền đơn (bỏ hủy) − tiền hoàn" style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
+                '<th>Thực bán <span title="= Doanh thu − trả hàng − hoàn tiền − giao thất bại" style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
+                '<th>💰 Đã nhận <span title="= tiền đã thanh toán − trả hàng − hoàn tiền − giao thất bại" style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
+                '<th>TB/đơn <span title="= Doanh thu ÷ số đơn (bỏ hủy)" style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
+                '<th>✅ CĐ <span title="= giao thành công ÷ đơn đặt · (giao thành công = đơn đặt − hủy − giao thất bại)" style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
+                '<th>❌ Hủy <span title="= đơn hủy ÷ đơn đặt" style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
+                '<th>↩️ Trả hàng <span title="= đơn trả hàng ÷ đơn đặt" style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
+                '<th>🚫 Giao TB <span title="= đơn giao thất bại ÷ đơn đặt" style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
+                '<th>💸 Tổng mất <span title="= hủy + trả hàng + giao thất bại" style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
                 f'</tr></thead><tbody>{_totrow}{_rows}</tbody></table></div>', unsafe_allow_html=True)
 
     def _sku_block(g):

@@ -3228,6 +3228,7 @@ def _sales_fetch_range(fetch_json, start, end, max_pages=280):
     store_grp_qty = defaultdict(lambda: defaultdict(int)) # SỐ LƯỢNG {gian hàng: {nhóm SKU}}
     placed_n, gross_val, cancelled_n, cancelled_val = 0, 0.0, 0, 0.0   # đơn ĐẶT (gồm hủy) + đơn HỦY
     store_placed = defaultdict(int)                       # đơn ĐẶT / gian hàng (gồm hủy)
+    store_placed_val = defaultdict(float)                 # GIÁ TRỊ đơn đặt / gian hàng (gồm hủy)
     store_cancelled_n = defaultdict(int)                  # đơn HỦY / gian hàng
     store_cancelled_val = defaultdict(float)              # giá trị đơn hủy / gian hàng
     store_cancelled_qty = defaultdict(int)                # SỐ SP đơn hủy / gian hàng
@@ -3256,6 +3257,7 @@ def _sales_fetch_range(fetch_json, start, end, max_pages=280):
                 placed_n += 1
                 gross_val += tp
                 store_placed[store] += 1
+                store_placed_val[store] += tp
                 if o.get("cancelled_on") or o.get("status") == "cancelled":
                     cancelled_n += 1
                     cancelled_val += tp
@@ -3319,7 +3321,8 @@ def _sales_fetch_range(fetch_json, start, end, max_pages=280):
             "store_grp_qty": {k: dict(v) for k, v in store_grp_qty.items()},
             "placed_n": placed_n, "gross_val": gross_val,
             "cancelled_n": cancelled_n, "cancelled_val": cancelled_val,
-            "store_placed": dict(store_placed), "store_cancelled_n": dict(store_cancelled_n),
+            "store_placed": dict(store_placed), "store_placed_val": dict(store_placed_val),
+            "store_cancelled_n": dict(store_cancelled_n),
             "store_cancelled_val": dict(store_cancelled_val),
             "store_cancelled_qty": dict(store_cancelled_qty),
             "store_paid_n": dict(store_paid_n), "store_paid_val": dict(store_paid_val),
@@ -3382,7 +3385,8 @@ def _merge_range_results(parts):
                 "delivered_n", "delivered_val", "settled_n", "settled_val", "paid_n", "paid_val")
     _flat = ("by_store", "by_grp", "store_orders", "by_brand", "by_grp_qty",
              "store_qty", "store_placed", "store_cancelled_n", "store_cancelled_val",
-             "store_cancelled_qty", "store_paid_n", "store_paid_val", "store_paid_qty")
+             "store_cancelled_qty", "store_paid_n", "store_paid_val", "store_paid_qty",
+             "store_placed_val")
     _nested = ("store_grp", "store_grp_qty")
     out = {k: 0 for k in _scalars}
     for k in _flat:
@@ -3481,8 +3485,8 @@ def _cached_by_month(fetch_json, start, end, gist_prefix, fetch_one, merge_fn):
 
 def _sales_fetch_range_cached(fetch_json, start, end):
     """_sales_fetch_range + cache tháng đã kết thúc (Gist) → 'Năm này' nhanh hơn nhiều sau lần đầu.
-    Prefix có version (v4 = thêm store_paid_qty) — đổi version khi đổi cấu trúc để tính lại."""
-    return _cached_by_month(fetch_json, start, end, "vitran_srng4", _sales_fetch_range, _merge_range_results)
+    Prefix có version (v5 = thêm store_placed_val) — đổi version khi đổi cấu trúc để tính lại."""
+    return _cached_by_month(fetch_json, start, end, "vitran_srng5", _sales_fetch_range, _merge_range_results)
 
 
 def _sales_returns_period_cached(fetch_json, start, end):
@@ -3644,6 +3648,7 @@ def get_sales_analysis(fetch_json, period="thangnay", _v=None):
         s_df, s_rr = rc.get("delivery_failed", 0), rc.get("return_and_refund", 0)
         _sr = (lambda n: (n / sp * 100) if sp else 0.0)
         s["placed"] = sp
+        s["placed_val"] = cur.get("store_placed_val", {}).get(nm, 0.0)   # giá trị đơn đặt (gồm hủy)
         s["conv_rate"] = _sr(max(0, sp - scn - s_df))
         s["cancel_rate"], s["cancel_val"] = _sr(scn), cur["store_cancelled_val"].get(nm, 0.0)
         s["refund_rate"], s["refund_val"] = _sr(s_rr), rv.get("return_and_refund", 0.0)
