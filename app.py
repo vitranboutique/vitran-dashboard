@@ -6149,21 +6149,25 @@ def _render_sales():
             st.markdown("**📊 Cơ cấu đơn** (✅CĐ · ❌hủy · 🚫thất bại)")
             st.plotly_chart(_outcome_bar(_stores), width="stretch")
         with st.expander("📋 Bảng số liệu theo gian hàng"):
-            st.caption("**Doanh thu** = NET (≈ \"Doanh số\" sàn) · **Thực nhận** = trừ thêm trả hàng/hoàn tiền "
-                       "(khớp bảng dự báo thuế).  Ô **Hủy/Trả hàng/Giao TB**: **số tiền** (to) · **số đơn + tỉ lệ** (nhỏ dưới).")
+            st.caption("**Doanh thu** = NET ≈ \"Doanh số\" sàn (nhỏ dưới: **số đơn**) · **Thực nhận** = trừ thêm "
+                       "trả hàng/hoàn tiền, khớp **dự báo thuế** (nhỏ dưới: **SL bán**).  "
+                       "Ô Hủy/Trả hàng/Giao TB: **số tiền** (to) · **số đơn + tỉ lệ** (nhỏ dưới).")
+
+            def _vni(n):
+                return f"{int(n or 0):,}".replace(",", ".")
 
             def _loss(n, val, rate):        # số tiền (to) + số đơn·tỉ lệ (nhỏ bên dưới)
                 return (f'<div class="main">{(val or 0) / 1e6:.0f}tr</div>'
-                        f'<div class="sub">{int(n or 0)} đơn · {(rate or 0):.1f}%</div>')
+                        f'<div class="sub">{_vni(n)} đơn · {(rate or 0):.1f}%</div>')
             _rows = ""
             for s in _stores:
                 _nm = str(s["name"]).replace("&", "&amp;").replace("<", "&lt;")
                 _rows += (
                     f'<tr><td class="nm">{_nm}</td>'
-                    f'<td class="main">{s["cur"] / 1e6:.1f}tr</td>'
-                    f'<td class="main" style="color:#0f766e">{s.get("net_real", s["cur"]) / 1e6:.1f}tr</td>'
-                    f'<td>{s["orders"]:,}</td>'
-                    f'<td>{s.get("qty", 0):,}</td>'
+                    f'<td><div class="main">{s["cur"] / 1e6:.1f}tr</div>'
+                    f'<div class="sub">{_vni(s["orders"])} đơn</div></td>'
+                    f'<td><div class="main" style="color:#0f766e">{s.get("net_real", s["cur"]) / 1e6:.1f}tr</div>'
+                    f'<div class="sub">{_vni(s.get("qty", 0))} SP</div></td>'
                     f'<td>{round(s["aov"] / 1000)}k</td>'
                     f'<td>{s.get("conv_rate", 0):.1f}%</td>'
                     f'<td>{_loss(s.get("cancel_n"), s.get("cancel_val"), s.get("cancel_rate"))}</td>'
@@ -6176,8 +6180,8 @@ def _render_sales():
                 '.ghtbl td.nm,.ghtbl th.nm{text-align:left;font-weight:600}'
                 '.ghtbl .main{font-weight:700}.ghtbl .sub{font-size:.74em;color:#94a3b8}</style>'
                 '<div style="overflow-x:auto"><table class="ghtbl"><thead><tr>'
-                '<th class="nm">Gian hàng</th><th>Doanh thu</th><th>Thực nhận</th><th>Số đơn</th>'
-                '<th>SL bán</th><th>TB/đơn</th><th>✅ CĐ</th><th>❌ Hủy</th><th>↩️ Trả hàng</th><th>🚫 Giao TB</th>'
+                '<th class="nm">Gian hàng</th><th>Doanh thu</th><th>Thực nhận</th><th>TB/đơn</th>'
+                '<th>✅ CĐ</th><th>❌ Hủy</th><th>↩️ Trả hàng</th><th>🚫 Giao TB</th>'
                 f'</tr></thead><tbody>{_rows}</tbody></table></div>', unsafe_allow_html=True)
 
     def _sku_block(g):
