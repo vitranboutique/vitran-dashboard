@@ -6149,9 +6149,12 @@ def _render_sales():
             st.markdown("**📊 Cơ cấu đơn** (✅CĐ · ❌hủy · 🚫thất bại)")
             st.plotly_chart(_outcome_bar(_stores), width="stretch")
         with st.expander("📋 Bảng số liệu theo gian hàng — bấm tên cột để sắp xếp ↑↓"):
+            st.caption("**Doanh thu** = NET (đã trừ đơn hủy + hoàn trên đơn) ≈ \"Doanh số\" của sàn.  "
+                       "**Thực nhận** = trừ THÊM trả hàng/hoàn tiền + giao thất bại → **đây là số khớp bảng dự báo thuế** bên dưới.")
             _sdf = pd.DataFrame([{
                 "Gian hàng": s["name"],
                 "Doanh thu": round(s["cur"] / 1e6, 1),
+                "Thực nhận": round(s.get("net_real", s["cur"]) / 1e6, 1),
                 "±% kỳ trước": (round(s["pct"], 1) if s["pct"] is not None else None),
                 "Số đơn": s["orders"], "SL bán": s.get("qty", 0),
                 "TB/đơn": round(s["aov"] / 1000),
@@ -6162,6 +6165,7 @@ def _render_sales():
                 for s in _stores])
             st.dataframe(_sdf, width="stretch", hide_index=True, column_config={
                 "Doanh thu": st.column_config.NumberColumn("Doanh thu (tr)", format="%.1f"),
+                "Thực nhận": st.column_config.NumberColumn("Thực nhận (tr)", format="%.1f"),
                 "±% kỳ trước": st.column_config.NumberColumn(format="%+.1f%%"),
                 "TB/đơn": st.column_config.NumberColumn("TB/đơn (k)", format="%.0f"),
                 "✅ Chuyển đổi": st.column_config.NumberColumn(format="%.1f%%"),

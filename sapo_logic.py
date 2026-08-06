@@ -3631,6 +3631,9 @@ def get_sales_analysis(fetch_json, period="thangnay", _v=None):
         s["cancel_rate"], s["cancel_val"] = _sr(scn), cur["store_cancelled_val"].get(nm, 0.0)
         s["refund_rate"], s["refund_val"] = _sr(s_rr), rv.get("return_and_refund", 0.0)
         s["fail_rate"], s["fail_val"] = _sr(s_df), rv.get("delivery_failed", 0.0)
+        # THỰC NHẬN = net − (trả hàng hoàn tiền + chỉ hoàn tiền + giao thất bại) → khớp bảng dự báo thuế
+        s["net_real"] = max(0.0, s["cur"] - (rv.get("return_and_refund", 0.0)
+                                             + rv.get("refund", 0.0) + rv.get("delivery_failed", 0.0)))
 
     return {
         "period": period, "clabel": clabel, "plabel": plabel,
