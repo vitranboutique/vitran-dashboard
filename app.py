@@ -6185,14 +6185,17 @@ def _render_sales():
             def _lq(s):
                 return (s.get("cancel_qty", 0) or 0) + (s.get("refund_qty", 0) or 0) + (s.get("fail_qty", 0) or 0)
 
-            def _lostcell(val, n, qty):     # ô "Tổng mất": số tiền (đỏ) · đơn·SP (nhỏ dưới)
+            def _lostcell(val, n, qty, cval, rval, fval):   # tổng mất (đỏ) · đơn·SP · tách từng loại (nhỏ dưới)
                 return (f'<td style="background:#fef2f2"><div class="main" style="color:#dc2626">{(val or 0) / 1e6:.0f}tr</div>'
-                        f'<div class="sub">{_vni(n)} đơn · {_vni(qty)} SP</div></td>')
+                        f'<div class="sub">{_vni(n)} đơn · {_vni(qty)} SP</div>'
+                        f'<div class="sub" style="color:#b91c1c">❌{(cval or 0) / 1e6:.0f} · '
+                        f'↩️{(rval or 0) / 1e6:.0f} · 🚫{(fval or 0) / 1e6:.0f} tr</div></td>')
             _rows = ""
             for s in _stores:
                 _nm = str(s["name"]).replace("&", "&amp;").replace("<", "&lt;")
                 _rows += (
-                    f'<tr><td class="nm">{_nm}</td>'
+                    f'<tr><td class="nm"><div>{_nm}</div>'
+                    f'<div class="sub">{_vni(s.get("placed", s["orders"]))} đơn đặt</div></td>'
                     f'<td><div class="main">{s["cur"] / 1e6:.1f}tr</div>'
                     f'<div class="sub">{_vni(s["orders"])} đơn · {_vni(s.get("qty", 0))} SP</div></td>'
                     f'<td><div class="main" style="color:#0f766e">{s.get("net_real", s["cur"]) / 1e6:.1f}tr</div>'
@@ -6205,7 +6208,7 @@ def _render_sales():
                     f'<td>{_loss(s.get("cancel_n"), s.get("cancel_qty"), s.get("cancel_val"), s.get("cancel_rate"))}</td>'
                     f'<td>{_loss(s.get("refund_n"), s.get("refund_qty"), s.get("refund_val"), s.get("refund_rate"))}</td>'
                     f'<td>{_loss(s.get("fail_n"), s.get("fail_qty"), s.get("fail_val"), s.get("fail_rate"))}</td>'
-                    f'{_lostcell(_lv(s), _ln(s), _lq(s))}</tr>')
+                    f'{_lostcell(_lv(s), _ln(s), _lq(s), s.get("cancel_val", 0), s.get("refund_val", 0), s.get("fail_val", 0))}</tr>')
             # DÒNG TỔNG — cộng từ các gian hàng (đơn/SP hủy-trả-giao có SP nên tự cộng, khỏi dùng quality)
             def _sum(k):
                 return sum(s.get(k, 0) or 0 for s in _stores)
@@ -6220,7 +6223,7 @@ def _render_sales():
             _trt = lambda n: (n / _tpl * 100) if _tpl else 0
             _totrow = (
                 '<tr style="background:#16233f;color:#fff;font-weight:700">'
-                '<td class="nm" style="color:#fff">🧮 TỔNG</td>'
+                f'<td class="nm" style="color:#fff">🧮 TỔNG<div class="sub" style="color:#cbd5e1">{_vni(_tpl)} đơn đặt</div></td>'
                 f'<td><div class="main">{_tdt / 1e6:.1f}tr</div>'
                 f'<div class="sub" style="color:#cbd5e1">{_vni(_tdon)} đơn · {_vni(_tsp)} SP</div></td>'
                 f'<td><div class="main" style="color:#5eead4">{_ttn / 1e6:.1f}tr</div>'
@@ -6233,7 +6236,7 @@ def _render_sales():
                 f'<td>{_loss(_sum("cancel_n"), _sum("cancel_qty"), _sum("cancel_val"), _trt(_sum("cancel_n")))}</td>'
                 f'<td>{_loss(_sum("refund_n"), _sum("refund_qty"), _sum("refund_val"), _trt(_sum("refund_n")))}</td>'
                 f'<td>{_loss(_sum("fail_n"), _sum("fail_qty"), _sum("fail_val"), _trt(_sum("fail_n")))}</td>'
-                f'{_lostcell(sum(_lv(s) for s in _stores), sum(_ln(s) for s in _stores), sum(_lq(s) for s in _stores))}</tr>')
+                f'{_lostcell(sum(_lv(s) for s in _stores), sum(_ln(s) for s in _stores), sum(_lq(s) for s in _stores), _sum("cancel_val"), _sum("refund_val"), _sum("fail_val"))}</tr>')
             st.markdown(
                 '<style>.ghtbl{border-collapse:collapse;width:100%;font-size:.9em}'
                 '.ghtbl th,.ghtbl td{padding:6px 10px;border-bottom:1px solid #e5eaf1;text-align:right;white-space:nowrap}'
@@ -6241,8 +6244,16 @@ def _render_sales():
                 '.ghtbl td.nm,.ghtbl th.nm{text-align:left;font-weight:600}'
                 '.ghtbl .main{font-weight:700}.ghtbl .sub{font-size:.74em;color:#94a3b8}</style>'
                 '<div style="overflow-x:auto"><table class="ghtbl"><thead><tr>'
-                '<th class="nm">Gian hàng</th><th>Doanh thu</th><th>Thực nhận</th><th>💰 Đã nhận</th><th>TB/đơn</th>'
-                '<th>✅ CĐ</th><th>❌ Hủy</th><th>↩️ Trả hàng</th><th>🚫 Giao TB</th><th>💸 Tổng mất</th>'
+                '<th class="nm">Gian hàng <span title="Dưới tên = TỔNG ĐƠN ĐẶT (mẫu số của các % CĐ/Hủy/Trả/Giao)" style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
+                '<th>Doanh thu <span title="NET ≈ Doanh số sàn. Tất cả đơn chưa hủy, GỒM cả đơn đang giao + chưa thanh toán (chưa phải tiền về ví). Số nhỏ: đơn · SP." style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
+                '<th>Thực nhận <span title="Doanh thu TRỪ trả hàng/hoàn tiền + giao thất bại (khớp dự báo thuế). Vẫn gồm đơn đang giao. Số nhỏ: đơn · SP còn lại." style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
+                '<th>💰 Đã nhận <span title="Tiền ĐÃ THANH TOÁN về ví, đã trừ trả/hoàn = tiền THẬT cầm về (chưa trừ phí sàn/thuế). Số nhỏ: đơn · SP đã nhận." style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
+                '<th>TB/đơn <span title="Doanh thu NET ÷ số đơn (đã trừ hủy) = giá trị trung bình mỗi đơn." style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
+                '<th>✅ CĐ <span title="Tỉ lệ chuyển đổi = đơn GIAO THÀNH CÔNG ÷ TỔNG ĐƠN ĐẶT. Số nhỏ: số đơn · SP giao thành công." style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
+                '<th>❌ Hủy <span title="Tỉ lệ = đơn hủy ÷ TỔNG ĐƠN ĐẶT. Số tiền = giá trị đơn hủy. Số nhỏ: đơn · SP." style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
+                '<th>↩️ Trả hàng <span title="Tỉ lệ = phiếu trả hàng hoàn tiền ÷ TỔNG ĐƠN ĐẶT. Số tiền hoàn. Số nhỏ: đơn · SP." style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
+                '<th>🚫 Giao TB <span title="Tỉ lệ = giao thất bại (hoàn về shop) ÷ TỔNG ĐƠN ĐẶT. Số nhỏ: đơn · SP." style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
+                '<th>💸 Tổng mất <span title="= Hủy + Trả hàng + Giao thất bại. Số nhỏ: đơn · SP, và tách từng loại (❌ hủy · ↩️ trả · 🚫 giao)." style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
                 f'</tr></thead><tbody>{_totrow}{_rows}</tbody></table></div>', unsafe_allow_html=True)
 
     def _sku_block(g):
