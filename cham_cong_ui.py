@@ -195,6 +195,45 @@ def _ot_request_ui(emp, y, mth):
                 st.markdown(f"- **{r['date']}** · {r['hours']}h · {_s}{_no}")
 
 
+def _rules_expander():
+    """Toàn bộ NGUYÊN TẮC TÍNH LƯƠNG — ẩn sẵn, bấm mới mở đọc (cho cả chủ shop & NV)."""
+    with st.expander("📖 Nguyên tắc tính lương — bấm để đọc", expanded=False):
+        st.markdown(f"""
+**1. Giờ làm & lương cơ bản**
+- **{_vnd(CC.RATE)}/giờ**, chuẩn **8 giờ/ngày** (đã tự trừ nghỉ trưa 1 giờ).
+- Làm **Thứ 2 → Thứ 7**, **nghỉ Chủ nhật** (Chủ nhật không tính lương).
+- Ca làm: **Kho** 08:30 → 17:30 *(từ 13/07/2026; trước đó 09:30 → 18:30)* · **CSKH** 10:00 → 19:00.
+- Chấm **2 lần/ngày**: **Vào** đầu ca + **Ra** cuối ca — bằng **mã 6 số** ở shop **+ selfie**.
+
+**2. Đi trễ / về sớm**
+- Tính **về đúng giờ tan**; về sớm bị trừ.
+- Mỗi ngày **tổng hụt** (đi trễ + về sớm cộng lại) **≤ 5 phút → bỏ qua** (coi như đủ công).
+- Quá 5 phút → **trừ theo số giờ thực làm**.
+
+**3. Tiền ăn**
+- **{_vnd(CC.MEAL)}/ngày công**. Ngày **thiếu ≥ 4 giờ** → **mất suất ăn** ngày đó.
+
+**4. Nghỉ**
+- **Nghỉ hẳn 1 ngày** (không chấm gì) → **0 lương + 0 tiền ăn** ngày đó — **dù có phép hay không** (không có nghỉ phép có lương).
+
+**5. Chuyên cần — {_vnd(CC.CHUYEN_CAN)}/tháng**
+- Cả tháng **nghỉ ≤ 8 giờ** → **được**. **Nghỉ > 8 giờ** → **mất** chuyên cần.
+
+**6. Thiếu chấm công**
+- Ngày nào **quên chấm 1 lần** (có Vào nhưng thiếu Ra, hoặc ngược lại) mà **KHÔNG có bằng chứng** → **trừ {_vnd(CC.PHAT_THIEU_CHAM)}/ngày**.
+- **Có bằng chứng** (chủ shop bổ sung giờ, hoặc xác nhận "đã có bằng chứng") → **miễn phạt**.
+
+**7. Tăng ca — ×1.5 ({_vnd(int(CC.RATE * 1.5))}/giờ)**
+- Tự làm quá giờ **KHÔNG** được tự động tính.
+- Muốn tính: **xin phép trước** (ghi ngày + giờ) → **chủ shop duyệt** mới tính.
+
+**8. Đánh dấu ✏️** — giờ do **chủ shop bổ sung tay** (khác giờ NV tự chấm) được ghi ✏️ ngay tại giờ đó để đối chiếu.
+
+---
+**Lương tháng = Σ(giờ × {_vnd(CC.RATE)} + tiền ăn) + chuyên cần + tăng ca đã duyệt − phạt thiếu chấm**
+""")
+
+
 def _salary_block(emp, y, mth, upto, own=False):
     rep = CC.salary_report(emp, y, mth, upto)
     m1, m2, m3, m4 = st.columns(4)
@@ -208,7 +247,10 @@ def _salary_block(emp, y, mth, upto, own=False):
            f"+ chuyên cần {_vnd(rep['chuyen_can'])}")
     if rep.get("ot_pay"):
         _bd += f" + **⏱️ tăng ca {rep.get('ot_hours', 0)}h ×1.5 = {_vnd(rep['ot_pay'])}**"
-    st.markdown(_bd)
+    if rep.get("phat_thieu_cham"):
+        _bd += (f" − <b style='color:#dc2626'>🚫 phạt thiếu chấm {rep.get('thieu_cham_days', 0)}×50k "
+                f"= {_vnd(rep['phat_thieu_cham'])}</b>")
+    st.markdown(_bd, unsafe_allow_html=True)
     if own:
         _ot_request_ui(emp, y, mth)
     # Bảng chi tiết TÔ MÀU: 🛌 Chủ nhật xám (nghỉ lịch, không tính) · ❌ NGHỈ đỏ (ngày làm không đi)
@@ -259,8 +301,13 @@ def _salary_block(emp, y, mth, upto, own=False):
         _co = _r.get("ra")
         _vao = _cell(_ci, _r.get("in_edit"), _lbl, "VÀO")
         _ra = _cell(_co, _r.get("out_edit"), _lbl, "RA")
-        if bool(_ci) != bool(_co):                  # CÓ vào HOẶC ra, THIẾU 1 lần → cần bằng chứng
-            _bg, _fg, _tt, _th = "#f5f3ff", "#6d28d9", "⚠️ THIẾU CHẤM — cần bằng chứng", "?"
+        _salcell = _vnd(_r["salary"])
+        if bool(_ci) != bool(_co):                  # THIẾU CHẤM (quên chấm 1 lần Vào/Ra)
+            if _r.get("evidence"):
+                _bg, _fg, _tt, _th = "#eff6ff", "#1d4ed8", "✅ thiếu chấm · đã có bằng chứng (miễn phạt)", "?"
+            else:
+                _bg, _fg, _tt, _th = "#f5f3ff", "#6d28d9", "⚠️ THIẾU CHẤM · chưa có bằng chứng · trừ 50k", "?"
+                _salcell = '<span style="color:#dc2626;font-weight:800">−50.000đ</span>'
         elif _w <= 0:                               # KHÔNG chấm gì (vào & ra đều trống) → NGHỈ thật
             _bg, _fg, _tt, _th = "#fef2f2", "#dc2626", "❌ NGHỈ", "cả ngày"
         elif _miss > CC.GRACE_MIN:                  # THIẾU GIỜ → hổ phách NHẠT + số phút
@@ -270,7 +317,7 @@ def _salary_block(emp, y, mth, upto, own=False):
         _trs += (f'<tr style="background:{_bg};color:{_fg}">'
                  f'<td><b>{_lbl}</b></td><td>{_vao}</td><td>{_ra}</td>'
                  f'<td>{_gio}h</td><td style="font-weight:800">{_th}</td>'
-                 f'<td>{_tt}</td><td style="text-align:right">{_vnd(_r["salary"])}</td></tr>')
+                 f'<td>{_tt}</td><td style="text-align:right">{_salcell}</td></tr>')
         _d += _dt.timedelta(days=1)
     st.markdown(
         '<style>.cctbl{border-collapse:collapse;width:100%;font-size:.9em}'
@@ -303,6 +350,7 @@ def render_my_salary(username):
     st.header(f"💰 Lương của {CC.EMPLOYEES[emp]['name']}")
     y, mth, upto = _month_picker("mysal")
     _salary_block(emp, y, mth, upto, own=True)
+    _rules_expander()
 
 
 # ══════════════════ SHOP — HIỆN QR ══════════════════
@@ -361,6 +409,7 @@ def render_admin():
                 CC.set_ot_status(r["emp"], r["id"], "rejected")
                 st.rerun()
     with tab1:
+        _rules_expander()
         for emp in CC.EMPLOYEES:
             st.subheader(CC.EMPLOYEES[emp]["name"])
             _salary_block(emp, y, mth, upto)
@@ -423,28 +472,46 @@ def render_admin():
                 return dft
         dft_in = _to_time(CC.EMPLOYEES[e]["start"], dtime(9, 30))
         dft_out = _to_time(CC.EMPLOYEES[e]["end"], dtime(18, 30))
-        cc1, cc2 = st.columns(2)
-        upd_in = cc1.checkbox("✏️ Sửa giờ VÀO", key=f"edit_uin_{e}_{day_iso}")
-        tin = cc1.time_input("Giờ VÀO", value=_to_time(cur.get("in"), dft_in),
-                             step=timedelta(minutes=1), disabled=not upd_in, key=f"edit_in_{e}_{day_iso}")
-        upd_out = cc2.checkbox("✏️ Sửa giờ RA", key=f"edit_uout_{e}_{day_iso}")
-        tout = cc2.time_input("Giờ RA", value=_to_time(cur.get("out"), dft_out),
-                              step=timedelta(minutes=1), disabled=not upd_out, key=f"edit_out_{e}_{day_iso}")
-        note = st.text_input("Ghi chú bổ sung (vì sao — hiện ngay tại giờ để đối chiếu)",
-                             placeholder="vd: về muộn gói hàng · NV báo quên chấm ra",
-                             key=f"edit_note_{e}_{day_iso}")
-        off = st.checkbox("🚫 Đánh NGHỈ ngày này (xóa cả 2 giờ)", key=f"edit_off_{e}_{day_iso}")
-        if st.button("💾 Lưu giờ công", type="primary", key="edit_save"):
+        # Ngày THIẾU CHẤM (đúng 1 giờ Vào/Ra) → cho đánh dấu đã có bằng chứng (miễn phạt 50k)
+        _is_tc = (bool(cur.get("in")) != bool(cur.get("out")))
+        if _is_tc:
+            st.warning("⚠️ Ngày này **thiếu chấm 1 lần** (quên Vào/Ra) → **trừ 50k** nếu không có bằng chứng. "
+                       "Cách xử lý: **bổ sung giờ còn thiếu** ở dưới, HOẶC tick **đã có bằng chứng**.")
+        # Gói vào FORM → tick/gõ thoải mái, CHỈ tải lại 1 lần khi bấm Lưu (sửa Vào+Ra cùng lúc)
+        with st.form(f"edit_form_{e}_{day_iso}", clear_on_submit=False):
+            st.caption("Tick giờ cần ghi (**tick cả 2 để sửa cùng lúc**), chỉnh giờ, rồi bấm **Lưu**.")
+            cc1, cc2 = st.columns(2)
+            upd_in = cc1.checkbox("✏️ Đặt/sửa giờ VÀO", value=False, key=f"ein_{e}_{day_iso}")
+            tin = cc1.time_input("Giờ VÀO", value=_to_time(cur.get("in"), dft_in),
+                                 step=timedelta(minutes=1), key=f"tin_{e}_{day_iso}")
+            upd_out = cc2.checkbox("✏️ Đặt/sửa giờ RA", value=False, key=f"eout_{e}_{day_iso}")
+            tout = cc2.time_input("Giờ RA", value=_to_time(cur.get("out"), dft_out),
+                                  step=timedelta(minutes=1), key=f"tout_{e}_{day_iso}")
+            note = st.text_input("Ghi chú bổ sung (vì sao — hiện ngay tại giờ để đối chiếu)",
+                                 placeholder="vd: về muộn gói hàng · NV báo quên chấm ra",
+                                 key=f"enote_{e}_{day_iso}")
+            ev = None
+            if _is_tc:
+                ev = st.checkbox("✅ Đã có bằng chứng (miễn phạt 50k)", value=bool(cur.get("evidence")),
+                                 key=f"eev_{e}_{day_iso}")
+            off = st.checkbox("🚫 Đánh NGHỈ ngày này (xóa cả 2 giờ)", value=False, key=f"eoff_{e}_{day_iso}")
+            submitted = st.form_submit_button("💾 Lưu giờ công", type="primary", use_container_width=True)
+        if submitted:
+            _ev_arg = ev if _is_tc else None
             if off:
-                ok, msg = CC.set_check(e, day_iso, "", "", note=note)
-            elif not (upd_in or upd_out):
-                ok, msg = False, "⚠️ Chưa chọn giờ nào để sửa — tick '✏️ Sửa giờ VÀO' hoặc '✏️ Sửa giờ RA'."
-            else:
+                ok, msg = CC.set_check(e, day_iso, "", "", note=note, evidence=False)
+            elif upd_in or upd_out:
                 ok, msg = CC.set_check(
                     e, day_iso,
                     tin.strftime("%H:%M") if upd_in else None,     # None = giữ nguyên
                     tout.strftime("%H:%M") if upd_out else None,
-                    note=note)
+                    note=note, evidence=_ev_arg)
+            elif _ev_arg is not None and _ev_arg != bool(cur.get("evidence")):
+                ok, msg = CC.set_check(e, day_iso, None, None, evidence=_ev_arg)   # chỉ đổi cờ bằng chứng
+                if ok:
+                    msg = "✅ Đã ghi nhận bằng chứng — miễn phạt 50k." if _ev_arg else "↩️ Đã bỏ đánh dấu bằng chứng (tính phạt lại)."
+            else:
+                ok, msg = False, "⚠️ Chưa chọn gì để lưu — tick giờ VÀO/RA, hoặc đánh dấu bằng chứng, hoặc NGHỈ."
             if ok:
                 st.session_state["edit_flash"] = msg     # báo "đã lưu" hiện SAU khi rerun
                 st.rerun()

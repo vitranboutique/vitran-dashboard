@@ -8,7 +8,9 @@ Quy tắc lương (user chốt 01/07):
 - Về ĐÚNG giờ tan (về sớm bị trừ). Mỗi ngày hụt TỔNG (đi trễ + về sớm) ≤5' → bỏ qua; quá 5' → trừ giờ thực. KHÔNG tăng ca (>8h vẫn 8h).
 - Thiếu ≥4h/ngày → MẤT suất ăn ngày đó. Nghỉ hẳn 1 ngày → 0 lương + 0 ăn (dù có phép hay không).
 - Cả tháng nghỉ >8h → MẤT chuyên cần 500k; nghỉ ≤8h → +500k.
-- Tiền ăn 30k/ngày công. Lương tháng = Σ(giờ×30k + ăn) + chuyên cần (nếu đạt).
+- Thiếu chấm (quên chấm 1 lần Vào HOẶC Ra) mà KHÔNG có bằng chứng → TRỪ 50k/ngày.
+- Tăng ca phải XIN PHÉP + chủ duyệt → ×1.5 (45k/giờ); tự làm quá giờ KHÔNG tự cộng.
+- Tiền ăn 30k/ngày công. Lương tháng = Σ(giờ×30k + ăn) + chuyên cần + tăng ca − phạt thiếu chấm.
 """
 from datetime import date, timedelta
 
@@ -20,6 +22,7 @@ MEAL = 30_000          # tiền ăn / ngày công
 NO_MEAL_IF_MISS = 240  # thiếu ≥4h → mất suất ăn
 CHUYEN_CAN = 500_000
 CHUYEN_CAN_MAX_MISS = 480   # cả tháng nghỉ ≤8h thì được chuyên cần
+PHAT_THIEU_CHAM = 50_000    # thiếu chấm 1 lần (Vào/Ra) không bằng chứng → trừ 50k/ngày
 
 EMPLOYEES = {
     # start/end = ca HIỆN TẠI. "history" = lịch sử đổi ca (mốc 'from' mới nhất ≤ ngày → dùng ca đó)
@@ -248,11 +251,12 @@ def _norm_hhmm(s):
     return f"{h:02d}:{mm:02d}" if (0 <= h <= 23 and 0 <= mm <= 59) else None
 
 
-def set_check(emp, day_iso, in_hhmm=None, out_hhmm=None, note="", by="chủ shop"):
+def set_check(emp, day_iso, in_hhmm=None, out_hhmm=None, note="", by="chủ shop", evidence=None):
     """Admin đặt/sửa giờ Vào–Ra cho 1 ngày (khi NV quên chấm). Trả (ok, msg).
     Mỗi field: **None = GIỮ NGUYÊN** (không đụng) · **"" = XÓA** · **"HH:MM"(-ish) = ĐẶT**.
     Giờ do CHỦ SHOP đặt/sửa (KHÁC giờ NV tự chấm) được ĐÁNH DẤU `in_edit`/`out_edit`
-    (ai bổ sung + lúc nào + ghi chú + giá trị cũ) → hiện ngay tại giờ đó để ĐỐI CHIẾU."""
+    (ai bổ sung + lúc nào + ghi chú + giá trị cũ) → hiện ngay tại giờ đó để ĐỐI CHIẾU.
+    `evidence` (True/False/None): đánh dấu ngày thiếu chấm ĐÃ CÓ bằng chứng → miễn phạt 50k."""
     import picklog, requests, json
 
     def _norm_or_keep(v):
@@ -302,6 +306,11 @@ def set_check(emp, day_iso, in_hhmm=None, out_hhmm=None, note="", by="chủ shop
 
         _apply("in", in_v, old_in)
         _apply("out", out_v, old_out)
+        if evidence is not None:           # cờ "đã có bằng chứng" (miễn phạt thiếu chấm)
+            if evidence:
+                day["evidence"] = True
+            else:
+                day.pop("evidence", None)
         if not day:                        # ngày trống hẳn → bỏ bản ghi
             recs.pop(day_iso, None)
         gid = picklog._resolve_gid()
@@ -336,9 +345,10 @@ def month_records(emp, y, mth):
     return {day: (v.get("in"), v.get("out")) for day, v in recs.items()}
 
 
-def month_edits(emp, y, mth):
-    """{ngày_iso: {'in_edit':..,'out_edit':..}} — giờ do CHỦ SHOP bổ sung tay (để đối chiếu).
-    KHÔNG có key = giờ đó NV tự chấm (hệ thống ghi tự động)."""
+def month_meta(emp, y, mth):
+    """{ngày_iso: {'in_edit','out_edit','evidence'}} — dấu giờ CHỦ SHOP bổ sung tay (đối chiếu)
+    + cờ 'evidence' (ngày thiếu chấm đã có bằng chứng → miễn phạt). KHÔNG có in_edit/out_edit =
+    giờ đó NV tự chấm (hệ thống ghi tự động)."""
     import picklog
     d = picklog._read_gist_file(_cong_file(y, mth)) or {}
     recs = (d.get("records") or {}).get(emp, {})
@@ -349,6 +359,8 @@ def month_edits(emp, y, mth):
             e["in_edit"] = v["in_edit"]
         if v.get("out_edit"):
             e["out_edit"] = v["out_edit"]
+        if v.get("evidence"):
+            e["evidence"] = True
         if e:
             out[day] = e
     return out
@@ -368,13 +380,20 @@ def salary_report(emp_key, y, mth, upto=None):
     _ot_pay = int(round(_ot_h * RATE * 1.5))
     rep["ot_hours"] = _ot_h
     rep["ot_pay"] = _ot_pay
-    rep["tong"] = rep["tong"] + _ot_pay
-    _ed = month_edits(emp_key, y, mth)            # dấu "chủ shop bổ sung tay" gắn vào từng dòng
+    _meta = month_meta(emp_key, y, mth)           # dấu bổ sung tay + cờ đã-có-bằng-chứng
+    _tc_days = 0
     for r in rep["rows"]:
-        _m2 = _ed.get(r["ngay"])
-        if _m2:
-            r["in_edit"] = _m2.get("in_edit")
-            r["out_edit"] = _m2.get("out_edit")
+        _m2 = _meta.get(r["ngay"], {})
+        r["in_edit"] = _m2.get("in_edit")
+        r["out_edit"] = _m2.get("out_edit")
+        r["evidence"] = bool(_m2.get("evidence"))
+        # THIẾU CHẤM = có đúng 1 trong 2 giờ (quên chấm 1 lần) & CHƯA có bằng chứng → phạt 50k
+        r["thieu_cham"] = (bool(r.get("vao")) != bool(r.get("ra"))) and not r["evidence"]
+        if r["thieu_cham"]:
+            _tc_days += 1
+    rep["thieu_cham_days"] = _tc_days
+    rep["phat_thieu_cham"] = PHAT_THIEU_CHAM * _tc_days
+    rep["tong"] = rep["tong"] + _ot_pay - rep["phat_thieu_cham"]
     return rep
 
 
