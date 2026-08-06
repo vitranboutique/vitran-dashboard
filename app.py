@@ -6200,7 +6200,7 @@ def _render_sales():
                 _nm = str(s["name"]).replace("&", "&amp;").replace("<", "&lt;")
                 _rows += (
                     f'<tr><td class="nm"><div>{_nm}</div>'
-                    f'<div class="sub">{_vni(s.get("placed", s["orders"]))} đơn đặt · {s.get("placed_val", 0) / 1e6:.0f}tr</div></td>'
+                    f'<div class="sub">{_vni(s.get("placed", s["orders"]))} đơn đặt · {_vni(round(s.get("placed_val", 0) / 1e6))}tr · {_vni(s.get("qty", 0) + s.get("cancel_qty", 0))} SP</div></td>'
                     f'<td><div class="main">{s["cur"] / 1e6:.1f}tr</div>'
                     f'<div class="sub">{_vni(s["orders"])} đơn · {_vni(s.get("qty", 0))} SP</div></td>'
                     f'<td><div class="main" style="color:#0f766e">{s.get("net_real", s["cur"]) / 1e6:.1f}tr</div>'
@@ -6228,7 +6228,7 @@ def _render_sales():
             _trt = lambda n: (n / _tpl * 100) if _tpl else 0
             _totrow = (
                 '<tr style="background:#16233f;color:#fff;font-weight:700">'
-                f'<td class="nm" style="color:#fff">🧮 TỔNG<div class="sub" style="color:#cbd5e1">{_vni(_tpl)} đơn đặt · {_sum("placed_val") / 1e6:.0f}tr</div></td>'
+                f'<td class="nm" style="color:#fff">🧮 TỔNG<div class="sub" style="color:#cbd5e1">{_vni(_tpl)} đơn đặt · {_vni(round(_sum("placed_val") / 1e6))}tr · {_vni(_sum("qty") + _sum("cancel_qty"))} SP</div></td>'
                 f'<td><div class="main">{_tdt / 1e6:.1f}tr</div>'
                 f'<div class="sub" style="color:#cbd5e1">{_vni(_tdon)} đơn · {_vni(_tsp)} SP</div></td>'
                 f'<td><div class="main" style="color:#5eead4">{_ttn / 1e6:.1f}tr</div>'
