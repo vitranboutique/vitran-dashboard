@@ -6245,7 +6245,7 @@ def _render_sales():
                 '.ghtbl .main{font-weight:700}.ghtbl .sub{font-size:.74em;color:#94a3b8}</style>'
                 '<div style="overflow-x:auto"><table class="ghtbl"><thead><tr>'
                 '<th class="nm">Gian hàng <span title="Dưới tên = TỔNG ĐƠN ĐẶT (mẫu số của các % CĐ/Hủy/Trả/Giao)" style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
-                '<th>Doanh thu <span title="NET ≈ Doanh số sàn. Tất cả đơn chưa hủy, GỒM cả đơn đang giao + chưa thanh toán (chưa phải tiền về ví). Số nhỏ: đơn · SP." style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
+                '<th>Doanh thu <span title="NET ≈ Doanh số sàn. ĐÃ TRỪ đơn hủy (KHÔNG gồm đơn hủy) + tiền hoàn. NHƯNG vẫn gồm đơn đang giao + chưa thanh toán (chưa phải tiền về ví). Số nhỏ: đơn (đã trừ hủy) · SP." style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
                 '<th>Thực nhận <span title="Doanh thu TRỪ trả hàng/hoàn tiền + giao thất bại (khớp dự báo thuế). Vẫn gồm đơn đang giao. Số nhỏ: đơn · SP còn lại." style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
                 '<th>💰 Đã nhận <span title="Tiền ĐÃ THANH TOÁN về ví, đã trừ trả/hoàn = tiền THẬT cầm về (chưa trừ phí sàn/thuế). Số nhỏ: đơn · SP đã nhận." style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
                 '<th>TB/đơn <span title="Doanh thu NET ÷ số đơn (đã trừ hủy) = giá trị trung bình mỗi đơn." style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
