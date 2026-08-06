@@ -5829,6 +5829,11 @@ def _fmt_vnd(x):
     return f"{x:,.0f}đ"
 
 
+def _fmt_dong(x):
+    """Số ĐẦY ĐỦ theo đồng (ngăn nghìn kiểu VN) — để đối chiếu chính xác, không làm tròn tỷ/tr."""
+    return f"{int(round(float(x or 0))):,}đ".replace(",", ".")
+
+
 def _hbar(names, values, color):
     """Biểu đồ cột NGANG (plotly) — nhóm nhiều nhất ở trên."""
     fig = go.Figure(go.Bar(x=values, y=names, orientation="h", marker_color=color,
@@ -6038,12 +6043,12 @@ def _render_sales():
                 f'({sa["cur_range"][0]}–{sa["cur_range"][1]}) — so với {sa["plabel"]} '
                 f'({sa["prev_range"][0]}–{sa["prev_range"][1]})</div>', unsafe_allow_html=True)
     k = st.columns(4)
-    k[0].metric("💵 Doanh thu NET", _fmt_vnd(sa["total"]), _d(sa["total_pct"]),
+    k[0].metric("💵 Doanh thu NET", _fmt_dong(sa["total"]), _d(sa["total_pct"]),
                 help="Tiền khách THỰC TRẢ (đã trừ giảm giá + đơn hủy + tiền hoàn), CHƯA trừ phí sàn & thuế. "
                      "Tính theo NGÀY TẠO ĐƠN — gồm cả đơn ĐÃ GIAO lẫn ĐANG GIAO. "
                      "Là số CHƯA ĐỐI SOÁT (không phải tiền thật về ví sau đối soát). "
                      "CHỈ trừ total_refunded (Sapo thường ghi thiếu) — xem 💰 DT thực bán để trừ TRỌN đơn hoàn.")
-    k[1].metric("💰 DT thực bán", _fmt_vnd(sa["net_real"]), _d(sa["net_real_pct"]),
+    k[1].metric("💰 DT thực bán", _fmt_dong(sa["net_real"]), _d(sa["net_real_pct"]),
                 help="DT NET đã TRỪ TOÀN BỘ đơn KHÔNG thu được tiền trong kỳ: trả hàng hoàn tiền + chỉ "
                      "hoàn tiền + giao thất bại — lấy TRỌN giá trị phiếu trả (không chỉ total_refunded như DT "
                      f"NET). Kỳ này trừ thêm {_fmt_vnd(sa.get('net_real_deduct', 0))} so với DT NET. "
@@ -6055,12 +6060,12 @@ def _render_sales():
                      "Doanh thu net ÷ số này = TB/đơn. KHÁC “đơn giao thành công” ở mục Chất lượng "
                      "(số đó còn trừ thêm đơn GIAO THẤT BẠI nên nhỏ hơn).")
     _aov = sa["total"] / sa["orders"] if sa["orders"] else 0
-    k[3].metric("📊 Giá trị TB/đơn", _fmt_vnd(_aov),
+    k[3].metric("📊 Giá trị TB/đơn", _fmt_dong(_aov),
                 help="Doanh thu NET ÷ số đơn (đã trừ hủy).")
     _fl = sa.get("flow") or {}
     st.markdown(
         f'<div style="color:#64748b;font-size:.85em">💰 Đã thanh toán (về ví): '
-        f'<b>{_fmt_vnd(_fl.get("paid_val", 0))}</b> · đã đối soát: <b>{_fmt_vnd(_fl.get("settled_val", 0))}</b> '
+        f'<b>{_fmt_dong(_fl.get("paid_val", 0))}</b> · đã đối soát: <b>{_fmt_dong(_fl.get("settled_val", 0))}</b> '
         '<span class="ic" title="Doanh thu NET &amp; DT thực bán tính theo ngày tạo đơn, GỒM cả đơn đang giao + '
         'chưa thanh toán — chưa phải tiền về ví. Chỉ số ĐÃ THANH TOÁN / ĐÃ ĐỐI SOÁT mới là tiền thật đã về ví '
         '(vẫn chưa trừ phí sàn &amp; thuế).">&#9432; hai số này khác Doanh thu</span></div>',
@@ -6080,13 +6085,13 @@ def _render_sales():
                  f"{q.get('conv_n', 0):,} đơn giao thành công", delta_color="off",
                  help="Đơn GIAO THÀNH CÔNG (đặt − hủy − giao thất bại) ÷ tổng đơn đặt.")
     qc[1].metric("❌ Tỉ lệ hủy đơn", f"{q.get('cancel_rate', 0):.1f}%",
-                 f"{q.get('cancel_n', 0):,} đơn · {_fmt_vnd(q.get('cancel_val', 0))}", delta_color="off",
+                 f"{q.get('cancel_n', 0):,} đơn · {_fmt_dong(q.get('cancel_val', 0))}", delta_color="off",
                  help="Đơn BỊ HỦY ÷ tổng đơn đặt. Kèm tổng giá trị đơn hủy.")
     qc[2].metric("↩️ Trả hàng hoàn tiền", f"{q.get('refund_rate', 0):.1f}%",
-                 f"{q.get('refund_n', 0):,} đơn · {_fmt_vnd(q.get('refund_val', 0))}", delta_color="off",
+                 f"{q.get('refund_n', 0):,} đơn · {_fmt_dong(q.get('refund_val', 0))}", delta_color="off",
                  help="Phiếu trả loại 'trả hàng hoàn tiền' (khách nhận rồi trả) ÷ tổng đơn đặt. Kèm số tiền.")
     qc[3].metric("🚫 Giao hàng thất bại", f"{q.get('fail_rate', 0):.1f}%",
-                 f"{q.get('fail_n', 0):,} đơn · {_fmt_vnd(q.get('fail_val', 0))}", delta_color="off",
+                 f"{q.get('fail_n', 0):,} đơn · {_fmt_dong(q.get('fail_val', 0))}", delta_color="off",
                  help="CHỈ đếm phiếu trả loại 'giao thất bại' (hoàn về shop) ÷ tổng đơn đặt. "
                       "Con số này THẤP HƠN thực tế: đơn hủy do giao lỗi, đơn TikTok kiểu closed+returned, "
                       "hoặc bị ghi thành 'trả hàng hoàn tiền' đều KHÔNG nằm ở đây.")
