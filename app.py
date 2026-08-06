@@ -6148,38 +6148,37 @@ def _render_sales():
         with _cB:
             st.markdown("**📊 Cơ cấu đơn** (✅CĐ · ❌hủy · 🚫thất bại)")
             st.plotly_chart(_outcome_bar(_stores), width="stretch")
-        with st.expander("📋 Bảng số liệu theo gian hàng — bấm tên cột để sắp xếp ↑↓"):
-            # BẢNG 1 — TIỀN: doanh thu / thực nhận / đơn (ít cột, dễ đọc)
-            st.markdown("**💵 Doanh thu & đơn hàng**")
-            st.caption("**Doanh thu** = NET (≈ \"Doanh số\" của sàn) · **Thực nhận** = trừ thêm trả hàng/hoàn tiền "
-                       "→ số khớp **bảng dự báo thuế** bên dưới.")
-            _df1 = pd.DataFrame([{
-                "Gian hàng": s["name"],
-                "Doanh thu": round(s["cur"] / 1e6, 1),
-                "Thực nhận": round(s.get("net_real", s["cur"]) / 1e6, 1),
-                "Số đơn": s["orders"], "SL bán": s.get("qty", 0),
-                "TB/đơn": round(s["aov"] / 1000)}
-                for s in _stores])
-            st.dataframe(_df1, width="stretch", hide_index=True, column_config={
-                "Doanh thu": st.column_config.NumberColumn("Doanh thu (tr)", format="%.1f"),
-                "Thực nhận": st.column_config.NumberColumn("Thực nhận (tr)", format="%.1f"),
-                "TB/đơn": st.column_config.NumberColumn("TB/đơn (k)", format="%.0f")})
+        with st.expander("📋 Bảng số liệu theo gian hàng"):
+            st.caption("**Doanh thu** = NET (≈ \"Doanh số\" sàn) · **Thực nhận** = trừ thêm trả hàng/hoàn tiền "
+                       "(khớp bảng dự báo thuế).  Ô **Hủy/Trả hàng/Giao TB**: **số tiền** (to) · **số đơn + tỉ lệ** (nhỏ dưới).")
 
-            # BẢNG 2 — CHẤT LƯỢNG ĐƠN: số đơn · số tiền theo từng loại (tách riêng cho gọn)
-            st.markdown("**📊 Chất lượng đơn** — mỗi ô: **số đơn · số tiền**")
-            st.caption("Chuyển đổi = tỉ lệ giao thành công. Hủy / Trả hàng / Giao thất bại = số đơn và số tiền mất theo loại.")
-
-            def _cmv(n, val):
-                return f"{int(n or 0)} đơn · {(val or 0) / 1e6:.0f}tr"
-            _df2 = pd.DataFrame([{
-                "Gian hàng": s["name"],
-                "✅ Chuyển đổi": round(s.get("conv_rate", 0), 1),
-                "❌ Hủy": _cmv(s.get("cancel_n"), s.get("cancel_val")),
-                "↩️ Trả hàng": _cmv(s.get("refund_n"), s.get("refund_val")),
-                "🚫 Giao thất bại": _cmv(s.get("fail_n"), s.get("fail_val"))}
-                for s in _stores])
-            st.dataframe(_df2, width="stretch", hide_index=True, column_config={
-                "✅ Chuyển đổi": st.column_config.NumberColumn("✅ Chuyển đổi", format="%.1f%%")})
+            def _loss(n, val, rate):        # số tiền (to) + số đơn·tỉ lệ (nhỏ bên dưới)
+                return (f'<div class="main">{(val or 0) / 1e6:.0f}tr</div>'
+                        f'<div class="sub">{int(n or 0)} đơn · {(rate or 0):.1f}%</div>')
+            _rows = ""
+            for s in _stores:
+                _nm = str(s["name"]).replace("&", "&amp;").replace("<", "&lt;")
+                _rows += (
+                    f'<tr><td class="nm">{_nm}</td>'
+                    f'<td class="main">{s["cur"] / 1e6:.1f}tr</td>'
+                    f'<td class="main" style="color:#0f766e">{s.get("net_real", s["cur"]) / 1e6:.1f}tr</td>'
+                    f'<td>{s["orders"]:,}</td>'
+                    f'<td>{s.get("qty", 0):,}</td>'
+                    f'<td>{round(s["aov"] / 1000)}k</td>'
+                    f'<td>{s.get("conv_rate", 0):.1f}%</td>'
+                    f'<td>{_loss(s.get("cancel_n"), s.get("cancel_val"), s.get("cancel_rate"))}</td>'
+                    f'<td>{_loss(s.get("refund_n"), s.get("refund_val"), s.get("refund_rate"))}</td>'
+                    f'<td>{_loss(s.get("fail_n"), s.get("fail_val"), s.get("fail_rate"))}</td></tr>')
+            st.markdown(
+                '<style>.ghtbl{border-collapse:collapse;width:100%;font-size:.9em}'
+                '.ghtbl th,.ghtbl td{padding:6px 10px;border-bottom:1px solid #e5eaf1;text-align:right;white-space:nowrap}'
+                '.ghtbl th{background:#1e293b;color:#fff;font-weight:600}'
+                '.ghtbl td.nm,.ghtbl th.nm{text-align:left;font-weight:600}'
+                '.ghtbl .main{font-weight:700}.ghtbl .sub{font-size:.74em;color:#94a3b8}</style>'
+                '<div style="overflow-x:auto"><table class="ghtbl"><thead><tr>'
+                '<th class="nm">Gian hàng</th><th>Doanh thu</th><th>Thực nhận</th><th>Số đơn</th>'
+                '<th>SL bán</th><th>TB/đơn</th><th>✅ CĐ</th><th>❌ Hủy</th><th>↩️ Trả hàng</th><th>🚫 Giao TB</th>'
+                f'</tr></thead><tbody>{_rows}</tbody></table></div>', unsafe_allow_html=True)
 
     def _sku_block(g):
         if not g:
