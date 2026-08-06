@@ -3354,6 +3354,125 @@ def _sales_returns_period(fetch_json, start, end, max_pages=60):
             "store_val": {k: dict(v) for k, v in store_val.items()}}
 
 
+# ── GỘP + CACHE THEO THÁNG ──────────────────────────────────────────────────
+# Tháng ĐÃ KẾT THÚC = số BẤT BIẾN → lưu Gist, khỏi tải lại. Chỉ tháng chứa HÔM NAY mới fetch mỗi lần.
+# "Năm này" nhờ vậy chỉ còn ~vài chục giây sau lần đầu (thay vì quét lại ~370 trang mỗi lần).
+def _merge_range_results(parts):
+    """Cộng nhiều kết quả _sales_fetch_range (theo tháng) thành 1 (cả năm)."""
+    from collections import defaultdict
+    parts = [p for p in parts if p]
+    _scalars = ("total", "orders", "placed_n", "gross_val", "cancelled_n", "cancelled_val",
+                "processing_n", "processing_val", "shipping_n", "shipping_val",
+                "delivered_n", "delivered_val", "settled_n", "settled_val", "paid_n", "paid_val")
+    _flat = ("by_store", "by_grp", "store_orders", "by_brand", "by_grp_qty",
+             "store_qty", "store_placed", "store_cancelled_n", "store_cancelled_val")
+    _nested = ("store_grp", "store_grp_qty")
+    out = {k: 0 for k in _scalars}
+    for k in _flat:
+        out[k] = defaultdict(float)
+    for k in _nested:
+        out[k] = defaultdict(lambda: defaultdict(float))
+    out["by_month"] = defaultdict(float)
+    out["truncated"] = False
+    for p in parts:
+        for k in _scalars:
+            out[k] += p.get(k, 0) or 0
+        for k in _flat:
+            for kk, vv in (p.get(k) or {}).items():
+                out[k][kk] += vv
+        for k in _nested:
+            for kk, sub in (p.get(k) or {}).items():
+                for skk, vv in (sub or {}).items():
+                    out[k][kk][skk] += vv
+        for kk, vv in (p.get("by_month") or {}).items():
+            out["by_month"][int(kk)] += vv          # key tháng: JSON làm chuỗi → ép lại int
+        out["truncated"] = out["truncated"] or bool(p.get("truncated"))
+    for k in _flat:
+        out[k] = dict(out[k])
+    for k in _nested:
+        out[k] = {kk: dict(v) for kk, v in out[k].items()}
+    out["by_month"] = dict(out["by_month"])
+    return out
+
+
+def _merge_returns_results(parts):
+    """Cộng nhiều kết quả _sales_returns_period (theo tháng) thành 1."""
+    from collections import defaultdict
+    parts = [p for p in parts if p]
+    out = {"cnt": defaultdict(int), "val": defaultdict(float), "won_n": 0, "won_val": 0.0,
+           "store_cnt": defaultdict(lambda: defaultdict(int)),
+           "store_val": defaultdict(lambda: defaultdict(float))}
+    for p in parts:
+        for kk, vv in (p.get("cnt") or {}).items():
+            out["cnt"][kk] += vv
+        for kk, vv in (p.get("val") or {}).items():
+            out["val"][kk] += vv
+        out["won_n"] += p.get("won_n", 0) or 0
+        out["won_val"] += p.get("won_val", 0.0) or 0.0
+        for kk, sub in (p.get("store_cnt") or {}).items():
+            for skk, vv in (sub or {}).items():
+                out["store_cnt"][kk][skk] += vv
+        for kk, sub in (p.get("store_val") or {}).items():
+            for skk, vv in (sub or {}).items():
+                out["store_val"][kk][skk] += vv
+    out["cnt"] = dict(out["cnt"])
+    out["val"] = dict(out["val"])
+    out["store_cnt"] = {k: dict(v) for k, v in out["store_cnt"].items()}
+    out["store_val"] = {k: dict(v) for k, v in out["store_val"].items()}
+    return out
+
+
+def _cached_by_month(fetch_json, start, end, gist_prefix, fetch_one, merge_fn):
+    """Khung chung: quét [start,end] theo tháng, THÁNG ĐÃ KẾT THÚC lấy từ Gist (hoặc tính rồi lưu),
+    THÁNG chứa hôm nay luôn fetch mới. Trả kết quả đã GỘP. Không có Gist → fetch thẳng (không cache)."""
+    try:
+        import picklog
+        _ok = bool(picklog.configured())
+    except Exception:
+        picklog, _ok = None, False
+    if not _ok:
+        return merge_fn([fetch_one(fetch_json, s, e) for s, e in _month_chunks(start, end)])
+    today = (_now_utc() + timedelta(hours=7)).date()
+    cache, dirty, parts = {}, set(), []
+
+    def _load(yr):
+        if yr not in cache:
+            try:
+                cache[yr] = picklog._read_gist_file(f"{gist_prefix}_{yr}.json") or {}
+            except Exception:
+                cache[yr] = {}
+        return cache[yr]
+
+    for seg_s, seg_e in _month_chunks(start, end):
+        immutable = seg_e < today                    # tháng đã kết thúc → số không đổi nữa
+        mk = seg_s.strftime("%Y-%m")
+        store = _load(seg_s.year)
+        if immutable and isinstance(store.get(mk), dict):
+            parts.append(store[mk])
+            continue
+        r = fetch_one(fetch_json, seg_s, seg_e)
+        parts.append(r)
+        if immutable:
+            store[mk] = r
+            dirty.add(seg_s.year)
+    for yr in dirty:
+        try:
+            picklog._write_gist_file(f"{gist_prefix}_{yr}.json", cache[yr])
+        except Exception:
+            pass
+    return merge_fn(parts)
+
+
+def _sales_fetch_range_cached(fetch_json, start, end):
+    """_sales_fetch_range + cache tháng đã kết thúc (Gist) → 'Năm này' nhanh hơn nhiều sau lần đầu."""
+    return _cached_by_month(fetch_json, start, end, "vitran_srng", _sales_fetch_range, _merge_range_results)
+
+
+def _sales_returns_period_cached(fetch_json, start, end):
+    """_sales_returns_period + cache tháng đã kết thúc (Gist)."""
+    return _cached_by_month(fetch_json, start, end, "vitran_sret", _sales_returns_period, _merge_returns_results)
+
+
 def get_sales_analysis(fetch_json, period="thangnay", _v=None):
     """PHÂN TÍCH DOANH THU NET (đã trừ đơn hủy + tiền hoàn) theo GIAN HÀNG & NHÓM SKU,
     so với CÙNG KỲ TRƯỚC (%), + dự báo doanh thu cả năm theo MÙA VỤ để cảnh báo ngưỡng
@@ -3361,8 +3480,12 @@ def get_sales_analysis(fetch_json, period="thangnay", _v=None):
     import calendar
     today = (_now_utc() + timedelta(hours=7)).date()
     cs, ce, ps, pe, clabel, plabel = _sales_period_range(period, today)
-    cur = _sales_fetch_range(fetch_json, cs, ce)
-    prev = _sales_fetch_range(fetch_json, ps, pe)
+    if period == "namnay":                    # cả năm (>30k đơn) → CACHE từng tháng đã kết thúc (Gist)
+        cur = _sales_fetch_range_cached(fetch_json, cs, ce)
+        prev = _sales_fetch_range_cached(fetch_json, ps, pe)
+    else:
+        cur = _sales_fetch_range(fetch_json, cs, ce)
+        prev = _sales_fetch_range(fetch_json, ps, pe)
 
     def _pct(c, p):
         if not p:
@@ -3381,8 +3504,12 @@ def get_sales_analysis(fetch_json, period="thangnay", _v=None):
         return out[:topn] if topn else out
 
     # ── PHIẾU TRẢ kỳ hiện tại & kỳ trước (đưa lên sớm để phần dự báo thuế dùng lại khi xem "năm này") ──
-    ret_b = _sales_returns_period(fetch_json, cs, ce)
-    ret_p = _sales_returns_period(fetch_json, ps, pe)     # phiếu trả kỳ TRƯỚC (để so % DT thực nhận)
+    if period == "namnay":                               # cả năm → cache từng tháng đã kết thúc
+        ret_b = _sales_returns_period_cached(fetch_json, cs, ce)
+        ret_p = _sales_returns_period_cached(fetch_json, ps, pe)
+    else:
+        ret_b = _sales_returns_period(fetch_json, cs, ce)
+        ret_p = _sales_returns_period(fetch_json, ps, pe)     # phiếu trả kỳ TRƯỚC (để so % DT thực nhận)
 
     # ── DỰ BÁO THUẾ: DOANH THU THỰC NHẬN cả năm theo mùa vụ (T11,12,1,2,3,4 bán GẤP ĐÔI) ──
     # Số THẬT (KHÔNG ước lượng): _sales_fetch_range quét THEO THÁNG nên đọc ĐỦ đơn cả năm (>30k).
@@ -3393,9 +3520,9 @@ def get_sales_analysis(fetch_json, period="thangnay", _v=None):
     y0 = today.replace(month=1, day=1)
     if period == "namnay":                     # đang xem cả năm → DÙNG LẠI dữ liệu đã tải (khỏi tải 2 lần)
         yr, yr_ret = cur, ret_b
-    else:
-        yr = _sales_fetch_range(fetch_json, y0, today)
-        yr_ret = _sales_returns_period(fetch_json, y0, today)
+    else:                                      # kỳ ngắn nhưng phần THUẾ vẫn cần CẢ NĂM → cache theo tháng
+        yr = _sales_fetch_range_cached(fetch_json, y0, today)
+        yr_ret = _sales_returns_period_cached(fetch_json, y0, today)
 
     def _nonearn_store(rr, k):                 # tiền KHÔNG thu được của 1 gian hàng (trả/hoàn/giao thất bại)
         sv = (rr.get("store_val") or {}).get(k, {})
