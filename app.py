@@ -1920,7 +1920,7 @@ def load_overview():
 
 @st.cache_data(ttl=900, show_spinner="Đang phân tích doanh thu từ Sapo…")
 def load_sales(period):
-    _cache_ver = "2026-08-07-sp-cols"      # ĐỔI chuỗi này mỗi khi sửa get_sales_analysis → BUST cache cũ
+    _cache_ver = "2026-08-07-paid-col"     # ĐỔI chuỗi này mỗi khi sửa get_sales_analysis → BUST cache cũ
     return L.get_sales_analysis(make_fetch_json(build_session()), period=period, _v=_cache_ver)
 
 
@@ -6171,12 +6171,11 @@ def _render_sales():
             st.markdown("**📊 Cơ cấu đơn** (✅CĐ · ❌hủy · 🚫thất bại)")
             st.plotly_chart(_outcome_bar(_stores), width="stretch")
         with st.expander("📋 Bảng số liệu theo gian hàng"):
-            st.caption("**Doanh thu** = NET ≈ \"Doanh số\" sàn (dưới: **đơn · SP tổng**) · "
-                       "**Thực nhận** = trừ trả hàng/hoàn tiền, khớp **dự báo thuế** (dưới: **đơn · SP còn lại**).  "
-                       "Ô Hủy/Trả hàng/Giao TB: **số tiền** (to) · **số đơn · SP · tỉ lệ** (nhỏ dưới).")
-            st.caption("⚠️ Cả 2 cột tính **TẤT CẢ đơn chưa hủy — GỒM cả đơn đang giao & chưa thanh toán** "
-                       "(chưa phải tiền đã về túi). Tiền **đã thực nhận** (đã thanh toán / đối soát) xem phần "
-                       "**Luồng giao hàng · đối soát** bên dưới.")
+            st.caption("**Doanh thu** = NET ≈ \"Doanh số\" sàn (đơn·SP tổng) · **Thực nhận** = trừ trả hàng/hoàn "
+                       "tiền, khớp dự báo thuế (đơn·SP còn lại) · **💰 Đã nhận** = tiền ĐÃ THANH TOÁN, về ví (đơn paid).  "
+                       "Ô Hủy/Trả hàng/Giao TB: **số tiền · % (đỏ)** · số đơn·SP (nhỏ dưới).")
+            st.caption("⚠️ **Doanh thu & Thực nhận GỒM cả đơn đang giao + chưa thanh toán** (chưa về túi). "
+                       "Chỉ cột **💰 Đã nhận** mới là tiền đã thật sự thanh toán về ví (vẫn chưa trừ phí sàn/thuế).")
 
             def _vni(n):
                 return f"{int(n or 0):,}".replace(",", ".")
@@ -6194,6 +6193,8 @@ def _render_sales():
                     f'<div class="sub">{_vni(s["orders"])} đơn · {_vni(s.get("qty", 0))} SP</div></td>'
                     f'<td><div class="main" style="color:#0f766e">{s.get("net_real", s["cur"]) / 1e6:.1f}tr</div>'
                     f'<div class="sub">{_vni(s.get("real_orders", s["orders"]))} đơn · {_vni(s.get("real_qty", s.get("qty", 0)))} SP</div></td>'
+                    f'<td><div class="main" style="color:#2563eb">{s.get("paid_val", 0) / 1e6:.1f}tr</div>'
+                    f'<div class="sub">{_vni(s.get("paid_n", 0))} đơn</div></td>'
                     f'<td>{_vni(round(s["aov"]))}đ</td>'
                     f'<td>{s.get("conv_rate", 0):.1f}%</td>'
                     f'<td>{_loss(s.get("cancel_n"), s.get("cancel_qty"), s.get("cancel_val"), s.get("cancel_rate"))}</td>'
@@ -6207,6 +6208,7 @@ def _render_sales():
             _ttn = sum(s.get("net_real", s["cur"]) for s in _stores)
             _tdon, _tsp = _sum("orders"), _sum("qty")
             _trdon, _trsp = _sum("real_orders"), _sum("real_qty")
+            _tpaid, _tpaidn = _sum("paid_val"), _sum("paid_n")
             _taov = (_tdt / _tdon) if _tdon else 0
             _tpl = _sum("placed")
             _trt = lambda n: (n / _tpl * 100) if _tpl else 0
@@ -6217,6 +6219,8 @@ def _render_sales():
                 f'<div class="sub" style="color:#cbd5e1">{_vni(_tdon)} đơn · {_vni(_tsp)} SP</div></td>'
                 f'<td><div class="main" style="color:#5eead4">{_ttn / 1e6:.1f}tr</div>'
                 f'<div class="sub" style="color:#cbd5e1">{_vni(_trdon)} đơn · {_vni(_trsp)} SP</div></td>'
+                f'<td><div class="main" style="color:#93c5fd">{_tpaid / 1e6:.1f}tr</div>'
+                f'<div class="sub" style="color:#cbd5e1">{_vni(_tpaidn)} đơn</div></td>'
                 f'<td>{_vni(round(_taov))}đ</td>'
                 f'<td>{q.get("conv_rate", 0):.1f}%</td>'
                 f'<td>{_loss(_sum("cancel_n"), _sum("cancel_qty"), _sum("cancel_val"), _trt(_sum("cancel_n")))}</td>'
@@ -6229,7 +6233,7 @@ def _render_sales():
                 '.ghtbl td.nm,.ghtbl th.nm{text-align:left;font-weight:600}'
                 '.ghtbl .main{font-weight:700}.ghtbl .sub{font-size:.74em;color:#94a3b8}</style>'
                 '<div style="overflow-x:auto"><table class="ghtbl"><thead><tr>'
-                '<th class="nm">Gian hàng</th><th>Doanh thu</th><th>Thực nhận</th><th>TB/đơn</th>'
+                '<th class="nm">Gian hàng</th><th>Doanh thu</th><th>Thực nhận</th><th>💰 Đã nhận</th><th>TB/đơn</th>'
                 '<th>✅ CĐ</th><th>❌ Hủy</th><th>↩️ Trả hàng</th><th>🚫 Giao TB</th>'
                 f'</tr></thead><tbody>{_totrow}{_rows}</tbody></table></div>', unsafe_allow_html=True)
 
