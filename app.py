@@ -6057,6 +6057,11 @@ def _render_sales():
     _aov = sa["total"] / sa["orders"] if sa["orders"] else 0
     k[3].metric("📊 Giá trị TB/đơn", _fmt_vnd(_aov),
                 help="Doanh thu NET ÷ số đơn (đã trừ hủy).")
+    _fl = sa.get("flow") or {}
+    st.info("ℹ️ **Doanh thu & DT thực nhận** tính theo **ngày tạo đơn**, **GỒM cả đơn ĐANG GIAO + chưa thanh toán** "
+            f"— **chưa phải tiền đã về ví**. Tiền **đã thanh toán** (về ví) trong kỳ: **{_fmt_vnd(_fl.get('paid_val', 0))}** "
+            f"({_fl.get('paid_n', 0):,} đơn) · **đã đối soát**: **{_fmt_vnd(_fl.get('settled_val', 0))}** "
+            f"({_fl.get('settled_n', 0):,} đơn). Chi tiết ở mục **Luồng giao hàng · đối soát** bên dưới.")
     if sa.get("truncated"):
         st.caption("⚠️ Dữ liệu rất lớn — đã lấy tối đa số trang cho phép; số liệu mang tính ước tính.")
 
@@ -6066,6 +6071,23 @@ def _render_sales():
                 'return_type của phiếu trả (tạo trong kỳ).">&#9432;</span></div>', unsafe_allow_html=True)
     q = sa.get("quality") or {}
     st.caption(f"Trên tổng **{q.get('placed', 0):,} đơn ĐẶT** trong kỳ (gồm cả đơn hủy).")
+    # 💸 TỔNG TIỀN MẤT ĐI = đơn hủy + trả hàng hoàn tiền + giao thất bại
+    _l_cancel = q.get("cancel_val", 0) or 0
+    _l_refund = q.get("refund_val", 0) or 0
+    _l_fail = q.get("fail_val", 0) or 0
+    _l_total = _l_cancel + _l_refund + _l_fail
+    _l_shipped = _l_refund + _l_fail        # đã giao/xử lý rồi mới mất (mất thật, gồm cả phí ship/hàng)
+    st.markdown(
+        '<div style="background:#fef2f2;border-left:4px solid #dc2626;border-radius:8px;padding:12px 16px;margin:4px 0 10px">'
+        f'<div style="font-size:1.15em;font-weight:800;color:#991b1b">💸 Tổng tiền MẤT ĐI: {_fmt_vnd(_l_total)}</div>'
+        '<div style="color:#7f1d1d;margin-top:5px;line-height:1.7">'
+        f'❌ Đơn hủy <b>{_fmt_vnd(_l_cancel)}</b> ({q.get("cancel_n", 0):,} đơn) &nbsp;·&nbsp; '
+        f'↩️ Trả hàng hoàn tiền <b>{_fmt_vnd(_l_refund)}</b> ({q.get("refund_n", 0):,} đơn) &nbsp;·&nbsp; '
+        f'🚫 Giao thất bại <b>{_fmt_vnd(_l_fail)}</b> ({q.get("fail_n", 0):,} đơn)</div>'
+        '<div style="color:#b91c1c;margin-top:6px;font-size:.9em">'
+        f'→ Trong đó <b>đã giao/xử lý rồi mới mất</b> (trả hàng + giao thất bại, mất thật cả tiền lẫn phí): '
+        f'<b>{_fmt_vnd(_l_shipped)}</b>. Đơn hủy là doanh số hụt (chưa giao hàng).</div></div>',
+        unsafe_allow_html=True)
     qc = st.columns(4)
     qc[0].metric("✅ Tỉ lệ chuyển đổi", f"{q.get('conv_rate', 0):.1f}%",
                  f"{q.get('conv_n', 0):,} đơn giao thành công", delta_color="off",
@@ -6152,6 +6174,9 @@ def _render_sales():
             st.caption("**Doanh thu** = NET ≈ \"Doanh số\" sàn (dưới: **đơn · SP tổng**) · "
                        "**Thực nhận** = trừ trả hàng/hoàn tiền, khớp **dự báo thuế** (dưới: **đơn · SP còn lại**).  "
                        "Ô Hủy/Trả hàng/Giao TB: **số tiền** (to) · **số đơn · SP · tỉ lệ** (nhỏ dưới).")
+            st.caption("⚠️ Cả 2 cột tính **TẤT CẢ đơn chưa hủy — GỒM cả đơn đang giao & chưa thanh toán** "
+                       "(chưa phải tiền đã về túi). Tiền **đã thực nhận** (đã thanh toán / đối soát) xem phần "
+                       "**Luồng giao hàng · đối soát** bên dưới.")
 
             def _vni(n):
                 return f"{int(n or 0):,}".replace(",", ".")
