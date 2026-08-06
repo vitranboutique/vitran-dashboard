@@ -6042,26 +6042,7 @@ def _render_sales():
     st.markdown(f'<div class="sec sec-orange">Doanh thu · {sa["clabel"]} '
                 f'({sa["cur_range"][0]}–{sa["cur_range"][1]}) — so với {sa["plabel"]} '
                 f'({sa["prev_range"][0]}–{sa["prev_range"][1]})</div>', unsafe_allow_html=True)
-    k = st.columns(4)
-    k[0].metric("💵 Doanh thu NET", _fmt_dong(sa["total"]), _d(sa["total_pct"]),
-                help="Tiền khách THỰC TRẢ (đã trừ giảm giá + đơn hủy + tiền hoàn), CHƯA trừ phí sàn & thuế. "
-                     "Tính theo NGÀY TẠO ĐƠN — gồm cả đơn ĐÃ GIAO lẫn ĐANG GIAO. "
-                     "Là số CHƯA ĐỐI SOÁT (không phải tiền thật về ví sau đối soát). "
-                     "CHỈ trừ total_refunded (Sapo thường ghi thiếu) — xem 💰 DT thực bán để trừ TRỌN đơn hoàn.")
-    k[1].metric("💰 DT thực bán", _fmt_dong(sa["net_real"]), _d(sa["net_real_pct"]),
-                help="DT NET đã TRỪ TOÀN BỘ đơn KHÔNG thu được tiền trong kỳ: trả hàng hoàn tiền + chỉ "
-                     "hoàn tiền + giao thất bại — lấy TRỌN giá trị phiếu trả (không chỉ total_refunded như DT "
-                     f"NET). Kỳ này trừ thêm {_fmt_vnd(sa.get('net_real_deduct', 0))} so với DT NET. "
-                     "Đây là tiền THỰC SỰ giữ lại (vẫn chưa trừ phí sàn & thuế). Phiếu trả bị hủy (kháng "
-                     "nghị THẮNG) không bị trừ.")
-    k[2].metric("🧾 Số đơn (đã trừ hủy)", f"{sa['orders']:,}", _d(sa["orders_pct"]),
-                help="Số đơn KHÔNG bị hủy (trừ đơn có trạng thái HỦY, dù hủy trước hay sau giao). "
-                     "Đơn TRẢ HÀNG sau giao VẪN tính là 1 đơn (chỉ trừ tiền hoàn khỏi doanh thu). "
-                     "Doanh thu net ÷ số này = TB/đơn. KHÁC “đơn giao thành công” ở mục Chất lượng "
-                     "(số đó còn trừ thêm đơn GIAO THẤT BẠI nên nhỏ hơn).")
-    _aov = sa["total"] / sa["orders"] if sa["orders"] else 0
-    k[3].metric("📊 Giá trị TB/đơn", _fmt_dong(_aov),
-                help="Doanh thu NET ÷ số đơn (đã trừ hủy).")
+    # (Đã bỏ 4 ô tổng đầu trang — số tổng xem dòng TỔNG của BẢNG theo gian hàng bên dưới)
     _fl = sa.get("flow") or {}
     st.markdown(
         f'<div style="color:#64748b;font-size:.85em">💰 Đã thanh toán (về ví): '
@@ -6073,29 +6054,8 @@ def _render_sales():
     if sa.get("truncated"):
         st.caption("⚠️ Dữ liệu rất lớn — đã lấy tối đa số trang cho phép; số liệu mang tính ước tính.")
 
-    st.markdown('<div class="sec sec-orange">Chất lượng đơn hàng — tỉ lệ & số tiền'
-                '<span class="ic" title="Tỉ lệ trên tổng đơn ĐẶT trong kỳ (gồm cả đơn hủy). '
-                'Chuyển đổi = đặt − hủy − giao thất bại. Trả hàng &amp; giao thất bại lấy đúng theo '
-                'return_type của phiếu trả (tạo trong kỳ).">&#9432;</span></div>', unsafe_allow_html=True)
-    q = sa.get("quality") or {}
-    st.caption(f"Trên tổng **{q.get('placed', 0):,} đơn ĐẶT** trong kỳ (gồm cả đơn hủy). "
-               "💸 **Tổng tiền mất** (hủy + trả + giao TB) xem cột cuối **bảng theo gian hàng** bên dưới.")
-    qc = st.columns(4)
-    qc[0].metric("✅ Tỉ lệ chuyển đổi", f"{q.get('conv_rate', 0):.1f}%",
-                 f"{q.get('conv_n', 0):,} đơn giao thành công", delta_color="off",
-                 help="Đơn GIAO THÀNH CÔNG (đặt − hủy − giao thất bại) ÷ tổng đơn đặt.")
-    qc[1].metric("❌ Tỉ lệ hủy đơn", f"{q.get('cancel_rate', 0):.1f}%",
-                 f"{q.get('cancel_n', 0):,} đơn · {_fmt_dong(q.get('cancel_val', 0))}", delta_color="off",
-                 help="Đơn BỊ HỦY ÷ tổng đơn đặt. Kèm tổng giá trị đơn hủy.")
-    qc[2].metric("↩️ Trả hàng hoàn tiền", f"{q.get('refund_rate', 0):.1f}%",
-                 f"{q.get('refund_n', 0):,} đơn · {_fmt_dong(q.get('refund_val', 0))}", delta_color="off",
-                 help="Phiếu trả loại 'trả hàng hoàn tiền' (khách nhận rồi trả) ÷ tổng đơn đặt. Kèm số tiền.")
-    qc[3].metric("🚫 Giao hàng thất bại", f"{q.get('fail_rate', 0):.1f}%",
-                 f"{q.get('fail_n', 0):,} đơn · {_fmt_dong(q.get('fail_val', 0))}", delta_color="off",
-                 help="CHỈ đếm phiếu trả loại 'giao thất bại' (hoàn về shop) ÷ tổng đơn đặt. "
-                      "Con số này THẤP HƠN thực tế: đơn hủy do giao lỗi, đơn TikTok kiểu closed+returned, "
-                      "hoặc bị ghi thành 'trả hàng hoàn tiền' đều KHÔNG nằm ở đây.")
-    st.markdown(_quality_bar(q), unsafe_allow_html=True)
+    # (Đã bỏ phần "Chất lượng đơn" — xem các cột CĐ · Hủy · Trả hàng · Giao TB · Tổng mất trong BẢNG bên dưới)
+    q = sa.get("quality") or {}   # giữ biến cho mục Khiếu nại (Luồng giao hàng) dùng
 
     # ── LUỒNG GIAO HÀNG · ĐỐI SOÁT · KHIẾU NẠI + CHI PHÍ nhập tay ──
     fl = sa.get("flow") or {}
@@ -6149,20 +6109,12 @@ def _render_sales():
         st.caption("⚠️ Số nhập tay chỉ lưu trong phiên (tải lại trang về 0). Muốn LƯU cố định thì báo mình thêm.")
 
     st.markdown('<div class="sec sec-orange">Theo GIAN HÀNG (tên shop × sàn)'
-                '<span class="ic" title="Mỗi gian hàng = thương hiệu × sàn TMĐT. Biểu đồ trái = doanh thu; '
-                'phải = cơ cấu đơn (chuyển đổi/hủy/thất bại). Số liệu đầy đủ trong bảng thu gọn bên dưới.">'
+                '<span class="ic" title="Mỗi gian hàng = thương hiệu × sàn TMĐT. Bảng đầy đủ bên dưới: '
+                'doanh thu → thực bán → đã nhận, và hủy/trả/giao + tổng mất theo từng gian hàng.">'
                 '&#9432;</span></div>', unsafe_allow_html=True)
     _stores = sa["stores"]
     if _stores:
-        _cA, _cB = st.columns(2)
-        with _cA:
-            st.markdown("**💵 Doanh thu**")
-            st.plotly_chart(_hbar([s["name"] for s in _stores], [s["cur"] for s in _stores], "#E24B4A"),
-                            width="stretch")
-        with _cB:
-            st.markdown("**📊 Cơ cấu đơn** (✅CĐ · ❌hủy · 🚫thất bại)")
-            st.plotly_chart(_outcome_bar(_stores), width="stretch")
-        with st.expander("📋 Bảng số liệu theo gian hàng"):
+        with st.expander("📋 Bảng số liệu theo gian hàng", expanded=True):
             st.markdown(
                 '<div style="color:#64748b;font-size:.85em;margin-bottom:2px">'
                 'Doanh thu → Thực bán → 💰 Đã nhận (về ví) · mỗi cột kèm đơn·SP '
