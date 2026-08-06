@@ -3230,6 +3230,7 @@ def _sales_fetch_range(fetch_json, start, end, max_pages=280):
     store_placed = defaultdict(int)                       # đơn ĐẶT / gian hàng (gồm hủy)
     store_cancelled_n = defaultdict(int)                  # đơn HỦY / gian hàng
     store_cancelled_val = defaultdict(float)              # giá trị đơn hủy / gian hàng
+    store_cancelled_qty = defaultdict(int)                # SỐ SP đơn hủy / gian hàng
     processing_n = shipping_n = delivered_n = 0           # luồng giao: chờ giao / đang giao / đã giao
     processing_val = shipping_val = delivered_val = 0.0   # doanh thu net theo luồng giao
     settled_n, settled_val = 0, 0.0                       # đơn đã ĐỐI SOÁT (settled_on)
@@ -3257,6 +3258,8 @@ def _sales_fetch_range(fetch_json, start, end, max_pages=280):
                     cancelled_val += tp
                     store_cancelled_n[store] += 1
                     store_cancelled_val[store] += tp
+                    store_cancelled_qty[store] += sum(int(round(li.get("quantity") or 0))
+                                                      for li in (o.get("line_items") or []))
                     continue
                 rf = float(o.get("total_refunded") or 0)
                 net = tp - rf
@@ -3311,6 +3314,7 @@ def _sales_fetch_range(fetch_json, start, end, max_pages=280):
             "cancelled_n": cancelled_n, "cancelled_val": cancelled_val,
             "store_placed": dict(store_placed), "store_cancelled_n": dict(store_cancelled_n),
             "store_cancelled_val": dict(store_cancelled_val),
+            "store_cancelled_qty": dict(store_cancelled_qty),
             "processing_n": processing_n, "shipping_n": shipping_n, "delivered_n": delivered_n,
             "processing_val": processing_val, "shipping_val": shipping_val, "delivered_val": delivered_val,
             "settled_n": settled_n, "settled_val": settled_val,
@@ -3328,6 +3332,7 @@ def _sales_returns_period(fetch_json, start, end, max_pages=60):
     won_n, won_val = 0, 0.0                               # phiếu trả bị HỦY = kháng nghị THẮNG (đòi lại được)
     store_cnt = defaultdict(lambda: defaultdict(int))     # {gian hàng: {return_type: số phiếu}}
     store_val = defaultdict(lambda: defaultdict(float))   # {gian hàng: {return_type: số tiền}}
+    store_qty = defaultdict(lambda: defaultdict(float))   # {gian hàng: {return_type: SỐ SP trả}}
     for p in range(1, max_pages + 1):
         rows = fetch_json("/admin/order_returns.json", limit=250, page=p,
                           created_on_min=cmin, created_on_max=cmax).get("order_returns", [])
@@ -3349,9 +3354,11 @@ def _sales_returns_period(fetch_json, start, end, max_pages=60):
                      or x.get("order_source") or "Khác")
             store_cnt[store][rt] += 1
             store_val[store][rt] += amt
+            store_qty[store][rt] += float(x.get("total_quantity") or 0)
     return {"cnt": dict(cnt), "val": dict(val), "won_n": won_n, "won_val": won_val,
             "store_cnt": {k: dict(v) for k, v in store_cnt.items()},
-            "store_val": {k: dict(v) for k, v in store_val.items()}}
+            "store_val": {k: dict(v) for k, v in store_val.items()},
+            "store_qty": {k: dict(v) for k, v in store_qty.items()}}
 
 
 # ── GỘP + CACHE THEO THÁNG ──────────────────────────────────────────────────
@@ -3365,7 +3372,8 @@ def _merge_range_results(parts):
                 "processing_n", "processing_val", "shipping_n", "shipping_val",
                 "delivered_n", "delivered_val", "settled_n", "settled_val", "paid_n", "paid_val")
     _flat = ("by_store", "by_grp", "store_orders", "by_brand", "by_grp_qty",
-             "store_qty", "store_placed", "store_cancelled_n", "store_cancelled_val")
+             "store_qty", "store_placed", "store_cancelled_n", "store_cancelled_val",
+             "store_cancelled_qty")
     _nested = ("store_grp", "store_grp_qty")
     out = {k: 0 for k in _scalars}
     for k in _flat:
@@ -3401,7 +3409,8 @@ def _merge_returns_results(parts):
     parts = [p for p in parts if p]
     out = {"cnt": defaultdict(int), "val": defaultdict(float), "won_n": 0, "won_val": 0.0,
            "store_cnt": defaultdict(lambda: defaultdict(int)),
-           "store_val": defaultdict(lambda: defaultdict(float))}
+           "store_val": defaultdict(lambda: defaultdict(float)),
+           "store_qty": defaultdict(lambda: defaultdict(float))}
     for p in parts:
         for kk, vv in (p.get("cnt") or {}).items():
             out["cnt"][kk] += vv
@@ -3409,16 +3418,14 @@ def _merge_returns_results(parts):
             out["val"][kk] += vv
         out["won_n"] += p.get("won_n", 0) or 0
         out["won_val"] += p.get("won_val", 0.0) or 0.0
-        for kk, sub in (p.get("store_cnt") or {}).items():
-            for skk, vv in (sub or {}).items():
-                out["store_cnt"][kk][skk] += vv
-        for kk, sub in (p.get("store_val") or {}).items():
-            for skk, vv in (sub or {}).items():
-                out["store_val"][kk][skk] += vv
+        for _key in ("store_cnt", "store_val", "store_qty"):
+            for kk, sub in (p.get(_key) or {}).items():
+                for skk, vv in (sub or {}).items():
+                    out[_key][kk][skk] += vv
     out["cnt"] = dict(out["cnt"])
     out["val"] = dict(out["val"])
-    out["store_cnt"] = {k: dict(v) for k, v in out["store_cnt"].items()}
-    out["store_val"] = {k: dict(v) for k, v in out["store_val"].items()}
+    for _key in ("store_cnt", "store_val", "store_qty"):
+        out[_key] = {k: dict(v) for k, v in out[_key].items()}
     return out
 
 
@@ -3464,13 +3471,14 @@ def _cached_by_month(fetch_json, start, end, gist_prefix, fetch_one, merge_fn):
 
 
 def _sales_fetch_range_cached(fetch_json, start, end):
-    """_sales_fetch_range + cache tháng đã kết thúc (Gist) → 'Năm này' nhanh hơn nhiều sau lần đầu."""
-    return _cached_by_month(fetch_json, start, end, "vitran_srng", _sales_fetch_range, _merge_range_results)
+    """_sales_fetch_range + cache tháng đã kết thúc (Gist) → 'Năm này' nhanh hơn nhiều sau lần đầu.
+    Prefix có version (v2 = thêm store_cancelled_qty) — đổi version khi đổi cấu trúc để tính lại."""
+    return _cached_by_month(fetch_json, start, end, "vitran_srng2", _sales_fetch_range, _merge_range_results)
 
 
 def _sales_returns_period_cached(fetch_json, start, end):
-    """_sales_returns_period + cache tháng đã kết thúc (Gist)."""
-    return _cached_by_month(fetch_json, start, end, "vitran_sret", _sales_returns_period, _merge_returns_results)
+    """_sales_returns_period + cache tháng đã kết thúc (Gist). Prefix v2 = thêm store_qty (SP trả)."""
+    return _cached_by_month(fetch_json, start, end, "vitran_sret2", _sales_returns_period, _merge_returns_results)
 
 
 def get_sales_analysis(fetch_json, period="thangnay", _v=None):
@@ -3632,9 +3640,19 @@ def get_sales_analysis(fetch_json, period="thangnay", _v=None):
         s["refund_rate"], s["refund_val"] = _sr(s_rr), rv.get("return_and_refund", 0.0)
         s["fail_rate"], s["fail_val"] = _sr(s_df), rv.get("delivery_failed", 0.0)
         s["cancel_n"], s["refund_n"], s["fail_n"] = scn, s_rr, s_df   # SỐ ĐƠN hủy/trả/giao thất bại
+        # SỐ SP mất theo loại: hủy (từ orders) · trả hàng + giao thất bại (từ phiếu trả total_quantity)
+        rq = (ret_b.get("store_qty") or {}).get(nm, {})
+        s["cancel_qty"] = cur.get("store_cancelled_qty", {}).get(nm, 0)
+        s["refund_qty"] = int(round(rq.get("return_and_refund", 0.0)))
+        s["fail_qty"] = int(round(rq.get("delivery_failed", 0.0)))
         # THỰC NHẬN = net − (trả hàng hoàn tiền + chỉ hoàn tiền + giao thất bại) → khớp bảng dự báo thuế
         s["net_real"] = max(0.0, s["cur"] - (rv.get("return_and_refund", 0.0)
                                              + rv.get("refund", 0.0) + rv.get("delivery_failed", 0.0)))
+        # ĐƠN & SP THỰC NHẬN = tổng − (đơn/SP đã trả hàng + chỉ hoàn + giao thất bại)
+        _ret_ord = s_rr + rc.get("refund", 0) + s_df
+        _ret_qty = rq.get("return_and_refund", 0.0) + rq.get("refund", 0.0) + rq.get("delivery_failed", 0.0)
+        s["real_orders"] = max(0, s["orders"] - _ret_ord)
+        s["real_qty"] = max(0, s.get("qty", 0) - int(round(_ret_qty)))
 
     return {
         "period": period, "clabel": clabel, "plabel": plabel,

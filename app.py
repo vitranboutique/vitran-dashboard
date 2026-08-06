@@ -1920,7 +1920,7 @@ def load_overview():
 
 @st.cache_data(ttl=900, show_spinner="Đang phân tích doanh thu từ Sapo…")
 def load_sales(period):
-    _cache_ver = "2026-08-06-netreal-cmv"  # ĐỔI chuỗi này mỗi khi sửa get_sales_analysis → BUST cache cũ
+    _cache_ver = "2026-08-07-sp-cols"      # ĐỔI chuỗi này mỗi khi sửa get_sales_analysis → BUST cache cũ
     return L.get_sales_analysis(make_fetch_json(build_session()), period=period, _v=_cache_ver)
 
 
@@ -6149,47 +6149,53 @@ def _render_sales():
             st.markdown("**📊 Cơ cấu đơn** (✅CĐ · ❌hủy · 🚫thất bại)")
             st.plotly_chart(_outcome_bar(_stores), width="stretch")
         with st.expander("📋 Bảng số liệu theo gian hàng"):
-            st.caption("**Doanh thu** = NET ≈ \"Doanh số\" sàn · **Thực nhận** = trừ thêm trả hàng/hoàn tiền, "
-                       "khớp **dự báo thuế**.  Dưới **tên gian hàng**: số đơn · số lượng SP (chung cả gian hàng).  "
-                       "Ô Hủy/Trả hàng/Giao TB: **số tiền** (to) · **số đơn + tỉ lệ** (nhỏ dưới).")
+            st.caption("**Doanh thu** = NET ≈ \"Doanh số\" sàn (dưới: **đơn · SP tổng**) · "
+                       "**Thực nhận** = trừ trả hàng/hoàn tiền, khớp **dự báo thuế** (dưới: **đơn · SP còn lại**).  "
+                       "Ô Hủy/Trả hàng/Giao TB: **số tiền** (to) · **số đơn · SP · tỉ lệ** (nhỏ dưới).")
 
             def _vni(n):
                 return f"{int(n or 0):,}".replace(",", ".")
 
-            def _loss(n, val, rate):        # số tiền (to) + số đơn·tỉ lệ (nhỏ bên dưới)
+            def _loss(n, qty, val, rate):   # số tiền (to) + số đơn·SP·tỉ lệ (nhỏ bên dưới)
                 return (f'<div class="main">{(val or 0) / 1e6:.0f}tr</div>'
-                        f'<div class="sub">{_vni(n)} đơn · {(rate or 0):.1f}%</div>')
+                        f'<div class="sub">{_vni(n)} đơn · {_vni(qty)} SP · {(rate or 0):.1f}%</div>')
             _rows = ""
             for s in _stores:
                 _nm = str(s["name"]).replace("&", "&amp;").replace("<", "&lt;")
                 _rows += (
-                    f'<tr><td class="nm"><div>{_nm}</div>'
+                    f'<tr><td class="nm">{_nm}</td>'
+                    f'<td><div class="main">{s["cur"] / 1e6:.1f}tr</div>'
                     f'<div class="sub">{_vni(s["orders"])} đơn · {_vni(s.get("qty", 0))} SP</div></td>'
-                    f'<td class="main">{s["cur"] / 1e6:.1f}tr</td>'
-                    f'<td class="main" style="color:#0f766e">{s.get("net_real", s["cur"]) / 1e6:.1f}tr</td>'
+                    f'<td><div class="main" style="color:#0f766e">{s.get("net_real", s["cur"]) / 1e6:.1f}tr</div>'
+                    f'<div class="sub">{_vni(s.get("real_orders", s["orders"]))} đơn · {_vni(s.get("real_qty", s.get("qty", 0)))} SP</div></td>'
                     f'<td>{_vni(round(s["aov"]))}đ</td>'
                     f'<td>{s.get("conv_rate", 0):.1f}%</td>'
-                    f'<td>{_loss(s.get("cancel_n"), s.get("cancel_val"), s.get("cancel_rate"))}</td>'
-                    f'<td>{_loss(s.get("refund_n"), s.get("refund_val"), s.get("refund_rate"))}</td>'
-                    f'<td>{_loss(s.get("fail_n"), s.get("fail_val"), s.get("fail_rate"))}</td></tr>')
-            # DÒNG TỔNG — tiền/đơn/SP cộng từ các gian hàng; hủy/trả/giao lấy chất lượng toàn shop
+                    f'<td>{_loss(s.get("cancel_n"), s.get("cancel_qty"), s.get("cancel_val"), s.get("cancel_rate"))}</td>'
+                    f'<td>{_loss(s.get("refund_n"), s.get("refund_qty"), s.get("refund_val"), s.get("refund_rate"))}</td>'
+                    f'<td>{_loss(s.get("fail_n"), s.get("fail_qty"), s.get("fail_val"), s.get("fail_rate"))}</td></tr>')
+            # DÒNG TỔNG — cộng từ các gian hàng (đơn/SP hủy-trả-giao có SP nên tự cộng, khỏi dùng quality)
+            def _sum(k):
+                return sum(s.get(k, 0) or 0 for s in _stores)
             q = sa.get("quality") or {}
             _tdt = sum(s["cur"] for s in _stores)
             _ttn = sum(s.get("net_real", s["cur"]) for s in _stores)
-            _tdon = sum(s["orders"] for s in _stores)
-            _tsp = sum(s.get("qty", 0) for s in _stores)
+            _tdon, _tsp = _sum("orders"), _sum("qty")
+            _trdon, _trsp = _sum("real_orders"), _sum("real_qty")
             _taov = (_tdt / _tdon) if _tdon else 0
+            _tpl = _sum("placed")
+            _trt = lambda n: (n / _tpl * 100) if _tpl else 0
             _totrow = (
                 '<tr style="background:#16233f;color:#fff;font-weight:700">'
-                '<td class="nm" style="color:#fff">🧮 TỔNG'
+                '<td class="nm" style="color:#fff">🧮 TỔNG</td>'
+                f'<td><div class="main">{_tdt / 1e6:.1f}tr</div>'
                 f'<div class="sub" style="color:#cbd5e1">{_vni(_tdon)} đơn · {_vni(_tsp)} SP</div></td>'
-                f'<td class="main">{_tdt / 1e6:.1f}tr</td>'
-                f'<td class="main" style="color:#5eead4">{_ttn / 1e6:.1f}tr</td>'
+                f'<td><div class="main" style="color:#5eead4">{_ttn / 1e6:.1f}tr</div>'
+                f'<div class="sub" style="color:#cbd5e1">{_vni(_trdon)} đơn · {_vni(_trsp)} SP</div></td>'
                 f'<td>{_vni(round(_taov))}đ</td>'
                 f'<td>{q.get("conv_rate", 0):.1f}%</td>'
-                f'<td>{_loss(q.get("cancel_n"), q.get("cancel_val"), q.get("cancel_rate"))}</td>'
-                f'<td>{_loss(q.get("refund_n"), q.get("refund_val"), q.get("refund_rate"))}</td>'
-                f'<td>{_loss(q.get("fail_n"), q.get("fail_val"), q.get("fail_rate"))}</td></tr>')
+                f'<td>{_loss(_sum("cancel_n"), _sum("cancel_qty"), _sum("cancel_val"), _trt(_sum("cancel_n")))}</td>'
+                f'<td>{_loss(_sum("refund_n"), _sum("refund_qty"), _sum("refund_val"), _trt(_sum("refund_n")))}</td>'
+                f'<td>{_loss(_sum("fail_n"), _sum("fail_qty"), _sum("fail_val"), _trt(_sum("fail_n")))}</td></tr>')
             st.markdown(
                 '<style>.ghtbl{border-collapse:collapse;width:100%;font-size:.9em}'
                 '.ghtbl th,.ghtbl td{padding:6px 10px;border-bottom:1px solid #e5eaf1;text-align:right;white-space:nowrap}'
