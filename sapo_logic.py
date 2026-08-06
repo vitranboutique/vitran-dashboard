@@ -3194,18 +3194,32 @@ def _sales_period_range(period, today):
     return cs, ce, ps, pe, f"Năm {today.year}", f"Năm {today.year - 1}"
 
 
+def _month_chunks(start, end):
+    """Chia [start,end] thành các đoạn THEO THÁNG. Sapo chặn cứng page×limit ≤ 30.000 đơn/truy vấn;
+    shop >30k đơn/năm nên quét cả năm 1 lượt sẽ THIẾU đơn → phải tách từng tháng (mỗi tháng < 30k)."""
+    cur = start
+    while cur <= end:
+        if cur.month == 12:
+            nxt = cur.replace(year=cur.year + 1, month=1, day=1)
+        else:
+            nxt = cur.replace(month=cur.month + 1, day=1)
+        seg_end = min(end, nxt - timedelta(days=1))
+        yield cur, seg_end
+        cur = seg_end + timedelta(days=1)
+
+
 def _sales_fetch_range(fetch_json, start, end, max_pages=280):
     """Doanh thu NET (đã trừ đơn HỦY + tiền HOÀN) trong [start,end]: tổng, theo gian hàng, theo nhóm SKU.
-    NET = total_price − total_refunded, bỏ đơn cancelled. Nhóm SKU = productCode (parse_sku)."""
+    NET = total_price − total_refunded, bỏ đơn cancelled. Nhóm SKU = productCode (parse_sku).
+    QUÉT THEO THÁNG (né chặn 30k đơn/truy vấn của Sapo) → đọc ĐỦ đơn kể cả năm >30k đơn."""
     from collections import defaultdict
     try:
         from sapo_tools import parse_sku
     except Exception:
         parse_sku = None
-    cmin = start.isoformat() + "T00:00:00+07:00"
-    cmax = end.isoformat() + "T23:59:59+07:00"
     total, orders_n = 0.0, 0
     by_store, by_grp = defaultdict(float), defaultdict(float)
+    by_month = defaultdict(float)                         # doanh thu net theo THÁNG (cho biểu đồ 12 tháng)
     store_orders = defaultdict(int)                       # số đơn / gian hàng
     by_brand = defaultdict(float)                         # doanh thu / thương hiệu (pháp nhân thuế)
     store_grp = defaultdict(lambda: defaultdict(float))   # doanh thu {gian hàng: {nhóm SKU: đ}}
@@ -3221,69 +3235,73 @@ def _sales_fetch_range(fetch_json, start, end, max_pages=280):
     settled_n, settled_val = 0, 0.0                       # đơn đã ĐỐI SOÁT (settled_on)
     paid_n, paid_val = 0, 0.0                             # đơn đã NHẬN TIỀN (financial_status=paid)
     truncated = False
-    for p in range(1, max_pages + 1):
-        rows = fetch_json("/admin/orders.json", limit=250, page=p,
-                          created_on_min=cmin, created_on_max=cmax).get("orders", [])
-        if not rows:
-            break
-        for o in rows:
-            d = _vn_date_of(o.get("created_on"))
-            if not d or d < start or d > end:
-                continue
-            tp = float(o.get("total_price") or 0)
-            store = (o.get("channel_definition") or {}).get("branch_name") or o.get("source_name") or "Khác"
-            placed_n += 1
-            gross_val += tp
-            store_placed[store] += 1
-            if o.get("cancelled_on") or o.get("status") == "cancelled":
-                cancelled_n += 1
-                cancelled_val += tp
-                store_cancelled_n[store] += 1
-                store_cancelled_val[store] += tp
-                continue
-            rf = float(o.get("total_refunded") or 0)
-            net = tp - rf
-            total += net
-            orders_n += 1
-            # luồng giao hàng + đối soát (chỉ đơn CHƯA hủy)
-            _ff = o.get("fulfillments") or []
-            _ss = str((_ff[0].get("shipment_status") if _ff else "") or "").lower()
-            if _ss == "delivered":
-                delivered_n += 1
-                delivered_val += net
-            elif _ss == "delivering":
-                shipping_n += 1
-                shipping_val += net
-            elif _ss not in ("returning", "returned"):
-                processing_n += 1                        # pending / chưa có vận đơn = đang xử lý, chờ giao
-                processing_val += net
-            if o.get("settled_on"):
-                settled_n += 1
-                settled_val += net
-            if str(o.get("financial_status") or "").lower() == "paid":
-                paid_n += 1
-                paid_val += net
-            brand = store.rsplit(" - ", 1)[0] if " - " in store else store   # bỏ đuôi sàn → thương hiệu
-            by_store[store] += net
-            store_orders[store] += 1
-            by_brand[brand] += net
-            ratio = (net / tp) if tp > 0 else 1.0        # phân bổ tiền hoàn theo tỉ lệ cho từng SKU
-            for li in (o.get("line_items") or []):
-                if parse_sku:
-                    grp = parse_sku(li.get("sku")).get("productCode") or "?"
-                else:
-                    grp = str(li.get("sku") or "?").split("-")[0] or "?"
-                qty = int(round(li.get("quantity") or 0))
-                amt = float(li.get("discounted_total")
-                            or ((li.get("price") or 0) * (li.get("quantity") or 0))) * ratio
-                by_grp[grp] += amt
-                store_grp[store][grp] += amt
-                by_grp_qty[grp] += qty
-                store_qty[store] += qty
-                store_grp_qty[store][grp] += qty
-        if p == max_pages and rows:
-            truncated = True
-    return {"total": total, "orders": orders_n,
+    for _seg_s, _seg_e in _month_chunks(start, end):     # QUÉT THEO THÁNG → né chặn 30k đơn/truy vấn
+        _cmin = _seg_s.isoformat() + "T00:00:00+07:00"
+        _cmax = _seg_e.isoformat() + "T23:59:59+07:00"
+        for p in range(1, 121):                          # ≤120 trang/tháng: page×250 ≤ 30.000 (giới hạn Sapo)
+            rows = fetch_json("/admin/orders.json", limit=250, page=p,
+                              created_on_min=_cmin, created_on_max=_cmax).get("orders", [])
+            if not rows:
+                break
+            for o in rows:
+                d = _vn_date_of(o.get("created_on"))
+                if not d or d < start or d > end:
+                    continue
+                tp = float(o.get("total_price") or 0)
+                store = (o.get("channel_definition") or {}).get("branch_name") or o.get("source_name") or "Khác"
+                placed_n += 1
+                gross_val += tp
+                store_placed[store] += 1
+                if o.get("cancelled_on") or o.get("status") == "cancelled":
+                    cancelled_n += 1
+                    cancelled_val += tp
+                    store_cancelled_n[store] += 1
+                    store_cancelled_val[store] += tp
+                    continue
+                rf = float(o.get("total_refunded") or 0)
+                net = tp - rf
+                total += net
+                by_month[d.month] += net
+                orders_n += 1
+                # luồng giao hàng + đối soát (chỉ đơn CHƯA hủy)
+                _ff = o.get("fulfillments") or []
+                _ss = str((_ff[0].get("shipment_status") if _ff else "") or "").lower()
+                if _ss == "delivered":
+                    delivered_n += 1
+                    delivered_val += net
+                elif _ss == "delivering":
+                    shipping_n += 1
+                    shipping_val += net
+                elif _ss not in ("returning", "returned"):
+                    processing_n += 1                    # pending / chưa có vận đơn = đang xử lý, chờ giao
+                    processing_val += net
+                if o.get("settled_on"):
+                    settled_n += 1
+                    settled_val += net
+                if str(o.get("financial_status") or "").lower() == "paid":
+                    paid_n += 1
+                    paid_val += net
+                brand = store.rsplit(" - ", 1)[0] if " - " in store else store   # bỏ đuôi sàn → thương hiệu
+                by_store[store] += net
+                store_orders[store] += 1
+                by_brand[brand] += net
+                ratio = (net / tp) if tp > 0 else 1.0    # phân bổ tiền hoàn theo tỉ lệ cho từng SKU
+                for li in (o.get("line_items") or []):
+                    if parse_sku:
+                        grp = parse_sku(li.get("sku")).get("productCode") or "?"
+                    else:
+                        grp = str(li.get("sku") or "?").split("-")[0] or "?"
+                    qty = int(round(li.get("quantity") or 0))
+                    amt = float(li.get("discounted_total")
+                                or ((li.get("price") or 0) * (li.get("quantity") or 0))) * ratio
+                    by_grp[grp] += amt
+                    store_grp[store][grp] += amt
+                    by_grp_qty[grp] += qty
+                    store_qty[store] += qty
+                    store_grp_qty[store][grp] += qty
+            if p == 120 and rows:
+                truncated = True
+    return {"total": total, "orders": orders_n, "by_month": dict(by_month),
             "by_store": dict(by_store), "by_grp": dict(by_grp),
             "store_orders": dict(store_orders), "by_brand": dict(by_brand),
             "store_grp": {k: dict(v) for k, v in store_grp.items()},
@@ -3362,64 +3380,65 @@ def get_sales_analysis(fetch_json, period="thangnay", _v=None):
         out.sort(key=lambda x: -x["cur"])
         return out[:topn] if topn else out
 
-    # ── DỰ BÁO THUẾ: doanh thu cả năm theo mùa vụ (tháng 11,12,1,2,3,4 bán GẤP ĐÔI) ──
-    def _count(a, b):
-        try:
-            return int(fetch_json("/admin/orders/count.json",
-                                  created_on_min=a, created_on_max=b).get("count", 0))
-        except Exception:
-            return 0
+    # ── PHIẾU TRẢ kỳ hiện tại & kỳ trước (đưa lên sớm để phần dự báo thuế dùng lại khi xem "năm này") ──
+    ret_b = _sales_returns_period(fetch_json, cs, ce)
+    ret_p = _sales_returns_period(fetch_json, ps, pe)     # phiếu trả kỳ TRƯỚC (để so % DT thực nhận)
+
+    # ── DỰ BÁO THUẾ: DOANH THU THỰC NHẬN cả năm theo mùa vụ (T11,12,1,2,3,4 bán GẤP ĐÔI) ──
+    # Số THẬT (KHÔNG ước lượng): _sales_fetch_range quét THEO THÁNG nên đọc ĐỦ đơn cả năm (>30k).
+    # THỰC NHẬN = net (đã bỏ đơn HỦY + total_refunded) − (trả hàng hoàn tiền + chỉ hoàn tiền + giao thất bại).
+    from collections import defaultdict as _dd
     PEAK = {11, 12, 1, 2, 3, 4}
     _w = lambda m: 2 if m in PEAK else 1
-    # AOV net = doanh thu net / SỐ ĐƠN đặt (count gồm cả hủy) — dùng ước lượng YTD nhanh, khỏi tải cả năm
-    aov_rev, aov_days = cur["total"], (ce - cs).days + 1
-    if aov_days < 20:
-        _a = _sales_fetch_range(fetch_json, today - timedelta(days=29), today)
-        aov_rev, aov_days = _a["total"], 30
-    gcnt = _count((today - timedelta(days=aov_days - 1)).isoformat() + "T00:00:00+07:00",
-                  today.isoformat() + "T23:59:59+07:00")
-    aov = (aov_rev / gcnt) if gcnt else 0.0
     y0 = today.replace(month=1, day=1)
-    ytd_cnt = _count(y0.isoformat() + "T00:00:00+07:00", today.isoformat() + "T23:59:59+07:00")
-    ytd_rev = ytd_cnt * aov
+    if period == "namnay":                     # đang xem cả năm → DÙNG LẠI dữ liệu đã tải (khỏi tải 2 lần)
+        yr, yr_ret = cur, ret_b
+    else:
+        yr = _sales_fetch_range(fetch_json, y0, today)
+        yr_ret = _sales_returns_period(fetch_json, y0, today)
+
+    def _nonearn_store(rr, k):                 # tiền KHÔNG thu được của 1 gian hàng (trả/hoàn/giao thất bại)
+        sv = (rr.get("store_val") or {}).get(k, {})
+        return sv.get("return_and_refund", 0.0) + sv.get("refund", 0.0) + sv.get("delivery_failed", 0.0)
+
+    _bs = yr.get("by_store") or {}
+    shops_real = {k: max(0.0, _bs.get(k, 0.0) - _nonearn_store(yr_ret, k)) for k in _bs}
+    ytd_rev = sum(shops_real.values())         # DT THỰC NHẬN cả năm — số THẬT (đã trừ hủy + trả/hoàn)
     elapsed_w = sum(_w(m) for m in range(1, today.month))
     dim = calendar.monthrange(today.year, today.month)[1]
     elapsed_w += _w(today.month) * (today.day / dim)
     total_w = sum(_w(m) for m in range(1, 13))          # = 18
-    proj_year = (ytd_rev / elapsed_w * total_w) if elapsed_w else 0.0
-    # Doanh thu TỪNG THÁNG cả năm (T1..T12): tháng ĐÃ QUA = thực tế ước (count×AOV);
-    # tháng HIỆN TẠI + TƯƠNG LAI = DỰ ĐOÁN (base × trọng số mùa vụ). base = doanh thu / trọng số đã qua.
+
+    def _proj(v):
+        return (v / elapsed_w * total_w) if elapsed_w else 0.0
+    proj_year = _proj(ytd_rev)
+    # Doanh thu THỰC NHẬN từng tháng (T1..T12): tháng ĐÃ QUA = thật (net tháng × tỉ lệ thực nhận/net cả năm);
+    # tháng HIỆN TẠI + TƯƠNG LAI = DỰ ĐOÁN mùa vụ (base × trọng số). base = thực nhận đã đạt / trọng số đã qua.
+    _net_year = (yr.get("total") or 0.0) or 1.0
+    _ratio_real = ytd_rev / _net_year
+    _bymo = yr.get("by_month") or {}
     base_w = (ytd_rev / elapsed_w) if elapsed_w else 0.0
     monthly = []
     for mo in range(1, 13):
         if mo < today.month:
-            _ld = calendar.monthrange(today.year, mo)[1]
-            a = today.replace(month=mo, day=1).isoformat() + "T00:00:00+07:00"
-            b = today.replace(month=mo, day=_ld).isoformat() + "T23:59:59+07:00"
-            rev, actual = _count(a, b) * aov, True
+            rev, actual = _bymo.get(mo, 0.0) * _ratio_real, True
         else:
             rev, actual = base_w * _w(mo), False
         monthly.append({"month": mo, "rev": rev, "actual": actual, "peak": mo in PEAK})
-    tax = {"ytd_rev": ytd_rev, "ytd_orders": ytd_cnt, "aov": aov, "proj_year": proj_year,
+    tax = {"ytd_rev": ytd_rev, "ytd_orders": int(yr.get("orders") or 0), "proj_year": proj_year,
            "elapsed_w": elapsed_w, "total_w": total_w, "remain_w": total_w - elapsed_w,
            "peak_months": sorted(PEAK), "year": today.year, "monthly": monthly,
            "t3": 3_000_000_000, "t10": 10_000_000_000}
-    # Cảnh báo thuế: dự đoán cả năm ở 3 CẤP — TỔNG + từng SÀN + từng GIAN HÀNG (mỗi sàn/gian hàng
-    # tính riêng, KHÔNG gộp VITRAN). Phân bổ YTD theo TỈ TRỌNG doanh thu kỳ (ước lượng, khỏi tải cả năm).
-    from collections import defaultdict as _dd
-    bs = cur["by_store"]
-    tot_s = sum(bs.values()) or 1.0
 
-    def _proj(sh):
-        return (ytd_rev * sh / elapsed_w * total_w) if elapsed_w else 0.0
-    tax["shops"] = [{"name": k, "cur": v, "share": v / tot_s,
-                     "ytd": ytd_rev * v / tot_s, "proj": _proj(v / tot_s)}
-                    for k, v in sorted(bs.items(), key=lambda x: -x[1])]
+    def _san_of(k):
+        return k.rsplit(" - ", 1)[-1] if " - " in k else k
+    # TỔNG + từng GIAN HÀNG + từng SÀN — mỗi cấp tính RIÊNG từ số thực nhận thật (không phân bổ tỉ trọng).
+    tax["shops"] = [{"name": k, "cur": shops_real[k], "ytd": shops_real[k], "proj": _proj(shops_real[k])}
+                    for k in sorted(shops_real, key=lambda x: -shops_real[x])]
     _plat = _dd(float)
-    for k, v in bs.items():
-        _plat[k.rsplit(" - ", 1)[-1] if " - " in k else k] += v
-    tax["platforms"] = [{"name": k, "cur": v, "share": v / tot_s,
-                         "ytd": ytd_rev * v / tot_s, "proj": _proj(v / tot_s)}
+    for k, v in shops_real.items():
+        _plat[_san_of(k)] += v
+    tax["platforms"] = [{"name": k, "cur": v, "ytd": v, "proj": _proj(v)}
                         for k, v in sorted(_plat.items(), key=lambda x: -x[1])]
 
     # doanh thu / gian hàng kèm SỐ ĐƠN + GIÁ TRỊ TB/ĐƠN
@@ -3444,8 +3463,7 @@ def get_sales_analysis(fetch_json, period="thangnay", _v=None):
         store_groups[st] = lst
 
     # ── CHẤT LƯỢNG ĐƠN: chuyển đổi / hủy / trả hàng hoàn tiền / giao thất bại (kỳ hiện tại) ──
-    ret_b = _sales_returns_period(fetch_json, cs, ce)
-    ret_p = _sales_returns_period(fetch_json, ps, pe)     # phiếu trả kỳ TRƯỚC (để so % DT thực nhận)
+    # (ret_b/ret_p đã tải ở phần dự báo thuế phía trên → dùng lại, khỏi gọi API 2 lần)
     # DT THỰC NHẬN = DT NET − TOÀN BỘ đơn KHÔNG thu được tiền (trả hàng hoàn tiền + chỉ hoàn tiền +
     # giao thất bại), lấy trọn total_price từ phiếu trả. DT NET chỉ trừ total_refunded (Sapo ghi thiếu),
     # nên số này mới phản ánh đúng tiền THỰC SỰ giữ lại. Phiếu trả bị hủy (kháng nghị thắng) không tính.

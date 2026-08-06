@@ -1920,7 +1920,7 @@ def load_overview():
 
 @st.cache_data(ttl=900, show_spinner="Đang phân tích doanh thu từ Sapo…")
 def load_sales(period):
-    _cache_ver = "2026-07-27-flow-val"     # ĐỔI chuỗi này mỗi khi sửa get_sales_analysis → BUST cache cũ
+    _cache_ver = "2026-08-06-real-year"    # ĐỔI chuỗi này mỗi khi sửa get_sales_analysis → BUST cache cũ
     return L.get_sales_analysis(make_fetch_json(build_session()), period=period, _v=_cache_ver)
 
 
@@ -5916,12 +5916,12 @@ def _tax_shop_combo(t, shops):
 
 def _render_tax_warning(t):
     st.markdown('<div class="sec sec-orange">⚠️ Cảnh báo ngưỡng thuế — dự đoán cả năm (T1→T12): TỔNG · từng SÀN · từng GIAN HÀNG'
-                '<span class="ic" title="Mỗi SÀN và mỗi GIAN HÀNG tính RIÊNG (không gộp VITRAN). Dự đoán cả năm = '
-                'doanh thu đã đạt ÷ trọng số mùa vụ đã qua × cả năm (6 tháng 11,12,1,2,3,4 bán gấp đôi). Ước theo '
-                'số đơn × TB/đơn — CẢNH BÁO SỚM.">&#9432;</span></div>', unsafe_allow_html=True)
+                '<span class="ic" title="Mỗi SÀN và mỗi GIAN HÀNG tính RIÊNG (không gộp VITRAN). THỰC TẾ ĐÃ ĐẠT = '
+                'doanh thu THỰC NHẬN thật (đã trừ đơn hủy + trả hàng/hoàn tiền + giao thất bại), quét ĐỦ đơn cả năm. '
+                'Dự đoán cả năm = thực nhận đã đạt ÷ trọng số mùa vụ đã qua × cả năm (6 tháng 11,12,1,2,3,4 bán gấp đôi).">&#9432;</span></div>', unsafe_allow_html=True)
     _peak = ", ".join(str(m) for m in t["peak_months"])
-    st.caption(f"Dự đoán cả năm (tháng 1→12) theo mùa vụ: 6 tháng cao điểm (tháng {_peak}) bán GẤP ĐÔI. "
-               "Con số ước tính để CẢNH BÁO SỚM, không phải quyết toán thuế.")
+    st.caption(f"**Thực tế đã đạt = số THẬT** (đã trừ đơn hủy + trả hàng/hoàn tiền). Dự đoán cả năm theo mùa vụ: "
+               f"6 tháng cao điểm (tháng {_peak}) bán GẤP ĐÔI — để CẢNH BÁO SỚM, không phải quyết toán thuế.")
     shops = t.get("shops") or []
     plats = t.get("platforms") or []
 
