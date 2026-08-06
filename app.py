@@ -6156,9 +6156,10 @@ def _render_sales():
             def _vni(n):
                 return f"{int(n or 0):,}".replace(",", ".")
 
-            def _loss(n, qty, val, rate):   # số tiền (to) + số đơn·SP·tỉ lệ (nhỏ bên dưới)
-                return (f'<div class="main">{(val or 0) / 1e6:.0f}tr</div>'
-                        f'<div class="sub">{_vni(n)} đơn · {_vni(qty)} SP · {(rate or 0):.1f}%</div>')
+            def _loss(n, qty, val, rate):   # số tiền + %tỉ-lệ (đỏ, cạnh nhau) · đơn·SP (nhỏ dưới)
+                return (f'<div class="main">{(val or 0) / 1e6:.0f}tr '
+                        f'<b style="color:#ef4444">{(rate or 0):.1f}%</b></div>'
+                        f'<div class="sub">{_vni(n)} đơn · {_vni(qty)} SP</div>')
             _rows = ""
             for s in _stores:
                 _nm = str(s["name"]).replace("&", "&amp;").replace("<", "&lt;")
