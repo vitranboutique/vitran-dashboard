@@ -1920,7 +1920,7 @@ def load_overview():
 
 @st.cache_data(ttl=900, show_spinner="Đang phân tích doanh thu từ Sapo…")
 def load_sales(period):
-    _cache_ver = "2026-08-06-real-year"    # ĐỔI chuỗi này mỗi khi sửa get_sales_analysis → BUST cache cũ
+    _cache_ver = "2026-08-06-netreal-cmv"  # ĐỔI chuỗi này mỗi khi sửa get_sales_analysis → BUST cache cũ
     return L.get_sales_analysis(make_fetch_json(build_session()), period=period, _v=_cache_ver)
 
 
@@ -6150,7 +6150,11 @@ def _render_sales():
             st.plotly_chart(_outcome_bar(_stores), width="stretch")
         with st.expander("📋 Bảng số liệu theo gian hàng — bấm tên cột để sắp xếp ↑↓"):
             st.caption("**Doanh thu** = NET (đã trừ đơn hủy + hoàn trên đơn) ≈ \"Doanh số\" của sàn.  "
-                       "**Thực nhận** = trừ THÊM trả hàng/hoàn tiền + giao thất bại → **đây là số khớp bảng dự báo thuế** bên dưới.")
+                       "**Thực nhận** = trừ THÊM trả hàng/hoàn tiền + giao thất bại → **số khớp bảng dự báo thuế** bên dưới.  "
+                       "3 cột cuối (Hủy · Trả hàng · Giao TB) = **số đơn · số tiền · tỉ lệ**.")
+
+            def _cmv(n, val, rate):      # "số đơn · số tiền · tỉ lệ"
+                return f"{int(n or 0)} đơn · {(val or 0) / 1e6:.0f}tr · {rate or 0:.1f}%"
             _sdf = pd.DataFrame([{
                 "Gian hàng": s["name"],
                 "Doanh thu": round(s["cur"] / 1e6, 1),
@@ -6159,19 +6163,16 @@ def _render_sales():
                 "Số đơn": s["orders"], "SL bán": s.get("qty", 0),
                 "TB/đơn": round(s["aov"] / 1000),
                 "✅ Chuyển đổi": round(s.get("conv_rate", 0), 1),
-                "❌ Hủy": round(s.get("cancel_rate", 0), 1),
-                "↩️ Trả hàng": round(s.get("refund_rate", 0), 1),
-                "🚫 Giao TB": round(s.get("fail_rate", 0), 1)}
+                "❌ Hủy": _cmv(s.get("cancel_n"), s.get("cancel_val"), s.get("cancel_rate")),
+                "↩️ Trả hàng": _cmv(s.get("refund_n"), s.get("refund_val"), s.get("refund_rate")),
+                "🚫 Giao TB": _cmv(s.get("fail_n"), s.get("fail_val"), s.get("fail_rate"))}
                 for s in _stores])
             st.dataframe(_sdf, width="stretch", hide_index=True, column_config={
                 "Doanh thu": st.column_config.NumberColumn("Doanh thu (tr)", format="%.1f"),
                 "Thực nhận": st.column_config.NumberColumn("Thực nhận (tr)", format="%.1f"),
                 "±% kỳ trước": st.column_config.NumberColumn(format="%+.1f%%"),
                 "TB/đơn": st.column_config.NumberColumn("TB/đơn (k)", format="%.0f"),
-                "✅ Chuyển đổi": st.column_config.NumberColumn(format="%.1f%%"),
-                "❌ Hủy": st.column_config.NumberColumn(format="%.1f%%"),
-                "↩️ Trả hàng": st.column_config.NumberColumn(format="%.1f%%"),
-                "🚫 Giao TB": st.column_config.NumberColumn(format="%.1f%%")})
+                "✅ Chuyển đổi": st.column_config.NumberColumn(format="%.1f%%")})
 
     def _sku_block(g):
         if not g:
