@@ -6414,34 +6414,48 @@ def _render_pick():
         # (Đã bỏ nút in trong phiếu để NV không in mà quên lưu.)
         if pdata["total"] > 0:
             _can_save = picklog.configured()
-            _lbl = ("🖨️ IN PHIẾU NHẶT — tự lưu vào lịch sử" if _can_save
-                    else "🖨️ In phiếu nhặt (chưa bật lưu lịch sử)")
-            if st.button(_lbl, type="primary", width="stretch"):
+
+            def _log_and_print(_e, _n, which):
+                """In + LƯU CHỈ nhóm được chọn (hỏa tốc hoặc thường)."""
                 if _can_save:
-                    _allsku = {s for s, _ in exp["skus"]} | {s for s, _ in nor["skus"]}
-                    _pcodes, _pskum, _pcar, _pgroups = _pick_codes_skus(exp, nor)
+                    _allsku = {s for s, _ in (_e.get("skus") or [])} | {s for s, _ in (_n.get("skus") or [])}
+                    _pcodes, _pskum, _pcar, _pgroups = _pick_codes_skus(_e, _n)
                     _ok, _msg = picklog.log_batch({
                         "ngay": (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%Y-%m-%d"),
                         "gio": now_str[:5],
-                        "so_don": exp["total_orders"] + nor["total_orders"],
-                        "so_sp": exp["total_qty"] + nor["total_qty"], "so_sku": len(_allsku),
-                        "ht_don": exp["total_orders"], "th_don": nor["total_orders"],
-                        "so_cu": exp["old"] + nor["old"],   # đơn CŨ (xác nhận hôm trước, nay mới nhặt)
-                        "codes": _pcodes,       # MÃ ĐƠN từng đơn → đối chiếu hủy trước/sau soạn
-                        "sku_list": _pskum,     # [(sku, SL)] đã nhặt trong đợt
-                        "carriers": _pcar,
-                        "code_groups": _pgroups,
+                        "so_don": (_e.get("total_orders") or 0) + (_n.get("total_orders") or 0),
+                        "so_sp": (_e.get("total_qty") or 0) + (_n.get("total_qty") or 0),
+                        "so_sku": len(_allsku),
+                        "ht_don": _e.get("total_orders") or 0, "th_don": _n.get("total_orders") or 0,
+                        "so_cu": (_e.get("old") or 0) + (_n.get("old") or 0),
+                        "codes": _pcodes, "sku_list": _pskum, "carriers": _pcar, "code_groups": _pgroups,
                     })
                     if not _ok:
                         st.error(_msg)
-                st.session_state["_pick_autoprint"] = True
+                st.session_state["_pick_print"] = which
                 st.rerun()
-            if not _can_save:
-                st.caption("⚙️ Bật kho lưu (mục bên phải) để mỗi lần IN là **tự lưu vào lịch sử**.")
-        _auto = st.session_state.pop("_pick_autoprint", False)
-        if _auto:
-            st.success("✅ Đã lưu đợt — đang bung hộp in (cho phép cửa sổ in).")
-        components.html(picking_html(pdata, now_str, auto_print=_auto), height=860, scrolling=True)
+
+            _n_ht, _n_th = exp["total_orders"], nor["total_orders"]
+            _bt = st.columns(2)
+            if _bt[0].button(f"🔴 IN HỎA TỐC ({_n_ht} đơn)", type="primary", width="stretch",
+                             disabled=(_n_ht == 0), key="pick_pr_ht"):
+                _log_and_print(exp, {}, "ht")            # chỉ hỏa tốc
+            if _bt[1].button(f"📋 IN THƯỜNG ({_n_th} đơn)", type="primary", width="stretch",
+                             disabled=(_n_th == 0), key="pick_pr_th"):
+                _log_and_print({}, nor, "th")            # chỉ thường
+            st.caption("Bấm loại nào thì **CHỈ in + lưu loại đó** vào lịch sử — NV tự chọn in gì."
+                       + ("" if _can_save else "  ⚠️ Chưa bật kho lưu → in được nhưng KHÔNG lưu lịch sử."))
+        _which = st.session_state.pop("_pick_print", None)
+        if _which:
+            st.success(f"✅ Đã lưu + đang bung hộp in **{'HỎA TỐC' if _which == 'ht' else 'THƯỜNG'}** "
+                       "(cho phép cửa sổ in).")
+        if _which == "ht":
+            _pd = {**pdata, "normal": {"total_orders": 0}}     # in mỗi hỏa tốc
+        elif _which == "th":
+            _pd = {**pdata, "express": {"total_orders": 0}}    # in mỗi thường
+        else:
+            _pd = pdata                                        # xem trước: cả 2
+        components.html(picking_html(_pd, now_str, auto_print=bool(_which)), height=860, scrolling=True)
     with _clog:
         st.markdown("#### 📋 Lịch sử in phiếu hôm nay")
         if not picklog.configured():
@@ -6461,9 +6475,9 @@ def _render_pick():
             else:
                 st.caption("Chưa lưu lượt nào hôm nay.")
         if pdata["total"] > 0:
-            st.caption("✅ Chỉ cần bấm nút xanh **🖨️ IN PHIẾU NHẶT** (bên trái) — nó **vừa in vừa tự lưu**. "
-                       "Nút dưới chỉ để lưu THỦ CÔNG khi cần (không in):")
-            if st.button("💾 Lưu đợt thủ công (không in)", disabled=not picklog.configured()):
+            st.caption("✅ Bấm **🔴 IN HỎA TỐC** hoặc **📋 IN THƯỜNG** (bên trái) — chỉ in + tự lưu loại đó. "
+                       "Nút dưới chỉ để lưu THỦ CÔNG CẢ 2 loại khi cần (không in):")
+            if st.button("💾 Lưu đợt thủ công CẢ 2 (không in)", disabled=not picklog.configured()):
                 _now_vn = datetime.now(timezone.utc) + timedelta(hours=7)
                 _allsku = {s for s, _ in exp["skus"]} | {s for s, _ in nor["skus"]}
                 _pcodes, _pskum, _pcar, _pgroups = _pick_codes_skus(exp, nor)
