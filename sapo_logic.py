@@ -1322,6 +1322,28 @@ def get_picking(fetch_json, max_pages: int = 15) -> dict:
     }
 
 
+def pick_shipped_codes(fetch_json, days: int = 6) -> set:
+    """Tập MÃ (mọi alias) của đơn ĐÃ GIAO ĐI (đã bàn giao shipper) trong `days` ngày gần đây.
+    Dùng để đối chiếu: mỗi ĐỢT phiếu nhặt đã giao được bao nhiêu đơn. 'Giao đi' = fulfillment
+    shipment_status ∈ delivering/delivered/returning/returned (đã rời shop). Quét cả open+closed
+    (đơn đã giao xong thường chuyển sang closed) nên KHÔNG lọc status."""
+    today = (_now_utc() + timedelta(hours=7)).date()
+    start = today - timedelta(days=max(1, days) - 1)
+    cmin = start.isoformat() + "T00:00:00+07:00"
+    cmax = today.isoformat() + "T23:59:59+07:00"
+    shipped = set()
+    for p in range(1, 40):
+        rows = fetch_json("/admin/orders.json", limit=250, page=p,
+                          created_on_min=cmin, created_on_max=cmax).get("orders", [])
+        if not rows:
+            break
+        for o in rows:
+            f = (o.get("fulfillments") or [{}])[0]
+            if str(f.get("shipment_status") or "").lower() in ("delivering", "delivered", "returning", "returned"):
+                shipped |= _order_codes(o)
+    return shipped
+
+
 # ───────────────────── Tổng quan điều hành (overview) ─────────────────────
 
 def _vn_date_of(iso):

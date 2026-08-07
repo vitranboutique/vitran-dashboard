@@ -1929,6 +1929,12 @@ def load_picking():
     return L.get_picking(make_fetch_json(build_session()))
 
 
+@st.cache_data(ttl=180, show_spinner="Đang kiểm đơn đã giao đi…")
+def load_pick_shipped():
+    """Tập mã đơn ĐÃ GIAO ĐI (bàn giao shipper) gần đây — đối chiếu đợt phiếu nhặt."""
+    return L.pick_shipped_codes(make_fetch_json(build_session()))
+
+
 @st.cache_data(ttl=180, show_spinner="Đang lọc đơn cần lấy TTKH…")
 def load_ttkh_candidates(days=15, channel_filter="tiktok"):
     # Đơn CẦN lấy TTKH = đơn chưa có SĐT trên đơn (real-time từ Sapo). Tự hiện/tự mất,
@@ -6466,13 +6472,30 @@ def _render_pick():
         else:
             _logrows = _picklog_today
             if _logrows:
-                _ldf = pd.DataFrame([{"Lượt": i + 1, "Giờ": r.get("gio", ""),
-                                      "Số đơn": r.get("so_don", 0), "Số SP": r.get("so_sp", 0),
-                                      "Số SKU": r.get("so_sku", 0), "HT": r.get("ht_don", 0),
-                                      "Thường": r.get("th_don", 0)} for i, r in enumerate(_logrows)])
+                try:
+                    _shipped = load_pick_shipped()
+                except Exception:
+                    _shipped = set()
+
+                def _giao_of(r):     # số đơn của ĐỢT đã GIAO ĐI (bàn giao shipper)
+                    _groups = r.get("code_groups") or [[c] for c in (r.get("codes") or [])]
+                    return sum(1 for grp in _groups if any(a in _shipped for a in (grp or [])))
+                _rows = []
+                for i, r in enumerate(_logrows):
+                    _sd = int(r.get("so_don", 0) or 0)
+                    _gi = _giao_of(r)
+                    _rows.append({"Lượt": i + 1, "Giờ": r.get("gio", ""),
+                                  "Số đơn": _sd, "Số SP": r.get("so_sp", 0),
+                                  "Số SKU": r.get("so_sku", 0), "HT": r.get("ht_don", 0),
+                                  "Thường": r.get("th_don", 0),
+                                  "Đã giao": (f"✅ {_gi}" if _gi >= _sd and _sd else f"{_gi}/{_sd}")})
+                _ldf = pd.DataFrame(_rows)
+                _tot_giao = sum(_giao_of(r) for r in _logrows)
                 st.markdown(f"**{len(_logrows)} lượt** · {int(_ldf['Số đơn'].sum())} đơn · "
-                            f"{int(_ldf['Số SP'].sum())} SP")
+                            f"{int(_ldf['Số SP'].sum())} SP · **đã giao {_tot_giao}**")
                 render_compact_table(_ldf)
+                st.caption("Cột **Đã giao** = số đơn của đợt đã bàn giao shipper (giao đi). "
+                           "✅ = giao hết; `x/y` = mới giao x trong y đơn.")
             else:
                 st.caption("Chưa lưu lượt nào hôm nay.")
         if pdata["total"] > 0:
