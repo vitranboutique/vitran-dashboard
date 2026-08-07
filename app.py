@@ -6435,27 +6435,28 @@ def _render_pick():
                 st.session_state["_pick_print"] = which
                 st.rerun()
 
-            _n_ht, _n_th = exp["total_orders"], nor["total_orders"]
-            _bt = st.columns(2)
-            if _bt[0].button(f"🔴 IN HỎA TỐC ({_n_ht} đơn)", type="primary", width="stretch",
-                             disabled=(_n_ht == 0), key="pick_pr_ht"):
-                _log_and_print(exp, {}, "ht")            # chỉ hỏa tốc
-            if _bt[1].button(f"📋 IN THƯỜNG ({_n_th} đơn)", type="primary", width="stretch",
-                             disabled=(_n_th == 0), key="pick_pr_th"):
-                _log_and_print({}, nor, "th")            # chỉ thường
-            st.caption("Bấm loại nào thì **CHỈ in + lưu loại đó** vào lịch sử — NV tự chọn in gì."
+            _which_active = st.session_state.pop("_pick_print", None)
+            if _which_active:
+                st.success(f"✅ Đã lưu + đang bung hộp in **{'HỎA TỐC' if _which_active == 'ht' else 'THƯỜNG'}** "
+                           "(cho phép cửa sổ in).")
+            st.caption("Mỗi loại: **nút in + phiếu xem trước NGAY DƯỚI** — bấm loại nào thì CHỈ in + lưu loại đó."
                        + ("" if _can_save else "  ⚠️ Chưa bật kho lưu → in được nhưng KHÔNG lưu lịch sử."))
-        _which = st.session_state.pop("_pick_print", None)
-        if _which:
-            st.success(f"✅ Đã lưu + đang bung hộp in **{'HỎA TỐC' if _which == 'ht' else 'THƯỜNG'}** "
-                       "(cho phép cửa sổ in).")
-        if _which == "ht":
-            _pd = {**pdata, "normal": {"total_orders": 0}}     # in mỗi hỏa tốc
-        elif _which == "th":
-            _pd = {**pdata, "express": {"total_orders": 0}}    # in mỗi thường
+            for _lbl, _e, _n, _key, _which, _cnt in (
+                ("🔴 IN HỎA TỐC", exp, {}, "pick_pr_ht", "ht", exp["total_orders"]),
+                ("📋 IN THƯỜNG", {}, nor, "pick_pr_th", "th", nor["total_orders"]),
+            ):
+                if st.button(f"{_lbl} ({_cnt} đơn)", type="primary", width="stretch",
+                             disabled=(_cnt == 0), key=_key):
+                    _log_and_print(_e, _n, _which)
+                if _cnt > 0:
+                    _pd = {"express": exp if _which == "ht" else {"total_orders": 0},
+                           "normal": nor if _which == "th" else {"total_orders": 0}}
+                    components.html(picking_html(_pd, now_str, auto_print=(_which_active == _which)),
+                                    height=560, scrolling=True)
+                else:
+                    st.caption(f"— chưa có đơn {'hỏa tốc' if _which == 'ht' else 'thường'} —")
         else:
-            _pd = pdata                                        # xem trước: cả 2
-        components.html(picking_html(_pd, now_str, auto_print=bool(_which)), height=860, scrolling=True)
+            components.html(picking_html(pdata, now_str), height=180, scrolling=True)
     with _clog:
         st.markdown("#### 📋 Lịch sử in phiếu hôm nay")
         if not picklog.configured():
