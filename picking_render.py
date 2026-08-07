@@ -174,13 +174,16 @@ def history_slips_html(batches, now_str):
     items = []
     for b in batches:
         sid = "dot%s" % b["dot"]
-        title = "PHIẾU NHẶT — ĐỢT %s (%s)" % (b["dot"], b["gio"])
-        slip = _slip(title, "#16233f", b["summary"], now_str)
+        _ht = b.get("loai") == "ht"
+        _typ = "HỎA TỐC" if _ht else "THƯỜNG"
+        _col = "#E24B4A" if _ht else "#111111"
+        title = "PHIẾU NHẶT — %s (%s)" % (_typ, b["gio"])
+        slip = _slip(title, _col, b["summary"], now_str, dot=b["dot"])
         items.append(
             "<div style='margin-bottom:4px'>"
             "<div style='text-align:center;margin:4px 0 8px'>"
-            "<button class='printbtn' onclick=\"printOne('%s')\">&#128424;&#65039; In lại đợt %s</button></div>"
-            "<div id='%s'>%s</div></div>" % (sid, b["dot"], sid, slip)
+            "<button class='printbtn' onclick=\"printOne('%s')\">&#128424;&#65039; In lại ĐỢT #%s (%s)</button></div>"
+            "<div id='%s'>%s</div></div>" % (sid, b["dot"], _typ, sid, slip)
         )
     body = "<div style='height:10px'></div>".join(items)
     js = (

@@ -38,7 +38,7 @@ from sapo_client import (
     customer_exists_by_phone, update_customer_address_from_info, upsert_customer_from_info,
     find_orders_by_phone, update_customer_note_lines,
 )
-from picking_render import picking_html
+from picking_render import picking_html, history_slips_html
 
 _DOHANA_RETENTION = 25  # file video bị xóa sau khoảng 25 ngày; mã trong kho vẫn được giữ để đối chiếu
 
@@ -58,6 +58,7 @@ try:                                   # picking_render: module thuần render �
     import picking_render as _pr
     _importlib.reload(_pr)
     picking_html = _pr.picking_html
+    history_slips_html = _pr.history_slips_html
 except Exception as _e:
     _RELOAD_ERR += f"picking_render: {_e}\n"
 # picklog: reload để có hàm MỚI ngay (khỏi Reboot), nhưng GIỮ _GID_CACHE để khỏi list lại gist mỗi rerun.
@@ -6427,11 +6428,16 @@ def _render_pick():
         if pdata["total"] > 0:
             _can_save = picklog.configured()
 
+            def _slim(g):     # đủ dữ liệu để IN LẠI đúng phiếu (nội dung phiếu vừa in)
+                return {k: g.get(k) for k in ("total_orders", "total_qty", "sku_count", "new", "old",
+                                              "late", "skus", "channels", "stores", "carriers", "services")}
+
             def _log_and_print(_e, _n, which):
                 """In + LƯU CHỈ nhóm được chọn (hỏa tốc hoặc thường)."""
                 if _can_save:
                     _allsku = {s for s, _ in (_e.get("skus") or [])} | {s for s, _ in (_n.get("skus") or [])}
                     _pcodes, _pskum, _pcar, _pgroups = _pick_codes_skus(_e, _n)
+                    _grp = _e if (_e.get("total_orders") or 0) else _n
                     _ok, _msg = picklog.log_batch({
                         "ngay": (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%Y-%m-%d"),
                         "gio": now_str[:5],
@@ -6441,6 +6447,7 @@ def _render_pick():
                         "ht_don": _e.get("total_orders") or 0, "th_don": _n.get("total_orders") or 0,
                         "so_cu": (_e.get("old") or 0) + (_n.get("old") or 0),
                         "codes": _pcodes, "sku_list": _pskum, "carriers": _pcar, "code_groups": _pgroups,
+                        "summary": _slim(_grp), "loai": which,   # để IN LẠI khi lỡ mất phiếu
                     })
                     if not _ok:
                         st.error(_msg)
@@ -6527,6 +6534,14 @@ def _render_pick():
                     unsafe_allow_html=True)
                 st.caption("**Đã giao** = số đơn của đợt đã bàn giao shipper. "
                            "✅ = giao hết · `x/y` = mới giao x trong y đơn.")
+                # IN LẠI phiếu đã in (khi NV lỡ mất phiếu) — chỉ đợt có lưu nội dung phiếu (summary)
+                _reprint = [(i + 1, r) for i, r in enumerate(_logrows) if r.get("summary")]
+                if _reprint:
+                    with st.expander(f"🖨️ IN LẠI phiếu đã in ({len(_reprint)} đợt) — khi lỡ mất phiếu"):
+                        st.caption("In lại đúng nội dung ĐỢT đã in — **KHÔNG** tạo lượt mới, không đụng lịch sử.")
+                        _bs = [{"dot": _dot, "gio": r.get("gio", ""), "summary": r["summary"],
+                                "loai": r.get("loai", "th")} for _dot, r in _reprint]
+                        components.html(history_slips_html(_bs, now_str), height=620, scrolling=True)
             else:
                 st.caption("Chưa lưu lượt nào hôm nay.")
         if pdata["total"] > 0:
