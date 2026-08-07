@@ -54,6 +54,12 @@ for _m in (L, daily_report, input_costs_ui, cham_cong, cham_cong_ui):
         _importlib.reload(_m)
     except Exception as _e:            # lỗi hiếm; giữ bản đang chạy, ghi lại để hiện cảnh báo
         _RELOAD_ERR += f"{getattr(_m, '__name__', '?')}: {_e}\n"
+try:                                   # picking_render: module thuần render → reload + gán LẠI hàm đã import
+    import picking_render as _pr
+    _importlib.reload(_pr)
+    picking_html = _pr.picking_html
+except Exception as _e:
+    _RELOAD_ERR += f"picking_render: {_e}\n"
 # picklog: reload để có hàm MỚI ngay (khỏi Reboot), nhưng GIỮ _GID_CACHE để khỏi list lại gist mỗi rerun.
 try:
     _gid_keep = getattr(picklog, "_GID_CACHE", None)
@@ -6455,9 +6461,12 @@ def _render_pick():
                              disabled=(_cnt == 0), key=_key):
                     _log_and_print(_e, _n, _which)
                 if _cnt > 0:
+                    _ap = (_which_active == _which)
+                    # đợt: bản IN vừa lưu = lượt cuối (len); bản xem trước = lượt KẾ (len+1)
+                    _dot = len(_picklog_today) if _ap else len(_picklog_today) + 1
                     _pd = {"express": exp if _which == "ht" else {"total_orders": 0},
                            "normal": nor if _which == "th" else {"total_orders": 0}}
-                    components.html(picking_html(_pd, now_str, auto_print=(_which_active == _which)),
+                    components.html(picking_html(_pd, now_str, auto_print=_ap, dot=_dot),
                                     height=560, scrolling=True)
                 else:
                     st.caption(f"— chưa có đơn {'hỏa tốc' if _which == 'ht' else 'thường'} —")
@@ -6480,22 +6489,44 @@ def _render_pick():
                 def _giao_of(r):     # số đơn của ĐỢT đã GIAO ĐI (bàn giao shipper)
                     _groups = r.get("code_groups") or [[c] for c in (r.get("codes") or [])]
                     return sum(1 for grp in _groups if any(a in _shipped for a in (grp or [])))
-                _rows = []
+                _trs = ""
+                _tot_don = _tot_sp = _tot_giao = 0
                 for i, r in enumerate(_logrows):
                     _sd = int(r.get("so_don", 0) or 0)
+                    _sp = int(r.get("so_sp", 0) or 0)
+                    _ht = int(r.get("ht_don", 0) or 0)
+                    _th = int(r.get("th_don", 0) or 0)
                     _gi = _giao_of(r)
-                    _rows.append({"Lượt": i + 1, "Giờ": r.get("gio", ""),
-                                  "Số đơn": _sd, "Số SP": r.get("so_sp", 0),
-                                  "Số SKU": r.get("so_sku", 0), "HT": r.get("ht_don", 0),
-                                  "Thường": r.get("th_don", 0),
-                                  "Đã giao": (f"✅ {_gi}" if _gi >= _sd and _sd else f"{_gi}/{_sd}")})
-                _ldf = pd.DataFrame(_rows)
-                _tot_giao = sum(_giao_of(r) for r in _logrows)
-                st.markdown(f"**{len(_logrows)} lượt** · {int(_ldf['Số đơn'].sum())} đơn · "
-                            f"{int(_ldf['Số SP'].sum())} SP · **đã giao {_tot_giao}**")
-                render_compact_table(_ldf)
-                st.caption("Cột **Đã giao** = số đơn của đợt đã bàn giao shipper (giao đi). "
-                           "✅ = giao hết; `x/y` = mới giao x trong y đơn.")
+                    _tot_don += _sd
+                    _tot_sp += _sp
+                    _tot_giao += _gi
+                    _giao_cell = (f'<b style="color:#16a34a">✅ {_gi}</b>' if (_sd and _gi >= _sd)
+                                  else f'<b style="color:#b45309">{_gi}/{_sd}</b>')
+                    _ht_cell = f'<b style="color:#dc2626">{_ht}</b>' if _ht else "0"
+                    _trs += (f'<tr><td style="font-weight:800">#{i + 1}</td>'
+                             f'<td>{r.get("gio", "")}</td><td>{_sd}</td><td>{_sp}</td>'
+                             f'<td>{r.get("so_sku", 0)}</td><td>{_ht_cell}</td><td>{_th}</td>'
+                             f'<td>{_giao_cell}</td></tr>')
+                _tgc = "✅ giao hết" if (_tot_don and _tot_giao >= _tot_don) else f"{_tot_giao}/{_tot_don}"
+                _totrow = ('<tr style="background:#16233f;color:#fff;font-weight:800">'
+                           '<td colspan="2" style="text-align:left">🧮 TỔNG</td>'
+                           f'<td>{_tot_don}</td><td>{_tot_sp}</td><td></td><td></td><td></td>'
+                           f'<td>{_tgc}</td></tr>')
+                st.markdown(f"**{len(_logrows)} lượt · {_tot_don} đơn · {_tot_sp} SP · đã giao {_tot_giao}**")
+                st.markdown(
+                    '<style>.pktbl{border-collapse:collapse;width:100%;font-size:.9em}'
+                    '.pktbl th,.pktbl td{padding:6px 9px;border-bottom:1px solid #e5eaf1;text-align:right;white-space:nowrap}'
+                    '.pktbl th{background:#1e293b;color:#fff;font-weight:600}'
+                    '.pktbl td:first-child,.pktbl th:first-child,.pktbl td:nth-child(2),'
+                    '.pktbl th:nth-child(2){text-align:left}'
+                    '.pktbl tbody tr:hover td{background:#f1f5f9}</style>'
+                    '<div style="overflow-x:auto"><table class="pktbl"><thead><tr>'
+                    '<th>Lượt</th><th>Giờ</th><th>Số đơn</th><th>SP</th><th>SKU</th>'
+                    '<th>🔴 HT</th><th>Thường</th><th>✅ Đã giao</th>'
+                    f'</tr></thead><tbody>{_trs}{_totrow}</tbody></table></div>',
+                    unsafe_allow_html=True)
+                st.caption("**Đã giao** = số đơn của đợt đã bàn giao shipper. "
+                           "✅ = giao hết · `x/y` = mới giao x trong y đơn.")
             else:
                 st.caption("Chưa lưu lượt nào hôm nay.")
         if pdata["total"] > 0:

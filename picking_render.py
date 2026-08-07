@@ -130,14 +130,19 @@ def _grouped_sku_rows(skus):
     return "".join(html)
 
 
-def _slip(title, accent, g, now_str):
+def _slip(title, accent, g, now_str, dot=None):
     skurows = _grouped_sku_rows(g.get("skus"))
     late = ""
     if g["late"]:
         late = (f'<div class="kv" style="color:#c00"><div>&#9888; XÁC NHẬN TRỄ:</div>'
                 f'<div class="v">{g["late"]}</div></div>')
+    dot_html = ""
+    if dot:
+        dot_html = (f'<div style="text-align:center;font-size:1.5em;font-weight:800;'
+                    f'color:{accent};margin:2px 0 4px;letter-spacing:1px">ĐỢT #{dot}</div>')
     return f"""<div class="receipt">
   <div class="title" style="color:{accent}">{_esc(title)}</div>
+  {dot_html}
   <div class="kv"><div>Giờ in:</div><div class="v">{_esc(now_str)}</div></div>
   <div class="line"></div>
   <div class="kv">
@@ -198,13 +203,13 @@ def history_slips_html(batches, now_str):
     )
 
 
-def picking_html(data, now_str, auto_print=False):
-    """auto_print=True → tự bung hộp in khi tải (dùng sau khi bấm nút Streamlit 'In + lưu đợt')."""
+def picking_html(data, now_str, auto_print=False, dot=None):
+    """auto_print=True → tự bung hộp in khi tải. dot = số ĐỢT hiện ghi lên phiếu."""
     parts = []
     if data["express"]["total_orders"] > 0:
-        parts.append(_slip("PHIẾU NHẶT — HỎA TỐC", "#E24B4A", data["express"], now_str))
+        parts.append(_slip("PHIẾU NHẶT — HỎA TỐC", "#E24B4A", data["express"], now_str, dot=dot))
     if data["normal"]["total_orders"] > 0:
-        parts.append(_slip("PHIẾU NHẶT — THƯỜNG", "#111111", data["normal"], now_str))
+        parts.append(_slip("PHIẾU NHẶT — THƯỜNG", "#111111", data["normal"], now_str, dot=dot))
     if not parts:
         blocks = '<div class="receipt"><div class="title">Không có đơn cần nhặt 👍</div></div>'
     else:
