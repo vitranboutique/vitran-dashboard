@@ -9976,11 +9976,13 @@ def _render_returns():
             d["note"] = note
         return rows
 
-    def _render_closed_return_app_note_editor(rows, notes):
+    def _render_closed_return_app_note_editor(rows, notes, *, title=None, help_text=None, key_prefix="closed_return"):
         if not rows:
             return
-        st.markdown("**✍️ Ghi chú app cho đơn Sapo đã đóng**")
-        _return_info("Phiếu đã đóng/hủy trên Sapo không ghi chú được nữa, nên ghi chú ở đây sẽ được app dùng để lọc Cần KN.")
+        title = title or "✍️ Ghi chú app cho đơn Sapo đã đóng"
+        help_text = help_text or "Phiếu đã đóng/hủy trên Sapo không ghi chú được nữa, nên ghi chú ở đây sẽ được app dùng để lọc Cần KN."
+        st.markdown(f"**{title}**")
+        _return_info(help_text)
         if not _can_edit_return_notes():
             _return_info("Chỉ tài khoản admin mới được ghi hoặc sửa ghi chú app/SAPO. Tài khoản khác chỉ xem dữ liệu.")
             return
@@ -10056,15 +10058,15 @@ def _render_returns():
                 "Ghi nhanh app - danh sách mã",
                 height=80,
                 placeholder="VD:\n2607100AM010FE4\nSPXVN069948080037",
-                key="closed_return_quick_note_codes",
+                key=f"{key_prefix}_quick_note_codes",
             )
             quick_note = st.text_area(
                 "Ghi nhanh app - ghi chú",
                 height=120,
                 placeholder="VD: Không cần KN | 0đ | Shopee yêu cầu trả hàng bị hủy\nCập nhật: 13/07/2026",
-                key="closed_return_quick_note_text",
+                key=f"{key_prefix}_quick_note_text",
             )
-            if st.button("🚀 Ghi nhanh app note theo mã", key="closed_return_quick_note_btn", use_container_width=True):
+            if st.button("🚀 Ghi nhanh app note theo mã", key=f"{key_prefix}_quick_note_btn", use_container_width=True):
                 quick_note = str(quick_note or "").strip()
                 if not quick_note or not _note_has_result(quick_note):
                     st.error("Ghi chú nhanh chưa đúng prefix chuẩn.")
@@ -10084,18 +10086,18 @@ def _render_returns():
                             st.rerun()
                         else:
                             st.error("Lưu ghi chú app lỗi. Kiểm tra token picklog/Gist.")
-            with st.form("closed_return_bulk_same_note_form"):
+            with st.form(f"{key_prefix}_bulk_same_note_form"):
                 bulk_codes = st.text_area(
                     "Danh sách mã cần ghi",
                     height=110,
                     placeholder="VD:\n584904315938637052\n4041276438705046780\nVTPVN9036194182",
-                    key="closed_return_bulk_note_codes",
+                    key=f"{key_prefix}_bulk_note_codes",
                 )
                 bulk_note = st.text_area(
                     "Ghi chú áp dụng cho các mã trên",
                     height=120,
                     placeholder="VD: 🚨 CẦN KN | 200.760đ | Khách chưa hoàn đủ hàng\n🕘 Cập nhật: 13/07/2026",
-                    key="closed_return_bulk_note_text",
+                    key=f"{key_prefix}_bulk_note_text",
                 )
                 bulk_save = st.form_submit_button("💾 Lưu hàng loạt theo danh sách mã")
             if bulk_save:
@@ -10140,7 +10142,7 @@ def _render_returns():
                 pd.DataFrame(edit_rows),
                 hide_index=True,
                 use_container_width=True,
-                key="closed_return_bulk_note_editor",
+                key=f"{key_prefix}_bulk_note_editor",
                 disabled=["Ngày tạo", "Mã đơn", "Mã trả", "VĐ trả về", "Ngày giờ quay", "Thời lượng", "Ghi chú Sapo", "_key"],
                 column_config={
                     "_key": None,
@@ -10154,7 +10156,7 @@ def _render_returns():
                     "Ghi chú Sapo": st.column_config.TextColumn("Ghi chú Sapo", width="large"),
                 },
             )
-            if st.button("💾 Lưu tất cả dòng đã sửa", key="closed_return_bulk_table_save"):
+            if st.button("💾 Lưu tất cả dòng đã sửa", key=f"{key_prefix}_bulk_table_save"):
                 new_notes = dict(notes or {})
                 invalid = []
                 changed = 0
@@ -10186,11 +10188,11 @@ def _render_returns():
 
         with st.expander("✍️ Ghi/chỉnh từng đơn", expanded=False):
             selected = st.selectbox("Chọn đơn cần ghi/chỉnh", choices, format_func=_fmt_choice,
-                                    key="closed_return_app_note_select")
+                                    key=f"{key_prefix}_app_note_select")
             row = row_map.get(selected) or {}
             old_note = _closed_return_app_note_text((notes or {}).get(selected))
             sapo_note = str(row.get("sapo_note") or ("" if old_note else row.get("note") or "")).strip()
-            with st.form("closed_return_app_note_form"):
+            with st.form(f"{key_prefix}_app_note_form"):
                 if sapo_note:
                     st.markdown(
                         f"<details><summary>ⓘ Ghi chú Sapo đang có</summary>"
@@ -10202,7 +10204,7 @@ def _render_returns():
                     value=old_note,
                     height=140,
                     placeholder="VD: 🚨 CẦN KN | 200.760đ | Khách chưa hoàn đủ hàng\n🕘 Cập nhật: 13/07/2026",
-                    key=f"closed_return_app_note_text_{_ascii_code(selected)[:48]}",
+                    key=f"{key_prefix}_app_note_text_{_ascii_code(selected)[:48]}",
                 )
                 st.markdown(
                     "<details><summary>ⓘ Quy tắc prefix</summary>"
@@ -12524,6 +12526,16 @@ def _render_returns():
             _dtag_kn_only = _dohana_items_not_in_detail(_dtag_kn)
             _dtag_nokn_only = _dohana_items_not_in_detail(_dtag_nokn)
             _dohana_yellow_ckn = _dohana_yellow_need_kn_rows(_dtag_kn + _dtag_nokn)
+            # Dohana can contain a real video/tracking code that has no matching SAPO return.
+            # Keep app notes addressable by that tracking code so an admin can close the case
+            # without fabricating a SAPO order/return profile.
+            _dohana_orphan_app_rows = [
+                d for d in _dohana_yellow_ckn
+                if not str(d.get("order_code") or "").strip()
+                and not str(d.get("return_code") or "").strip()
+                and str(d.get("vd_tra") or d.get("vd_di") or d.get("_dohana_code") or "").strip()
+            ]
+            _apply_closed_return_app_notes(_dohana_yellow_ckn, _closed_return_app_notes)
             _ckn_with_closed_returns = _merge_need_kn_rows(_ckn_list, _closed_returns_need_kn_detail)
             _ckn_render_raw_list = _merge_need_kn_rows(_ckn_with_closed_returns, _dohana_yellow_ckn)
             # Đơn ĐÃ NHẬP KHO thiếu video khui mà CHƯA có ghi chú chuẩn → cũng đưa vào Cần KN.
@@ -12563,6 +12575,15 @@ def _render_returns():
                               "với ID đơn hàng đã điền sẵn. Nếu chưa có phiếu thì tạo ngay; nếu có nhiều phiếu "
                               "TikTok sẽ hiện đầy đủ.")
             _return_info(_need_kn_info)
+            if _dohana_orphan_app_rows:
+                _render_closed_return_app_note_editor(
+                    _dohana_orphan_app_rows,
+                    _closed_return_app_notes,
+                    title="✍️ Ghi chú app cho mã Dohana chưa có hồ sơ SAPO",
+                    help_text=("Dùng khi video/mã vận đơn không thuộc shop hoặc không có hồ sơ SAPO để ghi. "
+                               "Ghi chú được lưu theo mã vận đơn; kết luận chuẩn sẽ tự đưa dòng khỏi Cần KN."),
+                    key_prefix="dohana_orphan",
+                )
             if '_missing_codes' in locals() and _missing_codes and not st.session_state.get("returns_dohana_deep_lookup"):
                 st.caption(f"Dohana còn {len(set(_missing_codes))} mã thiếu thông tin Sapo. Mặc định không quét sâu để trang mở nhanh.")
                 if st.button("🔎 Đối chiếu sâu Dohana/Sapo cho các mã thiếu", key="returns_dohana_deep_lookup_btn"):
