@@ -11211,6 +11211,8 @@ def _render_returns():
                     continue
                 if not _is_closed_kn_result(_d):
                     _d["need_kn"] = True
+                    _d["_closed_return_need_kn"] = True
+                    _d["_reason_label"] = "🧭 Đơn bị đóng"
                     _d["_location"] = "Đơn trả hàng bị đóng có VĐ trả về"
                     _d["_kn_priority"] = 0
                     _reason = str(_d.get("reason") or "").strip()
@@ -11714,8 +11716,6 @@ def _render_returns():
                     )
                 def _reason_brief_cell(d):
                     _forced = str((d or {}).get("_reason_label") or "").strip()
-                    if _forced:      # nhãn ÉP (vd bảng nhập-kho-thiếu-video: cả cột = "NV nhập kho sai")
-                        return f"<span class='reason-badge' title='{_safe(_forced)}'>{_safe(_forced)}</span>"
                     raw_reason = str((d or {}).get("reason") or "").strip()
                     raw_location = str((d or {}).get("_location") or _row_location(d) or "").strip()
                     full = " · ".join(x for x in (raw_reason, raw_location) if x) or "Cần kiểm tra"
@@ -11731,7 +11731,14 @@ def _render_returns():
                             m = re.search(r"(\d+)\s*ngày", full, flags=re.IGNORECASE)
                             age = int(m.group(1)) if m else 0
                         return f"⏳ Quá hạn {age}n" if age > 0 else "⏳ Hoàn quá hạn"
-                    if "DONGTHIEU" in compact:
+                    _is_closed_row = bool((d or {}).get("_closed_return_need_kn")) or any(
+                        marker in compact for marker in ("BITDONG", "DONGCOVD", "SAPODAHUY")
+                    )
+                    if _is_closed_row:
+                        label = "🧭 Đơn bị đóng"
+                    elif _forced:      # nhãn ép khác chỉ dùng khi hồ sơ chưa bị đóng
+                        label = _forced
+                    elif "DONGTHIEU" in compact:
                         label = "📦 Đóng thiếu"
                     elif "HUHONG" in compact or "HANGHONG" in compact:
                         label = "💥 Hư hỏng"
@@ -11741,8 +11748,6 @@ def _render_returns():
                         label = "🔁 Tráo/sai hàng"
                     elif "DASUDUNG" in compact or "DADUNG" in compact or "SUDUNG" in compact:
                         label = "♻️ Đã sử dụng"
-                    elif "BITDONG" in compact or "DONGCOVD" in compact or "SAPODAHUY" in compact:
-                        label = "🧭 Đơn bị đóng"
                     elif "NHAPKHO1PHAN" in compact or "PARTIAL" in stock_code:
                         label = "📦 Nhập thiếu"
                     elif return_type == "delivery_failed":
@@ -12319,7 +12324,13 @@ def _render_returns():
                         old = dict(merged[idx])
                         new = _dohana_merge_detail_row(old, extra)
                         new["need_kn"] = True
-                        new["_location"] = old.get("_location") or extra.get("_location")
+                        _closed_row = bool(old.get("_closed_return_need_kn") or extra.get("_closed_return_need_kn"))
+                        if _closed_row:
+                            new["_closed_return_need_kn"] = True
+                            new["_reason_label"] = "🧭 Đơn bị đóng"
+                            new["_location"] = "Đơn trả hàng bị đóng có VĐ trả về"
+                        else:
+                            new["_location"] = old.get("_location") or extra.get("_location")
                         new["_kn_priority"] = min(_priority(old), _priority(extra))
                         if str(extra.get("reason") or "").strip():
                             old_reason = str(old.get("reason") or "").strip()
