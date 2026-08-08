@@ -1796,6 +1796,11 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120, canceled_max_pages
         status = str(x.get("status") or "").lower()
         return status in ("canceled", "cancelled") or bool(x.get("cancelled_on") or x.get("canceled_on"))
 
+    def _is_closed_unstocked_return(x):
+        status = str(x.get("status") or "").lower()
+        is_closed = status == "closed" or bool(x.get("closed_on") or x.get("closed_at"))
+        return is_closed and _not_fully_stocked(x)
+
     def _return_shipper_name(x):
         note = str(x.get("note") or "")
         m = re.search(r"shipper\s*ho[aà]n\s*:\s*([^|\n\r]+)", note, flags=re.I)
@@ -1853,6 +1858,7 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120, canceled_max_pages
             "return_link": return_link,
             "return_status": str(x.get("status") or ""),
             "is_canceled": _is_canceled_return(x),
+            "is_closed": _is_closed_unstocked_return(x),
             "canceled_on": x.get("cancelled_on") or x.get("canceled_on") or "",
             "gian_hang": gian_hang,
             "created": created_disp, "created_on": _con,
@@ -1931,7 +1937,7 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120, canceled_max_pages
         x for x in canceled_scan_rows
         if _vn_date_of(x.get("created_on"))
         and _vn_date_of(x.get("created_on")).year == today.year
-        and _is_canceled_return(x)
+        and (_is_canceled_return(x) or _is_closed_unstocked_return(x))
     ]
 
     cnt, detail, n_complaint = {}, [], 0
@@ -1976,11 +1982,16 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120, canceled_max_pages
     canceled_detail = []
     for x in canceled_returns:
         row = _return_detail_row(x)
-        if str(row.get("vd_tra") or "").strip():
+        _closed_not_canceled = bool(row.get("is_closed")) and not bool(row.get("is_canceled"))
+        if str(row.get("vd_tra") or "").strip() and _closed_not_canceled:
+            row["reason"] = "Có VĐ trả về nhưng Sapo đã đóng phiếu — đối chiếu sàn trước khi kết luận"
+        elif str(row.get("vd_tra") or "").strip():
             row["reason"] = "Có VĐ trả về nhưng Sapo đánh dấu đã hủy — đối chiếu sàn trước khi kết luận"
+        elif _closed_not_canceled:
+            row["reason"] = "Sapo đã đóng phiếu — vẫn giữ để đối chiếu nếu sàn còn hồ sơ trả/KN"
         else:
             row["reason"] = "Sapo đánh dấu đã hủy — vẫn giữ để đối chiếu nếu sàn còn hồ sơ trả/KN"
-        row["_location"] = "Sapo đã hủy"
+        row["_location"] = "Sapo đã đóng" if _closed_not_canceled else "Sapo đã hủy"
         row["need_kn"] = False
         canceled_detail.append(row)
     canceled_detail.sort(key=lambda d: d["created_on"] or "", reverse=True)

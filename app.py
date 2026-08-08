@@ -11720,8 +11720,9 @@ def _render_returns():
                     _forced = str((d or {}).get("_reason_label") or "").strip()
                     raw_reason = str((d or {}).get("reason") or "").strip()
                     raw_location = str((d or {}).get("_location") or _row_location(d) or "").strip()
+                    raw_note = str((d or {}).get("note") or "").strip()
                     full = " · ".join(x for x in (raw_reason, raw_location) if x) or "Cần kiểm tra"
-                    compact = _search_norm(full + " " + str((d or {}).get("_dohana_tag_label") or ""))
+                    compact = _search_norm(full + " " + raw_note + " " + str((d or {}).get("_dohana_tag_label") or ""))
                     ship_code = str((d or {}).get("ship_code") or "").strip().lower()
                     stock_code = str((d or {}).get("stock_code") or "").strip().lower()
                     return_type = str((d or {}).get("loai_tra_code") or "").strip().lower()
@@ -11734,44 +11735,45 @@ def _render_returns():
                             age = int(m.group(1)) if m else 0
                         return f"⏳ Quá hạn {age}n" if age > 0 else "⏳ Hoàn quá hạn"
                     _is_closed_row = bool((d or {}).get("_closed_return_need_kn")) or any(
-                        marker in compact for marker in ("BITDONG", "DONGCOVD", "SAPODAHUY")
+                        marker in compact for marker in ("BITDONG", "DONGCOVD", "SAPODAHUY", "SAPODADONG")
                     )
-                    if _is_closed_row:
-                        label = "🧭 Đơn bị đóng"
-                    elif _forced:      # nhãn ép khác chỉ dùng khi hồ sơ chưa bị đóng
-                        label = _forced
+                    _forced_is_closed = "DONBIDONG" in _search_norm(_forced)
+                    if _forced and not _forced_is_closed:
+                        base_label = _forced
                     elif "DONGTHIEU" in compact:
-                        label = "📦 Đóng thiếu"
+                        base_label = "📦 Đóng thiếu"
                     elif "HUHONG" in compact or "HANGHONG" in compact:
-                        label = "💥 Hư hỏng"
+                        base_label = "💥 Hư hỏng"
                     elif "TRATHIEU" in compact or "THIEU" in compact:
-                        label = "➖ Trả thiếu"
-                    elif "TRAO" in compact or "SAIHANG" in compact or "SAISP" in compact or "KHACVOMOTA" in compact:
-                        label = "🔁 Tráo/sai hàng"
+                        base_label = "➖ Trả thiếu"
+                    elif ("TRAO" in compact or "SAIHANG" in compact or "SAISP" in compact
+                          or "KHACVOMOTA" in compact or "KHONGKHOPVOIMOTA" in compact):
+                        base_label = "🔁 Tráo/sai hàng"
                     elif "DASUDUNG" in compact or "DADUNG" in compact or "SUDUNG" in compact:
-                        label = "♻️ Đã sử dụng"
+                        base_label = "♻️ Đã sử dụng"
                     elif "NHAPKHO1PHAN" in compact or "PARTIAL" in stock_code:
-                        label = "📦 Nhập thiếu"
+                        base_label = "📦 Nhập thiếu"
                     elif return_type == "delivery_failed":
-                        label = "📕 Giao thất bại"
+                        base_label = "📕 Giao thất bại"
                     elif ship_code == "returning":
-                        label = _age_label()
+                        base_label = _age_label()
                     elif ship_code == "returned":
-                        label = "📍 Đã giao shop"
+                        base_label = "📍 Đã giao shop"
                     elif return_type == "refund" and ship_code == "no_return":
-                        label = "💸 Chỉ hoàn tiền"
+                        base_label = "💸 Chỉ hoàn tiền"
                     elif stock_code in ("unstocked", "unrestock", "not_stocked", "not_restocked", "no_stock", "no_restock"):
-                        label = "📦 Kho chưa nhận"
+                        base_label = "📦 Kho chưa nhận"
                     elif "QUA5NGAY" in compact or "QUA7NGAY" in compact or "DANGHOAN" in compact:
-                        label = _age_label()
+                        base_label = _age_label()
                     elif "DOHANATAG" in compact or "CHUACOGHICHUCHUAN" in compact:
-                        label = "🏷 Tag chưa chốt"
+                        base_label = "🏷 Tag chưa chốt"
                     elif "CANKN" in compact:
-                        label = _age_label() if (d or {}).get("age") else "⚠️ Chưa chốt KQ"
+                        base_label = _age_label() if (d or {}).get("age") else "⚠️ Chưa chốt KQ"
                     else:
-                        label = "⚠️ Chưa có KQ"
-                    if len(label) > 20:
-                        label = label[:19].rstrip() + "…"
+                        base_label = "⚠️ Chưa có KQ"
+                    label = f"{base_label} → 🧭 Đóng" if _is_closed_row else base_label
+                    if len(label) > 34:
+                        label = label[:33].rstrip() + "…"
                     return f"<span class='reason-badge' title='{_safe(full)}'>{_safe(label)}</span>"
                 body = ""
                 _prev_lt = None
