@@ -370,13 +370,46 @@ def _info_tip(content):
 
 
 def _batch_rows(batches, tong_don, tong_sp):
+    def _don(don, ht):   # số đơn kèm số HỎA TỐC trong ngoặc: "45 (5⚡)"
+        return f'{don} <span style="color:#c2410c;font-weight:800">({ht}⚡)</span>' if ht else f'{don}'
     body = "".join(
-        f'<tr><td class="l">Đợt {b["dot"]}{" (hỏa tốc)" if b.get("hoatoc") else ""}</td>'
-        f'<td>{_e(str(b["gio"]))}</td><td class="num">{b["don"]}</td><td class="num">{b["sp"]}</td></tr>'
+        f'<tr><td class="l">Đợt {b["dot"]}</td><td>{_e(str(b["gio"]))}</td>'
+        f'<td class="num">{_don(b["don"], b.get("hoatoc", 0) or 0)}</td><td class="num">{b["sp"]}</td></tr>'
         for b in batches) or '<tr><td class="l" colspan="4">Chưa có đợt nào</td></tr>'
+    _ht_tot = sum(b.get("hoatoc", 0) or 0 for b in batches)
     body += (f'<tr class="total"><td class="l">TỔNG</td><td></td>'
-             f'<td class="num">{tong_don}</td><td class="num">{tong_sp}</td></tr>')
+             f'<td class="num">{_don(tong_don, _ht_tot)}</td><td class="num">{tong_sp}</td></tr>')
     return body
+
+
+def _express_alert(rep):
+    """Hộp cảnh báo đơn HỎA TỐC quá hạn giao — liệt kê cụ thể mã đơn cho NV lấy lại / hối shipper."""
+    stuck = rep.get("express_stuck") or []
+    unpick = rep.get("express_unpicked") or []
+    if not stuck and not unpick:
+        return ""
+
+    def _codes(items):
+        out = []
+        for x in items:
+            code = _e(str(x.get("code") or x.get("tracking") or "?"))
+            tk = str(x.get("tracking") or "")
+            extra = f' <span style="color:#6b7280;font-weight:600">({_e(tk)})</span>' if tk and tk != x.get("code") else ""
+            out.append(f'<b>{code}</b>{extra}'
+                       f'<span style="color:#6b7280;font-weight:600"> · {_e(str(x.get("carrier") or ""))}'
+                       f' · từ {_e(str(x.get("since") or ""))}</span>')
+        return " &nbsp;•&nbsp; ".join(out)
+    blocks = ""
+    if stuck:
+        blocks += (f'<div style="margin-top:5px">🔴 <b>{len(stuck)} đơn hỏa tốc ĐÃ giao shipper hôm trước '
+                   f'nhưng CHƯA tới khách</b> — cần LẤY LẠI / hối shipper ngay:<br>{_codes(stuck)}</div>')
+    if unpick:
+        blocks += (f'<div style="margin-top:5px">🟠 <b>{len(unpick)} đơn hỏa tốc hôm trước CHƯA ai tới lấy</b> '
+                   f'— cần bàn giao shipper gấp:<br>{_codes(unpick)}</div>')
+    return (f'<div style="border:2px solid #dc2626;background:#fef2f2;border-radius:8px;'
+            f'padding:8px 11px;margin:0 0 9px;font-size:.9em;color:#7f1d1d">'
+            f'<div style="font-weight:900;color:#dc2626;font-size:1.02em">⚡🚨 CẢNH BÁO ĐƠN HỎA TỐC QUÁ HẠN GIAO</div>'
+            f'{blocks}</div>')
 
 
 _SRC = {"tiktokshop": "TikTok", "shopee": "Shopee", "lazada": "Lazada",
@@ -1078,6 +1111,7 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
   {vid_warn}
   {vid_note}
 
+  {_express_alert(rep)}
   <div class="io2col">
    <div class="io2c wide">
   <div class="sec">I. Số lượng đơn theo đơn vị vận chuyển</div>
@@ -1100,7 +1134,7 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
   <div class="sec">II. Số lượng hàng theo đợt soạn</div>
   <div class="batchsign">
     <div class="bs-tbl"><table>
-      <thead><tr><th class="l">Đợt lấy hàng</th><th>Giờ</th><th>Số đơn</th><th>Số SP</th></tr></thead>
+      <thead><tr><th class="l">Đợt lấy hàng</th><th>Giờ</th><th>Số đơn <span style="font-weight:600;font-size:.85em">(⚡=HT)</span></th><th>Số SP</th></tr></thead>
       <tbody>{_batch_rows(rep["batches"], rep["tong_don_soan"], rep["tong_sp_soan"])}</tbody>
     </table></div>
     <div class="bs-sign">{sign1}</div>

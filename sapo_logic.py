@@ -2786,6 +2786,29 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
     _ton_cho = sum(1 for o in open_orders if _ton_cho_cu(o))
     xot_truoc += _ton_cho
     xac_nhan += _ton_cho
+
+    # ĐƠN HỎA TỐC QUÁ HẠN (xử lý NGÀY TRƯỚC, chưa giao xong) — cảnh báo cụ thể mã để NV lấy lại / hối shipper
+    exp_stuck, exp_unpicked = [], []
+    for o in open_orders:
+        if o.get("shipment_category") != "express":
+            continue
+        f = f0(o)
+        ss = f.get("shipment_status")
+        _hd = _vn_date_of(f.get("shipment_created_on") or f.get("issued_on"))
+        if not _hd or _hd >= today or ss == "delivered":
+            continue                              # chỉ xét đơn hỏa tốc NGÀY TRƯỚC & CHƯA giao xong
+        _rec = {
+            "code": o.get("name") or "",
+            "tracking": (f.get("tracking_number") or (f.get("tracking_numbers") or [None])[0] or ""),
+            "carrier": ((f.get("tracking_info") or {}).get("carrier_name")
+                        or (o.get("shipping_lines") or [{}])[0].get("carrier_name") or "NB tự VC"),
+            "since": _hd.strftime("%d/%m"),
+        }
+        if ss == "delivering":
+            exp_stuck.append(_rec)                # shipper cầm rồi mà qua ngày CHƯA tới khách → lấy lại/hối
+        elif ss in ("pending", None):
+            exp_unpicked.append(_rec)             # chưa ai tới lấy
+
     funnel = {
         "xac_nhan": xac_nhan,                    # = tổng đơn cần gửi hôm nay (baseline phễu)
         "xac_nhan_today": xac_nhan_today,        # xác nhận HÔM NAY (tạo vận đơn hôm nay)
@@ -2809,6 +2832,8 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
 
     return {
         "date": today.strftime("%d/%m/%Y"),
+        "express_stuck": exp_stuck,
+        "express_unpicked": exp_unpicked,
         "by_carrier": rows,
         "totals": tot,
         "funnel": funnel,
