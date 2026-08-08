@@ -11013,6 +11013,12 @@ def _render_returns():
                     d["need_kn"] = False
             return rows
 
+        def _is_shopee_row(d):
+            """Đơn Shopee (để loại đơn Shopee ĐÃ ĐÓNG khỏi Cần KN — Shopee đóng = hủy thật)."""
+            _s = (str((d or {}).get("gian_hang") or "") + " " + str((d or {}).get("order_link") or "")
+                  + " " + str((d or {}).get("order_source") or "")).lower()
+            return "shopee" in _s
+
         _detail_rows = _drop_need_kn_without_return_waybill(_rip.get("detail") or [])
         _khong_can_kn_list = [d for d in _detail_rows if _note_is_khong_can_kn(d)]
         _ckn_list = [d for d in _detail_rows if d.get("need_kn") and _is_need_kn_shape(d)]
@@ -11199,6 +11205,10 @@ def _render_returns():
             ]
             _closed_returns_need_kn_detail = []
             for _d in _closed_returns_with_waybill_detail:
+                if _is_shopee_row(_d):        # Shopee ĐÓNG = HỦY THẬT → KHÔNG đưa lên Cần KN (vẫn hiện ở danh sách)
+                    _d["need_kn"] = False
+                    _d["_shopee_closed_real"] = True
+                    continue
                 if not _is_closed_kn_result(_d):
                     _d["need_kn"] = True
                     _d["_location"] = "Đơn trả hàng bị đóng có VĐ trả về"
