@@ -9722,6 +9722,16 @@ def _render_returns():
             or _compact_is_can_kn(compact)
         )
 
+    def _app_note_marks_marketplace_closed(note):
+        compact = _search_norm(note)
+        return any(marker in compact for marker in (
+            "SANDADONGYEUCAU",
+            "TIKTOKDADONGYEUCAU",
+            "SHOPEEDADONGYEUCAU",
+            "YEUCAUDADONG",
+            "DONGYEUCAU",
+        ))
+
     def _note_has_final_result(note):
         compact = _note_prefix_compact(note)
         return any(t in compact for t in ("THANG", "THUA", "HUY", "HETHAN")) or _compact_is_khong_can_kn(compact)
@@ -10260,13 +10270,24 @@ def _render_returns():
                     "</details>",
                     unsafe_allow_html=True,
                 )
-                c1, c2, _ = st.columns([1, 1, 4])
+                c1, c2, c3, _ = st.columns([1, 1.5, 1, 3])
                 save_btn = c1.form_submit_button("💾 Lưu ghi chú")
-                clear_btn = c2.form_submit_button("🧹 Xóa ghi chú app")
-            if save_btn or clear_btn:
+                closed_btn = c2.form_submit_button("🧭 Sàn đã đóng yêu cầu")
+                clear_btn = c3.form_submit_button("🧹 Xóa")
+            if save_btn or closed_btn or clear_btn:
                 new_notes = dict(notes or {})
                 if clear_btn:
                     _delete_closed_note_aliases(new_notes, row)
+                elif closed_btn:
+                    original_reason = str(row.get("reason") or row.get("_reason_label") or "").strip()
+                    note_lines = ["CẦN KN | Sàn đã đóng yêu cầu | Chưa chốt kết quả"]
+                    if original_reason:
+                        note_lines.append(f"Lý do ban đầu: {original_reason}")
+                    note_lines.append(
+                        "Cập nhật: "
+                        + (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%d/%m/%Y")
+                    )
+                    _upsert_closed_note_aliases(new_notes, row, "\n".join(note_lines))
                 else:
                     note_text = str(note_text or "").strip()
                     if note_text and not _note_has_result(note_text):
@@ -11159,6 +11180,8 @@ def _render_returns():
                     st.warning(f"Chưa quét được đơn trả bị đóng cả năm: `{_e}`")
                     st.session_state["closed_returns_full_year_loaded"] = False
             _closed_return_app_notes = _load_closed_return_app_notes()
+            _apply_closed_return_app_notes(_detail_rows, _closed_return_app_notes)
+            _apply_closed_return_app_notes(_all_returns_detail, _closed_return_app_notes)
             _apply_closed_return_app_notes(_canceled_returns_detail, _closed_return_app_notes)
 
             def _restock_novideo_rows():
@@ -11786,7 +11809,11 @@ def _render_returns():
                             age = int(m.group(1)) if m else 0
                         return f"⏳ Quá hạn {age}n" if age > 0 else "⏳ Hoàn quá hạn"
                     _is_closed_row = bool((d or {}).get("_closed_return_need_kn")) or any(
-                        marker in compact for marker in ("BITDONG", "DONGCOVD", "SAPODAHUY", "SAPODADONG")
+                        marker in compact for marker in (
+                            "BITDONG", "DONGCOVD", "SAPODAHUY", "SAPODADONG",
+                            "SANDADONGYEUCAU", "TIKTOKDADONGYEUCAU", "SHOPEEDADONGYEUCAU",
+                            "YEUCAUDADONG", "DONGYEUCAU",
+                        )
                     )
                     _forced_is_closed = "DONBIDONG" in _search_norm(_forced)
                     if _forced and not _forced_is_closed:
@@ -12602,6 +12629,22 @@ def _render_returns():
                     _ckn_render_raw_list = _ckn_render_raw_list + _nv_ckn
             except Exception:
                 pass
+            _apply_closed_return_app_notes(_ckn_render_raw_list, _closed_return_app_notes)
+            _marketplace_closed_app_rows = [
+                d for d in _ckn_render_raw_list
+                if _app_note_marks_marketplace_closed(d.get("app_note") or d.get("note"))
+            ]
+            _closed_display_keys = {
+                _dohana_row_key(d) for d in _closed_returns_with_waybill_detail if _dohana_row_key(d)
+            }
+            for _d in _marketplace_closed_app_rows:
+                _d["_closed_return_need_kn"] = not _is_closed_kn_result(_d)
+                _d["_location"] = "Sàn đã đóng yêu cầu; SAPO còn mở"
+                _key = _dohana_row_key(_d)
+                if not _key or _key not in _closed_display_keys:
+                    _closed_returns_with_waybill_detail.append(dict(_d))
+                    if _key:
+                        _closed_display_keys.add(_key)
             _ckn_render_list = [
                 d for d in _ckn_render_raw_list
                 if _is_need_kn_shape(d) and not _is_closed_kn_result(d)
@@ -12642,6 +12685,21 @@ def _render_returns():
                 if st.button("🔎 Đối chiếu sâu Dohana/Sapo cho các mã thiếu", key="returns_dohana_deep_lookup_btn"):
                     st.session_state["returns_dohana_deep_lookup"] = True
                     st.rerun()
+            _active_ckn_annotatable = [
+                d for d in _ckn_render_list
+                if not _is_shopee_row(d)
+                and any(str(d.get(field) or "").strip()
+                        for field in ("order_code", "return_code", "vd_tra", "vd_di"))
+            ]
+            _render_closed_return_app_note_editor(
+                _active_ckn_annotatable,
+                _closed_return_app_notes,
+                title="✍️ Cập nhật đơn sàn đã đóng nhưng SAPO còn mở",
+                help_text=("Sau khi kiểm tra TikTok/Shopee đã đóng yêu cầu, chọn đơn và bấm "
+                           "'Sàn đã đóng yêu cầu'. App giữ nguyên lý do ban đầu, đưa đơn vào bảng bị đóng "
+                           "và vẫn giữ trong Cần KN cho tới khi có kết quả cuối."),
+                key_prefix="marketplace_closed",
+            )
             _sub_table(_ckn_render_list, 520, show_reason=True, show_location=True,
                        show_type=True, pg_key="ckn", per_page=50, show_ticket=True)
             st.subheader("⛔ Đơn không cần KN — đã có kết luận", anchor="don-khong-can-kn")
@@ -12700,16 +12758,8 @@ def _render_returns():
                         st.rerun()
                 if _closed_returns_capped:
                     st.warning("Đã chạm giới hạn quét 500 trang phiếu bị đóng; có thể còn phiếu cũ hơn trong năm nay.")
-                # Đơn TikTok "tráo/sai hàng" đã chốt trên sàn nhưng Sapo CHƯA đánh dấu hủy vẫn nằm ở Cần KN
-                # (đang xử lý) — cho ghi chú luôn tại đây để chốt và tự rớt khỏi Cần KN.
-                _active_ckn_annotatable = [
-                    d for d in _ckn_render_list
-                    if not _is_shopee_row(d)
-                    and str(d.get("vd_tra") or "").strip()
-                    and not d.get("_closed_return_need_kn")
-                ]
                 _render_closed_return_app_note_editor(
-                    _closed_returns_with_waybill_detail + _active_ckn_annotatable,
+                    _closed_returns_with_waybill_detail,
                     _closed_return_app_notes,
                 )
                 _sub_table(
