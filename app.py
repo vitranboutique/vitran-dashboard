@@ -9883,8 +9883,10 @@ def _render_returns():
         "Cập nhật: 14/07/2026"
     )
     # Chốt TAY (khi UI kẹt / mã Dohana không có hồ sơ Sapo): (order_code, return_code, vd_tra, note).
+    # (danh sách mã bất kỳ của dòng, note) — note áp cho MỌI đơn mang 1 trong các mã này,
+    # dò theo MỌI trường (mã đơn / mã trả / VĐ / mã video Dohana) nên không lệch key.
     _CLOSED_RETURN_MANUAL_NOTES = [
-        ("", "", "857631345894",
+        (["857631345894"],
          "⚪ KHÔNG CẦN KN | Mã 857631345894 không có trong shop — không ghi được Sapo\n"
          "Cập nhật: 09/08/2026"),
     ]
@@ -9901,7 +9903,7 @@ def _render_returns():
 
     def _closed_return_note_keys(d):
         keys = []
-        for field in ("return_code", "order_code", "vd_tra", "vd_di"):
+        for field in ("return_code", "order_code", "vd_tra", "vd_di", "_dohana_code", "clip_code"):
             value = str((d or {}).get(field) or "").strip()
             if value:
                 key = f"{field}:{value}"
@@ -9978,15 +9980,13 @@ def _render_returns():
             out[f"return_code:{return_code}"] = item
             out[f"vd_tra:{vd_tra}"] = item
             out[f"order_code:{order_code}"] = item
-        for _o, _r, _v, _mnote in _CLOSED_RETURN_MANUAL_NOTES:
-            _mitem = {"note": _mnote, "order_code": _o, "return_code": _r, "vd_tra": _v,
-                      "updated_at": "2026-08-09 15:00:00"}
-            if _r:
-                out[f"return_code:{_r}"] = _mitem
-            if _v:
-                out[f"vd_tra:{_v}"] = _mitem
-            if _o:
-                out[f"order_code:{_o}"] = _mitem
+        for _mcodes, _mnote in _CLOSED_RETURN_MANUAL_NOTES:
+            for _mc in _mcodes:
+                _mc = str(_mc or "").strip()
+                if not _mc:
+                    continue
+                for _mf in ("return_code", "order_code", "vd_tra", "vd_di", "_dohana_code", "clip_code", "code"):
+                    out[f"{_mf}:{_mc}"] = {"note": _mnote, _mf: _mc, "updated_at": "2026-08-09 15:00:00"}
         return out
 
     def _save_closed_return_app_notes(notes):
