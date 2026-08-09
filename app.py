@@ -9976,6 +9976,7 @@ def _render_returns():
             d["note"] = note
         return rows
 
+    @st.fragment   # chọn đơn / gõ ghi chú chỉ tải lại KHỐI này, không tải lại cả trang (nhanh). Lưu xong mới rerun cả app.
     def _render_closed_return_app_note_editor(rows, notes, *, title=None, help_text=None, key_prefix="closed_return"):
         if not rows:
             return
