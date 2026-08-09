@@ -10051,9 +10051,10 @@ def _render_returns():
             choices = list(all_choices)
         _n_std_hidden = len(all_choices) - len(choices)
         if not choices:
-            st.success(f"✅ Cả {len(all_choices)} đơn đều đã có ghi chú chuẩn. Bỏ tick ở trên nếu muốn xem/sửa lại.")
-            return
-        if _only_unstd and _n_std_hidden:
+            # Đã ghi chú hết → KHÔNG ẩn sạch ô nhập (kẻo "không có chỗ ghi"): hiện lại tất cả để xem/sửa/ghi đè.
+            choices = list(all_choices)
+            st.success(f"✅ Cả {len(all_choices)} đơn đều đã có ghi chú chuẩn — đang hiện lại tất cả để bạn xem/sửa hoặc ghi đè.")
+        elif _only_unstd and _n_std_hidden:
             st.caption(f"Đang ẩn {_n_std_hidden} đơn đã có ghi chú chuẩn — còn {len(choices)} đơn chưa ghi chú.")
 
         def _note_meta(row, note_text):
