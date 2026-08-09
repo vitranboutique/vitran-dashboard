@@ -952,6 +952,8 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
         clip_kpi_sub = "chưa kết nối Dohana"
     _sp_sub = (f"Đã nhập kho {_sp_nhap}"
                + (f' · <span style="color:#dc2626;font-weight:800">Thiếu {_sp_thieu}</span>' if _sp_thieu else ""))
+    _ttkh_n = rep.get("ttkh_saved")
+    _ttkh_v = _ttkh_n if isinstance(_ttkh_n, int) else "—"
     r_kpis_html = (
         f'<div class="kpi"><div class="l">📥 Mã trả nhập kho hôm nay</div>'
         f'<div class="v">{nk.get("so_phieu", 0)}</div>'
@@ -970,6 +972,9 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
         f'<div class="l" style="margin-top:3px;font-weight:700">{clip_kpi_sub}</div></div>'
         f'<div class="kpi"><div class="l">🏪 Đơn hoàn theo gian hàng</div>'
         f'<div class="l" style="margin-top:5px;font-weight:700;font-size:1.02em;line-height:1.55">{_shop_summary}</div></div>'
+        f'<div class="kpi"><div class="l">📞 TTKH lấy trong ngày</div>'
+        f'<div class="v">{_ttkh_v}</div>'
+        f'<div class="l" style="margin-top:3px;font-weight:700">đã lưu Sapo (đơn có SĐT)</div></div>'
     )
     # ── KẾT LUẬN sai lệch (Phần 2) + lý do có thể ──
     _concl = []

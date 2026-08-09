@@ -1957,6 +1957,28 @@ def load_customer_phone_set():
     return L.get_customer_phone_set(make_fetch_json(build_session()), max_pages=220)
 
 
+@st.cache_data(ttl=180, show_spinner=False)
+def load_ttkh_saved_by_day():
+    """Số TTKH ĐÃ LẤY được (lưu Sapo thành công) theo NGÀY, đếm theo số ĐƠN riêng biệt.
+    Trả {iso_date: n}. Rỗng nếu chưa cấu hình kho lưu."""
+    if not picklog.configured():
+        return {}
+    _codes, _extra = {}, {}   # ngày -> set(mã đơn) ; ngày -> số lượt không có mã đơn
+    for _lg in (picklog.read_ttkh_logs() or []):
+        if _lg.get("ket_qua") != "thanh_cong":
+            continue
+        _d = str(_lg.get("ngay") or "").strip()
+        if not _d:
+            continue
+        _c = str(_lg.get("ma_don") or "").strip()
+        if _c:
+            _codes.setdefault(_d, set()).add(_c)
+        else:
+            _extra[_d] = _extra.get(_d, 0) + 1
+    return {_d: len(_codes.get(_d, ())) + _extra.get(_d, 0)
+            for _d in (set(_codes) | set(_extra))}
+
+
 def _sapo_lookup_key(value) -> str:
     return re.sub(r"\s+", "", str(value or "")).upper()
 
@@ -9536,6 +9558,7 @@ def _render_daily():
             _apply_picklog_soan_to_daily(_rep, _ps.get("rows") or [], _dvr, _ps.get("dup_orders") or 0)
         _inject_huy_soan(_rep, _iso)
         _inject_conxot_video(_rep)
+        _rep["ttkh_saved"] = (load_ttkh_saved_by_day().get(_iso, 0) if picklog.configured() else None)
         _now_hm = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%H:%M %d/%m/%Y")
         st.warning(f"🗂️ Ngày **{_disp}** chưa có bản chốt — hiện **SỐ HIỆN TẠI**, đóng băng từ giờ "
                    "(không phải số gốc lúc in). Video lấy từ kho đã lưu.")
@@ -9572,6 +9595,7 @@ def _render_daily():
         _apply_picklog_soan_to_daily(_rep, _ps.get("rows") or [], _dvr, _ps.get("dup_orders") or 0)
     _inject_huy_soan(_rep, _today_iso_vn())
     _inject_conxot_video(_rep)
+    _rep["ttkh_saved"] = (load_ttkh_saved_by_day().get(_today_iso_vn(), 0) if picklog.configured() else None)
     _now_vn = datetime.now(timezone.utc) + timedelta(hours=7)
     _nrep = _now_vn.strftime("%H:%M %d/%m/%Y")
     _nrec = len((_rep.get("nhap_kho") or {}).get("recon_rows") or [])
