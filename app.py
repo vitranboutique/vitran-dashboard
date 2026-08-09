@@ -10140,7 +10140,7 @@ def _render_returns():
                             if missing:
                                 msg += f" Có {len(missing)} mã không khớp bảng."
                             st.success(msg)
-                            st.rerun()
+                            st.rerun(scope="app")
                         else:
                             st.error("Lưu ghi chú app lỗi. Kiểm tra token picklog/Gist.")
             with st.form(f"{key_prefix}_bulk_same_note_form"):
@@ -10174,7 +10174,7 @@ def _render_returns():
                             if missing:
                                 msg += f" Có {len(missing)} mã không khớp bảng."
                             st.success(msg)
-                            st.rerun()
+                            st.rerun(scope="app")
                         else:
                             st.error("Lưu ghi chú app lỗi. Kiểm tra token picklog/Gist.")
 
@@ -10239,7 +10239,7 @@ def _render_returns():
                     st.info("Không có dòng nào thay đổi.")
                 elif _save_closed_return_app_notes(new_notes):
                     st.success(f"Đã lưu {changed} dòng ghi chú app.")
-                    st.rerun()
+                    st.rerun(scope="app")
                 else:
                     st.error("Lưu ghi chú app lỗi. Kiểm tra token picklog/Gist.")
 
@@ -10299,7 +10299,7 @@ def _render_returns():
                         _delete_closed_note_aliases(new_notes, row)
                 if _save_closed_return_app_notes(new_notes):
                     st.success("Đã lưu ghi chú app. Bảng sẽ lọc lại theo ghi chú này.")
-                    st.rerun()
+                    st.rerun(scope="app")
                 else:
                     st.error("Lưu ghi chú app lỗi. Kiểm tra token picklog/Gist.")
 
@@ -12527,11 +12527,29 @@ def _render_returns():
                     code = r.get("code") or ""
                     matches = _dohana_detail_matches(code)
                     d = matches[0] if matches else {}
-                    note = str(d.get("note") or "").strip() if matches else "Chưa thấy trong chi tiết"
+                    # Ghi chú app (KỂ CẢ mã Dohana KHÔNG có hồ sơ Sapo) cũng được tôn trọng ở bảng này:
+                    # đã có kết luận CHUẨN → hết tô vàng + hiện đúng ghi chú (đồng bộ với bảng Cần KN).
+                    _lk = dict(d)
+                    if code and not str(_lk.get("vd_tra") or "").strip():
+                        _lk["vd_tra"] = code
+                    _app_note = ""
+                    for _k in _closed_return_note_keys(_lk):
+                        _app_note = _closed_return_app_note_text((_closed_return_app_notes or {}).get(_k))
+                        if _app_note:
+                            break
+                    if _app_note:
+                        note = _app_note
+                        _concluded = _note_is_concluded(_app_note)
+                    elif matches:
+                        note = str(d.get("note") or "").strip()
+                        _concluded = _dohana_is_closed_note(note)
+                    else:
+                        note = "Chưa thấy trong chi tiết"
+                        _concluded = False
                     filmed_at = _clip_recorded_text(r.get("date"), r.get("time")) or "không có video"
                     duration = _clip_duration_text(r.get("dur"))
                     shipper = d.get("return_shipper") or ("Chưa có" if matches else "")
-                    bg = "" if (matches and _dohana_is_closed_note(note)) else "background:#fff3cd"
+                    bg = "" if _concluded else "background:#fff3cd"
                     filmed_html = (
                         f"<span class='no-video'>{_safe(filmed_at)}</span>"
                         if filmed_at == "không có video" else _safe(filmed_at)
