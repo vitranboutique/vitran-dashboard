@@ -12785,9 +12785,13 @@ def _render_returns():
             )
             _sub_table(_ckn_render_list, 520, show_reason=True, show_location=True,
                        show_type=True, pg_key="ckn", per_page=50, show_ticket=True)
+            st.divider()
+            st.markdown("### 🔽 Phần dưới: ĐÃ XONG & TRA CỨU")
+            st.caption("Các đơn đã kết luận + bảng đối chiếu — thu gọn sẵn, KHÔNG cần cho việc lấy KN hằng ngày. Bấm mở từng mục khi cần tra.")
             st.subheader("⛔ Đơn không cần KN — đã có kết luận", anchor="don-khong-can-kn")
-            _return_info("Các đơn trong bảng detail đã có ghi chú KHÔNG CẦN KN: đã nhận hàng, đã nhận/được đền tiền, hoặc shop đóng thiếu thật. Nhóm này không trộn vào danh sách CẦN KN.")
-            _sub_table(_khong_can_kn_list, 300, show_reason=True, show_type=True, pg_key="khong_can_kn")
+            with st.expander(f"Xem {len(_khong_can_kn_list)} đơn đã kết luận (không cần KN)", expanded=False):
+                _return_info("Các đơn trong bảng detail đã có ghi chú KHÔNG CẦN KN: đã nhận hàng, đã nhận/được đền tiền, hoặc shop đóng thiếu thật. Nhóm này không trộn vào danh sách CẦN KN.")
+                _sub_table(_khong_can_kn_list, 300, show_reason=True, show_type=True, pg_key="khong_can_kn")
             with st.expander(f"🏷️ Đơn Dohana gắn tag ĐÓNG HÀNG (đóng thiếu SP) — {len(_dtag_nokn)} đơn"
                              + (f" · {len(_dtag_nokn_only)} chưa khớp chi tiết" if _dtag_nokn_only else ""),
                              expanded=False):
@@ -12803,33 +12807,36 @@ def _render_returns():
             _nvhelp = ("Danh sách lấy trực tiếp từ cột Chốt video của Báo cáo vận hành cuối ngày: chỉ gồm các "
                        "dòng còn thiếu video khui hoàn sau khi đã trừ mã quay lộn mục. SAPO chỉ bổ sung thông tin mã đơn/mã trả/vận đơn. "
                        "Tô vàng = đơn chưa có ghi chú chuẩn (cần KN).")
-            st.markdown('**🚫 + Đơn ĐÃ NHẬP KHO nhưng KHÔNG có video khui** '
-                        f'<abbr title="{_esc(_nvhelp)}" style="cursor:help;color:#2563eb;text-decoration:none">ⓘ</abbr>',
-                        unsafe_allow_html=True)
-            try:
-                _nvrows = _restock_novideo_rows()      # đúng danh sách badge báo cáo + metadata SAPO
-                if not _nvrows:
-                    st.caption("✅ Không có đơn nhập kho nào thiếu video khui trong 30 ngày.")
-                else:
-                    _nvrows = sorted(_nvrows, key=lambda r: str(r.get("created_on") or ""), reverse=True)
-                    _nvrows = sorted(_nvrows, key=lambda r: 0 if r.get("need_kn") else 1)   # vàng (cần KN) lên đầu
-                    _nvneed = sum(1 for r in _nvrows if r.get("need_kn"))
-                    st.warning(f"⚠️ **{len(_nvrows)}** đơn ĐÃ nhập kho nhưng KHÔNG có video khui"
-                               + (f" · 🟡 **{_nvneed}** chưa có ghi chú chuẩn (tô vàng, cần KN)" if _nvneed else ""))
+            with st.expander("🚫 Đơn ĐÃ NHẬP KHO nhưng KHÔNG có video khui (nghi NV nhập sai)", expanded=False):
+                st.markdown('**🚫 + Đơn ĐÃ NHẬP KHO nhưng KHÔNG có video khui** '
+                            f'<abbr title="{_esc(_nvhelp)}" style="cursor:help;color:#2563eb;text-decoration:none">ⓘ</abbr>',
+                            unsafe_allow_html=True)
+                try:
+                    _nvrows = _restock_novideo_rows()      # đúng danh sách badge báo cáo + metadata SAPO
+                    if not _nvrows:
+                        st.caption("✅ Không có đơn nhập kho nào thiếu video khui trong 30 ngày.")
+                    else:
+                        _nvrows = sorted(_nvrows, key=lambda r: str(r.get("created_on") or ""), reverse=True)
+                        _nvrows = sorted(_nvrows, key=lambda r: 0 if r.get("need_kn") else 1)   # vàng (cần KN) lên đầu
+                        _nvneed = sum(1 for r in _nvrows if r.get("need_kn"))
+                        st.warning(f"⚠️ **{len(_nvrows)}** đơn ĐÃ nhập kho nhưng KHÔNG có video khui"
+                                   + (f" · 🟡 **{_nvneed}** chưa có ghi chú chuẩn (tô vàng, cần KN)" if _nvneed else ""))
 
-                    _sub_table(_nvrows, 520, show_reason=True, show_type=True,
-                               show_location=True, pg_key="restock_novideo", per_page=50)
-            except Exception as _env:
-                st.caption(f"Chưa dò được đơn nhập kho thiếu video: {_env}")
-            _type_block("💸 Trả hàng hoàn tiền", "return_and_refund")
-            _type_block("📕 Giao hàng thất bại", "delivery_failed")
-            _type_block("🚫 Chỉ hoàn tiền / không có hàng hoàn về", "refund")
-            _other = [d for d in _rip["detail"]
-                      if d["loai_tra_code"] not in ("return_and_refund", "delivery_failed", "refund")
-                      and d["ship_code"] != "no_return"]
-            if _other:
-                st.markdown(f"### Khác — {len(_other)} đơn")
-                _sub_table(_other, 200, show_reason=True, show_type=True, pg_key="other")
+                        _sub_table(_nvrows, 520, show_reason=True, show_type=True,
+                                   show_location=True, pg_key="restock_novideo", per_page=50)
+                except Exception as _env:
+                    st.caption(f"Chưa dò được đơn nhập kho thiếu video: {_env}")
+            with st.expander("🔍 Chi tiết đơn hoàn theo LOẠI (trả hoàn tiền · giao thất bại · chỉ hoàn tiền · khác)",
+                             expanded=False):
+                _type_block("💸 Trả hàng hoàn tiền", "return_and_refund")
+                _type_block("📕 Giao hàng thất bại", "delivery_failed")
+                _type_block("🚫 Chỉ hoàn tiền / không có hàng hoàn về", "refund")
+                _other = [d for d in _rip["detail"]
+                          if d["loai_tra_code"] not in ("return_and_refund", "delivery_failed", "refund")
+                          and d["ship_code"] != "no_return"]
+                if _other:
+                    st.markdown(f"### Khác — {len(_other)} đơn")
+                    _sub_table(_other, 200, show_reason=True, show_type=True, pg_key="other")
             if _closed_returns_with_waybill_detail:
                 st.markdown(f"### 🧭 Đơn trả hàng bị đóng có VĐ trả về — {len(_closed_returns_with_waybill_detail)} đơn")
                 if _closed_returns_loaded_full_year:
