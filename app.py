@@ -12648,6 +12648,37 @@ def _render_returns():
             except Exception:
                 pass
             _apply_closed_return_app_notes(_ckn_render_raw_list, _closed_return_app_notes)
+
+            # The Sapo list endpoint can keep a return as "returning" after its
+            # detail profile has already been closed/canceled. Verify only the
+            # small CKN worklist against the authoritative detail endpoint.
+            _sapo_detail_closed_rows = []
+            _sapo_detail_check_errors = 0
+            for _d in _ckn_render_raw_list:
+                _return_id = str((_d or {}).get("sapo_return_id") or "").strip()
+                if not _return_id or (_d or {}).get("is_canceled") or (_d or {}).get("is_closed"):
+                    continue
+                try:
+                    _return_detail = load_return_detail_for_link(_return_id)
+                except Exception:
+                    _sapo_detail_check_errors += 1
+                    continue
+                if not L.order_return_is_closed(_return_detail):
+                    continue
+                _detail_status = str((_return_detail or {}).get("status") or "").strip()
+                _closed_on = next((str((_return_detail or {}).get(k) or "").strip() for k in (
+                    "cancelled_on", "canceled_on", "closed_on", "closed_at",
+                    "cancelled_at", "canceled_at",
+                ) if str((_return_detail or {}).get(k) or "").strip()), "")
+                _d["return_status"] = _detail_status or "closed"
+                _d["is_canceled"] = _detail_status.lower() in ("canceled", "cancelled") or bool(_closed_on)
+                _d["is_closed"] = True
+                _d["canceled_on"] = _closed_on
+                _d["_sapo_closed_verified"] = True
+                _d["_closed_return_need_kn"] = not _is_closed_kn_result(_d)
+                _d["_location"] = "SAPO đã đóng/hủy phiếu; chưa có kết quả KN"
+                _sapo_detail_closed_rows.append(_d)
+
             _marketplace_closed_app_rows = [
                 d for d in _ckn_render_raw_list
                 if _app_note_marks_marketplace_closed(d.get("app_note") or d.get("note"))
@@ -12655,6 +12686,15 @@ def _render_returns():
             _closed_display_keys = {
                 _dohana_row_key(d) for d in _closed_returns_with_waybill_detail if _dohana_row_key(d)
             }
+            for _d in _sapo_detail_closed_rows:
+                _key = _dohana_row_key(_d)
+                _added_to_closed = not _key or _key not in _closed_display_keys
+                if _added_to_closed:
+                    _closed_returns_with_waybill_detail.append(dict(_d))
+                    if _key:
+                        _closed_display_keys.add(_key)
+                if _added_to_closed and _d.get("_closed_return_need_kn"):
+                    _closed_returns_need_kn_detail.append(dict(_d))
             for _d in _marketplace_closed_app_rows:
                 _d["_closed_return_need_kn"] = not _is_closed_kn_result(_d)
                 _d["_location"] = "Sàn đã đóng yêu cầu; SAPO còn mở"
@@ -12685,6 +12725,12 @@ def _render_returns():
             if _nv_ckn_added:
                 _need_kn_info += (f"\nCó {_nv_ckn_added} đơn ĐÃ nhập kho nhưng THIẾU video khui (nghi NV nhập kho "
                                   "sai) — đưa vào đây tới khi có ghi chú chuẩn thì tự rớt.")
+            if _sapo_detail_closed_rows:
+                _need_kn_info += (f"\nĐã xác nhận {len(_sapo_detail_closed_rows)} hồ sơ SAPO đóng/hủy từ API chi tiết "
+                                  "dù API danh sách còn báo đang xử lý.")
+            if _sapo_detail_check_errors:
+                _need_kn_info += (f"\nCó {_sapo_detail_check_errors} hồ sơ chưa kiểm tra được trạng thái chi tiết SAPO; "
+                                  "app giữ nguyên trong CẦN KN để không bỏ sót.")
             _need_kn_info += ("\nVới đơn TikTok, bấm Xem / tạo trong cột Phiếu yêu cầu để mở thẳng tab Tất cả "
                               "với ID đơn hàng đã điền sẵn. Nếu chưa có phiếu thì tạo ngay; nếu có nhiều phiếu "
                               "TikTok sẽ hiện đầy đủ.")

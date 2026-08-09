@@ -50,6 +50,27 @@ _SHOPEE_ORDER_URL_RE = re.compile(r"https?://banhang\.shopee\.vn/portal/sale/ord
 SNAPSHOT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "snapshot.json")
 
 
+def order_return_is_closed(record) -> bool:
+    """Return True when a Sapo return detail is closed or canceled.
+
+    The order-return list endpoint can lag behind the detail endpoint, so callers
+    that need an authoritative state should apply this helper to the detail row.
+    """
+    if not isinstance(record, dict):
+        return False
+    status = str(record.get("status") or "").strip().lower()
+    if status in ("closed", "canceled", "cancelled"):
+        return True
+    if any(record.get(key) for key in (
+        "closed_on", "closed_at", "canceled_on", "cancelled_on",
+        "canceled_at", "cancelled_at",
+    )):
+        return True
+    return any(record.get(key) is True for key in (
+        "is_closed", "is_canceled", "is_cancelled",
+    ))
+
+
 def _walk_doc_values(obj, path=()):
     if isinstance(obj, dict):
         for key, value in obj.items():
@@ -1794,12 +1815,12 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120, canceled_max_pages
 
     def _is_canceled_return(x):
         status = str(x.get("status") or "").lower()
-        return status in ("canceled", "cancelled") or bool(x.get("cancelled_on") or x.get("canceled_on"))
+        return status in ("canceled", "cancelled") or bool(
+            x.get("cancelled_on") or x.get("canceled_on")
+        )
 
     def _is_closed_unstocked_return(x):
-        status = str(x.get("status") or "").lower()
-        is_closed = status == "closed" or bool(x.get("closed_on") or x.get("closed_at"))
-        return is_closed and _not_fully_stocked(x)
+        return order_return_is_closed(x) and _not_fully_stocked(x)
 
     def _return_shipper_name(x):
         note = str(x.get("note") or "")
