@@ -9882,6 +9882,12 @@ def _render_returns():
         "KQ: Tạm chấp nhận không cần khiếu nại do đơn đã lâu.\n"
         "Cập nhật: 14/07/2026"
     )
+    # Chốt TAY (khi UI kẹt / mã Dohana không có hồ sơ Sapo): (order_code, return_code, vd_tra, note).
+    _CLOSED_RETURN_MANUAL_NOTES = [
+        ("", "", "857631345894",
+         "⚪ KHÔNG CẦN KN | Mã 857631345894 không có trong shop — không ghi được Sapo\n"
+         "Cập nhật: 09/08/2026"),
+    ]
     _CLOSED_RETURN_CONFIRMED_RECEIVED = [
         ("260401MFDGA4KF", "2604020QV8QWE3C", "SPXVN060411817964"),
         ("260402QTCDNFKU", "2604040V5QWNXPQ", "SPXVN063847852774"),
@@ -9972,6 +9978,15 @@ def _render_returns():
             out[f"return_code:{return_code}"] = item
             out[f"vd_tra:{vd_tra}"] = item
             out[f"order_code:{order_code}"] = item
+        for _o, _r, _v, _mnote in _CLOSED_RETURN_MANUAL_NOTES:
+            _mitem = {"note": _mnote, "order_code": _o, "return_code": _r, "vd_tra": _v,
+                      "updated_at": "2026-08-09 15:00:00"}
+            if _r:
+                out[f"return_code:{_r}"] = _mitem
+            if _v:
+                out[f"vd_tra:{_v}"] = _mitem
+            if _o:
+                out[f"order_code:{_o}"] = _mitem
         return out
 
     def _save_closed_return_app_notes(notes):
