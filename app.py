@@ -12205,15 +12205,18 @@ def _render_returns():
             def _dohana_merge_detail_row(base, extra):
                 merged = dict(base or {})
                 for key in (
-                    "order_code", "order_link", "return_code", "return_link", "created", "created_on",
+                    "sapo_return_id", "order_code", "order_link", "return_code", "return_link", "created", "created_on",
                     "vd_di", "vd_tra", "return_shipper", "gian_hang", "sku", "qty", "money",
                     "loai_tra", "loai_tra_code", "ship_code", "stock_status", "stock_code", "order_source",
+                    "return_status", "canceled_on",
                 ):
                     cur = merged.get(key)
                     new = (extra or {}).get(key)
                     missing = cur in (None, "") or (key in ("qty", "money") and not cur)
                     if missing and new not in (None, ""):
                         merged[key] = new
+                for key in ("is_canceled", "is_closed"):
+                    merged[key] = bool(merged.get(key) or (extra or {}).get(key))
                 if not str(merged.get("note") or "").strip() and str((extra or {}).get("note") or "").strip():
                     merged["note"] = extra.get("note")
                 if not str(merged.get("reason") or "").strip() and str((extra or {}).get("reason") or "").strip():
