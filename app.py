@@ -9687,7 +9687,9 @@ def _render_returns():
         return "không có video" if not has_clip_code else ""
 
     def _can_edit_return_notes():
-        return _auth_configured() and str(CUR_ROLE or "").strip().lower() == "admin"
+        # CHỈ chủ shop (vitran2291 + zenzen197) mới ghi/sửa ghi chú đơn trả (app + SAPO).
+        # Nhân viên và mọi tài khoản admin khác chỉ được XEM.
+        return _auth_configured() and _is_owner
 
     def _return_info(text, label="ⓘ"):
         text = str(text or "").strip()
@@ -10034,7 +10036,7 @@ def _render_returns():
         st.markdown(f"**{title}**")
         _return_info(help_text)
         if not _can_edit_return_notes():
-            _return_info("Chỉ tài khoản admin mới được ghi hoặc sửa ghi chú app/SAPO. Tài khoản khác chỉ xem dữ liệu.")
+            _return_info("Chỉ tài khoản CHỦ SHOP mới được ghi hoặc sửa ghi chú app/SAPO. Nhân viên và admin khác chỉ xem dữ liệu.")
             return
         if not picklog.configured():
             st.warning("Chưa cấu hình kho lưu picklog/Gist nên chưa lưu được ghi chú app.")
@@ -10542,7 +10544,7 @@ def _render_returns():
         _can_write_sapo = _can_edit_return_notes()
         _return_info("Dùng khi đã đối chiếu xong bên ngoài app. App sẽ dò phiếu trả theo mã đơn/mã trả hàng/mã vận đơn rồi ghi note vào SAPO qua API.")
         if not _can_write_sapo:
-            st.warning("Chức năng ghi SAPO chỉ mở cho tài khoản admin khi app đã cấu hình đăng nhập.")
+            st.warning("Chức năng ghi SAPO chỉ mở cho tài khoản CHỦ SHOP (nhân viên/admin khác chỉ xem).")
         _default_codes = ""
         _code_col, _lookup_col = st.columns([5, 1])
         with _lookup_col:
@@ -10889,7 +10891,9 @@ def _render_returns():
                       or ((not _full_note_mode) and _individual_mode and (not _individual_plan or not _individual_valid))),
             key="return_note_write_btn",
         )
-        if _quick_write_now or _write_clicked:
+        if (_quick_write_now or _write_clicked) and not _can_write_sapo:
+            st.error("Chỉ CHỦ SHOP mới được ghi chú vào SAPO. Tài khoản của bạn chỉ được xem.")
+        elif _quick_write_now or _write_clicked:
             results = []
             try:
                 rows, matches = _return_note_rows(_codes, int(_max_pages))
