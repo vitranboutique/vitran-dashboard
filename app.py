@@ -12787,6 +12787,51 @@ def _render_returns():
                            "và vẫn giữ trong Cần KN cho tới khi có kết quả cuối."),
                 key_prefix="marketplace_closed",
             )
+            # 🧹 DỌN app note THỪA (chỉ chủ shop). App note chỉ cần cho đơn BỊ ĐÓNG (không ghi Sapo
+            # được); app note nằm trên đơn CÒN MỞ (Sapo ghi được) là thừa → liệt kê cho xoá gọn 1 lần.
+            if _can_edit_return_notes() and picklog.configured():
+                with st.expander("🧹 Dọn app note THỪA (đơn còn ghi Sapo được)", expanded=False):
+                    st.caption("App note chỉ cần cho đơn BỊ ĐÓNG (không ghi Sapo được). Các app note dưới đây nằm trên đơn CÒN MỞ nên là thừa. Xem kỹ (gồm cả đơn 'sàn đã đóng nhưng Sapo còn mở') rồi mới xoá. KHÔNG đụng app note của đơn đã đóng thật.")
+                    try:
+                        _raw_gn = picklog._read_gist_file(_CLOSED_RETURN_NOTE_FILE) or {}
+                        _gist_notes = _raw_gn.get("notes") if isinstance(_raw_gn, dict) else {}
+                        _gist_notes = _gist_notes if isinstance(_gist_notes, dict) else {}
+                        _active_norm = set()
+                        for _ad in (_all_returns_detail or []):
+                            for _af in ("order_code", "return_code", "vd_tra", "vd_di"):
+                                _av = _search_norm(_ad.get(_af))
+                                if _av:
+                                    _active_norm.add(_av)
+                        _thua_keys, _thua_rows, _seen_id = [], [], set()
+                        for _nk, _nrec in _gist_notes.items():
+                            _rec = _nrec if isinstance(_nrec, dict) else {}
+                            _ncodes = [_search_norm(_rec.get(_f)) for _f in ("order_code", "return_code", "vd_tra", "vd_di")]
+                            if not any(_c and _c in _active_norm for _c in _ncodes):
+                                continue
+                            _thua_keys.append(_nk)
+                            _idk = "|".join(sorted(_c for _c in _ncodes if _c))
+                            if _idk and _idk not in _seen_id:
+                                _seen_id.add(_idk)
+                                _thua_rows.append(_rec)
+                        if not _thua_rows:
+                            st.success("✅ Không có app note thừa — mọi app note đang nằm trên đơn đã đóng.")
+                        else:
+                            st.warning(f"Có **{len(_thua_rows)}** đơn CÒN MỞ đang mang app note (thừa):")
+                            for _r in _thua_rows[:80]:
+                                _lbl = " · ".join(str(_r.get(_f)) for _f in ("order_code", "return_code", "vd_tra")
+                                                  if str(_r.get(_f) or "").strip())
+                                _nt0 = (str(_r.get("note") or "").splitlines() or [""])[0][:70]
+                                st.markdown(f"- `{_lbl or '—'}` — {_nt0}")
+                            _cf = st.checkbox("Tôi đã xem danh sách, xoá các app note thừa ở trên", key="cleanup_thua_confirm")
+                            if st.button("🗑️ Xoá app note thừa", disabled=not _cf, key="cleanup_thua_btn"):
+                                _kept = {k: v for k, v in _gist_notes.items() if k not in set(_thua_keys)}
+                                if _save_closed_return_app_notes(_kept):
+                                    st.success(f"Đã xoá app note thừa của {len(_thua_rows)} đơn.")
+                                    st.rerun(scope="app")
+                                else:
+                                    st.error("Lưu lỗi. Kiểm tra token picklog/Gist.")
+                    except Exception as _ce:
+                        st.caption(f"Chưa dò được app note thừa: {_ce}")
             _sub_table(_ckn_render_list, 520, show_reason=True, show_location=True,
                        show_type=True, pg_key="ckn", per_page=50, show_ticket=True)
             st.divider()
