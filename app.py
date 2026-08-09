@@ -9990,14 +9990,36 @@ def _render_returns():
             st.warning("Chưa cấu hình kho lưu picklog/Gist nên chưa lưu được ghi chú app.")
             return
         row_map = {}
-        choices = []
+        all_choices = []
         for d in rows:
             key = d.get("_app_note_key") or _closed_return_note_key(d)
             if key and key not in row_map:
                 row_map[key] = d
-                choices.append(key)
-        if not choices:
+                all_choices.append(key)
+        if not all_choices:
             return
+        # Mặc định chỉ hiện đơn CHƯA có ghi chú chuẩn cho gọn (bỏ tick để xem/sửa lại tất cả).
+        _only_unstd = st.checkbox(
+            "Chỉ hiện đơn CHƯA có ghi chú chuẩn",
+            value=True,
+            key=f"{key_prefix}_only_unstd",
+            help="Ẩn đơn đã có ghi chú chuẩn (THẮNG/THUA/HỦY/HẾT HẠN/KHÔNG CẦN KN/CẦN KN). Bỏ tick để xem hoặc sửa lại tất cả.",
+        )
+
+        def _has_std_note(_k, _d):
+            _app = _closed_return_app_note_text((notes or {}).get(_k))
+            return _note_is_standard(_app or str(_d.get("note") or ""))
+
+        if _only_unstd:
+            choices = [k for k in all_choices if not _has_std_note(k, row_map.get(k) or {})]
+        else:
+            choices = list(all_choices)
+        _n_std_hidden = len(all_choices) - len(choices)
+        if not choices:
+            st.success(f"✅ Cả {len(all_choices)} đơn đều đã có ghi chú chuẩn. Bỏ tick ở trên nếu muốn xem/sửa lại.")
+            return
+        if _only_unstd and _n_std_hidden:
+            st.caption(f"Đang ẩn {_n_std_hidden} đơn đã có ghi chú chuẩn — còn {len(choices)} đơn chưa ghi chú.")
 
         def _note_meta(row, note_text):
             return {
@@ -11022,8 +11044,12 @@ def _render_returns():
             return "shopee" in _s
 
         _detail_rows = _drop_need_kn_without_return_waybill(_rip.get("detail") or [])
+        # Ghi chú app (đơn đã đóng / đơn TikTok đã chốt trên sàn) cũng đè lên đơn ĐANG xử lý:
+        # đơn nào đã có kết luận chuẩn thì tự rớt khỏi Cần KN (đồng bộ cả số đếm lẫn bảng).
+        _apply_closed_return_app_notes(_detail_rows, _load_closed_return_app_notes())
         _khong_can_kn_list = [d for d in _detail_rows if _note_is_khong_can_kn(d)]
-        _ckn_list = [d for d in _detail_rows if d.get("need_kn") and _is_need_kn_shape(d)]
+        _ckn_list = [d for d in _detail_rows
+                     if d.get("need_kn") and _is_need_kn_shape(d) and not _note_is_concluded(d.get("note"))]
         _no_return_list = [d for d in _detail_rows if d.get("ship_code") == "no_return"]
         _khong_can_kn_money = sum(int(d.get("khong_can_kn_money")
                                       if d.get("khong_can_kn_money") is not None
@@ -12649,7 +12675,18 @@ def _render_returns():
                         st.rerun()
                 if _closed_returns_capped:
                     st.warning("Đã chạm giới hạn quét 500 trang phiếu bị đóng; có thể còn phiếu cũ hơn trong năm nay.")
-                _render_closed_return_app_note_editor(_closed_returns_with_waybill_detail, _closed_return_app_notes)
+                # Đơn TikTok "tráo/sai hàng" đã chốt trên sàn nhưng Sapo CHƯA đánh dấu hủy vẫn nằm ở Cần KN
+                # (đang xử lý) — cho ghi chú luôn tại đây để chốt và tự rớt khỏi Cần KN.
+                _active_ckn_annotatable = [
+                    d for d in _ckn_render_list
+                    if not _is_shopee_row(d)
+                    and str(d.get("vd_tra") or "").strip()
+                    and not d.get("_closed_return_need_kn")
+                ]
+                _render_closed_return_app_note_editor(
+                    _closed_returns_with_waybill_detail + _active_ckn_annotatable,
+                    _closed_return_app_notes,
+                )
                 _sub_table(
                     _closed_returns_with_waybill_detail,
                     300,
