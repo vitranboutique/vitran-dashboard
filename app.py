@@ -1979,6 +1979,12 @@ def load_ttkh_saved_by_day():
             for _d in (set(_codes) | set(_extra))}
 
 
+@st.cache_data(ttl=300, show_spinner="Đang lấy tồn kho Sapo…")
+def load_stock():
+    """Tồn kho theo SKU (2 loại: thực tế + có thể bán). Cache 5 phút."""
+    return L.get_stock_by_sku(make_fetch_json(build_session()))
+
+
 def _sapo_lookup_key(value) -> str:
     return re.sub(r"\s+", "", str(value or "")).upper()
 
@@ -9080,10 +9086,70 @@ def _daily_sig(rep, dvr):
         return ""
 
 
+_STOCK_FIXED_CODES = ["SD", "ST", "S-TR", "CVBC", "OL-DE", "OL-TR", "OS-DE", "OS-TR"]
+
+
+def _render_stock_report():
+    """BƯỚC 1 (bản thử): lấy tồn kho Sapo (2 loại) cho 8 mã cố định + mã chọn thêm, để đối chiếu số."""
+    with st.expander("📦 Báo cáo tồn kho + kiểm kê", expanded=False):
+        st.caption("Tồn kho lấy trực tiếp từ Sapo — 2 loại: THỰC TẾ (on-hand) & CÓ THỂ BÁN (available). "
+                   "Cột 'Thực tế đếm' để trống cho NV kiểm & điền vào. "
+                   "⚠️ BẢN THỬ: vui lòng đối chiếu số có KHỚP Sapo không, rồi tôi làm tiếp cột Đầu ngày / Xuất / Cuối ngày + in.")
+        if not credential_present():
+            st.info("Cần kết nối Sapo (LIVE) để xem tồn kho.")
+            return
+        if st.button("🔄 Tải lại tồn kho", key="stock_reload"):
+            load_stock.clear()
+        try:
+            _stock = load_stock()
+        except Exception as _e:
+            st.error(f"Chưa lấy được tồn kho: `{_e}`")
+            return
+        _sample = _stock.get("_sample") or []
+        _skus = {k: v for k, v in _stock.items() if k != "_sample"}
+        st.caption(f"Sapo trả về **{len(_skus)}** SKU có dữ liệu tồn.")
+        _fixed_pc = set()
+        for _c in _STOCK_FIXED_CODES:
+            _fp = PT.parse_sku(_c)
+            _fixed_pc.add((_fp.get("productCode"), _fp.get("colorCode")))
+        _opts = []
+        for _g in sorted({(PT.parse_sku(k).get("productColorKey") or k) for k in _skus}):
+            _gp = PT.parse_sku(_g.replace(" - ", "-"))
+            if (_gp.get("productCode"), _gp.get("colorCode")) not in _fixed_pc:
+                _opts.append(_g)
+        _extra = st.multiselect("➕ Chọn thêm mã muốn kiểm chung (ngoài 8 mã cố định)",
+                                options=_opts, key="stock_extra_codes")
+        _groups = list(_STOCK_FIXED_CODES) + list(_extra)
+        _rows = []
+        for _g in _groups:
+            _gp = PT.parse_sku(_g.replace(" - ", "-"))
+            _matched = []
+            for _sku, _d in _skus.items():
+                _sp = PT.parse_sku(_sku)
+                if _sp.get("productCode") != _gp.get("productCode"):
+                    continue
+                if _gp.get("colorCode") and _sp.get("colorCode") != _gp.get("colorCode"):
+                    continue
+                _matched.append((_sp, _d))
+            _matched.sort(key=lambda x: x[0].get("sortKey") or "")
+            for _sp, _d in _matched:
+                _rows.append({"Nhóm": _g, "SKU": _sp.get("sku"), "Size": _sp.get("size") or "—",
+                              "Tồn thực tế": _d.get("on_hand", 0), "Có thể bán": _d.get("available", 0),
+                              "Thực tế đếm": ""})
+        if not _rows:
+            st.warning("Chưa khớp SKU nào cho các mã đã chọn. Mở '🔧 Dữ liệu thô' để xem field Sapo trả về.")
+        else:
+            st.dataframe(pd.DataFrame(_rows), hide_index=True, use_container_width=True)
+            st.caption(f"**{len(_rows)}** dòng SKU. Số 'Tồn thực tế' / 'Có thể bán' có khớp Sapo không?")
+        with st.expander("🔧 Dữ liệu thô Sapo (2 variant đầu — để đối chiếu field nếu số sai)"):
+            st.json(_sample)
+
+
 def _render_daily():
     st.title("📄 Báo cáo vận hành cuối ngày")
     st.caption("Tổng hợp tự động từ Sapo + Dohana — bấm **In báo cáo A4** trong khung để in/lưu PDF.  "
                "🎥 *Clip nhập hàng hoàn tự cập nhật khoảng 5 phút; bấm “Tải lại số liệu” để cập nhật ngay.*")
+    _render_stock_report()
     with st.expander("🔌 Kiểm tra kết nối Dohana (bấm khi video không lên)"):
         st.caption("Bấm để dò Dohana theo TỪNG loại (inbound/package) + xem loại THẬT Dohana trả về.")
         if st.button("Gửi thử tới Dohana", key="dohana_ping_btn"):

@@ -3780,6 +3780,65 @@ def get_sales_analysis(fetch_json, period="thangnay", _v=None):
     }
 
 
+def get_stock_by_sku(fetch_json, max_pages: int = 80) -> dict:
+    """Tồn kho theo SKU từ Sapo (/admin/products.json). Gộp mọi kho (location).
+    Trả {SKU_UPPER: {"on_hand": tồn thực tế, "available": có thể bán, "committed": giữ hàng, "name": tên}}.
+    Bền với nhiều dạng field khác nhau của Sapo (inventories[] hoặc field phẳng).
+    Cũng trả khoá "_sample" = 2 variant thô đầu tiên để đối chiếu field khi số sai."""
+    def _n(v):
+        try:
+            return int(round(float(v)))
+        except Exception:
+            return 0
+
+    def _pick(d, *keys):
+        for k in keys:
+            if isinstance(d, dict) and d.get(k) is not None:
+                return d.get(k)
+        return None
+
+    out, sample = {}, []
+    for p in range(1, max_pages + 1):
+        try:
+            chunk = (fetch_json("/admin/products.json", limit=250, page=p) or {}).get("products", [])
+        except Exception:
+            break
+        if not chunk:
+            break
+        for prod in chunk:
+            pname = prod.get("name") or ""
+            for v in (prod.get("variants") or []):
+                sku = str(v.get("sku") or "").strip()
+                if not sku:
+                    continue
+                if len(sample) < 2:
+                    sample.append(v)
+                oh = av = cm = 0
+                invs = v.get("inventories")
+                if not isinstance(invs, list):
+                    invs = v.get("inventory_advances") if isinstance(v.get("inventory_advances"), list) else None
+                if isinstance(invs, list) and invs:
+                    for inv in invs:
+                        oh += _n(_pick(inv, "on_hand", "onhand", "quantity_on_hand"))
+                        av += _n(_pick(inv, "available", "quantity_available", "sellable"))
+                        cm += _n(_pick(inv, "committed", "quantity_committed"))
+                else:
+                    oh = _n(_pick(v, "on_hand", "onhand", "inventory_quantity", "quantity"))
+                    _avraw = _pick(v, "available", "sellable_quantity", "available_quantity")
+                    av = _n(_avraw) if _avraw is not None else oh
+                    cm = _n(_pick(v, "committed"))
+                key = sku.upper()
+                d = out.setdefault(key, {"on_hand": 0, "available": 0, "committed": 0,
+                                         "name": v.get("name") or pname})
+                d["on_hand"] += oh
+                d["available"] += av
+                d["committed"] += cm
+        if len(chunk) < 250:
+            break
+    out["_sample"] = sample
+    return out
+
+
 if __name__ == "__main__":
     # Smoke test: in nhanh payload demo
     import json
