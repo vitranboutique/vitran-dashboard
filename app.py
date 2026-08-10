@@ -9137,7 +9137,14 @@ def _render_stock_report():
         _extra = st.multiselect("➕ Chọn thêm mã muốn kiểm & in chung (ngoài 8 mã cố định)",
                                 options=_opts, key="stock_extra_codes")
         _groups = list(_STOCK_FIXED_CODES) + list(_extra)
-        _date_iso = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%Y-%m-%d")
+        _vn_now = (datetime.now(timezone.utc) + timedelta(hours=7)).date()
+        _pick_day = st.date_input("📅 Xem Nhập/Xuất của ngày", value=_vn_now,
+                                  min_value=_vn_now - timedelta(days=60), max_value=_vn_now,
+                                  format="DD/MM/YYYY", key="stock_io_date")
+        _date_iso = _pick_day.isoformat()
+        if _pick_day != _vn_now:
+            st.caption(f"⚠️ Đang xem ngày **{_pick_day.strftime('%d/%m/%Y')}** — cột Nhập/Xuất là của ngày đó, "
+                       "còn *Tồn cuối ngày / Có thể bán* LUÔN là tồn HIỆN TẠI (Sapo không lưu lịch sử tồn theo ngày).")
         try:
             _iores = load_stock_io(_date_iso) or {}
         except Exception:
@@ -9202,7 +9209,7 @@ def _render_stock_report():
             st.warning("Chưa khớp SKU nào cho các mã đã chọn. Mở '🔧 Dữ liệu thô' để xem field Sapo trả về.")
         else:
             import json as _json
-            _today = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%d/%m/%Y")
+            _today = _pick_day.strftime("%d/%m/%Y")
             _trs, _prev, _tX, _tN = "", None, 0, 0
             for _r in _rows:
                 _tX += _r["xuat"]
@@ -9223,18 +9230,23 @@ def _render_stock_report():
                          f"<td class='n'>{_r['av']:,}</td>"
                          f"<td class='blank'></td></tr>")
             _css = ("*{box-sizing:border-box}body{margin:0;font-family:Tahoma,Arial,sans-serif;color:#111}"
-                    ".wrap{max-width:100%;margin:0 auto}.hd{display:flex;justify-content:space-between;"
-                    "align-items:flex-end;border-bottom:2px solid #111;padding-bottom:6px;margin-bottom:8px}"
-                    ".ttl{font-size:16px;font-weight:800}.sub{font-size:11px;color:#555}.ncc{font-size:10px;color:#0a7a55}"
-                    "table{border-collapse:collapse;width:100%;font-size:12px}"
-                    "th,td{border:1px solid #999;padding:4px 7px}th{background:#eee;text-align:center}"
+                    ".wrap{max-width:190mm;margin:0 auto}.hd{display:flex;justify-content:space-between;"
+                    "align-items:flex-end;border-bottom:2px solid #111;padding-bottom:5px;margin-bottom:6px}"
+                    ".ttl{font-size:15px;font-weight:800}.sub{font-size:10px;color:#555}.ncc{font-size:9px;color:#0a7a55}"
+                    "table{border-collapse:collapse;width:100%;font-size:11px;table-layout:fixed}"
+                    "th,td{border:1px solid #999;padding:3px 4px;overflow-wrap:anywhere}"
+                    "th{background:#eee;text-align:center;font-size:10.5px}"
+                    "col.c-sku{width:23%}col.c-num{width:12%}col.c-cnt{width:17%}"
                     "td.n{text-align:right;white-space:nowrap}td.g{font-weight:800;background:#eef;text-align:left}"
-                    "td.blank{background:#fffde7;min-width:70px}@page{size:A4 landscape;margin:8mm}")
+                    "td.blank{background:#fffde7}tr{page-break-inside:avoid}thead{display:table-header-group}"
+                    "@page{size:A4 portrait;margin:9mm}")
             _content = ("<div class='wrap'><div class='hd'><div><div class='ttl'>PHIẾU XUẤT NHẬP TỒN + KIỂM KÊ</div>"
                         f"<div class='sub'>VITRAN BOUTIQUE · trong ngày <b>{_today}</b> · Đầu ngày = Cuối ngày + Xuất − Nhập</div></div>"
                         "<div class='sub' style='text-align:right'>NV kiểm: __________</div></div>"
-                        "<table><thead><tr><th>SKU</th><th>Tồn đầu ngày</th><th>Nhập</th><th>Xuất</th>"
-                        "<th>Tồn cuối ngày</th><th>Có thể bán</th><th>Thực tế đếm</th></tr></thead><tbody>"
+                        "<table><colgroup><col class='c-sku'><col class='c-num'><col class='c-num'>"
+                        "<col class='c-num'><col class='c-num'><col class='c-num'><col class='c-cnt'></colgroup>"
+                        "<thead><tr><th>SKU</th><th>Tồn<br>đầu ngày</th><th>Nhập</th><th>Xuất</th>"
+                        "<th>Tồn<br>cuối ngày</th><th>Có thể<br>bán</th><th>Thực tế đếm</th></tr></thead><tbody>"
                         + _trs + "</tbody></table>"
                         f"<div class='sub' style='margin-top:6px'>Tổng {len(_rows)} dòng · "
                         + ("Nhập/Xuất: CHƯA có quyền đọc kho Sapo (xem cảnh báo trên app)"
