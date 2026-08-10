@@ -9288,11 +9288,12 @@ def _render_stock_report():
             _rows_fx = [_r for _r in _rows if _r.get("fx")]        # TRANG 1: mã cố định
             _rows_ex = [_r for _r in _rows if not _r.get("fx")]    # TRANG 2: mã chọn thêm
             _half = max(1, (len(_rows_fx) + 1) // 2)
-            _css = ("*{box-sizing:border-box}html,body{height:100%}"
+            # ⚠️ KHÔNG dùng min-height:vh + flex center để "canh giữa": khi IN nó đẩy bảng sang
+            #    trang sau, trang đầu trống trơn. Cân đối bằng CỠ CHỮ + padding trên cho vừa trang.
+            _css = ("*{box-sizing:border-box}"
                     "body{margin:0;font-family:Tahoma,Arial,sans-serif;color:#111}"
-                    # CANH GIỮA theo chiều dọc: phiếu nằm giữa trang, không dồn lên trên.
-                    ".wrap{max-width:277mm;margin:0 auto;min-height:99vh;display:flex;flex-direction:column;"
-                    "justify-content:center}.brk{page-break-before:always}"
+                    ".wrap{max-width:277mm;margin:0 auto;padding-top:6mm}"
+                    ".brk{page-break-before:always}"
                     ".hd{display:flex;justify-content:space-between;"
                     "align-items:flex-end;border-bottom:3px solid #111;padding-bottom:9px;margin-bottom:12px}"
                     ".ttl{font-size:29px;font-weight:800;letter-spacing:.5px;line-height:1.12}"
