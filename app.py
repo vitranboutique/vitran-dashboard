@@ -9291,17 +9291,21 @@ def _render_stock_report():
             _css = ("*{box-sizing:border-box}body{margin:0;font-family:Tahoma,Arial,sans-serif;color:#111}"
                     ".wrap{max-width:277mm;margin:0 auto}.brk{page-break-before:always;margin-top:14px}"
                     ".hd{display:flex;justify-content:space-between;"
-                    "align-items:flex-end;border-bottom:2px solid #111;padding-bottom:4px;margin-bottom:5px}"
-                    ".ttl{font-size:16px;font-weight:800}.sub{font-size:10.5px;color:#555}.ncc{font-size:9.5px;color:#0a7a55}"
+                    "align-items:flex-end;border-bottom:2.5px solid #111;padding-bottom:7px;margin-bottom:9px}"
+                    ".ttl{font-size:23px;font-weight:800;letter-spacing:.4px;line-height:1.15}"
+                    ".sub{font-size:12.5px;color:#444;margin-top:3px}.sub b{color:#111}"
+                    ".meta{font-size:13px;color:#111;text-align:right;line-height:1.7;white-space:nowrap}"
+                    ".foot{font-size:11px;color:#666;margin-top:8px}.ncc{font-size:9.5px;color:#0a7a55}"
                     ".cols{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:start;"
                     "page-break-inside:avoid;break-inside:avoid}"
                     "table{border-collapse:collapse;width:100%;font-size:12.5px;table-layout:fixed;"
                     "page-break-inside:avoid;break-inside:avoid}"
                     "th,td{border:1px solid #999;padding:3.5px 6px;overflow-wrap:anywhere;line-height:1.25}"
-                    "th{background:#eee;text-align:center;font-size:11.5px;line-height:1.2}"
+                    "th{background:#e8ecf3;text-align:center;font-size:11.5px;line-height:1.2;font-weight:700}"
                     "col.c-sku{width:26%}col.c-num{width:11.5%}col.c-cnt{width:16.5%}"
-                    "td.n{text-align:right;white-space:nowrap}td.g{font-weight:800;background:#eef;text-align:left}"
-                    "td.blank{background:#fffde7}tr{page-break-inside:avoid}thead{display:table-header-group}"
+                    "td.n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}"
+                    "td.g{font-weight:800;background:#dfe6f3;text-align:left;font-size:12.5px;letter-spacing:.2px}"
+                    "td.blank{background:#fffdf0}tr{page-break-inside:avoid}thead{display:table-header-group}"
                     "@page{size:A4 landscape;margin:7mm}")
             _dau_src = ("Tồn đầu = tồn CUỐI ngày hôm trước (đã chốt)"
                         if any(r.get("dau_snap") for r in _rows) else
@@ -9312,13 +9316,13 @@ def _render_stock_report():
                     return ""
                 return (f"<div class='wrap{' brk' if _brk else ''}'><div class='hd'><div>"
                         f"<div class='ttl'>{_title}</div>"
-                        f"<div class='sub'>VITRAN BOUTIQUE · trong ngày <b>{_today}</b> · {_dau_src}</div></div>"
-                        f"<div class='sub' style='text-align:right'>NV kiểm: __________</div></div>"
+                        f"<div class='sub'><b>VITRAN BOUTIQUE</b> · {_dau_src}</div></div>"
+                        f"<div class='meta'>Ngày: <b>{_today}</b><br>NV kiểm: ______________</div></div>"
                         + _two_cols(_part)
-                        + f"<div class='sub' style='margin-top:6px'>{len(_part)} dòng · "
+                        + f"<div class='foot'>{len(_part)} dòng · "
                         + ("Nhập/Xuất: CHƯA có quyền đọc kho Sapo"
                            if _io_blocked else f"Nhập {sum(r['nhap'] for r in _part):,} · Xuất {sum(r['xuat'] for r in _part):,}")
-                        + " · cột 'Thực tế đếm' để NV điền tay.</div></div>")
+                        + " · cột <b>Thực tế đếm</b> để NV đếm rồi điền tay.</div></div>")
             _content = (_page("PHIẾU XUẤT NHẬP TỒN + KIỂM KÊ", _rows_fx)
                         + _page("PHIẾU KIỂM KÊ — MÃ BỔ SUNG (chọn thêm)", _rows_ex, _brk=bool(_rows_fx)))
             _js = ("function printStock(){var h=document.getElementById('stk').innerHTML;"
