@@ -9558,7 +9558,10 @@ def _render_daily():
             _apply_picklog_soan_to_daily(_rep, _ps.get("rows") or [], _dvr, _ps.get("dup_orders") or 0)
         _inject_huy_soan(_rep, _iso)
         _inject_conxot_video(_rep)
-        _rep["ttkh_saved"] = (load_ttkh_saved_by_day().get(_iso, 0) if picklog.configured() else None)
+        try:
+            _rep["ttkh_saved"] = (load_ttkh_saved_by_day().get(_iso, 0) if picklog.configured() else None)
+        except Exception:
+            _rep["ttkh_saved"] = None
         _now_hm = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%H:%M %d/%m/%Y")
         st.warning(f"🗂️ Ngày **{_disp}** chưa có bản chốt — hiện **SỐ HIỆN TẠI**, đóng băng từ giờ "
                    "(không phải số gốc lúc in). Video lấy từ kho đã lưu.")
@@ -9595,7 +9598,10 @@ def _render_daily():
         _apply_picklog_soan_to_daily(_rep, _ps.get("rows") or [], _dvr, _ps.get("dup_orders") or 0)
     _inject_huy_soan(_rep, _today_iso_vn())
     _inject_conxot_video(_rep)
-    _rep["ttkh_saved"] = (load_ttkh_saved_by_day().get(_today_iso_vn(), 0) if picklog.configured() else None)
+    try:
+        _rep["ttkh_saved"] = (load_ttkh_saved_by_day().get(_today_iso_vn(), 0) if picklog.configured() else None)
+    except Exception:
+        _rep["ttkh_saved"] = None
     _now_vn = datetime.now(timezone.utc) + timedelta(hours=7)
     _nrep = _now_vn.strftime("%H:%M %d/%m/%Y")
     _nrec = len((_rep.get("nhap_kho") or {}).get("recon_rows") or [])
