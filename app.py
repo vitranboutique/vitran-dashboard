@@ -9118,8 +9118,13 @@ def _render_stock_report():
             st.error(f"Chưa lấy được tồn kho: `{_e}`")
             return
         _sample = _stock.get("_sample") or []
-        _skus = {k: v for k, v in _stock.items() if k != "_sample"}
-        st.caption(f"Sapo trả về **{len(_skus)}** SKU có dữ liệu tồn.")
+        _levels_ok = bool(_stock.get("_levels_ok"))
+        _skus = {k: v for k, v in _stock.items() if not str(k).startswith("_")}
+        st.caption(f"Sapo trả về **{len(_skus)}** SKU có dữ liệu tồn."
+                   + ("  ✅ Tồn thực tế lấy từ *inventory_levels* (on_hand)." if _levels_ok else ""))
+        if not _levels_ok:
+            st.warning("⚠️ Chưa đọc được **tồn thực tế** (API `inventory_levels` bị chặn quyền) → cột *Tồn cuối ngày* "
+                       "đang tạm bằng *Có thể bán*. Cấp quyền đọc Kho cho API key là ra đúng số (vd SD-XS: 185 thay vì 183).")
         _fixed_pc = set()
         for _c in _STOCK_FIXED_CODES:
             _fp = PT.parse_sku(_c)

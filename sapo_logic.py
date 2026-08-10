@@ -3797,7 +3797,10 @@ def get_stock_by_sku(fetch_json, max_pages: int = 80) -> dict:
                 return d.get(k)
         return None
 
+    # ── 1) products.json: map variant_id → SKU (products KHÔNG có tồn thực tế, chỉ inventory_quantity
+    #       = ĐÚNG BẰNG "có thể bán") ──
     out, sample = {}, []
+    v2sku = {}
     for p in range(1, max_pages + 1):
         try:
             chunk = (fetch_json("/admin/products.json", limit=250, page=p) or {}).get("products", [])
@@ -3813,29 +3816,50 @@ def get_stock_by_sku(fetch_json, max_pages: int = 80) -> dict:
                     continue
                 if len(sample) < 2:
                     sample.append(v)
-                oh = av = cm = 0
-                invs = v.get("inventories")
-                if not isinstance(invs, list):
-                    invs = v.get("inventory_advances") if isinstance(v.get("inventory_advances"), list) else None
-                if isinstance(invs, list) and invs:
-                    for inv in invs:
-                        oh += _n(_pick(inv, "on_hand", "onhand", "quantity_on_hand"))
-                        av += _n(_pick(inv, "available", "quantity_available", "sellable"))
-                        cm += _n(_pick(inv, "committed", "quantity_committed"))
-                else:
-                    oh = _n(_pick(v, "on_hand", "onhand", "inventory_quantity", "quantity"))
-                    _avraw = _pick(v, "available", "sellable_quantity", "available_quantity")
-                    av = _n(_avraw) if _avraw is not None else oh
-                    cm = _n(_pick(v, "committed"))
                 key = sku.upper()
+                if v.get("id") is not None:
+                    v2sku[v["id"]] = key
                 d = out.setdefault(key, {"on_hand": 0, "available": 0, "committed": 0,
                                          "name": v.get("name") or pname})
-                d["on_hand"] += oh
-                d["available"] += av
-                d["committed"] += cm
+                # tạm: inventory_quantity = CÓ THỂ BÁN (available). on_hand lấy ở bước 2.
+                d["available"] += _n(_pick(v, "inventory_quantity", "quantity"))
         if len(chunk) < 250:
             break
+
+    # ── 2) inventory_levels.json: nguồn THẬT của tồn kho — on_hand (tồn thực tế) /
+    #       available (có thể bán) / committed (đang đặt). Gộp mọi kho (location_id). ──
+    lv_ok, lv = False, {}
+    for p in range(1, 200):
+        try:
+            levels = (fetch_json("/admin/inventory_levels.json", limit=250, page=p) or {}).get("inventory_levels", [])
+        except Exception:
+            break
+        if not levels:
+            break
+        lv_ok = True
+        for it in levels:
+            k = v2sku.get(it.get("variant_id"))
+            if not k:
+                continue
+            a = lv.setdefault(k, {"on_hand": 0, "available": 0, "committed": 0})
+            a["on_hand"] += _n(it.get("on_hand"))
+            a["available"] += _n(it.get("available"))
+            a["committed"] += _n(it.get("committed"))
+        if len(levels) < 250:
+            break
+    if lv_ok:
+        for k, a in lv.items():
+            d = out.setdefault(k, {"on_hand": 0, "available": 0, "committed": 0, "name": ""})
+            d["on_hand"] = a["on_hand"]
+            d["available"] = a["available"]
+            d["committed"] = a["committed"]
+    else:
+        # Không đọc được inventory_levels (403) → chỉ có "có thể bán"; on_hand = available.
+        for d in out.values():
+            d["on_hand"] = d["available"]
+
     out["_sample"] = sample
+    out["_levels_ok"] = lv_ok          # False = chưa lấy được TỒN THỰC TẾ (thiếu quyền)
     return out
 
 
@@ -3944,6 +3968,37 @@ def get_stock_io_day(fetch_json, date_iso: str, max_pages: int = 60) -> dict:
                 r = _rec(li["sku"])
                 r["xuat"] += int(round(li.get("quantity") or 0))
                 r["ly_do"].add("Bán - shipper lấy")
+
+    # NHẬP TỪ NHÀ CUNG CẤP — /admin/purchase_orders.json (cấu trúc: line_items[].sku/quantity/
+    # received_quantity, supplier.name, completed_on). Key hiện 403 → bỏ qua; cấp quyền là tự chạy.
+    _po_blocked = False
+    for p in range(1, 20):
+        try:
+            _pos = (fetch_json("/admin/purchase_orders.json", limit=250, page=p) or {}).get("purchase_orders", [])
+        except Exception as e:
+            _po_blocked = "403" in str(e) or "Forbidden" in str(e)
+            break
+        if not _pos:
+            break
+        for po in _pos:
+            if po.get("cancelled_on"):
+                continue
+            _pdate = _vn_date_of(po.get("completed_on") or po.get("created_on"))
+            if not _pdate or _pdate.isoformat() != date_iso:
+                continue
+            _sup = (po.get("supplier") or {})
+            _sup = (_sup.get("name") if isinstance(_sup, dict) else _sup) or ""
+            for li in (po.get("line_items") or []):
+                if not li.get("sku"):
+                    continue
+                _q = int(round(li.get("received_quantity") or 0)) or int(round(li.get("quantity") or 0))
+                if _q <= 0:
+                    continue
+                r = _rec(li["sku"])
+                r["nhap"] += _q
+                r["ly_do"].add(f"NCC: {_sup}" if _sup else "Nhập hàng")
+        if len(_pos) < 250:
+            break
 
     for p in range(1, 20):
         try:
