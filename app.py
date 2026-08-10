@@ -9262,12 +9262,28 @@ def _render_stock_report():
                         "<th>Tồn<br>cuối</th><th>Có thể<br>bán</th><th>Thực tế đếm</th></tr></thead>"
                         "<tbody>" + _tr + "</tbody></table>")
             def _two_cols(_part):
+                """Chia 2 cột nhưng CẮT ĐÚNG RANH GIỚI NHÓM — không để 1 nhóm bị xé đôi
+                (tiêu đề nhóm + vài dòng rớt lại cột trước)."""
                 if not _part:
                     return ""
-                _h = (len(_part) + 1) // 2
-                _out = "<div>" + _tbl(_part[:_h]) + "</div>"
-                if _part[_h:]:
-                    _out += "<div>" + _tbl(_part[_h:]) + "</div>"
+                _grp = []                       # [(tên nhóm, [dòng...])] giữ nguyên thứ tự
+                for _r in _part:
+                    if not _grp or _grp[-1][0] != _r["g"]:
+                        _grp.append((_r["g"], [_r]))
+                    else:
+                        _grp[-1][1].append(_r)
+                _tot = sum(len(_rs) + 1 for _, _rs in _grp)     # +1 = dòng tiêu đề nhóm
+                _target, _acc, _cut, _best = _tot / 2, 0, len(_grp), None
+                for _i, (_, _rs) in enumerate(_grp):
+                    _acc += len(_rs) + 1
+                    _diff = abs(_acc - _target)
+                    if _best is None or _diff < _best:
+                        _best, _cut = _diff, _i + 1
+                _left = [_r for _, _rs in _grp[:_cut] for _r in _rs]
+                _right = [_r for _, _rs in _grp[_cut:] for _r in _rs]
+                _out = "<div>" + _tbl(_left) + "</div>"
+                if _right:
+                    _out += "<div>" + _tbl(_right) + "</div>"
                 return f"<div class='cols'>{_out}</div>"
             _rows_fx = [_r for _r in _rows if _r.get("fx")]        # TRANG 1: mã cố định
             _rows_ex = [_r for _r in _rows if not _r.get("fx")]    # TRANG 2: mã chọn thêm
@@ -9276,11 +9292,13 @@ def _render_stock_report():
                     ".wrap{max-width:277mm;margin:0 auto}.brk{page-break-before:always;margin-top:14px}"
                     ".hd{display:flex;justify-content:space-between;"
                     "align-items:flex-end;border-bottom:2px solid #111;padding-bottom:4px;margin-bottom:5px}"
-                    ".ttl{font-size:18px;font-weight:800}.sub{font-size:11.5px;color:#555}.ncc{font-size:10px;color:#0a7a55}"
-                    ".cols{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:start}"
-                    "table{border-collapse:collapse;width:100%;font-size:13.5px;table-layout:fixed}"
-                    "th,td{border:1px solid #999;padding:5px 6px;overflow-wrap:anywhere}"
-                    "th{background:#eee;text-align:center;font-size:12.5px;line-height:1.2}"
+                    ".ttl{font-size:16px;font-weight:800}.sub{font-size:10.5px;color:#555}.ncc{font-size:9.5px;color:#0a7a55}"
+                    ".cols{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:start;"
+                    "page-break-inside:avoid;break-inside:avoid}"
+                    "table{border-collapse:collapse;width:100%;font-size:12.5px;table-layout:fixed;"
+                    "page-break-inside:avoid;break-inside:avoid}"
+                    "th,td{border:1px solid #999;padding:3.5px 6px;overflow-wrap:anywhere;line-height:1.25}"
+                    "th{background:#eee;text-align:center;font-size:11.5px;line-height:1.2}"
                     "col.c-sku{width:26%}col.c-num{width:11.5%}col.c-cnt{width:16.5%}"
                     "td.n{text-align:right;white-space:nowrap}td.g{font-weight:800;background:#eef;text-align:left}"
                     "td.blank{background:#fffde7}tr{page-break-inside:avoid}thead{display:table-header-group}"
