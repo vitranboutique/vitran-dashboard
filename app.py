@@ -9137,11 +9137,12 @@ def _render_stock_report():
             _iores = {}
         _io = _iores.get("rows") or {}
         _io_blocked = bool(_iores.get("_blocked"))
-        if _io_blocked:
-            st.warning("⚠️ **Chưa lấy được Nhập/Xuất từ Sapo** — API key của app CHƯA có quyền đọc kho (Sapo trả 403). "
-                       "App KHÔNG bịa số từ nguồn khác (sẽ lệch sổ kho). Cách mở: Sapo → **Cấu hình → Ứng dụng/API** "
-                       "→ mở key của dashboard → tick thêm quyền **Quản lý kho / Sản phẩm (đọc)** → Lưu. "
-                       "Xong bấm 🔄 Tải lại tồn kho là 3 cột Nhập/Xuất/Tồn đầu ngày tự chạy.")
+        _io_mode = str(_iores.get("_mode") or "")
+        if _io_mode == "tu_tinh":
+            st.info("ℹ️ **Nhập/Xuất đang TỰ TÍNH theo công thức Sapo** (API sổ kho bị khoá quyền nên không đọc thẳng được).\n\n"
+                    "· **Xuất** = đơn đã xuất kho hôm nay VÀ shipper đã xác nhận lấy hàng.\n"
+                    "· **Nhập** = hàng hoàn đã nhập kho hôm nay.\n"
+                    "· ⚠️ **CHƯA gồm**: nhập từ nhà cung cấp + điều chỉnh kho tay (Sapo chặn API) → nếu hôm nào có 2 việc này thì số sẽ lệch sổ kho Sapo.")
 
         def _agg(_items):
             # _items = list (sku_upper, stock_dict) → cộng tồn + nhập/xuất (sổ kho Sapo).

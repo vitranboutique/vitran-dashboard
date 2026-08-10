@@ -3892,7 +3892,73 @@ def get_stock_io_day(fetch_json, date_iso: str, max_pages: int = 60) -> dict:
 
     for v in rows.values():
         v["ly_do"] = sorted(x for x in v["ly_do"] if x)[:3]
-    return {"_blocked": blocked, "rows": rows}
+    if not blocked:
+        return {"_blocked": False, "_mode": "sapo_ledger", "rows": rows}
+
+    # ── API kho bị chặn (403) → TỰ TÍNH theo ĐÚNG công thức Sapo, từ dữ liệu key đọc được ──
+    #   XUẤT = đơn đã xuất kho hôm nay VÀ shipper đã xác nhận lấy (shipment_status rời 'pending')
+    #          — giống hệt định nghĩa "shipper nhận" của báo cáo cuối ngày.
+    #   NHẬP = đơn hoàn ĐÃ NHẬP KHO hôm nay (restock_status='restocked', restocked_ons = hôm nay).
+    #   ⚠️ KHÔNG có: nhập từ NCC (purchase_orders 403) + điều chỉnh kho tay (403) → cờ _partial.
+    rows = {}
+
+    def _rec(sku):
+        return rows.setdefault(str(sku or "").strip().upper(), {"nhap": 0, "xuat": 0, "ly_do": set()})
+
+    for p in range(1, max_pages + 1):
+        try:
+            ords = (fetch_json("/admin/orders.json", limit=250, page=p,
+                               created_on_min=(datetime.fromisoformat(date_iso) - timedelta(days=20)).date().isoformat()
+                               + "T00:00:00+07:00",
+                               created_on_max=date_iso + "T23:59:59+07:00") or {}).get("orders", [])
+        except Exception:
+            ords = []
+            break
+        if not ords:
+            break
+        for o in ords:
+            f = (o.get("fulfillments") or [{}])[0] or {}
+            _iss = _vn_date_of(f.get("issued_on"))
+            if not _iss or _iss.isoformat() != date_iso:
+                continue
+            if f.get("shipment_status") in ("pending", None):
+                continue                       # shipper CHƯA xác nhận lấy → chưa tính xuất
+            for li in (o.get("line_items") or []):
+                if li.get("sku"):
+                    r = _rec(li["sku"])
+                    r["xuat"] += int(round(li.get("quantity") or 0))
+                    r["ly_do"].add("Bán - shipper lấy")
+        if len(ords) < 250:
+            break
+
+    for p in range(1, 20):
+        try:
+            rets = (fetch_json("/admin/order_returns.json", limit=250, page=p) or {}).get("order_returns", [])
+        except Exception:
+            rets = []
+            break
+        if not rets:
+            break
+        _last = _vn_date_of(rets[-1].get("created_on"))
+        for x in rets:
+            if x.get("restock_status") != "restocked":
+                continue
+            ons = x.get("restocked_ons") or []
+            if isinstance(ons, str):
+                ons = [ons]
+            if not any((_vn_date_of(o) or "") and _vn_date_of(o).isoformat() == date_iso for o in ons):
+                continue
+            for li in (x.get("line_items") or []):
+                if li.get("sku"):
+                    r = _rec(li["sku"])
+                    r["nhap"] += int(round(li.get("quantity") or 0))
+                    r["ly_do"].add("Hàng hoàn nhập kho")
+        if len(rets) < 250 or (_last and (datetime.fromisoformat(date_iso).date() - _last).days > 90):
+            break
+
+    for v in rows.values():
+        v["ly_do"] = sorted(x for x in v["ly_do"] if x)[:3]
+    return {"_blocked": False, "_mode": "tu_tinh", "_partial": True, "rows": rows}
 
 
 if __name__ == "__main__":
