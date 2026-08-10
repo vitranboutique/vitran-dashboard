@@ -9288,23 +9288,26 @@ def _render_stock_report():
             _rows_fx = [_r for _r in _rows if _r.get("fx")]        # TRANG 1: mã cố định
             _rows_ex = [_r for _r in _rows if not _r.get("fx")]    # TRANG 2: mã chọn thêm
             _half = max(1, (len(_rows_fx) + 1) // 2)
-            _css = ("*{box-sizing:border-box}body{margin:0;font-family:Tahoma,Arial,sans-serif;color:#111}"
-                    ".wrap{max-width:277mm;margin:0 auto}.brk{page-break-before:always;margin-top:14px}"
+            _css = ("*{box-sizing:border-box}html,body{height:100%}"
+                    "body{margin:0;font-family:Tahoma,Arial,sans-serif;color:#111}"
+                    # CANH GIỮA theo chiều dọc: phiếu nằm giữa trang, không dồn lên trên.
+                    ".wrap{max-width:277mm;margin:0 auto;min-height:99vh;display:flex;flex-direction:column;"
+                    "justify-content:center}.brk{page-break-before:always}"
                     ".hd{display:flex;justify-content:space-between;"
-                    "align-items:flex-end;border-bottom:2.5px solid #111;padding-bottom:7px;margin-bottom:9px}"
-                    ".ttl{font-size:23px;font-weight:800;letter-spacing:.4px;line-height:1.15}"
-                    ".sub{font-size:12.5px;color:#444;margin-top:3px}.sub b{color:#111}"
-                    ".meta{font-size:13px;color:#111;text-align:right;line-height:1.7;white-space:nowrap}"
-                    ".foot{font-size:11px;color:#666;margin-top:8px}.ncc{font-size:9.5px;color:#0a7a55}"
-                    ".cols{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:start;"
+                    "align-items:flex-end;border-bottom:3px solid #111;padding-bottom:9px;margin-bottom:12px}"
+                    ".ttl{font-size:29px;font-weight:800;letter-spacing:.5px;line-height:1.12}"
+                    ".sub{font-size:15px;color:#444;margin-top:5px}.sub b{color:#111}"
+                    ".meta{font-size:16px;color:#111;text-align:right;line-height:1.8;white-space:nowrap}"
+                    ".foot{font-size:13px;color:#666;margin-top:10px}.ncc{font-size:11px;color:#0a7a55}"
+                    ".cols{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start;"
                     "page-break-inside:avoid;break-inside:avoid}"
-                    "table{border-collapse:collapse;width:100%;font-size:12.5px;table-layout:fixed;"
+                    "table{border-collapse:collapse;width:100%;font-size:15px;table-layout:fixed;"
                     "page-break-inside:avoid;break-inside:avoid}"
-                    "th,td{border:1px solid #999;padding:3.5px 6px;overflow-wrap:anywhere;line-height:1.25}"
-                    "th{background:#e8ecf3;text-align:center;font-size:11.5px;line-height:1.2;font-weight:700}"
+                    "th,td{border:1px solid #999;padding:5px 7px;overflow-wrap:anywhere;line-height:1.28}"
+                    "th{background:#e8ecf3;text-align:center;font-size:13.5px;line-height:1.2;font-weight:700}"
                     "col.c-sku{width:26%}col.c-num{width:11.5%}col.c-cnt{width:16.5%}"
                     "td.n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}"
-                    "td.g{font-weight:800;background:#dfe6f3;text-align:left;font-size:12.5px;letter-spacing:.2px}"
+                    "td.g{font-weight:800;background:#dfe6f3;text-align:left;font-size:15px;letter-spacing:.3px}"
                     "td.blank{background:#fffdf0}tr{page-break-inside:avoid}thead{display:table-header-group}"
                     "@page{size:A4 landscape;margin:7mm}")
             _dau_src = ("Tồn đầu = tồn CUỐI ngày hôm trước (đã chốt)"
@@ -9339,8 +9342,8 @@ def _render_stock_report():
                      "<div style='text-align:right;margin-bottom:8px'>"
                      "<button class='btn' onclick='printStock()'>🖨️ In ra giấy A4</button></div>"
                      "<div id='stk'>" + _content + "</div><script>" + _js + "</script>")
-            _vh = 300 + _half * 34 + (200 + ((len(_rows_ex) + 1) // 2) * 34 if _rows_ex else 0)
-            components.html(_html, height=min(_vh, 2000), scrolling=True)
+            _vh = 340 + _half * 38 + (240 + ((len(_rows_ex) + 1) // 2) * 38 if _rows_ex else 0)
+            components.html(_html, height=min(_vh, 2400), scrolling=True)
         with st.expander("🔧 Dữ liệu thô Sapo (chụp gửi Claude nếu 'Tồn thực tế' còn sai)"):
             if _sample:
                 _v0 = dict(_sample[0])
