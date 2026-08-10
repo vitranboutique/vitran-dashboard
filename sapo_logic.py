@@ -3839,6 +3839,68 @@ def get_stock_by_sku(fetch_json, max_pages: int = 80) -> dict:
     return out
 
 
+def get_stock_io_day(fetch_json, date_iso: str, order_pages: int = 60, po_pages: int = 30) -> dict:
+    """XUẤT (đơn bán) + NHẬP (đơn nhập hàng, kèm nhà cung cấp) theo SKU trong 1 NGÀY (giờ VN).
+    Trả {SKU_UPPER: {"xuat": sl bán, "nhap": sl nhập, "ncc": [tên NCC]}}.
+    Xuất = SL line item các đơn bán tạo trong ngày (bỏ đơn hủy). Nhập = SL line item các đơn nhập
+    nhận/tạo trong ngày. Bền: PO có thể bị 403 → phần nhập = 0, xuất vẫn chạy."""
+    out = {}
+    _cmin = date_iso + "T00:00:00+07:00"
+    _cmax = date_iso + "T23:59:59+07:00"
+
+    def _rec(sku):
+        return out.setdefault(str(sku or "").strip().upper(),
+                              {"xuat": 0, "nhap": 0, "ncc": set()})
+
+    # ── XUẤT: đơn bán tạo trong ngày (bỏ đơn hủy) ──
+    for p in range(1, order_pages + 1):
+        try:
+            rows = (fetch_json("/admin/orders.json", limit=250, page=p,
+                               created_on_min=_cmin, created_on_max=_cmax) or {}).get("orders", [])
+        except Exception:
+            break
+        if not rows:
+            break
+        for o in rows:
+            if o.get("cancelled_on") or str(o.get("status") or "").lower() == "cancelled":
+                continue
+            for li in (o.get("line_items") or []):
+                _s = li.get("sku")
+                if _s:
+                    _rec(_s)["xuat"] += int(round(li.get("quantity") or 0))
+        if len(rows) < 250:
+            break
+
+    # ── NHẬP: đơn nhập hàng nhận/tạo trong ngày (kèm nhà cung cấp) ──
+    for p in range(1, po_pages + 1):
+        try:
+            pos = (fetch_json("/admin/purchase_orders.json", limit=250, page=p) or {}).get("purchase_orders", [])
+        except Exception:
+            pos = []
+            break
+        if not pos:
+            break
+        for po in pos:
+            _pd = _vn_date_of(po.get("received_on") or po.get("imported_on") or po.get("created_on"))
+            if not _pd or _pd.isoformat() != date_iso:
+                continue
+            _sup = po.get("supplier")
+            _sup = (_sup.get("name") if isinstance(_sup, dict) else _sup) or po.get("supplier_name") or ""
+            for li in (po.get("line_items") or []):
+                _s = li.get("sku")
+                if _s:
+                    _r = _rec(_s)
+                    _r["nhap"] += int(round(li.get("quantity") or li.get("received_quantity") or 0))
+                    if _sup:
+                        _r["ncc"].add(str(_sup).strip())
+        if len(pos) < 250:
+            break
+
+    for _v in out.values():
+        _v["ncc"] = sorted(x for x in _v["ncc"] if x)
+    return out
+
+
 if __name__ == "__main__":
     # Smoke test: in nhanh payload demo
     import json

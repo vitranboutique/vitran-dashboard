@@ -1985,6 +1985,12 @@ def load_stock():
     return L.get_stock_by_sku(make_fetch_json(build_session()))
 
 
+@st.cache_data(ttl=300, show_spinner="Đang lấy xuất/nhập trong ngày…")
+def load_stock_io(date_iso):
+    """Xuất (đơn bán) + Nhập (đơn nhập + NCC) theo SKU trong 1 ngày. Cache 5 phút."""
+    return L.get_stock_io_day(make_fetch_json(build_session()), date_iso)
+
+
 def _sapo_lookup_key(value) -> str:
     return re.sub(r"\s+", "", str(value or "")).upper()
 
@@ -9124,6 +9130,26 @@ def _render_stock_report():
         _extra = st.multiselect("➕ Chọn thêm mã muốn kiểm & in chung (ngoài 8 mã cố định)",
                                 options=_opts, key="stock_extra_codes")
         _groups = list(_STOCK_FIXED_CODES) + list(_extra)
+        _date_iso = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%Y-%m-%d")
+        try:
+            _io = load_stock_io(_date_iso) or {}
+        except Exception:
+            _io = {}
+
+        def _agg(_items):
+            # _items = list (sku_upper, stock_dict) → cộng tồn + xuất/nhập/NCC. Cuối ngày = tồn hiện tại.
+            _oh = _av = _x = _n = 0
+            _ncc = set()
+            for _su, _dd in _items:
+                _oh += int(_dd.get("on_hand", 0) or 0)
+                _av += int(_dd.get("available", 0) or 0)
+                _iod = _io.get(str(_su).upper()) or {}
+                _x += int(_iod.get("xuat", 0) or 0)
+                _n += int(_iod.get("nhap", 0) or 0)
+                for _c in (_iod.get("ncc") or []):
+                    _ncc.add(_c)
+            return {"dau": _oh + _x - _n, "nhap": _n, "xuat": _x, "cuoi": _oh, "av": _av, "ncc": sorted(_ncc)}
+
         _rows = []
         for _g in _groups:
             _gp = PT.parse_sku(_g.replace(" - ", "-"))
@@ -9135,59 +9161,61 @@ def _render_stock_report():
                     continue
                 if _cc and _sp.get("colorCode") != _cc:
                     continue
-                _matched.append((_sp, _d))
+                _matched.append((_sku, _sp, _d))
             if not _cc:
                 # Mã KHÔNG kèm màu (vd CVBC) → GỘP mọi màu, giữ size. Muốn xem riêng màu thì chọn thêm mã màu.
                 _by = {}
-                for _sp, _d in _matched:
-                    _sz = (_sp.get("size") or "").upper()
-                    _a = _by.setdefault(_sz, {"oh": 0, "av": 0, "cl": set()})
-                    _a["oh"] += int(_d.get("on_hand", 0) or 0)
-                    _a["av"] += int(_d.get("available", 0) or 0)
-                    _a["cl"].add(_sp.get("colorCode") or "")
+                for _su, _sp, _d in _matched:
+                    _by.setdefault((_sp.get("size") or "").upper(), []).append((_su, _sp, _d))
                 for _sz in sorted(_by, key=lambda s: _SIZE_ORDER.get(s, 7)):
-                    _a = _by[_sz]
-                    _lbl = (f"{_pc}-{_sz}" if _sz else _pc) + (f" ({len(_a['cl'])} màu)" if len(_a["cl"]) > 1 else "")
-                    _rows.append({"g": _g, "sku": _lbl, "oh": _a["oh"], "av": _a["av"]})
+                    _items = _by[_sz]
+                    _cls = {(_sp.get("colorCode") or "") for _su, _sp, _d in _items}
+                    _lbl = (f"{_pc}-{_sz}" if _sz else _pc) + (f" ({len(_cls)} màu)" if len(_cls) > 1 else "")
+                    _row = _agg([(_su, _d) for _su, _sp, _d in _items])
+                    _row.update({"g": _g, "sku": _lbl})
+                    _rows.append(_row)
             else:
-                _matched.sort(key=lambda x: (_SIZE_ORDER.get(str(x[0].get("size") or "").upper(), 7),
-                                             str(x[0].get("sku") or "")))
-                for _sp, _d in _matched:
-                    _rows.append({"g": _g, "sku": _sp.get("sku") or "",
-                                  "oh": int(_d.get("on_hand", 0) or 0), "av": int(_d.get("available", 0) or 0)})
+                _matched.sort(key=lambda x: (_SIZE_ORDER.get(str(x[1].get("size") or "").upper(), 7), x[0]))
+                for _su, _sp, _d in _matched:
+                    _row = _agg([(_su, _d)])
+                    _row.update({"g": _g, "sku": _sp.get("sku") or ""})
+                    _rows.append(_row)
         if not _rows:
             st.warning("Chưa khớp SKU nào cho các mã đã chọn. Mở '🔧 Dữ liệu thô' để xem field Sapo trả về.")
         else:
             import json as _json
             _today = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%d/%m/%Y")
-            def _mini(_part):
-                _tr, _pv = "", None
-                for _r in _part:
-                    if _r["g"] != _pv:
-                        _pv = _r["g"]
-                        _tr += f"<tr><td colspan='3' class='g'>▸ {_e2(_r['g'])}</td></tr>"
-                    _tr += (f"<tr><td>{_e2(_r['sku'])}</td>"
-                            f"<td class='n'>{_r['oh']:,} / {_r['av']:,}</td><td class='blank'></td></tr>")
-                return ("<table><thead><tr><th>SKU</th><th>Tồn / Bán</th><th>Đếm</th></tr></thead>"
-                        "<tbody>" + _tr + "</tbody></table>")
-            _half = (len(_rows) + 1) // 2
-            _colhtml = "<div>" + _mini(_rows[:_half]) + "</div>"
-            if _rows[_half:]:
-                _colhtml += "<div>" + _mini(_rows[_half:]) + "</div>"
+            _trs, _prev, _tX, _tN = "", None, 0, 0
+            for _r in _rows:
+                _tX += _r["xuat"]
+                _tN += _r["nhap"]
+                if _r["g"] != _prev:
+                    _prev = _r["g"]
+                    _trs += f"<tr><td colspan='7' class='g'>▸ {_e2(_r['g'])}</td></tr>"
+                _ncc = ("<div class='ncc'>" + _e2(", ".join(_r["ncc"])) + "</div>") if _r["ncc"] else ""
+                _trs += (f"<tr><td>{_e2(_r['sku'])}</td>"
+                         f"<td class='n'>{_r['dau']:,}</td>"
+                         f"<td class='n'>{_r['nhap']:,}{_ncc}</td>"
+                         f"<td class='n'>{_r['xuat']:,}</td>"
+                         f"<td class='n'>{_r['cuoi']:,}</td>"
+                         f"<td class='n'>{_r['av']:,}</td>"
+                         f"<td class='blank'></td></tr>")
             _css = ("*{box-sizing:border-box}body{margin:0;font-family:Tahoma,Arial,sans-serif;color:#111}"
-                    ".wrap{max-width:900px;margin:0 auto}.hd{display:flex;justify-content:space-between;"
+                    ".wrap{max-width:100%;margin:0 auto}.hd{display:flex;justify-content:space-between;"
                     "align-items:flex-end;border-bottom:2px solid #111;padding-bottom:6px;margin-bottom:8px}"
-                    ".ttl{font-size:17px;font-weight:800}.sub{font-size:11px;color:#555}"
-                    ".cols{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start}"
+                    ".ttl{font-size:16px;font-weight:800}.sub{font-size:11px;color:#555}.ncc{font-size:10px;color:#0a7a55}"
                     "table{border-collapse:collapse;width:100%;font-size:12px}"
-                    "th,td{border:1px solid #999;padding:3px 6px}th{background:#eee;text-align:center}"
+                    "th,td{border:1px solid #999;padding:4px 7px}th{background:#eee;text-align:center}"
                     "td.n{text-align:right;white-space:nowrap}td.g{font-weight:800;background:#eef;text-align:left}"
-                    "td.blank{background:#fffde7;min-width:56px}@page{size:A4;margin:10mm}")
-            _content = ("<div class='wrap'><div class='hd'><div><div class='ttl'>PHIẾU KIỂM KÊ TỒN KHO</div>"
-                        "<div class='sub'>VITRAN BOUTIQUE · <b>Tồn</b> = tồn thực tế · <b>Bán</b> = có thể bán</div></div>"
-                        f"<div class='sub' style='text-align:right'>Ngày: <b>{_today}</b><br>NV kiểm: __________</div></div>"
-                        f"<div class='cols'>{_colhtml}</div>"
-                        f"<div class='sub' style='margin-top:6px'>Tổng {len(_rows)} dòng · cột 'Đếm' để NV điền tay.</div></div>")
+                    "td.blank{background:#fffde7;min-width:70px}@page{size:A4 landscape;margin:8mm}")
+            _content = ("<div class='wrap'><div class='hd'><div><div class='ttl'>PHIẾU XUẤT NHẬP TỒN + KIỂM KÊ</div>"
+                        f"<div class='sub'>VITRAN BOUTIQUE · trong ngày <b>{_today}</b> · Đầu ngày = Cuối ngày + Xuất − Nhập</div></div>"
+                        "<div class='sub' style='text-align:right'>NV kiểm: __________</div></div>"
+                        "<table><thead><tr><th>SKU</th><th>Tồn đầu ngày</th><th>Nhập</th><th>Xuất</th>"
+                        "<th>Tồn cuối ngày</th><th>Có thể bán</th><th>Thực tế đếm</th></tr></thead><tbody>"
+                        + _trs + "</tbody></table>"
+                        f"<div class='sub' style='margin-top:6px'>Tổng {len(_rows)} dòng · Nhập {_tN:,} · Xuất {_tX:,} · "
+                        "cột 'Thực tế đếm' để NV điền tay · số xanh dưới cột Nhập = nhà cung cấp.</div></div>")
             _js = ("function printStock(){var h=document.getElementById('stk').innerHTML;"
                    "var f=document.createElement('iframe');"
                    "f.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0';"
@@ -9202,7 +9230,7 @@ def _render_stock_report():
                      "<div style='text-align:right;margin-bottom:8px'>"
                      "<button class='btn' onclick='printStock()'>🖨️ In ra giấy A4</button></div>"
                      "<div id='stk'>" + _content + "</div><script>" + _js + "</script>")
-            components.html(_html, height=min(340 + _half * 30, 1500), scrolling=True)
+            components.html(_html, height=min(320 + len(_rows) * 30, 1600), scrolling=True)
         with st.expander("🔧 Dữ liệu thô Sapo (chụp gửi Claude nếu 'Tồn thực tế' còn sai)"):
             if _sample:
                 _v0 = dict(_sample[0])
