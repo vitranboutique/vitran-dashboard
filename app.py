@@ -9210,44 +9210,52 @@ def _render_stock_report():
         else:
             import json as _json
             _today = _pick_day.strftime("%d/%m/%Y")
-            _trs, _prev, _tX, _tN = "", None, 0, 0
-            for _r in _rows:
-                _tX += _r["xuat"]
-                _tN += _r["nhap"]
-                if _r["g"] != _prev:
-                    _prev = _r["g"]
-                    _trs += f"<tr><td colspan='7' class='g'>▸ {_e2(_r['g'])}</td></tr>"
-                _ncc = ("<div class='ncc'>" + _e2(", ".join(_r["ncc"])) + "</div>") if _r["ncc"] else ""
-                # Chưa có quyền đọc kho → để TRỐNG (—) thay vì hiện số dễ hiểu nhầm là "hôm nay không phát sinh".
-                _c_dau = "—" if _io_blocked else f"{_r['dau']:,}"
-                _c_nhap = "—" if _io_blocked else f"{_r['nhap']:,}{_ncc}"
-                _c_xuat = "—" if _io_blocked else f"{_r['xuat']:,}"
-                _trs += (f"<tr><td>{_e2(_r['sku'])}</td>"
-                         f"<td class='n'>{_c_dau}</td>"
-                         f"<td class='n'>{_c_nhap}</td>"
-                         f"<td class='n'>{_c_xuat}</td>"
-                         f"<td class='n'>{_r['cuoi']:,}</td>"
-                         f"<td class='n'>{_r['av']:,}</td>"
-                         f"<td class='blank'></td></tr>")
+            _tX = sum(_r["xuat"] for _r in _rows)
+            _tN = sum(_r["nhap"] for _r in _rows)
+
+            def _tbl(_part):
+                _tr, _pv = "", None
+                for _r in _part:
+                    if _r["g"] != _pv:
+                        _pv = _r["g"]
+                        _tr += f"<tr><td colspan='7' class='g'>▸ {_e2(_r['g'])}</td></tr>"
+                    _ncc = ("<div class='ncc'>" + _e2(", ".join(_r["ncc"])) + "</div>") if _r["ncc"] else ""
+                    # Chưa có quyền đọc kho → để TRỐNG (—) thay vì số dễ hiểu nhầm "không phát sinh".
+                    _c_dau = "—" if _io_blocked else f"{_r['dau']:,}"
+                    _c_nhap = "—" if _io_blocked else f"{_r['nhap']:,}{_ncc}"
+                    _c_xuat = "—" if _io_blocked else f"{_r['xuat']:,}"
+                    _tr += (f"<tr><td>{_e2(_r['sku'])}</td>"
+                            f"<td class='n'>{_c_dau}</td>"
+                            f"<td class='n'>{_c_nhap}</td>"
+                            f"<td class='n'>{_c_xuat}</td>"
+                            f"<td class='n'>{_r['cuoi']:,}</td>"
+                            f"<td class='n'>{_r['av']:,}</td>"
+                            f"<td class='blank'></td></tr>")
+                return ("<table><colgroup><col class='c-sku'><col class='c-num'><col class='c-num'>"
+                        "<col class='c-num'><col class='c-num'><col class='c-num'><col class='c-cnt'></colgroup>"
+                        "<thead><tr><th>SKU</th><th>Tồn<br>đầu</th><th>Nhập</th><th>Xuất</th>"
+                        "<th>Tồn<br>cuối</th><th>Có thể<br>bán</th><th>Thực tế đếm</th></tr></thead>"
+                        "<tbody>" + _tr + "</tbody></table>")
+            _half = (len(_rows) + 1) // 2
+            _tables = "<div>" + _tbl(_rows[:_half]) + "</div>"
+            if _rows[_half:]:
+                _tables += "<div>" + _tbl(_rows[_half:]) + "</div>"
             _css = ("*{box-sizing:border-box}body{margin:0;font-family:Tahoma,Arial,sans-serif;color:#111}"
-                    ".wrap{max-width:190mm;margin:0 auto}.hd{display:flex;justify-content:space-between;"
-                    "align-items:flex-end;border-bottom:2px solid #111;padding-bottom:5px;margin-bottom:6px}"
+                    ".wrap{max-width:277mm;margin:0 auto}.hd{display:flex;justify-content:space-between;"
+                    "align-items:flex-end;border-bottom:2px solid #111;padding-bottom:4px;margin-bottom:5px}"
                     ".ttl{font-size:15px;font-weight:800}.sub{font-size:10px;color:#555}.ncc{font-size:9px;color:#0a7a55}"
-                    "table{border-collapse:collapse;width:100%;font-size:11px;table-layout:fixed}"
-                    "th,td{border:1px solid #999;padding:3px 4px;overflow-wrap:anywhere}"
-                    "th{background:#eee;text-align:center;font-size:10.5px}"
-                    "col.c-sku{width:23%}col.c-num{width:12%}col.c-cnt{width:17%}"
+                    ".cols{display:grid;grid-template-columns:1fr 1fr;gap:6px;align-items:start}"
+                    "table{border-collapse:collapse;width:100%;font-size:10.5px;table-layout:fixed}"
+                    "th,td{border:1px solid #999;padding:2px 4px;overflow-wrap:anywhere}"
+                    "th{background:#eee;text-align:center;font-size:10px;line-height:1.15}"
+                    "col.c-sku{width:26%}col.c-num{width:11.5%}col.c-cnt{width:16.5%}"
                     "td.n{text-align:right;white-space:nowrap}td.g{font-weight:800;background:#eef;text-align:left}"
                     "td.blank{background:#fffde7}tr{page-break-inside:avoid}thead{display:table-header-group}"
-                    "@page{size:A4 portrait;margin:9mm}")
+                    "@page{size:A4 landscape;margin:7mm}")
             _content = ("<div class='wrap'><div class='hd'><div><div class='ttl'>PHIẾU XUẤT NHẬP TỒN + KIỂM KÊ</div>"
                         f"<div class='sub'>VITRAN BOUTIQUE · trong ngày <b>{_today}</b> · Đầu ngày = Cuối ngày + Xuất − Nhập</div></div>"
                         "<div class='sub' style='text-align:right'>NV kiểm: __________</div></div>"
-                        "<table><colgroup><col class='c-sku'><col class='c-num'><col class='c-num'>"
-                        "<col class='c-num'><col class='c-num'><col class='c-num'><col class='c-cnt'></colgroup>"
-                        "<thead><tr><th>SKU</th><th>Tồn<br>đầu ngày</th><th>Nhập</th><th>Xuất</th>"
-                        "<th>Tồn<br>cuối ngày</th><th>Có thể<br>bán</th><th>Thực tế đếm</th></tr></thead><tbody>"
-                        + _trs + "</tbody></table>"
+                        f"<div class='cols'>{_tables}</div>"
                         f"<div class='sub' style='margin-top:6px'>Tổng {len(_rows)} dòng · "
                         + ("Nhập/Xuất: CHƯA có quyền đọc kho Sapo (xem cảnh báo trên app)"
                            if _io_blocked else f"Nhập {_tN:,} · Xuất {_tX:,}")
@@ -9266,7 +9274,7 @@ def _render_stock_report():
                      "<div style='text-align:right;margin-bottom:8px'>"
                      "<button class='btn' onclick='printStock()'>🖨️ In ra giấy A4</button></div>"
                      "<div id='stk'>" + _content + "</div><script>" + _js + "</script>")
-            components.html(_html, height=min(320 + len(_rows) * 30, 1600), scrolling=True)
+            components.html(_html, height=min(300 + _half * 27, 1500), scrolling=True)
         with st.expander("🔧 Dữ liệu thô Sapo (chụp gửi Claude nếu 'Tồn thực tế' còn sai)"):
             if _sample:
                 _v0 = dict(_sample[0])
