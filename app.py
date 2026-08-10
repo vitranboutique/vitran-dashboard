@@ -9245,6 +9245,28 @@ def _render_stock_report():
                     st.caption("⚠️ Variant KHÔNG có mảng 'inventories' → tồn thực tế nằm ở 1 field phẳng ở trên (hoặc phải gọi API khác).")
             else:
                 st.caption("Chưa có mẫu dữ liệu.")
+        with st.expander("🔌 Test API kho Sapo (để biết key có lấy được Nhập/Xuất từ Sapo không)"):
+            st.caption("Bấm để thử các endpoint kho của Sapo bằng CHÍNH key của app — xem cái nào ra dữ liệu (200) hay bị chặn (403/404). Chụp kết quả gửi Claude.")
+            if st.button("Thử các endpoint kho Sapo", key="stock_api_probe"):
+                try:
+                    _fj = make_fetch_json(build_session())
+                except Exception as _se:
+                    _fj = None
+                    st.error(f"Không mở được phiên Sapo: {_se}")
+                for _ep in (["/admin/reports/inventory_transaction.json",
+                             "/admin/reports/inventory_transaction",
+                             "/admin/inventory_transactions.json", "/admin/stock_adjustments.json",
+                             "/admin/inventory_adjustments.json", "/admin/purchase_orders.json",
+                             "/admin/inventory_transfers.json", "/admin/fulfillments.json"] if _fj else []):
+                    try:
+                        _rr = _fj(_ep, limit=1)
+                        if isinstance(_rr, dict):
+                            _info = "keys = " + ", ".join(list(_rr.keys())[:8])
+                        else:
+                            _info = str(_rr)[:80]
+                        st.success(f"✅ {_ep} → 200 · {_info}")
+                    except Exception as _pe:
+                        st.error(f"❌ {_ep} → {type(_pe).__name__}: {str(_pe)[:100]}")
 
 
 def _render_daily():
