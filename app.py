@@ -9132,23 +9132,32 @@ def _render_stock_report():
         _groups = list(_STOCK_FIXED_CODES) + list(_extra)
         _date_iso = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%Y-%m-%d")
         try:
-            _io = load_stock_io(_date_iso) or {}
+            _iores = load_stock_io(_date_iso) or {}
         except Exception:
-            _io = {}
+            _iores = {}
+        _io = _iores.get("rows") or {}
+        _io_blocked = bool(_iores.get("_blocked"))
+        if _io_blocked:
+            st.warning("⚠️ **Chưa lấy được Nhập/Xuất từ Sapo** — API key của app CHƯA có quyền đọc kho (Sapo trả 403). "
+                       "App KHÔNG bịa số từ nguồn khác (sẽ lệch sổ kho). Cách mở: Sapo → **Cấu hình → Ứng dụng/API** "
+                       "→ mở key của dashboard → tick thêm quyền **Quản lý kho / Sản phẩm (đọc)** → Lưu. "
+                       "Xong bấm 🔄 Tải lại tồn kho là 3 cột Nhập/Xuất/Tồn đầu ngày tự chạy.")
 
         def _agg(_items):
-            # _items = list (sku_upper, stock_dict) → cộng tồn + xuất/nhập/NCC. Cuối ngày = tồn hiện tại.
+            # _items = list (sku_upper, stock_dict) → cộng tồn + nhập/xuất (sổ kho Sapo).
+            # Cuối ngày = tồn hiện tại. Đầu ngày = cuối + xuất − nhập (đúng công thức Sapo).
             _oh = _av = _x = _n = 0
-            _ncc = set()
+            _ly = set()
             for _su, _dd in _items:
                 _oh += int(_dd.get("on_hand", 0) or 0)
                 _av += int(_dd.get("available", 0) or 0)
                 _iod = _io.get(str(_su).upper()) or {}
                 _x += int(_iod.get("xuat", 0) or 0)
                 _n += int(_iod.get("nhap", 0) or 0)
-                for _c in (_iod.get("ncc") or []):
-                    _ncc.add(_c)
-            return {"dau": _oh + _x - _n, "nhap": _n, "xuat": _x, "cuoi": _oh, "av": _av, "ncc": sorted(_ncc)}
+                for _c in (_iod.get("ly_do") or []):
+                    _ly.add(_c)
+            return {"dau": _oh + _x - _n, "nhap": _n, "xuat": _x, "cuoi": _oh, "av": _av,
+                    "ncc": sorted(_ly)[:2]}
 
         _rows = []
         for _g in _groups:
@@ -9193,10 +9202,14 @@ def _render_stock_report():
                     _prev = _r["g"]
                     _trs += f"<tr><td colspan='7' class='g'>▸ {_e2(_r['g'])}</td></tr>"
                 _ncc = ("<div class='ncc'>" + _e2(", ".join(_r["ncc"])) + "</div>") if _r["ncc"] else ""
+                # Chưa có quyền đọc kho → để TRỐNG (—) thay vì hiện số dễ hiểu nhầm là "hôm nay không phát sinh".
+                _c_dau = "—" if _io_blocked else f"{_r['dau']:,}"
+                _c_nhap = "—" if _io_blocked else f"{_r['nhap']:,}{_ncc}"
+                _c_xuat = "—" if _io_blocked else f"{_r['xuat']:,}"
                 _trs += (f"<tr><td>{_e2(_r['sku'])}</td>"
-                         f"<td class='n'>{_r['dau']:,}</td>"
-                         f"<td class='n'>{_r['nhap']:,}{_ncc}</td>"
-                         f"<td class='n'>{_r['xuat']:,}</td>"
+                         f"<td class='n'>{_c_dau}</td>"
+                         f"<td class='n'>{_c_nhap}</td>"
+                         f"<td class='n'>{_c_xuat}</td>"
                          f"<td class='n'>{_r['cuoi']:,}</td>"
                          f"<td class='n'>{_r['av']:,}</td>"
                          f"<td class='blank'></td></tr>")
@@ -9214,8 +9227,10 @@ def _render_stock_report():
                         "<table><thead><tr><th>SKU</th><th>Tồn đầu ngày</th><th>Nhập</th><th>Xuất</th>"
                         "<th>Tồn cuối ngày</th><th>Có thể bán</th><th>Thực tế đếm</th></tr></thead><tbody>"
                         + _trs + "</tbody></table>"
-                        f"<div class='sub' style='margin-top:6px'>Tổng {len(_rows)} dòng · Nhập {_tN:,} · Xuất {_tX:,} · "
-                        "cột 'Thực tế đếm' để NV điền tay · số xanh dưới cột Nhập = nhà cung cấp.</div></div>")
+                        f"<div class='sub' style='margin-top:6px'>Tổng {len(_rows)} dòng · "
+                        + ("Nhập/Xuất: CHƯA có quyền đọc kho Sapo (xem cảnh báo trên app)"
+                           if _io_blocked else f"Nhập {_tN:,} · Xuất {_tX:,}")
+                        + " · cột 'Thực tế đếm' để NV điền tay · chữ xanh dưới cột Nhập = nguồn/chứng từ.</div></div>")
             _js = ("function printStock(){var h=document.getElementById('stk').innerHTML;"
                    "var f=document.createElement('iframe');"
                    "f.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0';"

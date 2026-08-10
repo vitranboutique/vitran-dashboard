@@ -3839,66 +3839,60 @@ def get_stock_by_sku(fetch_json, max_pages: int = 80) -> dict:
     return out
 
 
-def get_stock_io_day(fetch_json, date_iso: str, order_pages: int = 60, po_pages: int = 30) -> dict:
-    """XUẤT (đơn bán) + NHẬP (đơn nhập hàng, kèm nhà cung cấp) theo SKU trong 1 NGÀY (giờ VN).
-    Trả {SKU_UPPER: {"xuat": sl bán, "nhap": sl nhập, "ncc": [tên NCC]}}.
-    Xuất = SL line item các đơn bán tạo trong ngày (bỏ đơn hủy). Nhập = SL line item các đơn nhập
-    nhận/tạo trong ngày. Bền: PO có thể bị 403 → phần nhập = 0, xuất vẫn chạy."""
-    out = {}
-    _cmin = date_iso + "T00:00:00+07:00"
-    _cmax = date_iso + "T23:59:59+07:00"
+def get_stock_io_day(fetch_json, date_iso: str, max_pages: int = 60) -> dict:
+    """NHẬP / XUẤT theo SKU trong 1 NGÀY (giờ VN) — LẤY ĐÚNG NGUỒN SAPO: sổ kho
+    (/admin/inventory_transactions.json), tức là CÙNG dữ liệu với "Báo cáo sổ kho" trên Sapo:
+    gồm shipper lấy hàng, nhập từ NCC, VÀ điều chỉnh kho tăng/giảm.
 
-    def _rec(sku):
-        return out.setdefault(str(sku or "").strip().upper(),
-                              {"xuat": 0, "nhap": 0, "ncc": set()})
-
-    # ── XUẤT: đơn bán tạo trong ngày (bỏ đơn hủy) ──
-    for p in range(1, order_pages + 1):
+    Trả {"_blocked": bool, "rows": {SKU_UPPER: {"nhap", "xuat", "ly_do": [nguồn/chứng từ]}}}.
+    _blocked=True nghĩa là API key CHƯA có quyền đọc kho (403) → phải cấp quyền trong Sapo,
+    KHÔNG bịa số từ nguồn khác (số sẽ sai với sổ kho)."""
+    def _n(v):
         try:
-            rows = (fetch_json("/admin/orders.json", limit=250, page=p,
-                               created_on_min=_cmin, created_on_max=_cmax) or {}).get("orders", [])
+            return int(round(float(v or 0)))
         except Exception:
-            break
-        if not rows:
-            break
-        for o in rows:
-            if o.get("cancelled_on") or str(o.get("status") or "").lower() == "cancelled":
-                continue
-            for li in (o.get("line_items") or []):
-                _s = li.get("sku")
-                if _s:
-                    _rec(_s)["xuat"] += int(round(li.get("quantity") or 0))
-        if len(rows) < 250:
-            break
+            return 0
 
-    # ── NHẬP: đơn nhập hàng nhận/tạo trong ngày (kèm nhà cung cấp) ──
-    for p in range(1, po_pages + 1):
+    rows, blocked = {}, False
+    for p in range(1, max_pages + 1):
         try:
-            pos = (fetch_json("/admin/purchase_orders.json", limit=250, page=p) or {}).get("purchase_orders", [])
-        except Exception:
-            pos = []
+            resp = fetch_json("/admin/inventory_transactions.json", limit=250, page=p,
+                              created_on_min=date_iso + "T00:00:00+07:00",
+                              created_on_max=date_iso + "T23:59:59+07:00") or {}
+        except Exception as e:
+            if "403" in str(e) or "Forbidden" in str(e):
+                blocked = True
             break
-        if not pos:
+        items = None
+        if isinstance(resp, dict):
+            for k in ("inventory_transactions", "inventory_transaction", "transactions", "data"):
+                if isinstance(resp.get(k), list):
+                    items = resp[k]
+                    break
+        if not items:
             break
-        for po in pos:
-            _pd = _vn_date_of(po.get("received_on") or po.get("imported_on") or po.get("created_on"))
-            if not _pd or _pd.isoformat() != date_iso:
+        for it in items:
+            _d = _vn_date_of(it.get("created_on") or it.get("transaction_date") or it.get("issued_on"))
+            if _d and _d.isoformat() != date_iso:
                 continue
-            _sup = po.get("supplier")
-            _sup = (_sup.get("name") if isinstance(_sup, dict) else _sup) or po.get("supplier_name") or ""
-            for li in (po.get("line_items") or []):
-                _s = li.get("sku")
-                if _s:
-                    _r = _rec(_s)
-                    _r["nhap"] += int(round(li.get("quantity") or li.get("received_quantity") or 0))
-                    if _sup:
-                        _r["ncc"].add(str(_sup).strip())
-        if len(pos) < 250:
+            sku = (it.get("variant_sku") or it.get("sku")
+                   or ((it.get("variant") or {}).get("sku") if isinstance(it.get("variant"), dict) else ""))
+            sku = str(sku or "").strip().upper()
+            if not sku:
+                continue
+            r = rows.setdefault(sku, {"nhap": 0, "xuat": 0, "ly_do": set()})
+            r["nhap"] += _n(it.get("import_quantity") or it.get("quantity_import"))
+            r["xuat"] += _n(it.get("export_quantity") or it.get("quantity_export"))
+            _ref = (it.get("reference_document_name") or it.get("reference_name")
+                    or it.get("transaction_type") or it.get("reason") or "")
+            if _ref:
+                r["ly_do"].add(str(_ref).strip())
+        if len(items) < 250:
             break
 
-    for _v in out.values():
-        _v["ncc"] = sorted(x for x in _v["ncc"] if x)
-    return out
+    for v in rows.values():
+        v["ly_do"] = sorted(x for x in v["ly_do"] if x)[:3]
+    return {"_blocked": blocked, "rows": rows}
 
 
 if __name__ == "__main__":
