@@ -9127,50 +9127,67 @@ def _render_stock_report():
         _rows = []
         for _g in _groups:
             _gp = PT.parse_sku(_g.replace(" - ", "-"))
+            _pc, _cc = _gp.get("productCode"), _gp.get("colorCode")
             _matched = []
             for _sku, _d in _skus.items():
                 _sp = PT.parse_sku(_sku)
-                if _sp.get("productCode") != _gp.get("productCode"):
+                if _sp.get("productCode") != _pc:
                     continue
-                if _gp.get("colorCode") and _sp.get("colorCode") != _gp.get("colorCode"):
+                if _cc and _sp.get("colorCode") != _cc:
                     continue
                 _matched.append((_sp, _d))
-            _matched.sort(key=lambda x: (_SIZE_ORDER.get(str(x[0].get("size") or "").upper(), 7),
-                                         str(x[0].get("sku") or "")))
-            for _sp, _d in _matched:
-                _rows.append({"g": _g, "sku": _sp.get("sku") or "", "size": _sp.get("size") or "—",
-                              "oh": int(_d.get("on_hand", 0) or 0), "av": int(_d.get("available", 0) or 0)})
+            if not _cc:
+                # Mã KHÔNG kèm màu (vd CVBC) → GỘP mọi màu, giữ size. Muốn xem riêng màu thì chọn thêm mã màu.
+                _by = {}
+                for _sp, _d in _matched:
+                    _sz = (_sp.get("size") or "").upper()
+                    _a = _by.setdefault(_sz, {"oh": 0, "av": 0, "cl": set()})
+                    _a["oh"] += int(_d.get("on_hand", 0) or 0)
+                    _a["av"] += int(_d.get("available", 0) or 0)
+                    _a["cl"].add(_sp.get("colorCode") or "")
+                for _sz in sorted(_by, key=lambda s: _SIZE_ORDER.get(s, 7)):
+                    _a = _by[_sz]
+                    _lbl = (f"{_pc}-{_sz}" if _sz else _pc) + (f" ({len(_a['cl'])} màu)" if len(_a["cl"]) > 1 else "")
+                    _rows.append({"g": _g, "sku": _lbl, "oh": _a["oh"], "av": _a["av"]})
+            else:
+                _matched.sort(key=lambda x: (_SIZE_ORDER.get(str(x[0].get("size") or "").upper(), 7),
+                                             str(x[0].get("sku") or "")))
+                for _sp, _d in _matched:
+                    _rows.append({"g": _g, "sku": _sp.get("sku") or "",
+                                  "oh": int(_d.get("on_hand", 0) or 0), "av": int(_d.get("available", 0) or 0)})
         if not _rows:
             st.warning("Chưa khớp SKU nào cho các mã đã chọn. Mở '🔧 Dữ liệu thô' để xem field Sapo trả về.")
         else:
             import json as _json
             _today = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%d/%m/%Y")
-            _trs, _prev = "", None
-            for _r in _rows:
-                _new = _r["g"] != _prev
-                _prev = _r["g"]
-                _gcls = " class='grp'" if _new else ""
-                _gcell = _e2(_r["g"]) if _new else ""
-                _trs += (f"<tr{_gcls}><td class='g'>{_gcell}</td>"
-                         f"<td>{_e2(_r['sku'])}</td><td class='c'>{_e2(_r['size'])}</td>"
-                         f"<td class='n'>{_r['oh']:,}</td><td class='n'>{_r['av']:,}</td>"
-                         f"<td class='blank'></td></tr>")
+            def _mini(_part):
+                _tr, _pv = "", None
+                for _r in _part:
+                    if _r["g"] != _pv:
+                        _pv = _r["g"]
+                        _tr += f"<tr><td colspan='3' class='g'>▸ {_e2(_r['g'])}</td></tr>"
+                    _tr += (f"<tr><td>{_e2(_r['sku'])}</td>"
+                            f"<td class='n'>{_r['oh']:,} / {_r['av']:,}</td><td class='blank'></td></tr>")
+                return ("<table><thead><tr><th>SKU</th><th>Tồn / Bán</th><th>Đếm</th></tr></thead>"
+                        "<tbody>" + _tr + "</tbody></table>")
+            _half = (len(_rows) + 1) // 2
+            _colhtml = "<div>" + _mini(_rows[:_half]) + "</div>"
+            if _rows[_half:]:
+                _colhtml += "<div>" + _mini(_rows[_half:]) + "</div>"
             _css = ("*{box-sizing:border-box}body{margin:0;font-family:Tahoma,Arial,sans-serif;color:#111}"
-                    ".wrap{max-width:820px;margin:0 auto}.hd{display:flex;justify-content:space-between;"
+                    ".wrap{max-width:900px;margin:0 auto}.hd{display:flex;justify-content:space-between;"
                     "align-items:flex-end;border-bottom:2px solid #111;padding-bottom:6px;margin-bottom:8px}"
-                    ".ttl{font-size:18px;font-weight:800}.sub{font-size:12px;color:#555}"
-                    "table{border-collapse:collapse;width:100%;font-size:13px}"
-                    "th,td{border:1px solid #999;padding:5px 8px}th{background:#eee;text-align:center}"
-                    "td.n{text-align:right}td.c{text-align:center}td.g{font-weight:800;background:#fafafa}"
-                    "td.blank{background:#fffde7;min-width:90px}tr.grp td{border-top:2px solid #333}"
-                    "@page{size:A4;margin:12mm}")
+                    ".ttl{font-size:17px;font-weight:800}.sub{font-size:11px;color:#555}"
+                    ".cols{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start}"
+                    "table{border-collapse:collapse;width:100%;font-size:12px}"
+                    "th,td{border:1px solid #999;padding:3px 6px}th{background:#eee;text-align:center}"
+                    "td.n{text-align:right;white-space:nowrap}td.g{font-weight:800;background:#eef;text-align:left}"
+                    "td.blank{background:#fffde7;min-width:56px}@page{size:A4;margin:10mm}")
             _content = ("<div class='wrap'><div class='hd'><div><div class='ttl'>PHIẾU KIỂM KÊ TỒN KHO</div>"
-                        "<div class='sub'>VITRAN BOUTIQUE</div></div><div class='sub' style='text-align:right'>"
-                        f"Ngày: <b>{_today}</b><br>NV kiểm: ____________</div></div>"
-                        "<table><thead><tr><th>Nhóm</th><th>SKU</th><th>Size</th><th>Tồn thực tế</th>"
-                        "<th>Có thể bán</th><th>Thực tế đếm</th></tr></thead><tbody>" + _trs + "</tbody></table>"
-                        f"<div class='sub' style='margin-top:8px'>Tổng {len(_rows)} SKU · "
-                        "Tồn thực tế = hàng trong kho · Có thể bán = tồn thực tế − số lượng đang đặt.</div></div>")
+                        "<div class='sub'>VITRAN BOUTIQUE · <b>Tồn</b> = tồn thực tế · <b>Bán</b> = có thể bán</div></div>"
+                        f"<div class='sub' style='text-align:right'>Ngày: <b>{_today}</b><br>NV kiểm: __________</div></div>"
+                        f"<div class='cols'>{_colhtml}</div>"
+                        f"<div class='sub' style='margin-top:6px'>Tổng {len(_rows)} dòng · cột 'Đếm' để NV điền tay.</div></div>")
             _js = ("function printStock(){var h=document.getElementById('stk').innerHTML;"
                    "var f=document.createElement('iframe');"
                    "f.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0';"
@@ -9185,7 +9202,7 @@ def _render_stock_report():
                      "<div style='text-align:right;margin-bottom:8px'>"
                      "<button class='btn' onclick='printStock()'>🖨️ In ra giấy A4</button></div>"
                      "<div id='stk'>" + _content + "</div><script>" + _js + "</script>")
-            components.html(_html, height=min(300 + len(_rows) * 32, 1200), scrolling=True)
+            components.html(_html, height=min(340 + _half * 30, 1500), scrolling=True)
         with st.expander("🔧 Dữ liệu thô Sapo (chụp gửi Claude nếu 'Tồn thực tế' còn sai)"):
             if _sample:
                 _v0 = dict(_sample[0])
