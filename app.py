@@ -9089,12 +9089,16 @@ def _daily_sig(rep, dvr):
 _STOCK_FIXED_CODES = ["SD", "ST", "S-TR", "CVBC", "OL-DE", "OL-TR", "OS-DE", "OS-TR"]
 
 
+_SIZE_ORDER = {"XS": 0, "S": 1, "M": 2, "L": 3, "XL": 4, "2XL": 5, "XXL": 5, "3XL": 6, "XXXL": 6}
+
+
 def _render_stock_report():
-    """BƯỚC 1 (bản thử): lấy tồn kho Sapo (2 loại) cho 8 mã cố định + mã chọn thêm, để đối chiếu số."""
-    with st.expander("📦 Báo cáo tồn kho + kiểm kê", expanded=False):
-        st.caption("Tồn kho lấy trực tiếp từ Sapo — 2 loại: THỰC TẾ (on-hand) & CÓ THỂ BÁN (available). "
-                   "Cột 'Thực tế đếm' để trống cho NV kiểm & điền vào. "
-                   "⚠️ BẢN THỬ: vui lòng đối chiếu số có KHỚP Sapo không, rồi tôi làm tiếp cột Đầu ngày / Xuất / Cuối ngày + in.")
+    """Báo cáo tồn kho Sapo (2 loại) — 8 mã cố định + chọn thêm, hiển thị & IN A4, sort size XS→XL."""
+    def _e2(s):
+        return str(s if s not in (None, "") else "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    with st.expander("📦 Báo cáo tồn kho + kiểm kê (in A4)", expanded=False):
+        st.caption("Tồn kho từ Sapo — TỒN THỰC TẾ (hàng trong kho) & CÓ THỂ BÁN (= tồn thực tế − số lượng đang đặt). "
+                   "Cột 'Thực tế đếm' để trống cho NV kiểm & điền. Bấm 🖨️ để in ra giấy A4.")
         if not credential_present():
             st.info("Cần kết nối Sapo (LIVE) để xem tồn kho.")
             return
@@ -9117,7 +9121,7 @@ def _render_stock_report():
             _gp = PT.parse_sku(_g.replace(" - ", "-"))
             if (_gp.get("productCode"), _gp.get("colorCode")) not in _fixed_pc:
                 _opts.append(_g)
-        _extra = st.multiselect("➕ Chọn thêm mã muốn kiểm chung (ngoài 8 mã cố định)",
+        _extra = st.multiselect("➕ Chọn thêm mã muốn kiểm & in chung (ngoài 8 mã cố định)",
                                 options=_opts, key="stock_extra_codes")
         _groups = list(_STOCK_FIXED_CODES) + list(_extra)
         _rows = []
@@ -9131,18 +9135,71 @@ def _render_stock_report():
                 if _gp.get("colorCode") and _sp.get("colorCode") != _gp.get("colorCode"):
                     continue
                 _matched.append((_sp, _d))
-            _matched.sort(key=lambda x: x[0].get("sortKey") or "")
+            _matched.sort(key=lambda x: (_SIZE_ORDER.get(str(x[0].get("size") or "").upper(), 7),
+                                         str(x[0].get("sku") or "")))
             for _sp, _d in _matched:
-                _rows.append({"Nhóm": _g, "SKU": _sp.get("sku"), "Size": _sp.get("size") or "—",
-                              "Tồn thực tế": _d.get("on_hand", 0), "Có thể bán": _d.get("available", 0),
-                              "Thực tế đếm": ""})
+                _rows.append({"g": _g, "sku": _sp.get("sku") or "", "size": _sp.get("size") or "—",
+                              "oh": int(_d.get("on_hand", 0) or 0), "av": int(_d.get("available", 0) or 0)})
         if not _rows:
             st.warning("Chưa khớp SKU nào cho các mã đã chọn. Mở '🔧 Dữ liệu thô' để xem field Sapo trả về.")
         else:
-            st.dataframe(pd.DataFrame(_rows), hide_index=True, use_container_width=True)
-            st.caption(f"**{len(_rows)}** dòng SKU. Số 'Tồn thực tế' / 'Có thể bán' có khớp Sapo không?")
-        with st.expander("🔧 Dữ liệu thô Sapo (2 variant đầu — để đối chiếu field nếu số sai)"):
-            st.json(_sample)
+            import json as _json
+            _today = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%d/%m/%Y")
+            _trs, _prev = "", None
+            for _r in _rows:
+                _new = _r["g"] != _prev
+                _prev = _r["g"]
+                _gcls = " class='grp'" if _new else ""
+                _gcell = _e2(_r["g"]) if _new else ""
+                _trs += (f"<tr{_gcls}><td class='g'>{_gcell}</td>"
+                         f"<td>{_e2(_r['sku'])}</td><td class='c'>{_e2(_r['size'])}</td>"
+                         f"<td class='n'>{_r['oh']:,}</td><td class='n'>{_r['av']:,}</td>"
+                         f"<td class='blank'></td></tr>")
+            _css = ("*{box-sizing:border-box}body{margin:0;font-family:Tahoma,Arial,sans-serif;color:#111}"
+                    ".wrap{max-width:820px;margin:0 auto}.hd{display:flex;justify-content:space-between;"
+                    "align-items:flex-end;border-bottom:2px solid #111;padding-bottom:6px;margin-bottom:8px}"
+                    ".ttl{font-size:18px;font-weight:800}.sub{font-size:12px;color:#555}"
+                    "table{border-collapse:collapse;width:100%;font-size:13px}"
+                    "th,td{border:1px solid #999;padding:5px 8px}th{background:#eee;text-align:center}"
+                    "td.n{text-align:right}td.c{text-align:center}td.g{font-weight:800;background:#fafafa}"
+                    "td.blank{background:#fffde7;min-width:90px}tr.grp td{border-top:2px solid #333}"
+                    "@page{size:A4;margin:12mm}")
+            _content = ("<div class='wrap'><div class='hd'><div><div class='ttl'>PHIẾU KIỂM KÊ TỒN KHO</div>"
+                        "<div class='sub'>VITRAN BOUTIQUE</div></div><div class='sub' style='text-align:right'>"
+                        f"Ngày: <b>{_today}</b><br>NV kiểm: ____________</div></div>"
+                        "<table><thead><tr><th>Nhóm</th><th>SKU</th><th>Size</th><th>Tồn thực tế</th>"
+                        "<th>Có thể bán</th><th>Thực tế đếm</th></tr></thead><tbody>" + _trs + "</tbody></table>"
+                        f"<div class='sub' style='margin-top:8px'>Tổng {len(_rows)} SKU · "
+                        "Tồn thực tế = hàng trong kho · Có thể bán = tồn thực tế − số lượng đang đặt.</div></div>")
+            _js = ("function printStock(){var h=document.getElementById('stk').innerHTML;"
+                   "var f=document.createElement('iframe');"
+                   "f.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0';"
+                   "document.body.appendChild(f);var d=f.contentWindow.document;d.open();"
+                   "d.write('<!doctype html><html><head><meta charset=\"utf-8\"><style>'+"
+                   + _json.dumps(_css) +
+                   "+'</style></head><body>'+h+'</body></html>');d.close();"
+                   "f.onload=function(){f.contentWindow.focus();f.contentWindow.print();"
+                   "setTimeout(function(){try{document.body.removeChild(f);}catch(e){}},800);};}")
+            _html = ("<style>" + _css + ".btn{background:#2563eb;color:#fff;border:0;border-radius:6px;"
+                     "padding:8px 16px;font-weight:700;cursor:pointer;font-size:14px}</style>"
+                     "<div style='text-align:right;margin-bottom:8px'>"
+                     "<button class='btn' onclick='printStock()'>🖨️ In ra giấy A4</button></div>"
+                     "<div id='stk'>" + _content + "</div><script>" + _js + "</script>")
+            components.html(_html, height=min(300 + len(_rows) * 32, 1200), scrolling=True)
+        with st.expander("🔧 Dữ liệu thô Sapo (chụp gửi Claude nếu 'Tồn thực tế' còn sai)"):
+            if _sample:
+                _v0 = dict(_sample[0])
+                _flat = {k: v for k, v in _v0.items() if not isinstance(v, (list, dict))}
+                st.caption("Các field PHẲNG của 1 SKU — tìm field nào = số TỒN KHO thật (vd 185):")
+                st.json(_flat)
+                _invs = _v0.get("inventories")
+                if isinstance(_invs, list) and _invs:
+                    st.caption("Mảng inventories[] (tồn theo từng kho — chụp cả cái này):")
+                    st.json(_invs)
+                else:
+                    st.caption("⚠️ Variant KHÔNG có mảng 'inventories' → tồn thực tế nằm ở 1 field phẳng ở trên (hoặc phải gọi API khác).")
+            else:
+                st.caption("Chưa có mẫu dữ liệu.")
 
 
 def _render_daily():
