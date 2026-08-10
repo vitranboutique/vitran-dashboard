@@ -9125,6 +9125,16 @@ def _render_stock_report():
         if not _levels_ok:
             st.warning("⚠️ Chưa đọc được **tồn thực tế** (API `inventory_levels` bị chặn quyền) → cột *Tồn cuối ngày* "
                        "đang tạm bằng *Có thể bán*. Cấp quyền đọc Kho cho API key là ra đúng số (vd SD-XS: 185 thay vì 183).")
+        # CHỐT TỒN CUỐI NGÀY (ghi đè trong ngày; bản cuối = số cuối ngày) → mai dùng làm TỒN ĐẦU NGÀY.
+        _vn_today_iso = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%Y-%m-%d")
+        if _levels_ok and picklog.configured() and st.session_state.get("_stock_snap_day") != _vn_today_iso:
+            try:
+                if picklog.save_stock_snapshot(
+                        _vn_today_iso, {k: int(v.get("on_hand", 0) or 0) for k, v in _skus.items()},
+                        at=(datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%H:%M %d/%m/%Y")):
+                    st.session_state["_stock_snap_day"] = _vn_today_iso
+            except Exception:
+                pass
         _fixed_pc = set()
         for _c in _STOCK_FIXED_CODES:
             _fp = PT.parse_sku(_c)
@@ -9159,21 +9169,34 @@ def _render_stock_report():
                     "· **Nhập** = hàng hoàn đã nhập kho hôm nay.\n"
                     "· ⚠️ **CHƯA gồm**: nhập từ nhà cung cấp + điều chỉnh kho tay (Sapo chặn API 403) → hôm nào có 2 việc này thì lệch sổ kho.")
 
+        # TỒN CUỐI hôm trước = TỒN ĐẦU hôm nay (mốc đã chốt). Chưa có mốc → suy ra: cuối + xuất − nhập.
+        _snap_prev = {}
+        if picklog.configured():
+            try:
+                _sp = picklog.read_stock_snapshot((_pick_day - timedelta(days=1)).isoformat())
+                _snap_prev = (_sp or {}).get("on_hand") or {}
+            except Exception:
+                _snap_prev = {}
+
         def _agg(_items):
             # _items = list (sku_upper, stock_dict) → cộng tồn + nhập/xuất (sổ kho Sapo).
-            # Cuối ngày = tồn hiện tại. Đầu ngày = cuối + xuất − nhập (đúng công thức Sapo).
             _oh = _av = _x = _n = 0
             _ly = set()
+            _dau_snap, _has_snap = 0, False
             for _su, _dd in _items:
+                _k = str(_su).upper()
                 _oh += int(_dd.get("on_hand", 0) or 0)
                 _av += int(_dd.get("available", 0) or 0)
-                _iod = _io.get(str(_su).upper()) or {}
+                _iod = _io.get(_k) or {}
                 _x += int(_iod.get("xuat", 0) or 0)
                 _n += int(_iod.get("nhap", 0) or 0)
                 for _c in (_iod.get("ly_do") or []):
                     _ly.add(_c)
-            return {"dau": _oh + _x - _n, "nhap": _n, "xuat": _x, "cuoi": _oh, "av": _av,
-                    "ncc": sorted(_ly)[:2]}
+                if _k in _snap_prev:
+                    _dau_snap += int(_snap_prev.get(_k) or 0)
+                    _has_snap = True
+            return {"dau": _dau_snap if _has_snap else (_oh + _x - _n), "dau_snap": _has_snap,
+                    "nhap": _n, "xuat": _x, "cuoi": _oh, "av": _av, "ncc": sorted(_ly)[:2]}
 
         _rows = []
         for _g in _groups:
@@ -9243,17 +9266,21 @@ def _render_stock_report():
             _css = ("*{box-sizing:border-box}body{margin:0;font-family:Tahoma,Arial,sans-serif;color:#111}"
                     ".wrap{max-width:277mm;margin:0 auto}.hd{display:flex;justify-content:space-between;"
                     "align-items:flex-end;border-bottom:2px solid #111;padding-bottom:4px;margin-bottom:5px}"
-                    ".ttl{font-size:15px;font-weight:800}.sub{font-size:10px;color:#555}.ncc{font-size:9px;color:#0a7a55}"
-                    ".cols{display:grid;grid-template-columns:1fr 1fr;gap:6px;align-items:start}"
-                    "table{border-collapse:collapse;width:100%;font-size:10.5px;table-layout:fixed}"
-                    "th,td{border:1px solid #999;padding:2px 4px;overflow-wrap:anywhere}"
-                    "th{background:#eee;text-align:center;font-size:10px;line-height:1.15}"
+                    ".ttl{font-size:18px;font-weight:800}.sub{font-size:11.5px;color:#555}.ncc{font-size:10px;color:#0a7a55}"
+                    ".cols{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:start}"
+                    "table{border-collapse:collapse;width:100%;font-size:13.5px;table-layout:fixed}"
+                    "th,td{border:1px solid #999;padding:5px 6px;overflow-wrap:anywhere}"
+                    "th{background:#eee;text-align:center;font-size:12.5px;line-height:1.2}"
                     "col.c-sku{width:26%}col.c-num{width:11.5%}col.c-cnt{width:16.5%}"
                     "td.n{text-align:right;white-space:nowrap}td.g{font-weight:800;background:#eef;text-align:left}"
                     "td.blank{background:#fffde7}tr{page-break-inside:avoid}thead{display:table-header-group}"
                     "@page{size:A4 landscape;margin:7mm}")
             _content = ("<div class='wrap'><div class='hd'><div><div class='ttl'>PHIẾU XUẤT NHẬP TỒN + KIỂM KÊ</div>"
-                        f"<div class='sub'>VITRAN BOUTIQUE · trong ngày <b>{_today}</b> · Đầu ngày = Cuối ngày + Xuất − Nhập</div></div>"
+                        f"<div class='sub'>VITRAN BOUTIQUE · trong ngày <b>{_today}</b> · "
+                        + ("Tồn đầu = tồn CUỐI ngày hôm trước (đã chốt)"
+                           if any(r.get("dau_snap") for r in _rows) else
+                           "Tồn đầu = Tồn cuối + Xuất − Nhập (chưa có mốc chốt hôm trước)")
+                        + "</div></div>"
                         "<div class='sub' style='text-align:right'>NV kiểm: __________</div></div>"
                         f"<div class='cols'>{_tables}</div>"
                         f"<div class='sub' style='margin-top:6px'>Tổng {len(_rows)} dòng · "

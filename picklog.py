@@ -895,6 +895,27 @@ def save_daily_frozen(day_iso: str, payload: dict) -> bool:
     return _write_gist_file(_daily_frozen_fname(str(day_iso)), payload)
 
 
+# ── CHỐT TỒN KHO cuối ngày: TỒN CUỐI hôm nay = TỒN ĐẦU ngày mai ──
+def _stock_snap_fname(day_iso: str) -> str:
+    return f"vitran_stock_{day_iso}.json"
+
+
+def read_stock_snapshot(day_iso: str):
+    """Mốc tồn đã chốt của 1 ngày: {"at": giờ chốt, "on_hand": {SKU: số}} hoặc None."""
+    if not day_iso:
+        return None
+    v = _read_gist_file(_stock_snap_fname(str(day_iso)))
+    return v if isinstance(v, dict) else None
+
+
+def save_stock_snapshot(day_iso: str, on_hand: dict, at: str = "") -> bool:
+    """Chốt tồn CUỐI NGÀY (ghi đè trong ngày — bản cuối cùng là số cuối ngày)."""
+    if not (day_iso and isinstance(on_hand, dict) and on_hand):
+        return False
+    return _write_gist_file(_stock_snap_fname(str(day_iso)),
+                            {"at": at, "on_hand": {str(k): int(v or 0) for k, v in on_hand.items()}})
+
+
 def read_video_type_overrides() -> list:
     """[{date, code, type}] — sửa loại clip trong app mà không thay dữ liệu gốc Dohana."""
     d = _read_gist_file(_VIDEO_TYPE_OVERRIDE_FILE)
