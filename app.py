@@ -9110,6 +9110,8 @@ def _render_stock_report():
             return
         if st.button("🔄 Tải lại tồn kho", key="stock_reload"):
             load_stock.clear()
+            load_stock_io.clear()      # phải xoá CẢ cache Nhập/Xuất, không thì bảng giữ số cũ
+            st.rerun()
         try:
             _stock = load_stock()
         except Exception as _e:
@@ -9139,10 +9141,11 @@ def _render_stock_report():
         _io_blocked = bool(_iores.get("_blocked"))
         _io_mode = str(_iores.get("_mode") or "")
         if _io_mode == "tu_tinh":
-            st.info("ℹ️ **Nhập/Xuất đang TỰ TÍNH theo công thức Sapo** (API sổ kho bị khoá quyền nên không đọc thẳng được).\n\n"
-                    "· **Xuất** = đơn đã xuất kho hôm nay VÀ shipper đã xác nhận lấy hàng.\n"
+            st.info(f"ℹ️ **Nhập/Xuất TỰ TÍNH theo công thức Sapo** — đếm được **{_iores.get('_orders_xuat', 0)} đơn đã xuất** "
+                    f"(khớp cột *Shipper thực nhận* ở bảng ĐVVC bên dưới), **{_iores.get('_sku_hit', 0)} SKU** có phát sinh.\n\n"
+                    "· **Xuất** = đơn xuất kho hôm nay VÀ shipper đã xác nhận lấy hàng.\n"
                     "· **Nhập** = hàng hoàn đã nhập kho hôm nay.\n"
-                    "· ⚠️ **CHƯA gồm**: nhập từ nhà cung cấp + điều chỉnh kho tay (Sapo chặn API) → nếu hôm nào có 2 việc này thì số sẽ lệch sổ kho Sapo.")
+                    "· ⚠️ **CHƯA gồm**: nhập từ nhà cung cấp + điều chỉnh kho tay (Sapo chặn API 403) → hôm nào có 2 việc này thì lệch sổ kho.")
 
         def _agg(_items):
             # _items = list (sku_upper, stock_dict) → cộng tồn + nhập/xuất (sổ kho Sapo).

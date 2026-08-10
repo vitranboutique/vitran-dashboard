@@ -3905,31 +3905,45 @@ def get_stock_io_day(fetch_json, date_iso: str, max_pages: int = 60) -> dict:
     def _rec(sku):
         return rows.setdefault(str(sku or "").strip().upper(), {"nhap": 0, "xuat": 0, "ly_do": set()})
 
+    # Quét ĐÚNG như get_daily_report (bảng ĐVVC "Shipper thực nhận"): đơn status=open (mọi tuổi)
+    # + đơn status=closed tạo trong 7 ngày (đơn hỏa tốc giao xong trong ngày đã rớt khỏi 'open').
+    _n_orders = 0
+    _scan = []
     for p in range(1, max_pages + 1):
         try:
-            ords = (fetch_json("/admin/orders.json", limit=250, page=p,
-                               created_on_min=(datetime.fromisoformat(date_iso) - timedelta(days=20)).date().isoformat()
-                               + "T00:00:00+07:00",
-                               created_on_max=date_iso + "T23:59:59+07:00") or {}).get("orders", [])
+            _r = (fetch_json("/admin/orders.json", limit=250, page=p, status="open") or {}).get("orders", [])
         except Exception:
-            ords = []
             break
-        if not ords:
+        if not _r:
             break
-        for o in ords:
-            f = (o.get("fulfillments") or [{}])[0] or {}
-            _iss = _vn_date_of(f.get("issued_on"))
-            if not _iss or _iss.isoformat() != date_iso:
-                continue
-            if f.get("shipment_status") in ("pending", None):
-                continue                       # shipper CHƯA xác nhận lấy → chưa tính xuất
-            for li in (o.get("line_items") or []):
-                if li.get("sku"):
-                    r = _rec(li["sku"])
-                    r["xuat"] += int(round(li.get("quantity") or 0))
-                    r["ly_do"].add("Bán - shipper lấy")
-        if len(ords) < 250:
+        _scan += _r
+        if len(_r) < 250:
             break
+    _cmin = (datetime.fromisoformat(date_iso).date() - timedelta(days=7)).isoformat() + "T00:00:00+07:00"
+    for p in range(1, 20):
+        try:
+            _r = (fetch_json("/admin/orders.json", limit=250, page=p, status="closed",
+                             created_on_min=_cmin) or {}).get("orders", [])
+        except Exception:
+            break
+        if not _r:
+            break
+        _scan += _r
+        if len(_r) < 250:
+            break
+    for o in _scan:
+        f = (o.get("fulfillments") or [{}])[0] or {}
+        _iss = _vn_date_of(f.get("issued_on"))
+        if not _iss or _iss.isoformat() != date_iso:
+            continue
+        if f.get("shipment_status") in ("pending", None):
+            continue                       # shipper CHƯA xác nhận lấy → chưa tính xuất
+        _n_orders += 1
+        for li in (o.get("line_items") or []):
+            if li.get("sku"):
+                r = _rec(li["sku"])
+                r["xuat"] += int(round(li.get("quantity") or 0))
+                r["ly_do"].add("Bán - shipper lấy")
 
     for p in range(1, 20):
         try:
@@ -3958,7 +3972,9 @@ def get_stock_io_day(fetch_json, date_iso: str, max_pages: int = 60) -> dict:
 
     for v in rows.values():
         v["ly_do"] = sorted(x for x in v["ly_do"] if x)[:3]
-    return {"_blocked": False, "_mode": "tu_tinh", "_partial": True, "rows": rows}
+    return {"_blocked": False, "_mode": "tu_tinh", "_partial": True,
+            "_orders_xuat": _n_orders,          # số ĐƠN đã xuất (đối chiếu "Shipper thực nhận")
+            "_sku_hit": len(rows), "rows": rows}
 
 
 if __name__ == "__main__":
