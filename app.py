@@ -9199,7 +9199,9 @@ def _render_stock_report():
                     "nhap": _n, "xuat": _x, "cuoi": _oh, "av": _av, "ncc": sorted(_ly)[:2]}
 
         _rows = []
+        _fixed_set = set(_STOCK_FIXED_CODES)
         for _g in _groups:
+            _is_fixed = _g in _fixed_set          # mã CỐ ĐỊNH → trang 1; mã chọn thêm → trang 2
             _gp = PT.parse_sku(_g.replace(" - ", "-"))
             _pc, _cc = _gp.get("productCode"), _gp.get("colorCode")
             _matched = []
@@ -9220,13 +9222,13 @@ def _render_stock_report():
                     _cls = {(_sp.get("colorCode") or "") for _su, _sp, _d in _items}
                     _lbl = (f"{_pc}-{_sz}" if _sz else _pc) + (f" ({len(_cls)} màu)" if len(_cls) > 1 else "")
                     _row = _agg([(_su, _d) for _su, _sp, _d in _items])
-                    _row.update({"g": _g, "sku": _lbl})
+                    _row.update({"g": _g, "sku": _lbl, "fx": _is_fixed})
                     _rows.append(_row)
             else:
                 _matched.sort(key=lambda x: (_SIZE_ORDER.get(str(x[1].get("size") or "").upper(), 7), x[0]))
                 for _su, _sp, _d in _matched:
                     _row = _agg([(_su, _d)])
-                    _row.update({"g": _g, "sku": _sp.get("sku") or ""})
+                    _row.update({"g": _g, "sku": _sp.get("sku") or "", "fx": _is_fixed})
                     _rows.append(_row)
         if not _rows:
             st.warning("Chưa khớp SKU nào cho các mã đã chọn. Mở '🔧 Dữ liệu thô' để xem field Sapo trả về.")
@@ -9259,12 +9261,20 @@ def _render_stock_report():
                         "<thead><tr><th>SKU</th><th>Tồn<br>đầu</th><th>Nhập</th><th>Xuất</th>"
                         "<th>Tồn<br>cuối</th><th>Có thể<br>bán</th><th>Thực tế đếm</th></tr></thead>"
                         "<tbody>" + _tr + "</tbody></table>")
-            _half = (len(_rows) + 1) // 2
-            _tables = "<div>" + _tbl(_rows[:_half]) + "</div>"
-            if _rows[_half:]:
-                _tables += "<div>" + _tbl(_rows[_half:]) + "</div>"
+            def _two_cols(_part):
+                if not _part:
+                    return ""
+                _h = (len(_part) + 1) // 2
+                _out = "<div>" + _tbl(_part[:_h]) + "</div>"
+                if _part[_h:]:
+                    _out += "<div>" + _tbl(_part[_h:]) + "</div>"
+                return f"<div class='cols'>{_out}</div>"
+            _rows_fx = [_r for _r in _rows if _r.get("fx")]        # TRANG 1: mã cố định
+            _rows_ex = [_r for _r in _rows if not _r.get("fx")]    # TRANG 2: mã chọn thêm
+            _half = max(1, (len(_rows_fx) + 1) // 2)
             _css = ("*{box-sizing:border-box}body{margin:0;font-family:Tahoma,Arial,sans-serif;color:#111}"
-                    ".wrap{max-width:277mm;margin:0 auto}.hd{display:flex;justify-content:space-between;"
+                    ".wrap{max-width:277mm;margin:0 auto}.brk{page-break-before:always;margin-top:14px}"
+                    ".hd{display:flex;justify-content:space-between;"
                     "align-items:flex-end;border-bottom:2px solid #111;padding-bottom:4px;margin-bottom:5px}"
                     ".ttl{font-size:18px;font-weight:800}.sub{font-size:11.5px;color:#555}.ncc{font-size:10px;color:#0a7a55}"
                     ".cols{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:start}"
@@ -9275,18 +9285,24 @@ def _render_stock_report():
                     "td.n{text-align:right;white-space:nowrap}td.g{font-weight:800;background:#eef;text-align:left}"
                     "td.blank{background:#fffde7}tr{page-break-inside:avoid}thead{display:table-header-group}"
                     "@page{size:A4 landscape;margin:7mm}")
-            _content = ("<div class='wrap'><div class='hd'><div><div class='ttl'>PHIẾU XUẤT NHẬP TỒN + KIỂM KÊ</div>"
-                        f"<div class='sub'>VITRAN BOUTIQUE · trong ngày <b>{_today}</b> · "
-                        + ("Tồn đầu = tồn CUỐI ngày hôm trước (đã chốt)"
-                           if any(r.get("dau_snap") for r in _rows) else
-                           "Tồn đầu = Tồn cuối + Xuất − Nhập (chưa có mốc chốt hôm trước)")
-                        + "</div></div>"
-                        "<div class='sub' style='text-align:right'>NV kiểm: __________</div></div>"
-                        f"<div class='cols'>{_tables}</div>"
-                        f"<div class='sub' style='margin-top:6px'>Tổng {len(_rows)} dòng · "
-                        + ("Nhập/Xuất: CHƯA có quyền đọc kho Sapo (xem cảnh báo trên app)"
-                           if _io_blocked else f"Nhập {_tN:,} · Xuất {_tX:,}")
-                        + " · cột 'Thực tế đếm' để NV điền tay · chữ xanh dưới cột Nhập = nguồn/chứng từ.</div></div>")
+            _dau_src = ("Tồn đầu = tồn CUỐI ngày hôm trước (đã chốt)"
+                        if any(r.get("dau_snap") for r in _rows) else
+                        "Tồn đầu = Tồn cuối + Xuất − Nhập (chưa có mốc chốt hôm trước)")
+
+            def _page(_title, _part, _brk=False):
+                if not _part:
+                    return ""
+                return (f"<div class='wrap{' brk' if _brk else ''}'><div class='hd'><div>"
+                        f"<div class='ttl'>{_title}</div>"
+                        f"<div class='sub'>VITRAN BOUTIQUE · trong ngày <b>{_today}</b> · {_dau_src}</div></div>"
+                        f"<div class='sub' style='text-align:right'>NV kiểm: __________</div></div>"
+                        + _two_cols(_part)
+                        + f"<div class='sub' style='margin-top:6px'>{len(_part)} dòng · "
+                        + ("Nhập/Xuất: CHƯA có quyền đọc kho Sapo"
+                           if _io_blocked else f"Nhập {sum(r['nhap'] for r in _part):,} · Xuất {sum(r['xuat'] for r in _part):,}")
+                        + " · cột 'Thực tế đếm' để NV điền tay.</div></div>")
+            _content = (_page("PHIẾU XUẤT NHẬP TỒN + KIỂM KÊ", _rows_fx)
+                        + _page("PHIẾU KIỂM KÊ — MÃ BỔ SUNG (chọn thêm)", _rows_ex, _brk=bool(_rows_fx)))
             _js = ("function printStock(){var h=document.getElementById('stk').innerHTML;"
                    "var f=document.createElement('iframe');"
                    "f.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0';"
@@ -9301,7 +9317,8 @@ def _render_stock_report():
                      "<div style='text-align:right;margin-bottom:8px'>"
                      "<button class='btn' onclick='printStock()'>🖨️ In ra giấy A4</button></div>"
                      "<div id='stk'>" + _content + "</div><script>" + _js + "</script>")
-            components.html(_html, height=min(300 + _half * 27, 1500), scrolling=True)
+            _vh = 300 + _half * 34 + (200 + ((len(_rows_ex) + 1) // 2) * 34 if _rows_ex else 0)
+            components.html(_html, height=min(_vh, 2000), scrolling=True)
         with st.expander("🔧 Dữ liệu thô Sapo (chụp gửi Claude nếu 'Tồn thực tế' còn sai)"):
             if _sample:
                 _v0 = dict(_sample[0])
