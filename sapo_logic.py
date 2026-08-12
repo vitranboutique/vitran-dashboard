@@ -3829,7 +3829,7 @@ def get_stock_by_sku(fetch_json, max_pages: int = 80) -> dict:
     # ── 2) inventory_levels.json: nguồn THẬT của tồn kho — on_hand (tồn thực tế) /
     #       available (có thể bán) / committed (đang đặt). Gộp mọi kho (location_id). ──
     lv_ok, lv = False, {}
-    for p in range(1, 200):
+    for p in range(1, 41):        # tối đa 40 trang (10k dòng tồn) — tránh dội API Sapo → 403
         try:
             levels = (fetch_json("/admin/inventory_levels.json", limit=250, page=p) or {}).get("inventory_levels", [])
         except Exception:

@@ -9108,9 +9108,23 @@ def _render_stock_report():
         if not credential_present():
             st.info("Cần kết nối Sapo (LIVE) để xem tồn kho.")
             return
-        if st.button("🔄 Tải lại tồn kho", key="stock_reload"):
+        # ⚠️ Nội dung expander VẪN CHẠY dù đang đóng → nếu tự quét kho ở đây thì MỖI LẦN mở
+        #    trang báo cáo đều gọi hàng chục nghìn bản ghi Sapo → key bị chặn 403, hỏng cả
+        #    báo cáo cuối ngày. Vì vậy CHỈ quét khi NV bấm nút.
+        if not st.session_state.get("stock_report_on"):
+            st.info("Bấm nút dưới để lấy số liệu tồn kho (quét kho Sapo, mất ~30–60 giây). "
+                    "Không bấm thì trang báo cáo chạy nhẹ như bình thường.")
+            if st.button("📥 Lấy số liệu tồn kho", key="stock_load_btn", type="primary"):
+                st.session_state["stock_report_on"] = True
+                st.rerun()
+            return
+        _c1, _c2 = st.columns([1, 4])
+        if _c1.button("🔄 Tải lại tồn kho", key="stock_reload"):
             load_stock.clear()
             load_stock_io.clear()      # phải xoá CẢ cache Nhập/Xuất, không thì bảng giữ số cũ
+            st.rerun()
+        if _c2.button("✖️ Đóng (ngưng quét kho)", key="stock_off_btn"):
+            st.session_state["stock_report_on"] = False
             st.rerun()
         try:
             _stock = load_stock()
