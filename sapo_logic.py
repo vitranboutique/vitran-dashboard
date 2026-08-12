@@ -3884,6 +3884,52 @@ def get_stock_by_sku(fetch_json, max_pages: int = 80) -> dict:
     return out
 
 
+def get_purchase_in_day(fetch_json, date_iso: str, max_pages: int = 20) -> dict:
+    """NHẬP TỪ NHÀ CUNG CẤP trong 1 NGÀY (giờ VN) — từ /admin/purchase_orders.json.
+
+    Mỗi dòng hàng có `received_quantity` (đã nhập) và `updated_on` (lúc bấm nhập kho).
+    Dòng nào received_quantity>0 và updated_on rơi vào đúng ngày → tính là NHẬP ngày đó.
+    Trả {"_ok": bool, "_blocked": bool, "rows": {SKU: {"qty": n, "ncc": [tên NCC]}}}."""
+    rows, ok, blocked = {}, False, False
+    for p in range(1, max_pages + 1):
+        try:
+            pos = (fetch_json("/admin/purchase_orders.json", limit=250, page=p) or {}).get("purchase_orders", [])
+        except Exception as e:
+            blocked = ("403" in str(e) or "Forbidden" in str(e) or "denied" in str(e).lower()
+                       or "Cloudflare" in str(e))
+            break
+        ok = True
+        if not pos:
+            break
+        for po in pos:
+            if po.get("cancelled_on"):
+                continue
+            _sup = po.get("supplier") or {}
+            _sup = (_sup.get("name") if isinstance(_sup, dict) else _sup) or ""
+            for li in (po.get("line_items") or []):
+                try:
+                    _q = int(round(float(li.get("received_quantity") or 0)))
+                except Exception:
+                    _q = 0
+                if _q <= 0:
+                    continue
+                _d = _vn_date_of(li.get("updated_on") or po.get("updated_on"))
+                if not _d or _d.isoformat() != date_iso:
+                    continue
+                _sku = str(li.get("sku") or "").strip().upper()
+                if not _sku:
+                    continue
+                r = rows.setdefault(_sku, {"qty": 0, "ncc": set()})
+                r["qty"] += _q
+                if _sup:
+                    r["ncc"].add(str(_sup).strip())
+        if len(pos) < 250:
+            break
+    for v in rows.values():
+        v["ncc"] = sorted(v["ncc"])
+    return {"_ok": ok, "_blocked": blocked, "rows": rows}
+
+
 def get_stock_io_day(fetch_json, date_iso: str, max_pages: int = 60) -> dict:
     """NHẬP / XUẤT theo SKU trong 1 NGÀY (giờ VN) — LẤY ĐÚNG NGUỒN SAPO: sổ kho
     (/admin/inventory_transactions.json), tức là CÙNG dữ liệu với "Báo cáo sổ kho" trên Sapo:

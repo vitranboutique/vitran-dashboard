@@ -1992,6 +1992,12 @@ def load_stock():
     return L.get_stock_by_sku(make_fetch_json(build_session()))
 
 
+@st.cache_data(ttl=300, show_spinner="Đang lấy đơn nhập hàng (NCC)…")
+def load_purchase_in(date_iso):
+    """Nhập từ NHÀ CUNG CẤP theo SKU trong 1 ngày (kèm tên NCC). Cache 5 phút."""
+    return L.get_purchase_in_day(make_fetch_json(build_session()), date_iso)
+
+
 @st.cache_data(ttl=300, show_spinner="Đang lấy xuất/nhập trong ngày…")
 def load_stock_io(date_iso):
     """Xuất (đơn bán) + Nhập (đơn nhập + NCC) theo SKU trong 1 ngày. Cache 5 phút."""
@@ -9130,7 +9136,8 @@ def _render_stock_report():
             load_stock.clear()
             load_stock_io.clear()      # phải xoá CẢ cache Nhập/Xuất, không thì bảng giữ số cũ
             try:
-                load_daily_report.clear()   # Xuất/Nhập lấy từ báo cáo ngày → phải làm mới luôn
+                load_purchase_in.clear()    # đơn nhập hàng NCC
+                load_daily_report.clear()   # Xuất/Hoàn lấy từ báo cáo ngày → phải làm mới luôn
             except Exception:
                 pass
             st.rerun()
@@ -9210,6 +9217,15 @@ def _render_stock_report():
             except Exception:
                 _xuat_rep, _nhap_rep, _rep_on = {}, {}, False
         _xuat_rep_on = _rep_on
+        # NHẬP KHO từ NHÀ CUNG CẤP (đơn nhập hàng REI…) — tách riêng với hàng hoàn.
+        try:
+            _pores = load_purchase_in(_date_iso) or {}
+        except Exception:
+            _pores = {}
+        _po = _pores.get("rows") or {}
+        if _pores.get("_blocked"):
+            st.warning("⚠️ Chưa lấy được **đơn nhập hàng từ NCC** (Sapo chặn quyền API `purchase_orders`) "
+                       "→ cột *Nhập kho* trống, phần đó sẽ hiện ở cột *lệch*.")
         if _rep_on:
             st.success(f"✅ **Xuất** = shipper thực nhận hôm nay ({sum(_xuat_rep.values()):,} SP · {len(_xuat_rep)} SKU) · "
                        f"**Nhập** = hàng hoàn đã nhập kho hôm nay ({sum(_nhap_rep.values()):,} SP · {len(_nhap_rep)} SKU) "
@@ -9242,7 +9258,7 @@ def _render_stock_report():
 
         def _agg(_items):
             # _items = list (sku_upper, stock_dict) → cộng tồn + nhập/xuất (sổ kho Sapo).
-            _oh = _av = _x = _n = 0
+            _oh = _av = _x = _n = _nk = 0     # _n = hàng HOÀN · _nk = NHẬP KHO từ NCC
             _ly = set()
             _dau_snap, _has_snap = 0, False
             for _su, _dd in _items:
@@ -9253,7 +9269,9 @@ def _render_stock_report():
                 # Ưu tiên số XUẤT của Báo cáo cuối ngày (shipper thực nhận) — chuẩn nhất.
                 _x += int(_xuat_rep.get(_k, 0) or 0) if _rep_on else int(_iod.get("xuat", 0) or 0)
                 _n += int(_nhap_rep.get(_k, 0) or 0) if _rep_on else int(_iod.get("nhap", 0) or 0)
-                for _c in (_iod.get("ly_do") or []):
+                _pod = _po.get(_k) or {}
+                _nk += int(_pod.get("qty", 0) or 0)
+                for _c in (_pod.get("ncc") or []):
                     _ly.add(_c)
                 if _k in _snap_prev:
                     _dau_snap += int(_snap_prev.get(_k) or 0)
@@ -9262,9 +9280,9 @@ def _render_stock_report():
             #   Xuất  = từ Báo cáo cuối ngày (shipper thực nhận)
             #   Nhập  = hàng hoàn nhập kho (API đơn nhập NCC đang bị Sapo chặn → phần đó còn thiếu)
             #   Lệch  = Cuối − (Đầu + Nhập − Xuất): khác 0 nghĩa là có nhập NCC / chỉnh kho chưa lấy được.
-            _dau = _dau_snap if _has_snap else (_oh + _x - _n)
-            _lech = _oh - (_dau + _n - _x) if _has_snap else 0
-            return {"dau": _dau, "dau_snap": _has_snap, "nhap": _n, "lech": _lech,
+            _dau = _dau_snap if _has_snap else (_oh + _x - _n - _nk)
+            _lech = _oh - (_dau + _n + _nk - _x) if _has_snap else 0
+            return {"dau": _dau, "dau_snap": _has_snap, "nhap": _n, "nhapkho": _nk, "lech": _lech,
                     "xuat": _x, "cuoi": _oh, "av": _av, "ncc": sorted(_ly)[:2]}
 
         _rows = []
@@ -9315,25 +9333,31 @@ def _render_stock_report():
                 for _r in _part:
                     if _r["g"] != _pv:
                         _pv = _r["g"]
-                        _tr += f"<tr><td colspan='7' class='g'>▸ {_e2(_r['g'])}</td></tr>"
-                    _ncc = ("<div class='ncc'>" + _e2(", ".join(_r["ncc"])) + "</div>") if _r["ncc"] else ""
-                    if _r.get("lech"):    # chênh chưa giải thích được = nhập NCC / chỉnh kho (API bị chặn)
-                        _ncc = f"<div class='ncc'>lệch {_r['lech']:+,}</div>"
+                        _tr += f"<tr><td colspan='8' class='g'>▸ {_e2(_r['g'])}</td></tr>"
+                    # Chú thích dưới cột Nhập kho: tên NCC; nếu số chưa cân thì ghi DƯ / THIẾU.
+                    _sub = ("<div class='ncc'>" + _e2(", ".join(_r["ncc"])) + "</div>") if _r["ncc"] else ""
+                    _lc = _r.get("lech") or 0
+                    if _lc:
+                        _sub = (f"<div class='ncc'>{'dư' if _lc > 0 else 'thiếu'} {abs(_lc):,}</div>")
                     # Chưa có quyền đọc kho → để TRỐNG (—) thay vì số dễ hiểu nhầm "không phát sinh".
                     _c_dau = "—" if _io_blocked else f"{_r['dau']:,}"
-                    _c_nhap = "—" if _io_blocked else f"{_r['nhap']:,}{_ncc}"
+                    _c_hoan = "—" if _io_blocked else f"{_r['nhap']:,}"
+                    _c_nk = "—" if _io_blocked else f"{_r.get('nhapkho', 0):,}{_sub}"
                     _c_xuat = "—" if _io_blocked else f"{_r['xuat']:,}"
                     _tr += (f"<tr><td>{_e2(_r['sku'])}</td>"
                             f"<td class='n'>{_c_dau}</td>"
-                            f"<td class='n'>{_c_nhap}</td>"
+                            f"<td class='n'>{_c_hoan}</td>"
+                            f"<td class='n'>{_c_nk}</td>"
                             f"<td class='n'>{_c_xuat}</td>"
                             f"<td class='n'>{_r['cuoi']:,}</td>"
                             f"<td class='n'>{_r['av']:,}</td>"
                             f"<td class='blank'></td></tr>")
                 return ("<table><colgroup><col class='c-sku'><col class='c-num'><col class='c-num'>"
-                        "<col class='c-num'><col class='c-num'><col class='c-num'><col class='c-cnt'></colgroup>"
-                        "<thead><tr><th>SKU</th><th>Tồn<br>đầu</th><th>Nhập</th><th>Xuất</th>"
-                        "<th>Tồn<br>cuối</th><th>Có thể<br>bán</th><th>Thực tế đếm</th></tr></thead>"
+                        "<col class='c-num'><col class='c-num'><col class='c-num'><col class='c-num'>"
+                        "<col class='c-cnt'></colgroup>"
+                        "<thead><tr><th>SKU</th><th>Tồn<br>đầu</th><th>Hoàn</th><th>Nhập<br>kho</th>"
+                        "<th>Xuất</th><th>Tồn<br>cuối</th><th>Có thể<br>bán</th>"
+                        "<th>Thực tế đếm</th></tr></thead>"
                         "<tbody>" + _tr + "</tbody></table>")
             def _two_cols(_part):
                 """Chia 2 cột nhưng CẮT ĐÚNG RANH GIỚI NHÓM — không để 1 nhóm bị xé đôi
@@ -9381,7 +9405,7 @@ def _render_stock_report():
                     "table{border-collapse:collapse;width:100%;font-size:13px;table-layout:fixed}"
                     "th,td{border:1px solid #999;padding:3px 6px;overflow-wrap:anywhere;line-height:1.22}"
                     "th{background:#e8ecf3;text-align:center;font-size:12px;line-height:1.2;font-weight:700}"
-                    "col.c-sku{width:26%}col.c-num{width:11.5%}col.c-cnt{width:16.5%}"
+                    "col.c-sku{width:23%}col.c-num{width:10.5%}col.c-cnt{width:14%}"
                     "td.n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}"
                     "td.g{font-weight:800;background:#dfe6f3;text-align:left;font-size:13px;letter-spacing:.2px}"
                     "td.blank{background:#fffdf0}tr{page-break-inside:avoid}thead{display:table-header-group}"
@@ -9399,8 +9423,10 @@ def _render_stock_report():
                         f"<div class='meta'>Ngày: <b>{_today}</b><br>NV kiểm: ______________</div></div>"
                         + _two_cols(_part)
                         + f"<div class='foot'>{len(_part)} dòng · "
-                        + ("Nhập/Xuất: CHƯA có quyền đọc kho Sapo"
-                           if _io_blocked else f"Nhập {sum(r['nhap'] for r in _part):,} · Xuất {sum(r['xuat'] for r in _part):,}")
+                        + ("Nhập/Xuất: CHƯA có quyền đọc kho Sapo" if _io_blocked else
+                           f"Hoàn {sum(r['nhap'] for r in _part):,} · "
+                           f"Nhập kho {sum(r.get('nhapkho', 0) for r in _part):,} · "
+                           f"Xuất {sum(r['xuat'] for r in _part):,}")
                         + " · cột <b>Thực tế đếm</b> để NV đếm rồi điền tay.</div></div>")
             _content = (_page("PHIẾU XUẤT NHẬP TỒN + KIỂM KÊ", _rows_fx)
                         + _page("PHIẾU KIỂM KÊ — MÃ BỔ SUNG (chọn thêm)", _rows_ex, _brk=bool(_rows_fx)))
