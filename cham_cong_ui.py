@@ -410,10 +410,10 @@ def render_admin():
                 st.rerun()
     with tab1:
         _rules_expander()
+        # THU GỌN từng NV — chủ shop bấm tên ai thì mở người đó, khỏi xổ hết cho rối.
         for emp in CC.EMPLOYEES:
-            st.subheader(CC.EMPLOYEES[emp]["name"])
-            _salary_block(emp, y, mth, upto)
-            st.divider()
+            with st.expander(f"👤 {CC.EMPLOYEES[emp]['name']}", expanded=False):
+                _salary_block(emp, y, mth, upto)
     with tab_edit:
         flash = st.session_state.pop("edit_flash", None)
         if flash:
@@ -518,8 +518,9 @@ def render_admin():
             else:
                 st.error(msg)
     with tab2:
-        for emp in CC.EMPLOYEES:
-            st.subheader(CC.EMPLOYEES[emp]["name"])
+      # THU GỌN từng NV — bấm tên ai mới mở ảnh selfie của người đó.
+      for emp in CC.EMPLOYEES:
+        with st.expander(f"👤 {CC.EMPLOYEES[emp]['name']}", expanded=False):
             days = CC.month_selfies(emp, y, mth)
             if not days:
                 st.caption("Chưa có dữ liệu.")
