@@ -9197,9 +9197,16 @@ def _render_stock_report():
         if _pick_day == _vn_now:
             try:
                 _drep = load_daily_report() or {}
-                _xuat_rep = _drep.get("xuat_by_sku") or {}
+                # đọc được ở CẢ 2 vị trí (tầng ngoài + trong "funnel") → không phụ thuộc bản deploy
+                _xuat_rep = (_drep.get("xuat_by_sku")
+                             or (_drep.get("funnel") or {}).get("xuat_by_sku") or {})
                 _nhap_rep = (_drep.get("nhap_kho") or {}).get("nhap_by_sku") or {}
                 _rep_on = True
+                _dv_nhan = int(((_drep.get("funnel") or {}).get("dvvc_nhan")) or 0)
+                if _dv_nhan and not _xuat_rep:
+                    st.warning(f"⚠️ Báo cáo có **{_dv_nhan} đơn shipper thực nhận** nhưng chưa có số theo SKU "
+                               "→ app đang giữ **bản báo cáo cũ trong bộ nhớ**. Bấm **🔄 Tải lại tồn kho** "
+                               "(nếu vẫn vậy thì bản mới chưa deploy xong, chờ 1–2 phút rồi bấm lại).")
             except Exception:
                 _xuat_rep, _nhap_rep, _rep_on = {}, {}, False
         _xuat_rep_on = _rep_on
