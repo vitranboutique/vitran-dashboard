@@ -1,0 +1,25 @@
+name: Chốt tồn kho cuối ngày
+
+# Chạy 23:40 giờ VN mỗi ngày (16:40 UTC) — SAU khi kho đã nhập/xuất xong trong ngày,
+# nên mốc chốt đúng là TỒN CUỐI NGÀY (gồm cả hàng nhập buổi tối). Hôm sau app lấy mốc
+# này làm "Tồn đầu ngày". Có thể chạy tay ở tab Actions.
+on:
+  schedule:
+    - cron: "40 16 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - name: Chốt tồn + đẩy Gist
+        env:
+          SAPO_API_KEY: ${{ secrets.SAPO_API_KEY }}
+          SAPO_API_SECRET: ${{ secrets.SAPO_API_SECRET }}
+          GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
+        run: python snapshot_stock.py

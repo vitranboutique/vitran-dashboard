@@ -9196,8 +9196,8 @@ def _render_stock_report():
                     "· ⚠️ **CHƯA gồm**: nhập từ nhà cung cấp + điều chỉnh kho tay (Sapo chặn API 403) → hôm nào có 2 việc này thì lệch sổ kho.")
             if not _iores.get("_errs") and not _iores.get("_orders_xuat"):
                 st.warning("⚠️ Hôm nay CHƯA có đơn nào shipper xác nhận lấy → Xuất = 0 là đúng. "
-                           "Nếu *Tồn đầu* khác *Tồn cuối* thì phần chênh đó phát sinh SAU lúc chốt tồn hôm qua "
-                           "(app chốt tồn khi mở trang lần đầu trong ngày, không phải đúng 23h59).")
+                           "Tồn kho được **chốt tự động lúc 23h40 mỗi đêm** (sau khi kho nhập/xuất xong), "
+                           "nên hàng nhập buổi tối VẪN được tính vào tồn cuối ngày hôm đó.")
 
         # TỒN CUỐI hôm trước = TỒN ĐẦU hôm nay (mốc đã chốt). Chưa có mốc → suy ra: cuối + xuất − nhập.
         _snap_prev = {}
@@ -9249,8 +9249,9 @@ def _render_stock_report():
                     _by.setdefault((_sp.get("size") or "").upper(), []).append((_su, _sp, _d))
                 for _sz in sorted(_by, key=lambda s: _SIZE_ORDER.get(s, 7)):
                     _items = _by[_sz]
-                    _cls = {(_sp.get("colorCode") or "") for _su, _sp, _d in _items}
-                    _lbl = (f"{_pc}-{_sz}" if _sz else _pc) + (f" ({len(_cls)} màu)" if len(_cls) > 1 else "")
+                    # Mã gộp (CVBC…) chỉ ghi ĐÚNG MÃ, KHÔNG ghi "(N màu)" — muốn xem riêng màu
+                    # thì chọn thêm mã màu ở ô "➕".
+                    _lbl = f"{_pc}-{_sz}" if _sz else _pc
                     _row = _agg([(_su, _d) for _su, _sp, _d in _items])
                     _row.update({"g": _g, "sku": _lbl, "fx": _is_fixed})
                     _rows.append(_row)
