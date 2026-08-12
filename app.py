@@ -9292,6 +9292,50 @@ def _render_stock_report():
                            "Tồn kho được **chốt tự động lúc 23h40 mỗi đêm** (sau khi kho nhập/xuất xong), "
                            "nên hàng nhập buổi tối VẪN được tính vào tồn cuối ngày hôm đó.")
 
+        # 🔁 TỰ CHỐT LẠI (không cần ai bấm): nếu ngày đang xem CHƯA phát sinh bán/hoàn nào
+        #    thì tồn Sapo hiện tại CHÍNH LÀ tồn cuối ngày hôm trước → ghi đè mốc chốt cho chuẩn.
+        #    An toàn tuyệt đối vì chưa có biến động nào để mất. Lo trường hợp lịch 23h40 lỡ nhịp.
+        if (_levels_ok and picklog.configured() and _rep_on
+                and not sum(_xuat_rep.values()) and not sum(_nhap_rep.values())):
+            _prev_iso = (_pick_day - timedelta(days=1)).isoformat()
+            _auto_key = f"_stk_autobase_{_prev_iso}"
+            if not st.session_state.get(_auto_key):
+                try:
+                    _cur = {k: int(v.get("on_hand", 0) or 0) for k, v in _skus.items()}
+                    _snap_old = picklog.read_stock_snapshot(_prev_iso) or {}
+                    _old = _snap_old.get("on_hand") or {}
+                    if _cur and _cur != _old:
+                        # GHI LẠI LỆCH của mốc cũ để sáng ra còn kiểm: mã nào đổi bao nhiêu.
+                        _dif = {k: _cur[k] - int(_old.get(k) or 0)
+                                for k in _cur if _cur[k] != int(_old.get(k) or 0)}
+                        if _old and _dif:
+                            try:
+                                picklog.save_stock_lech(_prev_iso, _dif)
+                            except Exception:
+                                pass
+                        if picklog.save_stock_snapshot(
+                                _prev_iso, _cur,
+                                at=(datetime.now(timezone.utc) + timedelta(hours=7)).strftime(
+                                    "%H:%M %d/%m/%Y") + " (tự chốt lại — ngày chưa phát sinh)"):
+                            st.session_state[_auto_key] = True
+                            st.rerun()
+                    st.session_state[_auto_key] = True
+                except Exception:
+                    st.session_state[_auto_key] = True
+
+        # LỆCH đã ghi nhận của NGÀY HÔM TRƯỚC → nhắc để sáng ra kiểm lại.
+        _lech_prev, _lech_prev_txt = {}, ""
+        if picklog.configured():
+            try:
+                _lech_prev = picklog.read_stock_lech((_pick_day - timedelta(days=1)).isoformat()) or {}
+            except Exception:
+                _lech_prev = {}
+        if _lech_prev:
+            _lp = sorted(_lech_prev.items(), key=lambda kv: -abs(int(kv[1] or 0)))
+            _lech_prev_txt = " · ".join(f"{k} {int(v):+,}" for k, v in _lp[:10])
+            st.warning(f"⚠️ **Hôm trước ({(_pick_day - timedelta(days=1)).strftime('%d/%m')}) có lệch "
+                       f"{len(_lech_prev)} mã** — cần kiểm lại: {_lech_prev_txt}")
+
         # TỒN CUỐI hôm trước = TỒN ĐẦU hôm nay (mốc đã chốt). Chưa có mốc → suy ra: cuối + xuất − nhập.
         _snap_prev = {}
         if picklog.configured():
@@ -9487,7 +9531,10 @@ def _render_stock_report():
                     return ""
                 return (f"<div class='wrap{' brk' if _brk else ''}'><div class='hd'><div>"
                         f"<div class='ttl'>{_title}</div>"
-                        f"<div class='sub'><b>VITRAN BOUTIQUE</b> · {_dau_src} · "
+                        + (f"<div class='sub' style='color:#b45309'><b>⚠️ Hôm trước "
+                           f"({(_pick_day - timedelta(days=1)).strftime('%d/%m')}) lệch:</b> "
+                           f"{_e2(_lech_prev_txt)} — cần kiểm lại</div>" if _lech_prev_txt else "")
+                        + f"<div class='sub'><b>VITRAN BOUTIQUE</b> · {_dau_src} · "
                         "<b>TỒN SAPO</b> là số chuẩn · "
                         "<b>Lệch</b> = Tồn Sapo − (Tồn đầu + Hoàn − Bán ra), khác 0 là kho có "
                         "thay đổi ngoài bán/hoàn</div></div>"

@@ -908,6 +908,30 @@ def read_stock_snapshot(day_iso: str):
     return v if isinstance(v, dict) else None
 
 
+def read_stock_lech(day_iso: str) -> dict:
+    """LỆCH đã phát hiện của 1 ngày: {SKU: chênh} (dương = tồn dôi, âm = hụt)."""
+    if not day_iso:
+        return {}
+    d = _read_gist_file(f"vitran_stock_lech_{day_iso}.json")
+    v = (d or {}).get("items") if isinstance(d, dict) else None
+    return v if isinstance(v, dict) else {}
+
+
+def save_stock_lech(day_iso: str, items: dict) -> bool:
+    """Ghi lệch của ngày (để hôm sau còn kiểm lại). Gộp với lệch đã ghi trước đó."""
+    if not day_iso or not isinstance(items, dict) or not items:
+        return False
+    cur = read_stock_lech(day_iso)
+    for k, v in items.items():
+        try:
+            cur[str(k)] = int(cur.get(str(k), 0)) + int(v or 0)
+        except Exception:
+            pass
+    return _write_gist_file(f"vitran_stock_lech_{day_iso}.json",
+                            {"items": {k: v for k, v in cur.items() if v},
+                             "at": _now_vn().strftime("%H:%M %d/%m/%Y")})
+
+
 def read_stock_confirm(day_iso: str) -> dict:
     """NV đã XÁC NHẬN nhập kho bao nhiêu trong ngày: {SKU: {"qty": n, "note": "NCC..."}}."""
     if not day_iso:
