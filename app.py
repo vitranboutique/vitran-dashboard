@@ -1986,13 +1986,13 @@ def load_ttkh_saved_by_day():
             for _d in (set(_codes) | set(_extra))}
 
 
-@st.cache_data(ttl=300, show_spinner="Đang lấy tồn kho Sapo…")
+@st.cache_data(ttl=900, show_spinner="Đang lấy tồn kho Sapo…")
 def load_stock():
     """Tồn kho theo SKU (2 loại: thực tế + có thể bán). Cache 5 phút."""
     return L.get_stock_by_sku(make_fetch_json(build_session()))
 
 
-@st.cache_data(ttl=300, show_spinner="Đang lấy đơn nhập hàng (NCC)…")
+@st.cache_data(ttl=900, show_spinner="Đang lấy đơn nhập hàng (NCC)…")
 def load_purchase_in(date_iso):
     """Nhập từ NHÀ CUNG CẤP theo SKU trong 1 ngày (kèm tên NCC). Cache 5 phút."""
     return L.get_purchase_in_day(make_fetch_json(build_session()), date_iso)
@@ -9193,10 +9193,9 @@ def _render_stock_report():
                     f"{_vn_now.strftime('%d/%m/%Y')}). Hoàn/Nhập kho/Xuất là của NGÀY ĐÓ; "
                     "riêng *Tồn cuối / Có thể bán* LUÔN là tồn HIỆN TẠI (Sapo không lưu lịch sử tồn). "
                     "Muốn xem hôm nay thì đổi ô ngày ở trên.")
-        try:
-            _iores = load_stock_io(_date_iso) or {}
-        except Exception:
-            _iores = {}
+        # ⚠️ KHÔNG gọi load_stock_io nữa: nó quét lại TOÀN BỘ đơn hàng (~80 request) trong khi
+        # Xuất/Hoàn đã lấy sẵn từ Báo cáo cuối ngày → gọi thêm chỉ tổ làm Cloudflare chặn IP.
+        _iores = {}
         _io = _iores.get("rows") or {}
         _io_blocked = bool(_iores.get("_blocked"))
         _io_mode = str(_iores.get("_mode") or "")

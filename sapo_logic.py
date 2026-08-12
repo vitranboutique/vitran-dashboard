@@ -3797,7 +3797,7 @@ def get_sales_analysis(fetch_json, period="thangnay", _v=None):
     }
 
 
-def get_stock_by_sku(fetch_json, max_pages: int = 80) -> dict:
+def get_stock_by_sku(fetch_json, max_pages: int = 12) -> dict:
     """Tồn kho theo SKU từ Sapo (/admin/products.json). Gộp mọi kho (location).
     Trả {SKU_UPPER: {"on_hand": tồn thực tế, "available": có thể bán, "committed": giữ hàng, "name": tên}}.
     Bền với nhiều dạng field khác nhau của Sapo (inventories[] hoặc field phẳng).
@@ -3846,7 +3846,7 @@ def get_stock_by_sku(fetch_json, max_pages: int = 80) -> dict:
     # ── 2) inventory_levels.json: nguồn THẬT của tồn kho — on_hand (tồn thực tế) /
     #       available (có thể bán) / committed (đang đặt). Gộp mọi kho (location_id). ──
     lv_ok, lv, lv_capped = False, {}, False
-    for p in range(1, 81):        # tối đa 80 trang (20k dòng tồn); chỉ chạy khi NV bấm nút
+    for p in range(1, 13):        # shop chỉ ~53 SP (~1k dòng tồn) → 12 trang là quá đủ, tránh dội API
         try:
             levels = (fetch_json("/admin/inventory_levels.json", limit=250, page=p) or {}).get("inventory_levels", [])
         except Exception:
@@ -3864,7 +3864,7 @@ def get_stock_by_sku(fetch_json, max_pages: int = 80) -> dict:
             a["committed"] += _n(it.get("committed"))
         if len(levels) < 250:
             break
-        if p == 80:
+        if p == 12:
             lv_capped = True      # còn dòng tồn CHƯA quét hết → số có thể THIẾU
     if lv_ok:
         for k, a in lv.items():
@@ -3884,7 +3884,7 @@ def get_stock_by_sku(fetch_json, max_pages: int = 80) -> dict:
     return out
 
 
-def get_purchase_in_day(fetch_json, date_iso: str, max_pages: int = 20) -> dict:
+def get_purchase_in_day(fetch_json, date_iso: str, max_pages: int = 6) -> dict:
     """NHẬP TỪ NHÀ CUNG CẤP trong 1 NGÀY (giờ VN) — từ /admin/purchase_orders.json.
 
     Mỗi dòng hàng có `received_quantity` (đã nhập) và `updated_on` (lúc bấm nhập kho).
