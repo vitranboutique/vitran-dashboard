@@ -9224,8 +9224,11 @@ def _render_stock_report():
             _pores = {}
         _po = _pores.get("rows") or {}
         if _pores.get("_blocked"):
-            st.warning("⚠️ Chưa lấy được **đơn nhập hàng từ NCC** (Sapo chặn quyền API `purchase_orders`) "
-                       "→ cột *Nhập kho* sẽ trống.")
+            st.warning("⚠️ Chưa đọc được **đơn nhập hàng (NCC)** nên KHÔNG có tên nhà cung cấp. "
+                       "Cột *Nhập kho* vẫn có số — app tự tính bằng cân đối kho "
+                       "(Tồn cuối − Tồn đầu − Hoàn + Xuất), số vẫn đúng.\n\n"
+                       f"Sapo trả về: `{_pores.get('_err') or 'không rõ'}`\n\n"
+                       "→ Muốn hiện TÊN NCC thì cấp quyền đọc **Đơn nhập hàng / Kho** cho API key trong Sapo.")
         elif _po:
             _nccs = sorted({_c for _v in _po.values() for _c in (_v.get("ncc") or [])})
             st.success(f"📥 **Nhập kho từ NCC ngày này:** {sum(int(v.get('qty', 0) or 0) for v in _po.values()):,} SP "
@@ -9288,7 +9291,14 @@ def _render_stock_report():
             #   Lệch  = Cuối − (Đầu + Nhập − Xuất): khác 0 nghĩa là có nhập NCC / chỉnh kho chưa lấy được.
             _dau = _dau_snap if _has_snap else (_oh + _x - _n - _nk)
             _lech = _oh - (_dau + _n + _nk - _x) if _has_snap else 0
-            return {"dau": _dau, "dau_snap": _has_snap, "nhap": _n, "nhapkho": _nk, "lech": _lech,
+            # Không đọc được đơn nhập NCC (Sapo chặn quyền) → SUY RA từ cân đối kho:
+            #   Nhập kho = Tồn cuối − Tồn đầu − Hoàn + Xuất
+            # Giờ số này CHÍNH XÁC vì Tồn đầu/cuối, Hoàn, Xuất đều là số thật.
+            _nk_suyra = False
+            if _has_snap and not _nk and _lech > 0:
+                _nk, _lech, _nk_suyra = _lech, 0, True
+            return {"dau": _dau, "dau_snap": _has_snap, "nhap": _n, "nhapkho": _nk,
+                    "nk_suyra": _nk_suyra, "lech": _lech,
                     "xuat": _x, "cuoi": _oh, "av": _av, "ncc": sorted(_ly)[:2]}
 
         _rows = []

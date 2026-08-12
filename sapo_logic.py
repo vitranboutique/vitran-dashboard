@@ -3890,13 +3890,13 @@ def get_purchase_in_day(fetch_json, date_iso: str, max_pages: int = 20) -> dict:
     Mỗi dòng hàng có `received_quantity` (đã nhập) và `updated_on` (lúc bấm nhập kho).
     Dòng nào received_quantity>0 và updated_on rơi vào đúng ngày → tính là NHẬP ngày đó.
     Trả {"_ok": bool, "_blocked": bool, "rows": {SKU: {"qty": n, "ncc": [tên NCC]}}}."""
-    rows, ok, blocked = {}, False, False
+    rows, ok, blocked, err = {}, False, False, ""
     for p in range(1, max_pages + 1):
         try:
             pos = (fetch_json("/admin/purchase_orders.json", limit=250, page=p) or {}).get("purchase_orders", [])
         except Exception as e:
-            blocked = ("403" in str(e) or "Forbidden" in str(e) or "denied" in str(e).lower()
-                       or "Cloudflare" in str(e))
+            err = f"{type(e).__name__}: {str(e)[:160]}"
+            blocked = True
             break
         ok = True
         if not pos:
@@ -3927,7 +3927,7 @@ def get_purchase_in_day(fetch_json, date_iso: str, max_pages: int = 20) -> dict:
             break
     for v in rows.values():
         v["ncc"] = sorted(v["ncc"])
-    return {"_ok": ok, "_blocked": blocked, "rows": rows}
+    return {"_ok": ok, "_blocked": blocked, "_err": err, "rows": rows}
 
 
 def get_stock_io_day(fetch_json, date_iso: str, max_pages: int = 60) -> dict:
