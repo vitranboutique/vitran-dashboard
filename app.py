@@ -9188,35 +9188,37 @@ def _render_stock_report():
                                   min_value=_vn_now - timedelta(days=60), max_value=_vn_now,
                                   format="DD/MM/YYYY", key="stock_io_date")
         _date_iso = _pick_day.isoformat()
-        # Mốc chốt đêm trước bị thiếu/cũ (vd lịch tự động chưa chạy) → cho chủ shop đặt lại ngay:
-        # lấy TỒN SAPO HIỆN TẠI làm TỒN ĐẦU của ngày đang xem. Chỉ nên bấm khi trong ngày CHƯA
-        # phát sinh bán/hoàn (vd sáng sớm), nếu không sẽ mất phần đã phát sinh.
-        # ⚠️ _can_edit_return_notes() nằm TRONG _render_returns() → gọi ở đây là NameError.
-        #    Trang tồn kho dùng biến quyền cấp module: chỉ CHỦ SHOP được đặt lại mốc chốt.
-        if _levels_ok and picklog.configured() and _is_owner:
-            with st.expander("📌 Đặt lại Tồn đầu ngày (khi mốc chốt đêm trước bị thiếu)", expanded=False):
-                st.caption(f"Sẽ ghi **tồn Sapo hiện tại** thành *Tồn đầu* của ngày "
-                           f"**{_pick_day.strftime('%d/%m/%Y')}**, cột Lệch sẽ về 0. "
-                           "Chỉ bấm khi hôm đó CHƯA bán/hoàn gì (vd sáng sớm), nếu không sẽ mất phần đã phát sinh.")
-                if st.button("📌 Lấy tồn Sapo hiện tại làm Tồn đầu ngày này", key="stk_rebase"):
-                    try:
-                        if picklog.save_stock_snapshot(
-                                (_pick_day - timedelta(days=1)).isoformat(),
-                                {k: int(v.get("on_hand", 0) or 0) for k, v in _skus.items()},
-                                at=(datetime.now(timezone.utc) + timedelta(hours=7)).strftime(
-                                    "%H:%M %d/%m/%Y") + " (đặt lại tay)"):
-                            st.success("Đã đặt lại Tồn đầu. Bảng sẽ tính lại.")
-                            st.rerun()
-                        else:
-                            st.error("Lưu lỗi — kiểm tra kho lưu Gist.")
-                    except Exception as _e:
-                        st.error(f"Lỗi: {_e}")
+        # Mốc chốt đêm trước thiếu/cũ (lịch 23h40 chưa chạy) → cho chủ shop đặt lại NGAY.
+        # Hiện RÕ (không giấu trong expander) + cho biết mốc đang dùng chốt lúc nào.
+        if _levels_ok and picklog.configured():
+            try:
+                _snap_info = picklog.read_stock_snapshot((_pick_day - timedelta(days=1)).isoformat()) or {}
+            except Exception:
+                _snap_info = {}
+            _snap_at = str(_snap_info.get("at") or "")
+            _cA, _cB = st.columns([3, 2])
+            if _snap_at:
+                _cA.caption(f"📌 Tồn đầu đang dùng: mốc chốt lúc **{_snap_at}** "
+                            f"({len(_snap_info.get('on_hand') or {})} SKU).")
+            else:
+                _cA.caption("📌 **Chưa có mốc chốt** cho ngày hôm trước → cột Tồn đầu đang suy ra tạm.")
+            if _is_owner and _cB.button("📌 Đặt Tồn đầu = tồn Sapo hiện tại", key="stk_rebase",
+                                        use_container_width=True):
+                try:
+                    if picklog.save_stock_snapshot(
+                            (_pick_day - timedelta(days=1)).isoformat(),
+                            {k: int(v.get("on_hand", 0) or 0) for k, v in _skus.items()},
+                            at=(datetime.now(timezone.utc) + timedelta(hours=7)).strftime(
+                                "%H:%M %d/%m/%Y") + " (đặt lại tay)"):
+                        st.success("Đã đặt lại Tồn đầu = tồn Sapo hiện tại. Cột Lệch sẽ về 0.")
+                        st.rerun()
+                    else:
+                        st.error("Lưu lỗi — kiểm tra kho lưu Gist (picklog).")
+                except Exception as _e:
+                    st.error(f"Lỗi khi lưu: {_e}")
+            if _is_owner:
+                _cB.caption("Chỉ bấm khi ngày đó CHƯA bán/hoàn gì (vd sáng sớm).")
 
-        if _pick_day != _vn_now:
-            st.info(f"📅 Đang xem ngày **{_pick_day.strftime('%d/%m/%Y')}** (hôm nay là "
-                    f"{_vn_now.strftime('%d/%m/%Y')}). Hoàn/Nhập kho/Xuất là của NGÀY ĐÓ; "
-                    "riêng *Tồn cuối / Có thể bán* LUÔN là tồn HIỆN TẠI (Sapo không lưu lịch sử tồn). "
-                    "Muốn xem hôm nay thì đổi ô ngày ở trên.")
         # ⚠️ KHÔNG gọi load_stock_io nữa: nó quét lại TOÀN BỘ đơn hàng (~80 request) trong khi
         # Xuất/Hoàn đã lấy sẵn từ Báo cáo cuối ngày → gọi thêm chỉ tổ làm Cloudflare chặn IP.
         _iores = {}
