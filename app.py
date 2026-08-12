@@ -9129,6 +9129,10 @@ def _render_stock_report():
         if _c1.button("🔄 Tải lại tồn kho", key="stock_reload"):
             load_stock.clear()
             load_stock_io.clear()      # phải xoá CẢ cache Nhập/Xuất, không thì bảng giữ số cũ
+            try:
+                load_daily_report.clear()   # Xuất/Nhập lấy từ báo cáo ngày → phải làm mới luôn
+            except Exception:
+                pass
             st.rerun()
         if _c2.button("✖️ Đóng (ngưng quét kho)", key="stock_off_btn"):
             st.session_state["stock_report_on"] = False
@@ -9188,14 +9192,23 @@ def _render_stock_report():
         _io_mode = str(_iores.get("_mode") or "")
         # XUẤT lấy THẲNG từ Báo cáo vận hành cuối ngày (cột "Shipper thực nhận") — cùng nguồn
         # nên số luôn khớp báo cáo. Chỉ áp cho HÔM NAY (báo cáo chỉ tính ngày hiện tại).
-        _xuat_rep, _xuat_rep_on = {}, False
+        # NHẬP lấy từ báo cáo "hàng hoàn đã nhập kho trong ngày" (cùng nguồn với mục Nhập kho).
+        _xuat_rep, _nhap_rep, _rep_on = {}, {}, False
         if _pick_day == _vn_now:
             try:
-                _xuat_rep = (load_daily_report() or {}).get("xuat_by_sku") or {}
-                _xuat_rep_on = bool(_xuat_rep)
+                _drep = load_daily_report() or {}
+                _xuat_rep = _drep.get("xuat_by_sku") or {}
+                _nhap_rep = (_drep.get("nhap_kho") or {}).get("nhap_by_sku") or {}
+                _rep_on = True
             except Exception:
-                _xuat_rep, _xuat_rep_on = {}, False
-        if _io_mode == "tu_tinh":
+                _xuat_rep, _nhap_rep, _rep_on = {}, {}, False
+        _xuat_rep_on = _rep_on
+        if _rep_on:
+            st.success(f"✅ **Xuất** = shipper thực nhận hôm nay ({sum(_xuat_rep.values()):,} SP · {len(_xuat_rep)} SKU) · "
+                       f"**Nhập** = hàng hoàn đã nhập kho hôm nay ({sum(_nhap_rep.values()):,} SP · {len(_nhap_rep)} SKU) "
+                       "— cùng nguồn với Báo cáo vận hành cuối ngày nên số luôn khớp. "
+                       "Cột *lệch* (nếu có) = nhập từ NCC / điều chỉnh kho tay, Sapo chưa cho lấy qua API.")
+        elif _io_mode == "tu_tinh":
             if _iores.get("_errs"):
                 st.error("❌ **Quét đơn để tính Xuất bị LỖI** (nên cột Xuất mới ra 0):\n\n- "
                          + "\n- ".join(_iores["_errs"]))
@@ -9231,8 +9244,8 @@ def _render_stock_report():
                 _av += int(_dd.get("available", 0) or 0)
                 _iod = _io.get(_k) or {}
                 # Ưu tiên số XUẤT của Báo cáo cuối ngày (shipper thực nhận) — chuẩn nhất.
-                _x += int(_xuat_rep.get(_k, 0) or 0) if _xuat_rep_on else int(_iod.get("xuat", 0) or 0)
-                _n += int(_iod.get("nhap", 0) or 0)
+                _x += int(_xuat_rep.get(_k, 0) or 0) if _rep_on else int(_iod.get("xuat", 0) or 0)
+                _n += int(_nhap_rep.get(_k, 0) or 0) if _rep_on else int(_iod.get("nhap", 0) or 0)
                 for _c in (_iod.get("ly_do") or []):
                     _ly.add(_c)
                 if _k in _snap_prev:

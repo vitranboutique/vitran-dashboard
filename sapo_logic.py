@@ -2321,10 +2321,15 @@ def get_returns_received_today(fetch_json, scan_days: int = 60, max_pages: int =
 
     recv = [x for x in rows if _restocked_today(x)]
     by_source, so_sp, detail = {}, 0, []
+    nhap_by_sku = {}          # {SKU: SL} — hàng hoàn ĐÃ NHẬP KHO ngày đó (cho phiếu Xuất Nhập Tồn)
     for x in recv:
         s = x.get("order_source") or "Khác"
         by_source[s] = by_source.get(s, 0) + 1
         so_sp += int(round(x.get("total_quantity") or 0))
+        for _li in (x.get("line_items") or []):      # gom theo SKU cho phiếu Xuất Nhập Tồn
+            _lsku = str(_li.get("sku") or "").strip().upper()
+            if _lsku:
+                nhap_by_sku[_lsku] = nhap_by_sku.get(_lsku, 0) + int(round(_li.get("quantity") or 0))
         si = x.get("shipping_info") or {}
         track = si.get("tracking_number")           # mã vận đơn HOÀN-VỀ (thường KHÔNG tra ra ở Sapo)
         fft = si.get("fulfillment_tracking_numbers") or []
@@ -2432,6 +2437,7 @@ def get_returns_received_today(fetch_json, scan_days: int = 60, max_pages: int =
     return {
         "so_phieu": len(recv),
         "so_sp": so_sp,
+        "nhap_by_sku": nhap_by_sku,      # {SKU: SL} hàng hoàn đã nhập kho ngày đó
         "by_source": dict(sorted(by_source.items(), key=lambda x: -x[1])),
         "cho_xu_ly": cho_xu_ly,
         "detail": detail,
