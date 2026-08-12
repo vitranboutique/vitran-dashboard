@@ -2892,6 +2892,9 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
         "con_xot_packed": con_xot_packed,
         "con_xot_unpacked": con_xot_unpacked,
         "nhap_kho": nhap_kho,
+        # XUẤT theo SKU (= đơn shipper thực nhận hôm nay) — phải nằm ở TẦNG NGOÀI để phiếu
+        # Xuất Nhập Tồn đọc được (trước đây lọt vào dict con "funnel" nên Xuất luôn ra 0).
+        "xuat_by_sku": xuat_by_sku,
         "dong_goi_codes": dong_goi_codes,
         "huy_goi_codes": huy_goi_codes,
         "dong_goi_order_codes": dong_goi_order_codes,
