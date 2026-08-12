@@ -9217,9 +9217,15 @@ def _render_stock_report():
                     st.warning(f"⚠️ Báo cáo có **{_dv_nhan} đơn shipper thực nhận** nhưng chưa có số theo SKU "
                                "→ app đang giữ **bản báo cáo cũ trong bộ nhớ**. Bấm **🔄 Tải lại tồn kho** "
                                "(nếu vẫn vậy thì bản mới chưa deploy xong, chờ 1–2 phút rồi bấm lại).")
-            except Exception:
+            except Exception as _re:
                 _xuat_rep, _nhap_rep, _rep_on = {}, {}, False
+                st.error(f"❌ Không lấy được **Báo cáo cuối ngày** nên cột *Hoàn* và *Xuất* = 0. "
+                         f"Lỗi: `{type(_re).__name__}: {str(_re)[:140]}`")
         _xuat_rep_on = _rep_on
+        # Đầu ngày mới chưa phát sinh gì → nhắc để khỏi tưởng mất dữ liệu.
+        if _rep_on and not _xuat_rep and not _nhap_rep and _pick_day == _vn_now:
+            st.info(f"ℹ️ Hôm nay ({_vn_now.strftime('%d/%m')}) **chưa phát sinh** hoàn/xuất nào nên 2 cột đó = 0. "
+                    "Muốn xem số của hôm qua thì đổi **ô chọn ngày** ở trên.")
         # NHẬP KHO từ NHÀ CUNG CẤP (đơn nhập hàng REI…) — tách riêng với hàng hoàn.
         try:
             _pores = load_purchase_in(_date_iso) or {}
@@ -9228,11 +9234,11 @@ def _render_stock_report():
         _po = _pores.get("rows") or {}
         _po_ok = bool(_pores.get("_ok")) and not _pores.get("_blocked")
         if _pores.get("_blocked"):
-            st.warning("⚠️ Chưa đọc được **đơn nhập hàng (NCC)** nên KHÔNG có tên nhà cung cấp. "
-                       "Cột *Nhập kho* vẫn có số — app tự tính bằng cân đối kho "
-                       "(Tồn cuối − Tồn đầu − Hoàn + Xuất), số vẫn đúng.\n\n"
+            st.warning("⚠️ **API key của app CHƯA có quyền đọc Đơn nhập hàng** → cột *Nhập kho* để trống "
+                       "và không có tên nhà cung cấp. Dữ liệu vẫn có đủ trên Sapo, chỉ thiếu quyền cho key.\n\n"
                        f"Sapo trả về: `{_pores.get('_err') or 'không rõ'}`\n\n"
-                       "→ Muốn hiện TÊN NCC thì cấp quyền đọc **Đơn nhập hàng / Kho** cho API key trong Sapo.")
+                       "→ Cách mở: Sapo → quản lý API/ứng dụng → key dashboard đang dùng → "
+                       "bật quyền đọc **Đơn nhập hàng (Kho)** → Lưu. Xong là tự hiện số + tên NCC.")
         elif _po:
             _nccs = sorted({_c for _v in _po.values() for _c in (_v.get("ncc") or [])})
             st.success(f"📥 **Nhập kho từ NCC ngày này:** {sum(int(v.get('qty', 0) or 0) for v in _po.values()):,} SP "

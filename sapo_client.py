@@ -77,13 +77,17 @@ class SapoBlockedError(RuntimeError):
 
 
 def _is_cloudflare_block(resp) -> bool:
+    """CHỈ đúng khi Cloudflare CHẶN (trang challenge HTML). ⚠️ KHÔNG dựa vào header
+    Server: Sapo luôn chạy sau Cloudflare nên header đó có ở MỌI phản hồi — dựa vào nó
+    thì lỗi 'thiếu quyền' (Sapo trả JSON/XML access_denied) bị báo nhầm thành 'chặn IP'."""
     if resp.status_code not in (403, 503, 429):
         return False
-    if "cloudflare" in str(resp.headers.get("Server", "")).lower():
-        return True
-    head = (resp.text or "")[:800].lower()
-    return "cloudflare" in head and ("attention required" in head or "cf-error" in head
-                                     or "cdn-cgi" in head or "ray id" in head)
+    head = (resp.text or "")[:1200].lower()
+    if "access_denied" in head or "access is denied" in head:
+        return False                      # Sapo từ chối vì QUYỀN, không phải Cloudflare
+    return ("attention required" in head or "cf-error" in head
+            or "checking your browser" in head
+            or ("cloudflare" in head and "cdn-cgi" in head))
 
 
 def make_fetch_json(session: requests.Session):
