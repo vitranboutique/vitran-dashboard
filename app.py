@@ -9184,11 +9184,20 @@ def _render_stock_report():
         _io_blocked = bool(_iores.get("_blocked"))
         _io_mode = str(_iores.get("_mode") or "")
         if _io_mode == "tu_tinh":
-            st.info(f"ℹ️ **Nhập/Xuất TỰ TÍNH theo công thức Sapo** — đếm được **{_iores.get('_orders_xuat', 0)} đơn đã xuất** "
-                    f"(khớp cột *Shipper thực nhận* ở bảng ĐVVC bên dưới), **{_iores.get('_sku_hit', 0)} SKU** có phát sinh.\n\n"
+            if _iores.get("_errs"):
+                st.error("❌ **Quét đơn để tính Xuất bị LỖI** (nên cột Xuất mới ra 0):\n\n- "
+                         + "\n- ".join(_iores["_errs"]))
+            st.info(f"ℹ️ **Nhập/Xuất TỰ TÍNH theo công thức Sapo** — quét **{_iores.get('_scanned', 0):,} đơn**, "
+                    f"trong đó **{_iores.get('_issued_today', 0)} đơn xuất kho ngày này**, "
+                    f"**{_iores.get('_orders_xuat', 0)} đơn shipper đã lấy** (= cột *Shipper thực nhận* ở báo cáo ngày), "
+                    f"**{_iores.get('_sku_hit', 0)} SKU** có phát sinh.\n\n"
                     "· **Xuất** = đơn xuất kho hôm nay VÀ shipper đã xác nhận lấy hàng.\n"
                     "· **Nhập** = hàng hoàn đã nhập kho hôm nay.\n"
                     "· ⚠️ **CHƯA gồm**: nhập từ nhà cung cấp + điều chỉnh kho tay (Sapo chặn API 403) → hôm nào có 2 việc này thì lệch sổ kho.")
+            if not _iores.get("_errs") and not _iores.get("_orders_xuat"):
+                st.warning("⚠️ Hôm nay CHƯA có đơn nào shipper xác nhận lấy → Xuất = 0 là đúng. "
+                           "Nếu *Tồn đầu* khác *Tồn cuối* thì phần chênh đó phát sinh SAU lúc chốt tồn hôm qua "
+                           "(app chốt tồn khi mở trang lần đầu trong ngày, không phải đúng 23h59).")
 
         # TỒN CUỐI hôm trước = TỒN ĐẦU hôm nay (mốc đã chốt). Chưa có mốc → suy ra: cuối + xuất − nhập.
         _snap_prev = {}

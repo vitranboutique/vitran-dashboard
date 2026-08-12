@@ -3932,34 +3932,40 @@ def get_stock_io_day(fetch_json, date_iso: str, max_pages: int = 60) -> dict:
     # Quét ĐÚNG như get_daily_report (bảng ĐVVC "Shipper thực nhận"): đơn status=open (mọi tuổi)
     # + đơn status=closed tạo trong 7 ngày (đơn hỏa tốc giao xong trong ngày đã rớt khỏi 'open').
     _n_orders = 0
-    _scan = []
+    _scan, _errs = [], []
     for p in range(1, max_pages + 1):
         try:
             _r = (fetch_json("/admin/orders.json", limit=250, page=p, status="open") or {}).get("orders", [])
-        except Exception:
+        except Exception as _oe:
+            _errs.append(f"đơn đang mở: {type(_oe).__name__}: {str(_oe)[:120]}")
             break
         if not _r:
             break
         _scan += _r
         if len(_r) < 250:
             break
-    _cmin = (datetime.fromisoformat(date_iso).date() - timedelta(days=7)).isoformat() + "T00:00:00+07:00"
-    for p in range(1, 20):
+    # closed: nới 7 → 30 ngày (đơn tạo lâu mới giao vẫn phải tính vào XUẤT hôm nay)
+    _cmin = (datetime.fromisoformat(date_iso).date() - timedelta(days=30)).isoformat() + "T00:00:00+07:00"
+    for p in range(1, 30):
         try:
             _r = (fetch_json("/admin/orders.json", limit=250, page=p, status="closed",
                              created_on_min=_cmin) or {}).get("orders", [])
-        except Exception:
+        except Exception as _oe:
+            _errs.append(f"đơn đã đóng: {type(_oe).__name__}: {str(_oe)[:120]}")
             break
         if not _r:
             break
         _scan += _r
         if len(_r) < 250:
             break
+    _n_scanned = len(_scan)
+    _n_issued_today = 0
     for o in _scan:
         f = (o.get("fulfillments") or [{}])[0] or {}
         _iss = _vn_date_of(f.get("issued_on"))
         if not _iss or _iss.isoformat() != date_iso:
             continue
+        _n_issued_today += 1
         if f.get("shipment_status") in ("pending", None):
             continue                       # shipper CHƯA xác nhận lấy → chưa tính xuất
         _n_orders += 1
@@ -4029,6 +4035,9 @@ def get_stock_io_day(fetch_json, date_iso: str, max_pages: int = 60) -> dict:
         v["ly_do"] = sorted(x for x in v["ly_do"] if x)[:3]
     return {"_blocked": False, "_mode": "tu_tinh", "_partial": True,
             "_orders_xuat": _n_orders,          # số ĐƠN đã xuất (đối chiếu "Shipper thực nhận")
+            "_scanned": _n_scanned,             # tổng đơn quét được
+            "_issued_today": _n_issued_today,   # đơn có issued_on = ngày này (chưa lọc shipper)
+            "_errs": _errs,                     # lỗi gọi API (nếu có) — KHÔNG nuốt im lặng nữa
             "_sku_hit": len(rows), "rows": rows}
 
 
