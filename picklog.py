@@ -908,6 +908,24 @@ def read_stock_snapshot(day_iso: str):
     return v if isinstance(v, dict) else None
 
 
+def read_stock_confirm(day_iso: str) -> dict:
+    """NV đã XÁC NHẬN nhập kho bao nhiêu trong ngày: {SKU: {"qty": n, "note": "NCC..."}}."""
+    if not day_iso:
+        return {}
+    d = _read_gist_file(f"vitran_stock_confirm_{day_iso}.json")
+    v = (d or {}).get("items") if isinstance(d, dict) else None
+    return v if isinstance(v, dict) else {}
+
+
+def save_stock_confirm(day_iso: str, items: dict, by: str = "") -> bool:
+    """Lưu xác nhận nhập kho của NV cho 1 ngày (ghi đè)."""
+    if not day_iso or not isinstance(items, dict):
+        return False
+    return _write_gist_file(f"vitran_stock_confirm_{day_iso}.json",
+                            {"items": items, "by": by,
+                             "at": _now_vn().strftime("%H:%M %d/%m/%Y")})
+
+
 def save_stock_snapshot(day_iso: str, on_hand: dict, at: str = "") -> bool:
     """Chốt tồn CUỐI NGÀY (ghi đè trong ngày — bản cuối cùng là số cuối ngày)."""
     if not (day_iso and isinstance(on_hand, dict) and on_hand):
