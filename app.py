@@ -9164,7 +9164,9 @@ def _render_stock_report():
         # Mốc chốt đêm trước bị thiếu/cũ (vd lịch tự động chưa chạy) → cho chủ shop đặt lại ngay:
         # lấy TỒN SAPO HIỆN TẠI làm TỒN ĐẦU của ngày đang xem. Chỉ nên bấm khi trong ngày CHƯA
         # phát sinh bán/hoàn (vd sáng sớm), nếu không sẽ mất phần đã phát sinh.
-        if _levels_ok and picklog.configured() and _can_edit_return_notes():
+        # ⚠️ _can_edit_return_notes() nằm TRONG _render_returns() → gọi ở đây là NameError.
+        #    Trang tồn kho dùng biến quyền cấp module: chỉ CHỦ SHOP được đặt lại mốc chốt.
+        if _levels_ok and picklog.configured() and _is_owner:
             with st.expander("📌 Đặt lại Tồn đầu ngày (khi mốc chốt đêm trước bị thiếu)", expanded=False):
                 st.caption(f"Sẽ ghi **tồn Sapo hiện tại** thành *Tồn đầu* của ngày "
                            f"**{_pick_day.strftime('%d/%m/%Y')}**, cột Lệch sẽ về 0. "
