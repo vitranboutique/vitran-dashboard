@@ -11771,7 +11771,6 @@ def _render_returns():
                     _candidates = load_restock_novideo(days=30).get("candidates") or []
                 except Exception:
                     return []
-
                 def _ids(value):
                     out = []
                     for token in re.findall(r"[A-Za-z0-9À-ỹĐđ]+", str(value or "")):
@@ -11779,6 +11778,22 @@ def _render_returns():
                         if len(code) >= 6 and any(ch.isdigit() for ch in code):
                             out.append(code)
                     return list(dict.fromkeys(out))
+
+                # CHỐT CHẶN CUỐI: mã đã KHỚP TAY (clip ↔ đơn) thì KHÔNG được vào Cần KN nữa,
+                # dù luồng nào tạo ra dòng đó. Trước đây khớp tay xong đơn vẫn còn báo thiếu video.
+                _mm_codes = set()
+                try:
+                    for _m in (picklog.read_khui_manual_match() or []):
+                        for _f in ("ret", "clip", "ret_raw", "clip_raw"):
+                            _v = _ascii_code(str(_m.get(_f) or ""))
+                            if len(_v) >= 6:
+                                _mm_codes.add(_v)
+                except Exception:
+                    _mm_codes = set()
+                if _mm_codes:
+                    _missing = [_e for _e in _missing
+                                if not (_mm_codes & set(_ids(str(_e.get("label") or ""))))]
+
 
                 _candidate_by_code = {}
                 for _candidate in _candidates:
