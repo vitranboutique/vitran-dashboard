@@ -9161,6 +9161,28 @@ def _render_stock_report():
         if not _levels_ok:
             st.warning("⚠️ Chưa đọc được **tồn thực tế** (API `inventory_levels` bị chặn quyền) → cột *Tồn cuối ngày* "
                        "đang tạm bằng *Có thể bán*. Cấp quyền đọc Kho cho API key là ra đúng số (vd SD-XS: 185 thay vì 183).")
+        # Mốc chốt đêm trước bị thiếu/cũ (vd lịch tự động chưa chạy) → cho chủ shop đặt lại ngay:
+        # lấy TỒN SAPO HIỆN TẠI làm TỒN ĐẦU của ngày đang xem. Chỉ nên bấm khi trong ngày CHƯA
+        # phát sinh bán/hoàn (vd sáng sớm), nếu không sẽ mất phần đã phát sinh.
+        if _levels_ok and picklog.configured() and _can_edit_return_notes():
+            with st.expander("📌 Đặt lại Tồn đầu ngày (khi mốc chốt đêm trước bị thiếu)", expanded=False):
+                st.caption(f"Sẽ ghi **tồn Sapo hiện tại** thành *Tồn đầu* của ngày "
+                           f"**{_pick_day.strftime('%d/%m/%Y')}**, cột Lệch sẽ về 0. "
+                           "Chỉ bấm khi hôm đó CHƯA bán/hoàn gì (vd sáng sớm), nếu không sẽ mất phần đã phát sinh.")
+                if st.button("📌 Lấy tồn Sapo hiện tại làm Tồn đầu ngày này", key="stk_rebase"):
+                    try:
+                        if picklog.save_stock_snapshot(
+                                (_pick_day - timedelta(days=1)).isoformat(),
+                                {k: int(v.get("on_hand", 0) or 0) for k, v in _skus.items()},
+                                at=(datetime.now(timezone.utc) + timedelta(hours=7)).strftime(
+                                    "%H:%M %d/%m/%Y") + " (đặt lại tay)"):
+                            st.success("Đã đặt lại Tồn đầu. Bảng sẽ tính lại.")
+                            st.rerun()
+                        else:
+                            st.error("Lưu lỗi — kiểm tra kho lưu Gist.")
+                    except Exception as _e:
+                        st.error(f"Lỗi: {_e}")
+
         # CHỐT TỒN CUỐI NGÀY (ghi đè trong ngày; bản cuối = số cuối ngày) → mai dùng làm TỒN ĐẦU NGÀY.
         _vn_today_iso = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%Y-%m-%d")
         if _levels_ok and picklog.configured() and st.session_state.get("_stock_snap_day") != _vn_today_iso:
