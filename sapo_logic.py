@@ -2656,6 +2656,7 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
 
     dong_goi_codes, huy_goi_codes, dong_goi_order_codes = set(), set(), []
     issued_orders = []
+    xuat_by_sku = {}          # {SKU: SL} — xuất kho hôm nay theo SKU (= đơn shipper đã nhận)
     for o in open_orders:
         f = f0(o)
         c = carrier(o)
@@ -2683,6 +2684,12 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
             # Tính theo TRẠNG THÁI ĐƠN (không lọc ngày tạo vận đơn) → đếm được cả ĐƠN CŨ giao hôm nay.
             if f.get("shipment_status") not in ("pending", None):
                 ce(c)["shipper_nhan"] += 1
+                # XUẤT KHO theo SKU = đúng các đơn đã tính "shipper thực nhận" ở bảng ĐVVC
+                # (dùng cho phiếu Xuất Nhập Tồn — cùng nguồn nên số luôn khớp báo cáo).
+                for _li in (o.get("line_items") or []):
+                    _lsku = str(_li.get("sku") or "").strip().upper()
+                    if _lsku:
+                        xuat_by_sku[_lsku] = xuat_by_sku.get(_lsku, 0) + int(round(_li.get("quantity") or 0))
         # Giao tới khách = TRONG SỐ đơn đóng gói hôm nay, đã giao đến tay khách (tới hiện tại)
         if _vn_date_of(f.get("packed_on")) == today and f.get("shipment_status") == "delivered":
             ce(c)["giao_khach"] += 1
@@ -2850,6 +2857,7 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
         "base": hist["tong_don"],                # đợt soạn (89) — baseline so lệch video
         "video": None,                           # đóng gói có video (gắn ở app.py)
         "dvvc_nhan": tot["shipper_nhan"],        # shipper THỰC NHẬN = ĐVVC đã xác nhận lấy = 84
+        "xuat_by_sku": xuat_by_sku,              # {SKU: SL} xuất kho hôm nay (cho phiếu Xuất Nhập Tồn)
         "huy": tot["huy"],
         "con_xot": len(con_xot_packed) + len(con_xot_unpacked),  # xác nhận nhưng chưa giao shipper
     }

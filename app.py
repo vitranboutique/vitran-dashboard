@@ -9186,6 +9186,15 @@ def _render_stock_report():
         _io = _iores.get("rows") or {}
         _io_blocked = bool(_iores.get("_blocked"))
         _io_mode = str(_iores.get("_mode") or "")
+        # XUẤT lấy THẲNG từ Báo cáo vận hành cuối ngày (cột "Shipper thực nhận") — cùng nguồn
+        # nên số luôn khớp báo cáo. Chỉ áp cho HÔM NAY (báo cáo chỉ tính ngày hiện tại).
+        _xuat_rep, _xuat_rep_on = {}, False
+        if _pick_day == _vn_now:
+            try:
+                _xuat_rep = (load_daily_report() or {}).get("xuat_by_sku") or {}
+                _xuat_rep_on = bool(_xuat_rep)
+            except Exception:
+                _xuat_rep, _xuat_rep_on = {}, False
         if _io_mode == "tu_tinh":
             if _iores.get("_errs"):
                 st.error("❌ **Quét đơn để tính Xuất bị LỖI** (nên cột Xuất mới ra 0):\n\n- "
@@ -9221,23 +9230,21 @@ def _render_stock_report():
                 _oh += int(_dd.get("on_hand", 0) or 0)
                 _av += int(_dd.get("available", 0) or 0)
                 _iod = _io.get(_k) or {}
-                _x += int(_iod.get("xuat", 0) or 0)
+                # Ưu tiên số XUẤT của Báo cáo cuối ngày (shipper thực nhận) — chuẩn nhất.
+                _x += int(_xuat_rep.get(_k, 0) or 0) if _xuat_rep_on else int(_iod.get("xuat", 0) or 0)
                 _n += int(_iod.get("nhap", 0) or 0)
                 for _c in (_iod.get("ly_do") or []):
                     _ly.add(_c)
                 if _k in _snap_prev:
                     _dau_snap += int(_snap_prev.get(_k) or 0)
                     _has_snap = True
-            # NHẬP: API đơn nhập (purchase_orders) đang bị Sapo chặn → SUY RA từ chênh lệch tồn:
-            #   Đầu + Nhập − Xuất = Cuối  ⇒  Nhập = (Cuối − Đầu) + Xuất
-            # Cách này GỒM CẢ nhập từ NCC lẫn điều chỉnh kho tay, và bảng luôn cân.
+            # KHÔNG "suy ra" Nhập nữa (số bịa, sai). Chỉ hiện số THẬT:
+            #   Xuất  = từ Báo cáo cuối ngày (shipper thực nhận)
+            #   Nhập  = hàng hoàn nhập kho (API đơn nhập NCC đang bị Sapo chặn → phần đó còn thiếu)
+            #   Lệch  = Cuối − (Đầu + Nhập − Xuất): khác 0 nghĩa là có nhập NCC / chỉnh kho chưa lấy được.
             _dau = _dau_snap if _has_snap else (_oh + _x - _n)
-            _nhap, _suyra = _n, False
-            if _has_snap and not _n:
-                _d = (_oh - _dau_snap) + _x
-                if _d > 0:
-                    _nhap, _suyra = _d, True
-            return {"dau": _dau, "dau_snap": _has_snap, "nhap": _nhap, "nhap_suyra": _suyra,
+            _lech = _oh - (_dau + _n - _x) if _has_snap else 0
+            return {"dau": _dau, "dau_snap": _has_snap, "nhap": _n, "lech": _lech,
                     "xuat": _x, "cuoi": _oh, "av": _av, "ncc": sorted(_ly)[:2]}
 
         _rows = []
@@ -9251,7 +9258,9 @@ def _render_stock_report():
                 _sp = PT.parse_sku(_sku)
                 if _sp.get("productCode") != _pc:
                     continue
-                if _cc and _sp.get("colorCode") != _cc:
+                # Mã KHÔNG kèm màu (vd "CVBC") → CHỈ lấy SKU không có màu (CVBC-S, CVBC-M…),
+                # KHÔNG gộp các màu khác (CVBC-XD-S…). Muốn xem màu thì chọn thêm mã màu.
+                if (_sp.get("colorCode") or "") != (_cc or ""):
                     continue
                 _matched.append((_sku, _sp, _d))
             if not _cc:
@@ -9288,8 +9297,8 @@ def _render_stock_report():
                         _pv = _r["g"]
                         _tr += f"<tr><td colspan='7' class='g'>▸ {_e2(_r['g'])}</td></tr>"
                     _ncc = ("<div class='ncc'>" + _e2(", ".join(_r["ncc"])) + "</div>") if _r["ncc"] else ""
-                    if _r.get("nhap_suyra"):      # số suy ra từ chênh lệch tồn (gồm nhập NCC + chỉnh kho)
-                        _ncc = "<div class='ncc'>≈ suy ra</div>"
+                    if _r.get("lech"):    # chênh chưa giải thích được = nhập NCC / chỉnh kho (API bị chặn)
+                        _ncc = f"<div class='ncc'>lệch {_r['lech']:+,}</div>"
                     # Chưa có quyền đọc kho → để TRỐNG (—) thay vì số dễ hiểu nhầm "không phát sinh".
                     _c_dau = "—" if _io_blocked else f"{_r['dau']:,}"
                     _c_nhap = "—" if _io_blocked else f"{_r['nhap']:,}{_ncc}"
