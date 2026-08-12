@@ -9138,6 +9138,7 @@ def _render_stock_report():
             try:
                 load_purchase_in.clear()    # đơn nhập hàng NCC
                 load_daily_report.clear()   # Xuất/Hoàn lấy từ báo cáo ngày → phải làm mới luôn
+                load_daily_report_archive.clear()   # ngày cũ cũng phải làm mới
             except Exception:
                 pass
             st.rerun()
@@ -9188,8 +9189,10 @@ def _render_stock_report():
                                   format="DD/MM/YYYY", key="stock_io_date")
         _date_iso = _pick_day.isoformat()
         if _pick_day != _vn_now:
-            st.caption(f"⚠️ Đang xem ngày **{_pick_day.strftime('%d/%m/%Y')}** — cột Nhập/Xuất là của ngày đó, "
-                       "còn *Tồn cuối ngày / Có thể bán* LUÔN là tồn HIỆN TẠI (Sapo không lưu lịch sử tồn theo ngày).")
+            st.info(f"📅 Đang xem ngày **{_pick_day.strftime('%d/%m/%Y')}** (hôm nay là "
+                    f"{_vn_now.strftime('%d/%m/%Y')}). Hoàn/Nhập kho/Xuất là của NGÀY ĐÓ; "
+                    "riêng *Tồn cuối / Có thể bán* LUÔN là tồn HIỆN TẠI (Sapo không lưu lịch sử tồn). "
+                    "Muốn xem hôm nay thì đổi ô ngày ở trên.")
         try:
             _iores = load_stock_io(_date_iso) or {}
         except Exception:
@@ -9201,9 +9204,10 @@ def _render_stock_report():
         # nên số luôn khớp báo cáo. Chỉ áp cho HÔM NAY (báo cáo chỉ tính ngày hiện tại).
         # NHẬP lấy từ báo cáo "hàng hoàn đã nhập kho trong ngày" (cùng nguồn với mục Nhập kho).
         _xuat_rep, _nhap_rep, _rep_on = {}, {}, False
-        if _pick_day == _vn_now:
+        if True:      # dùng cho MỌI ngày: hôm nay → báo cáo live, ngày cũ → báo cáo ngày cũ
             try:
-                _drep = load_daily_report() or {}
+                _drep = (load_daily_report() if _pick_day == _vn_now
+                         else load_daily_report_archive(_date_iso)) or {}
                 # đọc được ở CẢ 2 vị trí (tầng ngoài + trong "funnel") → không phụ thuộc bản deploy
                 _xuat_rep = (_drep.get("xuat_by_sku")
                              or (_drep.get("funnel") or {}).get("xuat_by_sku") or {})
