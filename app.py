@@ -9913,6 +9913,24 @@ def _render_daily():
         _rep = load_daily_report()
     except Exception as e:
         st.error(f"❌ Lỗi tổng hợp báo cáo: `{e}`")
+        # CHẨN ĐOÁN: raise_for_status() nuốt mất NỘI DUNG Sapo trả về — mà chính nội dung đó
+        # mới cho biết 403 là do HẾT HẠN MỨC hay MẤT QUYỀN. Gọi thô 1 lần để đọc nguyên văn.
+        with st.expander("🔎 Xem Sapo trả về gì (để biết vì sao 403)", expanded=True):
+            try:
+                _s = build_session()
+                _hdr_used = [k for k in ("X-Sapo-Access-Token", "Cookie") if k in _s.headers]
+                _auth = (_hdr_used[0] if _hdr_used else ("Basic key/secret" if _s.auth else "?"))
+                st.write(f"**Cách xác thực đang dùng:** `{_auth}`")
+                _r = _s.get("https://vitranboutiquehcm.mysapo.net/admin/orders.json",
+                            params={"limit": 1}, timeout=20)
+                st.write(f"**HTTP:** `{_r.status_code}`")
+                st.code((_r.text or "")[:1500] or "(không có nội dung)")
+                _lim = {k: v for k, v in _r.headers.items()
+                        if any(t in k.lower() for t in ("limit", "quota", "retry", "remain"))}
+                if _lim:
+                    st.write("**Hạn mức Sapo báo:**", _lim)
+            except Exception as _de:
+                st.write(f"Không gọi thử được: `{_de}`")
         return
     _dvr = load_dohana() if dohana.configured() else None
     _inb = load_dohana_inbound() if dohana.configured() else None
