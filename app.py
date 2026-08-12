@@ -9912,6 +9912,13 @@ def _render_daily():
     try:
         _rep = load_daily_report()
     except Exception as e:
+        if "Cloudflare" in str(e) or type(e).__name__ == "SapoBlockedError":
+            st.error("🛡️ **Cloudflare của Sapo đang CHẶN IP máy chủ app** — không phải hỏng key, "
+                     "không mất dữ liệu.\n\n"
+                     "**Cách xử lý (chủ shop):** vào Streamlit Cloud → menu **Manage app** → **Reboot app**. "
+                     "Khởi động lại thường đổi sang IP khác là chạy lại ngay. "
+                     "Nếu vẫn chặn thì chờ Cloudflare tự mở (thường vài giờ) — số liệu vẫn còn nguyên.")
+            return
         st.error(f"❌ Lỗi tổng hợp báo cáo: `{e}`")
         # CHẨN ĐOÁN: raise_for_status() nuốt mất NỘI DUNG Sapo trả về — mà chính nội dung đó
         # mới cho biết 403 là do HẾT HẠN MỨC hay MẤT QUYỀN. Gọi thô 1 lần để đọc nguyên văn.

@@ -72,6 +72,20 @@ def build_session() -> requests.Session:
     return s
 
 
+class SapoBlockedError(RuntimeError):
+    """Cloudflare (lá chắn của Sapo) CHẶN IP máy chủ — không phải lỗi key/quyền."""
+
+
+def _is_cloudflare_block(resp) -> bool:
+    if resp.status_code not in (403, 503, 429):
+        return False
+    if "cloudflare" in str(resp.headers.get("Server", "")).lower():
+        return True
+    head = (resp.text or "")[:800].lower()
+    return "cloudflare" in head and ("attention required" in head or "cf-error" in head
+                                     or "cdn-cgi" in head or "ray id" in head)
+
+
 def make_fetch_json(session: requests.Session):
     """Trả về fetch_json có giãn nhịp và tự thử lại khi Sapo trả 429."""
     last_call = 0.0
@@ -80,10 +94,16 @@ def make_fetch_json(session: requests.Session):
         nonlocal last_call
         for attempt in range(5):
             elapsed = time.monotonic() - last_call
-            if elapsed < 0.22:
-                time.sleep(0.22 - elapsed)
+            if elapsed < 0.34:          # ~3 req/s: chậm hơn để KHÔNG bị Cloudflare chặn IP
+                time.sleep(0.34 - elapsed)
             r = session.get(f"{BASE}{path}", params=params, timeout=30)
             last_call = time.monotonic()
+            if _is_cloudflare_block(r):
+                raise SapoBlockedError(
+                    "Cloudflare của Sapo đang CHẶN IP máy chủ app (gọi API quá dày). "
+                    "KHÔNG phải hỏng key hay mất quyền. Cách xử lý: bấm Reboot app trên "
+                    "Streamlit Cloud (thường đổi IP là hết), hoặc chờ Cloudflare tự mở (vài giờ)."
+                )
             if r.status_code != 429:
                 r.raise_for_status()
                 return r.json()
