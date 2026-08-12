@@ -9223,6 +9223,7 @@ def _render_stock_report():
         except Exception:
             _pores = {}
         _po = _pores.get("rows") or {}
+        _po_ok = bool(_pores.get("_ok")) and not _pores.get("_blocked")
         if _pores.get("_blocked"):
             st.warning("⚠️ Chưa đọc được **đơn nhập hàng (NCC)** nên KHÔNG có tên nhà cung cấp. "
                        "Cột *Nhập kho* vẫn có số — app tự tính bằng cân đối kho "
@@ -9291,14 +9292,11 @@ def _render_stock_report():
             #   Lệch  = Cuối − (Đầu + Nhập − Xuất): khác 0 nghĩa là có nhập NCC / chỉnh kho chưa lấy được.
             _dau = _dau_snap if _has_snap else (_oh + _x - _n - _nk)
             _lech = _oh - (_dau + _n + _nk - _x) if _has_snap else 0
-            # Không đọc được đơn nhập NCC (Sapo chặn quyền) → SUY RA từ cân đối kho:
-            #   Nhập kho = Tồn cuối − Tồn đầu − Hoàn + Xuất
-            # Giờ số này CHÍNH XÁC vì Tồn đầu/cuối, Hoàn, Xuất đều là số thật.
-            _nk_suyra = False
-            if _has_snap and not _nk and _lech > 0:
-                _nk, _lech, _nk_suyra = _lech, 0, True
+            # ⚠️ KHÔNG suy ra Nhập kho từ chênh lệch tồn nữa: mốc tồn đầu chốt lúc nào thì
+            # chênh lệch lệch theo lúc đó (vd ra 49 trong khi phiếu nhập thật là 54). Chỉ hiện
+            # SỐ THẬT đọc từ đơn nhập hàng; chưa đọc được thì để TRỐNG, không bịa.
             return {"dau": _dau, "dau_snap": _has_snap, "nhap": _n, "nhapkho": _nk,
-                    "nk_suyra": _nk_suyra, "lech": _lech,
+                    "nk_ok": bool(_po_ok), "lech": _lech,
                     "xuat": _x, "cuoi": _oh, "av": _av, "ncc": sorted(_ly)[:2]}
 
         _rows = []
@@ -9336,6 +9334,13 @@ def _render_stock_report():
                     _row = _agg([(_su, _d)])
                     _row.update({"g": _g, "sku": _sp.get("sku") or "", "fx": _is_fixed})
                     _rows.append(_row)
+        # Cảnh báo CHỈ TRÊN APP (không in ra phiếu): dòng nào không cân thì nêu tên để kiểm tra.
+        _bad = [r for r in _rows if r.get("lech")]
+        if _bad:
+            st.warning("⚠️ Có **{} dòng chưa cân** (Tồn đầu + Hoàn + Nhập kho − Xuất ≠ Tồn cuối) — "
+                       "thường do chỉnh kho tay: {}".format(
+                           len(_bad),
+                           " · ".join(f"{r['sku']} ({r['lech']:+,})" for r in _bad[:8])))
         if not _rows:
             st.warning("Chưa khớp SKU nào cho các mã đã chọn. Mở '🔧 Dữ liệu thô' để xem field Sapo trả về.")
         else:
@@ -9358,7 +9363,9 @@ def _render_stock_report():
                     # Chưa có quyền đọc kho → để TRỐNG (—) thay vì số dễ hiểu nhầm "không phát sinh".
                     _c_dau = "—" if _io_blocked else f"{_r['dau']:,}"
                     _c_hoan = "—" if _io_blocked else f"{_r['nhap']:,}"
-                    _c_nk = "—" if _io_blocked else f"{_r.get('nhapkho', 0):,}{_sub}"
+                    # Chưa đọc được đơn nhập hàng → để TRỐNG (không bịa số suy ra).
+                    _c_nk = ("—" if (_io_blocked or not _r.get("nk_ok"))
+                             else f"{_r.get('nhapkho', 0):,}{_sub}")
                     _c_xuat = "—" if _io_blocked else f"{_r['xuat']:,}"
                     _tr += (f"<tr><td>{_e2(_r['sku'])}</td>"
                             f"<td class='n'>{_c_dau}</td>"
