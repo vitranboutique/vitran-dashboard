@@ -30,7 +30,10 @@ EMPLOYEES = {
     "kho":  {"name": "NV Kho",  "start": "08:30", "end": "17:30",
              "history": [{"from": "2026-07-13", "start": "08:30", "end": "17:30"},
                          {"from": "2000-01-01", "start": "09:30", "end": "18:30"}]},
-    "cskh": {"name": "NV CSKH", "start": "10:00", "end": "19:00"},
+    # NV CSKH đổi giờ chính thức 10:00→19:00 thành 09:00→18:00 từ 2026-08-08.
+    "cskh": {"name": "NV CSKH", "start": "09:00", "end": "18:00",
+             "history": [{"from": "2026-08-08", "start": "09:00", "end": "18:00"},
+                         {"from": "2000-01-01", "start": "10:00", "end": "19:00"}]},
 }
 
 
