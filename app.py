@@ -9225,7 +9225,13 @@ def _render_stock_report():
         _po = _pores.get("rows") or {}
         if _pores.get("_blocked"):
             st.warning("⚠️ Chưa lấy được **đơn nhập hàng từ NCC** (Sapo chặn quyền API `purchase_orders`) "
-                       "→ cột *Nhập kho* trống, phần đó sẽ hiện ở cột *lệch*.")
+                       "→ cột *Nhập kho* sẽ trống.")
+        elif _po:
+            _nccs = sorted({_c for _v in _po.values() for _c in (_v.get("ncc") or [])})
+            st.success(f"📥 **Nhập kho từ NCC ngày này:** {sum(int(v.get('qty', 0) or 0) for v in _po.values()):,} SP "
+                       f"· {len(_po)} SKU" + (f" · NCC: **{', '.join(_nccs[:3])}**" if _nccs else ""))
+        elif _pores.get("_ok"):
+            st.caption("📥 Ngày này không có đơn nhập hàng từ NCC.")
         if _rep_on:
             st.success(f"✅ **Xuất** = shipper thực nhận hôm nay ({sum(_xuat_rep.values()):,} SP · {len(_xuat_rep)} SKU) · "
                        f"**Nhập** = hàng hoàn đã nhập kho hôm nay ({sum(_nhap_rep.values()):,} SP · {len(_nhap_rep)} SKU) "
@@ -9325,6 +9331,8 @@ def _render_stock_report():
         else:
             import json as _json
             _today = _pick_day.strftime("%d/%m/%Y")
+            # GIỜ IN cụ thể (giờ VN) — để biết phiếu chốt số lúc mấy giờ, đối chiếu khi kiểm hàng.
+            _now_txt = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%H:%M %d/%m/%Y")
             _tX = sum(_r["xuat"] for _r in _rows)
             _tN = sum(_r["nhap"] for _r in _rows)
 
@@ -9334,11 +9342,9 @@ def _render_stock_report():
                     if _r["g"] != _pv:
                         _pv = _r["g"]
                         _tr += f"<tr><td colspan='8' class='g'>▸ {_e2(_r['g'])}</td></tr>"
-                    # Chú thích dưới cột Nhập kho: tên NCC; nếu số chưa cân thì ghi DƯ / THIẾU.
+                    # Dưới cột Nhập kho CHỈ ghi TÊN NHÀ CUNG CẤP (số nhập là số bình thường,
+                    # không ghi dư/thiếu ở đây nữa).
                     _sub = ("<div class='ncc'>" + _e2(", ".join(_r["ncc"])) + "</div>") if _r["ncc"] else ""
-                    _lc = _r.get("lech") or 0
-                    if _lc:
-                        _sub = (f"<div class='ncc'>{'dư' if _lc > 0 else 'thiếu'} {abs(_lc):,}</div>")
                     # Chưa có quyền đọc kho → để TRỐNG (—) thay vì số dễ hiểu nhầm "không phát sinh".
                     _c_dau = "—" if _io_blocked else f"{_r['dau']:,}"
                     _c_hoan = "—" if _io_blocked else f"{_r['nhap']:,}"
@@ -9420,7 +9426,9 @@ def _render_stock_report():
                 return (f"<div class='wrap{' brk' if _brk else ''}'><div class='hd'><div>"
                         f"<div class='ttl'>{_title}</div>"
                         f"<div class='sub'><b>VITRAN BOUTIQUE</b> · {_dau_src}</div></div>"
-                        f"<div class='meta'>Ngày: <b>{_today}</b><br>NV kiểm: ______________</div></div>"
+                        f"<div class='meta'>Ngày: <b>{_today}</b><br>"
+                        f"<span style='font-size:11.5px;color:#444'>In lúc: <b>{_now_txt}</b></span><br>"
+                        f"NV kiểm: ______________</div></div>"
                         + _two_cols(_part)
                         + f"<div class='foot'>{len(_part)} dòng · "
                         + ("Nhập/Xuất: CHƯA có quyền đọc kho Sapo" if _io_blocked else
