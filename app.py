@@ -9266,14 +9266,6 @@ def _render_stock_report():
                            "Tồn kho được **chốt tự động lúc 23h40 mỗi đêm** (sau khi kho nhập/xuất xong), "
                            "nên hàng nhập buổi tối VẪN được tính vào tồn cuối ngày hôm đó.")
 
-        # NV đã XÁC NHẬN nhập kho bao nhiêu (nhập tay theo phiếu nhập REI…) cho ngày đang xem.
-        _confirm = {}
-        if picklog.configured():
-            try:
-                _confirm = picklog.read_stock_confirm(_date_iso) or {}
-            except Exception:
-                _confirm = {}
-
         # TỒN CUỐI hôm trước = TỒN ĐẦU hôm nay (mốc đã chốt). Chưa có mốc → suy ra: cuối + xuất − nhập.
         _snap_prev = {}
         if picklog.configured():
@@ -9285,12 +9277,11 @@ def _render_stock_report():
 
         def _agg(_items):
             # _items = list (sku_upper, stock_dict) → cộng tồn + nhập/xuất (sổ kho Sapo).
-            _oh = _av = _x = _n = _nk = _nkxn = 0   # _n=HOÀN · _nk=NCC(API) · _nkxn=NV XÁC NHẬN
+            _oh = _av = _x = _n = _nk = 0     # _n = hàng HOÀN · _nk = nhập từ NCC (API)
             _ly = set()
             _dau_snap, _has_snap = 0, False
             for _su, _dd in _items:
                 _k = str(_su).upper()
-                _nkxn += int((_confirm.get(_k) or {}).get("qty") or 0)
                 _oh += int(_dd.get("on_hand", 0) or 0)
                 _av += int(_dd.get("available", 0) or 0)
                 _iod = _io.get(_k) or {}
@@ -9318,12 +9309,11 @@ def _render_stock_report():
             # DƯ / THIẾU do app TỰ TÍNH — KHÔNG ghi lý do:
             #   Dư/Thiếu = Tồn Sapo − (Tồn đầu + Hoàn − Bán ra)
             # Dương = tồn nhiều hơn dự kiến · Âm = tồn hụt. Chưa có mốc chốt → None (hiện "—").
-            # KHO APP = sổ riêng của app: tồn đầu + hoàn + nhập (NV xác nhận theo phiếu) − bán ra.
-            # KHO SAPO = tồn thực tế Sapo. LỆCH = Sapo − App (khác 0 ⇒ có việc chưa ghi vào app).
-            _kho_app = (_dau_snap + _n + _nkxn - _x) if _has_snap else None
-            _chenh = (_oh - _kho_app) if _kho_app is not None else None
+            # LỆCH = Tồn Sapo − (Tồn chốt hôm trước + Hoàn − Bán ra).
+            # VD: tối qua chốt 100, hôm nay chưa bán/hoàn gì mà Sapo thành 150 → lệch +50.
+            # Chỉ BÁO cho biết, KHÔNG đoán lý do; hôm sau vẫn chốt tiếp theo số Sapo.
+            _chenh = (_oh - (_dau_snap + _n - _x)) if _has_snap else None
             return {"dau": _dau, "dau_snap": _has_snap, "nhap": _n, "chenh": _chenh,
-                    "kho_app": _kho_app, "nkxn": _nkxn,
                     "xuat": _x, "cuoi": _oh, "av": _av, "ncc": sorted(_ly)[:2]}
 
         _rows = []
@@ -9362,47 +9352,7 @@ def _render_stock_report():
                     _row.update({"g": _g, "sku": _sp.get("sku") or "", "fx": _is_fixed})
                     _rows.append(_row)
         # Cảnh báo CHỈ TRÊN APP (không in ra phiếu): dòng nào không cân thì nêu tên để kiểm tra.
-        # ── 📥 NHẬP KHO THEO PHIẾU: NV gõ theo phiếu giấy (REI…) → cập nhật KHO APP ──
-        if _can_edit_return_notes() and picklog.configured():
-            with st.expander("📥 Nhập kho theo phiếu (gõ từ phiếu giấy REI…) — cập nhật KHO APP", expanded=False):
-                st.caption("Gõ mỗi dòng: **MÃ SKU  SỐ LƯỢNG** (vd `S-CF-XL 14`). Lấy đúng cột SKU và Số lượng "
-                           "trên phiếu nhập. Lưu xong KHO APP tự cộng thêm, cột Lệch với Sapo sẽ về 0 nếu khớp.")
-                _pn = st.text_input("Mã phiếu nhập + nhà cung cấp (ghi chú)", key="stk_cf_note",
-                                    placeholder="VD: REI00358 · PHẠM THỊ DIỄM MY")
-                _ptxt = st.text_area("Danh sách SKU và số lượng", height=140, key="stk_cf_txt",
-                                     placeholder="S-CF-XL 14\nS-CF-S 56\nS-CF-XS 14")
-                if st.button("💾 Lưu nhập kho theo phiếu", key="stk_cf_save", type="primary"):
-                    _new = dict(_confirm)
-                    _added, _bad = 0, []
-                    for _line in str(_ptxt or "").splitlines():
-                        _line = _line.strip()
-                        if not _line:
-                            continue
-                        _m = re.match(r"^(.+?)[\s,;|]+(-?\d+)\s*$", _line)
-                        if not _m:
-                            _bad.append(_line)
-                            continue
-                        _sk = _m.group(1).strip().upper()
-                        _qt = int(_m.group(2))
-                        _cur = _new.get(_sk) or {"qty": 0, "note": ""}
-                        _new[_sk] = {"qty": int(_cur.get("qty") or 0) + _qt,
-                                     "note": (str(_pn or "").strip() or _cur.get("note") or "")}
-                        _added += 1
-                    if _bad:
-                        st.error("Không đọc được dòng: " + " | ".join(_bad[:5]))
-                    elif not _added:
-                        st.info("Chưa gõ dòng nào.")
-                    elif picklog.save_stock_confirm(_date_iso, _new, by=str(CUR_USER)):
-                        st.success(f"Đã cộng {_added} mã vào KHO APP cho ngày {_pick_day.strftime('%d/%m/%Y')}.")
-                        st.rerun()
-                    else:
-                        st.error("Lưu lỗi — kiểm tra kho lưu Gist.")
-                if _confirm:
-                    st.caption("Đã xác nhận nhập trong ngày: " + " · ".join(
-                        f"{k} +{int(v.get('qty') or 0)}" for k, v in list(_confirm.items())[:12]))
-                    if st.button("🗑️ Xoá xác nhận nhập của ngày này", key="stk_cf_clear"):
-                        if picklog.save_stock_confirm(_date_iso, {}, by=str(CUR_USER)):
-                            st.rerun()
+        # (Bỏ sổ KHO APP + form nhập kho theo phiếu — chỉ dùng TỒN SAPO, app tự báo lệch.)
         if not _rows:
             st.warning("Chưa khớp SKU nào cho các mã đã chọn. Mở '🔧 Dữ liệu thô' để xem field Sapo trả về.")
         else:
@@ -9418,7 +9368,7 @@ def _render_stock_report():
                 for _r in _part:
                     if _r["g"] != _pv:
                         _pv = _r["g"]
-                        _tr += f"<tr><td colspan='8' class='g'>▸ {_e2(_r['g'])}</td></tr>"
+                        _tr += f"<tr><td colspan='7' class='g'>▸ {_e2(_r['g'])}</td></tr>"
                     # Dưới cột Nhập kho CHỈ ghi TÊN NHÀ CUNG CẤP (số nhập là số bình thường,
                     # không ghi dư/thiếu ở đây nữa).
                     _sub = ("<div class='ncc'>" + _e2(", ".join(_r["ncc"])) + "</div>") if _r["ncc"] else ""
@@ -9433,22 +9383,19 @@ def _render_stock_report():
                     # KHÔNG ghi lý do (không đoán là nhập NCC hay chỉnh kho).
                     _dt = _r.get("chenh")
                     _c_dt = "—" if _dt is None else (f"<b>{_dt:+,}</b>" if _dt else "0")
-                    _ka = _r.get("kho_app")
-                    _c_ka = "—" if _ka is None else f"{_ka:,}"
                     _tr += (f"<tr><td>{_e2(_r['sku'])}</td>"
+                            f"<td class='n'>{_c_dau}</td>"
                             f"<td class='n'>{_c_hoan}</td>"
-                            f"<td class='n'>{_r.get('nkxn', 0):,}</td>"
                             f"<td class='n'>{_c_xuat}</td>"
-                            f"<td class='n app'>{_c_ka}</td>"
                             f"<td class='n sapo'>{_r['cuoi']:,}</td>"
                             f"<td class='n'>{_c_dt}</td>"
                             f"<td class='blank'></td></tr>")
                 return ("<table><colgroup><col class='c-sku'><col class='c-num'><col class='c-num'>"
-                        "<col class='c-num'><col class='c-num'><col class='c-num'><col class='c-num'>"
+                        "<col class='c-num'><col class='c-num'><col class='c-num'>"
                         "<col class='c-cnt'></colgroup>"
-                        "<thead><tr><th>SKU</th><th>Hoàn</th><th>Nhập</th><th>Bán ra</th>"
-                        "<th class='app'>KHO APP</th><th class='sapo'>KHO SAPO</th>"
-                        "<th>Lệch</th><th>Thực tế đếm</th></tr></thead>"
+                        "<thead><tr><th>SKU</th><th>Tồn đầu<br>(chốt)</th><th>Hoàn</th><th>Bán ra</th>"
+                        "<th class='sapo'>TỒN SAPO</th><th>Lệch</th>"
+                        "<th>Thực tế đếm</th></tr></thead>"
                         "<tbody>" + _tr + "</tbody></table>")
             def _two_cols(_part):
                 """Chia 2 cột nhưng CẮT ĐÚNG RANH GIỚI NHÓM — không để 1 nhóm bị xé đôi
@@ -9515,8 +9462,9 @@ def _render_stock_report():
                 return (f"<div class='wrap{' brk' if _brk else ''}'><div class='hd'><div>"
                         f"<div class='ttl'>{_title}</div>"
                         f"<div class='sub'><b>VITRAN BOUTIQUE</b> · {_dau_src} · "
-                        "<b>Dư/Thiếu</b> = Tồn Sapo − (Tồn đầu + Hoàn − Bán ra) · "
-                        "<b>TỒN SAPO</b> là số chuẩn để NV đối chiếu khi đếm</div></div>"
+                        "<b>TỒN SAPO</b> là số chuẩn · "
+                        "<b>Lệch</b> = Tồn Sapo − (Tồn đầu + Hoàn − Bán ra), khác 0 là kho có "
+                        "thay đổi ngoài bán/hoàn</div></div>"
                         f"<div class='meta'>Ngày: <b>{_today}</b><br>"
                         f"<span style='font-size:11.5px;color:#444'>In lúc: <b>{_now_txt}</b></span><br>"
                         f"NV kiểm: ______________</div></div>"
