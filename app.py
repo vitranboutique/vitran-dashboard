@@ -10606,17 +10606,19 @@ def _render_returns():
                 all_choices.append(key)
         if not all_choices:
             return
-        # Mặc định chỉ hiện đơn CHƯA có ghi chú chuẩn cho gọn (bỏ tick để xem/sửa lại tất cả).
+        # Mặc định chỉ ẩn đơn ĐÃ CHỐT XONG. ⚠️ Đơn ghi "CẦN KN" tuy là ghi chú chuẩn nhưng
+        # VẪN ĐANG PHẢI XỬ LÝ → phải cho chọn để sửa, không được ẩn (trước đây bị ẩn mất).
         _only_unstd = st.checkbox(
-            "Chỉ hiện đơn CHƯA có ghi chú chuẩn",
+            "Chỉ hiện đơn CHƯA chốt xong",
             value=True,
             key=f"{key_prefix}_only_unstd",
-            help="Ẩn đơn đã có ghi chú chuẩn (THẮNG/THUA/HỦY/HẾT HẠN/KHÔNG CẦN KN/CẦN KN). Bỏ tick để xem hoặc sửa lại tất cả.",
+            help="Ẩn đơn ĐÃ CHỐT (THẮNG/THUA/HỦY/HẾT HẠN/KHÔNG CẦN KN). Đơn ghi CẦN KN vẫn hiện "
+                 "vì còn phải xử lý. Bỏ tick để xem/sửa lại tất cả.",
         )
 
         def _has_std_note(_k, _d):
             _app = _closed_return_app_note_text((notes or {}).get(_k))
-            return _note_is_standard(_app or str(_d.get("note") or ""))
+            return _note_is_concluded(_app or str(_d.get("note") or ""))
 
         if _only_unstd:
             choices = [k for k in all_choices if not _has_std_note(k, row_map.get(k) or {})]
@@ -10626,9 +10628,9 @@ def _render_returns():
         if not choices:
             # Đã ghi chú hết → KHÔNG ẩn sạch ô nhập (kẻo "không có chỗ ghi"): hiện lại tất cả để xem/sửa/ghi đè.
             choices = list(all_choices)
-            st.success(f"✅ Cả {len(all_choices)} đơn đều đã có ghi chú chuẩn — đang hiện lại tất cả để bạn xem/sửa hoặc ghi đè.")
+            st.success(f"✅ Cả {len(all_choices)} đơn đều ĐÃ CHỐT XONG — đang hiện lại tất cả để bạn xem/sửa hoặc ghi đè.")
         elif _only_unstd and _n_std_hidden:
-            st.caption(f"Đang ẩn {_n_std_hidden} đơn đã có ghi chú chuẩn — còn {len(choices)} đơn chưa ghi chú.")
+            st.caption(f"Đang ẩn {_n_std_hidden} đơn đã chốt xong — còn {len(choices)} đơn cần xử lý (gồm cả đơn ghi CẦN KN).")
 
         def _note_meta(row, note_text):
             return {
