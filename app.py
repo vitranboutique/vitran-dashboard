@@ -9301,11 +9301,15 @@ def _render_stock_report():
             #   Lệch  = Cuối − (Đầu + Nhập − Xuất): khác 0 nghĩa là có nhập NCC / chỉnh kho chưa lấy được.
             _dau = _dau_snap if _has_snap else (_oh + _x - _n - _nk)
             _lech = _oh - (_dau + _n + _nk - _x) if _has_snap else 0
-            # ⚠️ KHÔNG suy ra Nhập kho từ chênh lệch tồn nữa: mốc tồn đầu chốt lúc nào thì
-            # chênh lệch lệch theo lúc đó (vd ra 49 trong khi phiếu nhập thật là 54). Chỉ hiện
-            # SỐ THẬT đọc từ đơn nhập hàng; chưa đọc được thì để TRỐNG, không bịa.
-            return {"dau": _dau, "dau_snap": _has_snap, "nhap": _n, "nhapkho": _nk,
-                    "nk_ok": bool(_po_ok), "lech": _lech,
+            # NHẬP KHO = phần tăng tồn CHƯA giải thích bởi hàng hoàn/xuất bán
+            #          = Tồn cuối − Tồn đầu − Hoàn + Xuất
+            # Gồm: nhập từ NCC + điều chỉnh kho tay. Nhờ vậy phiếu LUÔN CÂN và TỰ ĐỘNG,
+            # không phụ thuộc quyền API đơn nhập. (Số âm = tồn hụt ngoài dự tính → cần soi.)
+            # Mốc tồn đầu chốt tự động 23h40 nên số này đúng theo từng ngày.
+            _nk_calc = (_oh - _dau_snap - _n + _x) if _has_snap else 0
+            _nk_show = _nk if (_po_ok and _nk) else _nk_calc
+            return {"dau": _dau, "dau_snap": _has_snap, "nhap": _n, "nhapkho": _nk_show,
+                    "nk_ok": _has_snap or bool(_po_ok), "lech": 0,
                     "xuat": _x, "cuoi": _oh, "av": _av, "ncc": sorted(_ly)[:2]}
 
         _rows = []
@@ -9344,12 +9348,12 @@ def _render_stock_report():
                     _row.update({"g": _g, "sku": _sp.get("sku") or "", "fx": _is_fixed})
                     _rows.append(_row)
         # Cảnh báo CHỈ TRÊN APP (không in ra phiếu): dòng nào không cân thì nêu tên để kiểm tra.
-        _bad = [r for r in _rows if r.get("lech")]
-        if _bad:
-            st.warning("⚠️ Có **{} dòng chưa cân** (Tồn đầu + Hoàn + Nhập kho − Xuất ≠ Tồn cuối) — "
-                       "thường do chỉnh kho tay: {}".format(
-                           len(_bad),
-                           " · ".join(f"{r['sku']} ({r['lech']:+,})" for r in _bad[:8])))
+        _minus = [r for r in _rows if (r.get("nhapkho") or 0) < 0]
+        if _minus:
+            st.warning("⚠️ **{} mã có Nhập kho ÂM** = tồn giảm nhiều hơn số bán ra + hoàn → nên soi lại "
+                       "(chỉnh kho tay, thất thoát, hoặc đếm sai): {}".format(
+                           len(_minus),
+                           " · ".join(f"{r['sku']} ({r['nhapkho']:+,})" for r in _minus[:8])))
         if not _rows:
             st.warning("Chưa khớp SKU nào cho các mã đã chọn. Mở '🔧 Dữ liệu thô' để xem field Sapo trả về.")
         else:
@@ -9388,7 +9392,7 @@ def _render_stock_report():
                         "<col class='c-num'><col class='c-num'><col class='c-num'><col class='c-num'>"
                         "<col class='c-cnt'></colgroup>"
                         "<thead><tr><th>SKU</th><th>Tồn<br>đầu</th><th>Hoàn</th><th>Nhập<br>kho</th>"
-                        "<th>Xuất</th><th>Tồn<br>cuối</th><th>Có thể<br>bán</th>"
+                        "<th>Bán ra</th><th>Tồn<br>cuối</th><th>Có thể<br>bán</th>"
                         "<th>Thực tế đếm</th></tr></thead>"
                         "<tbody>" + _tr + "</tbody></table>")
             def _two_cols(_part):
@@ -9451,7 +9455,9 @@ def _render_stock_report():
                     return ""
                 return (f"<div class='wrap{' brk' if _brk else ''}'><div class='hd'><div>"
                         f"<div class='ttl'>{_title}</div>"
-                        f"<div class='sub'><b>VITRAN BOUTIQUE</b> · {_dau_src}</div></div>"
+                        f"<div class='sub'><b>VITRAN BOUTIQUE</b> · {_dau_src} · "
+                        "<b>Tồn đầu + Hoàn + Nhập kho − Bán ra = Tồn cuối</b> "
+                        "<span style='color:#666'>(Nhập kho = nhập NCC + điều chỉnh kho)</span></div></div>"
                         f"<div class='meta'>Ngày: <b>{_today}</b><br>"
                         f"<span style='font-size:11.5px;color:#444'>In lúc: <b>{_now_txt}</b></span><br>"
                         f"NV kiểm: ______________</div></div>"
