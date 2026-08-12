@@ -1827,6 +1827,9 @@ PAGE_QLCC = "🛠️ Quản lý chấm công"
 PAGE_TIKTOK_INBOX = "💬 TikTok Inbox"
 PAGE_COSTS = "💸 Chi phí đầu vào"   # 3 công cụ mua vải / gia công → lưu chi phí đầu vào (chủ shop + admin)
 PAGE_OPS = "📊 Vận hành"   # tab: Báo cáo cuối ngày + Đơn trả + Phiếu nhặt (CSKH chỉ thấy Báo cáo)
+# TÁCH RIÊNG khỏi trang Vận hành: quét kho rất nặng, để chung sẽ đốt hạn mức API và
+# làm hỏng Báo cáo cuối ngày (đã từng gây 403). Trang riêng → không ảnh hưởng nhau.
+PAGE_STOCK = "📦 Tồn kho & kiểm kê"
 
 # Phân quyền theo tài khoản.
 #  · Tổng quan + Báo cáo cuối ngày: AI CŨNG xem được.
@@ -1843,20 +1846,24 @@ _is_cskh = (_cc_role == "nv" and _cc_emp != "kho")   # CSKH: KHÔNG thấy tab �
 _can_match_clip = bool(_is_owner or _cc_role == "admin" or _cc_emp == "kho")
 # PAGE_OPS (Vận hành) gồm: Báo cáo cuối ngày (mặc định) + Đơn trả + Phiếu nhặt (tab ngang).
 if _cc_role == "nv":
-    _rolepg = [PAGE_PRODUCTION] if _cc_emp == "kho" else [PAGE_TTKH]
+    # NV kho: thêm trang Tồn kho & kiểm kê (để in phiếu đi đếm hàng).
+    _rolepg = [PAGE_PRODUCTION, PAGE_STOCK] if _cc_emp == "kho" else [PAGE_TTKH]
     _opts = [PAGE_OPS] + _rolepg + [PAGE_CHAMCONG, PAGE_LUONG]
     _default = PAGE_CHAMCONG if st.query_params.get("tk") else PAGE_OPS   # quét QR → về Chấm công
 elif _cc_role == "shop":                    # máy shop: CHỈ thấy trang hiện mã QR chấm công
     _opts = [PAGE_QRSHOP]
     _default = PAGE_QRSHOP
 elif _cc_role == "admin":
-    _opts = [PAGE_OPS, PAGE_TIKTOK_INBOX, PAGE_PRODUCTION, PAGE_PRICE, PAGE_TTKH, PAGE_QRSHOP, PAGE_QLCC, PAGE_COSTS]
+    _opts = [PAGE_OPS, PAGE_TIKTOK_INBOX, PAGE_PRODUCTION, PAGE_STOCK, PAGE_PRICE, PAGE_TTKH,
+             PAGE_QRSHOP, PAGE_QLCC, PAGE_COSTS]
     _default = PAGE_OPS
 else:
-    _opts = [PAGE_OPS, PAGE_PRODUCTION, PAGE_PRICE, PAGE_TTKH]
+    _opts = [PAGE_OPS, PAGE_PRODUCTION, PAGE_STOCK, PAGE_PRICE, PAGE_TTKH]
     _default = PAGE_OPS
 if _is_owner:                               # chủ shop + zenzen197: thêm trang Tổng quan điều hành
     _opts = [PAGE_OVERVIEW] + _opts
+    if PAGE_STOCK not in _opts:
+        _opts.append(PAGE_STOCK)
     if PAGE_TIKTOK_INBOX not in _opts:
         _opts.insert(1, PAGE_TIKTOK_INBOX)
     if PAGE_COSTS not in _opts:             # chủ shop: thêm trang Chi phí đầu vào (mua vải / gia công)
@@ -9102,7 +9109,7 @@ def _render_stock_report():
     """Báo cáo tồn kho Sapo (2 loại) — 8 mã cố định + chọn thêm, hiển thị & IN A4, sort size XS→XL."""
     def _e2(s):
         return str(s if s not in (None, "") else "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-    with st.expander("📦 Báo cáo tồn kho + kiểm kê (in A4)", expanded=False):
+    if True:      # (đã tách thành TRANG RIÊNG — không còn bọc trong expander)
         st.caption("Tồn kho từ Sapo — TỒN THỰC TẾ (hàng trong kho) & CÓ THỂ BÁN (= tồn thực tế − số lượng đang đặt). "
                    "Cột 'Thực tế đếm' để trống cho NV kiểm & điền. Bấm 🖨️ để in ra giấy A4.")
         if not credential_present():
@@ -9402,7 +9409,8 @@ def _render_daily():
     st.title("📄 Báo cáo vận hành cuối ngày")
     st.caption("Tổng hợp tự động từ Sapo + Dohana — bấm **In báo cáo A4** trong khung để in/lưu PDF.  "
                "🎥 *Clip nhập hàng hoàn tự cập nhật khoảng 5 phút; bấm “Tải lại số liệu” để cập nhật ngay.*")
-    _render_stock_report()
+    # (Tồn kho & kiểm kê ĐÃ TÁCH sang TRANG RIÊNG — quét kho nặng, để chung sẽ đốt hạn mức
+    #  API và làm hỏng báo cáo này.)
     with st.expander("🔌 Kiểm tra kết nối Dohana (bấm khi video không lên)"):
         st.caption("Bấm để dò Dohana theo TỪNG loại (inbound/package) + xem loại THẬT Dohana trả về.")
         if st.button("Gửi thử tới Dohana", key="dohana_ping_btn"):
@@ -13427,6 +13435,16 @@ if _page == PAGE_OPS:
             _render_returns()
         else:
             _render_pick()
+    st.stop()
+
+
+# ═════════════ TRANG TỒN KHO & KIỂM KÊ (TÁCH RIÊNG — quét kho nặng) ═════════════
+if _page == PAGE_STOCK:
+    st.title("📦 Tồn kho & kiểm kê")
+    st.caption("Phiếu xuất nhập tồn + ô để nhân viên đếm tay, in khổ A4 ngang. "
+               "Trang này TÁCH RIÊNG khỏi Báo cáo cuối ngày: quét kho khá nặng nên chỉ chạy khi bấm nút, "
+               "không làm ảnh hưởng các trang khác.")
+    _render_stock_report()
     st.stop()
 
 
