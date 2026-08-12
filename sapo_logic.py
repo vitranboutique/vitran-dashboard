@@ -3828,8 +3828,8 @@ def get_stock_by_sku(fetch_json, max_pages: int = 80) -> dict:
 
     # ── 2) inventory_levels.json: nguồn THẬT của tồn kho — on_hand (tồn thực tế) /
     #       available (có thể bán) / committed (đang đặt). Gộp mọi kho (location_id). ──
-    lv_ok, lv = False, {}
-    for p in range(1, 41):        # tối đa 40 trang (10k dòng tồn) — tránh dội API Sapo → 403
+    lv_ok, lv, lv_capped = False, {}, False
+    for p in range(1, 81):        # tối đa 80 trang (20k dòng tồn); chỉ chạy khi NV bấm nút
         try:
             levels = (fetch_json("/admin/inventory_levels.json", limit=250, page=p) or {}).get("inventory_levels", [])
         except Exception:
@@ -3847,6 +3847,8 @@ def get_stock_by_sku(fetch_json, max_pages: int = 80) -> dict:
             a["committed"] += _n(it.get("committed"))
         if len(levels) < 250:
             break
+        if p == 80:
+            lv_capped = True      # còn dòng tồn CHƯA quét hết → số có thể THIẾU
     if lv_ok:
         for k, a in lv.items():
             d = out.setdefault(k, {"on_hand": 0, "available": 0, "committed": 0, "name": ""})
@@ -3860,6 +3862,8 @@ def get_stock_by_sku(fetch_json, max_pages: int = 80) -> dict:
 
     out["_sample"] = sample
     out["_levels_ok"] = lv_ok          # False = chưa lấy được TỒN THỰC TẾ (thiếu quyền)
+    out["_levels_capped"] = lv_capped  # True = quét chưa hết dòng tồn → số có thể thiếu
+    out["_levels_rows"] = len(lv)
     return out
 
 

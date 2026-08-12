@@ -9142,7 +9142,10 @@ def _render_stock_report():
         _levels_ok = bool(_stock.get("_levels_ok"))
         _skus = {k: v for k, v in _stock.items() if not str(k).startswith("_")}
         st.caption(f"Sapo trả về **{len(_skus)}** SKU có dữ liệu tồn."
-                   + ("  ✅ Tồn thực tế lấy từ *inventory_levels* (on_hand)." if _levels_ok else ""))
+                   + (f"  ✅ Tồn thực tế từ *inventory_levels* ({_stock.get('_levels_rows', 0)} SKU có tồn)."
+                      if _levels_ok else ""))
+        if _stock.get("_levels_capped"):
+            st.error("⚠️ Quét tồn kho CHƯA HẾT (chạm giới hạn trang) → một số mã có thể THIẾU số. Báo Claude để nới thêm.")
         if not _levels_ok:
             st.warning("⚠️ Chưa đọc được **tồn thực tế** (API `inventory_levels` bị chặn quyền) → cột *Tồn cuối ngày* "
                        "đang tạm bằng *Có thể bán*. Cấp quyền đọc Kho cho API key là ra đúng số (vd SD-XS: 185 thay vì 183).")
@@ -9225,8 +9228,17 @@ def _render_stock_report():
                 if _k in _snap_prev:
                     _dau_snap += int(_snap_prev.get(_k) or 0)
                     _has_snap = True
-            return {"dau": _dau_snap if _has_snap else (_oh + _x - _n), "dau_snap": _has_snap,
-                    "nhap": _n, "xuat": _x, "cuoi": _oh, "av": _av, "ncc": sorted(_ly)[:2]}
+            # NHẬP: API đơn nhập (purchase_orders) đang bị Sapo chặn → SUY RA từ chênh lệch tồn:
+            #   Đầu + Nhập − Xuất = Cuối  ⇒  Nhập = (Cuối − Đầu) + Xuất
+            # Cách này GỒM CẢ nhập từ NCC lẫn điều chỉnh kho tay, và bảng luôn cân.
+            _dau = _dau_snap if _has_snap else (_oh + _x - _n)
+            _nhap, _suyra = _n, False
+            if _has_snap and not _n:
+                _d = (_oh - _dau_snap) + _x
+                if _d > 0:
+                    _nhap, _suyra = _d, True
+            return {"dau": _dau, "dau_snap": _has_snap, "nhap": _nhap, "nhap_suyra": _suyra,
+                    "xuat": _x, "cuoi": _oh, "av": _av, "ncc": sorted(_ly)[:2]}
 
         _rows = []
         _fixed_set = set(_STOCK_FIXED_CODES)
@@ -9276,6 +9288,8 @@ def _render_stock_report():
                         _pv = _r["g"]
                         _tr += f"<tr><td colspan='7' class='g'>▸ {_e2(_r['g'])}</td></tr>"
                     _ncc = ("<div class='ncc'>" + _e2(", ".join(_r["ncc"])) + "</div>") if _r["ncc"] else ""
+                    if _r.get("nhap_suyra"):      # số suy ra từ chênh lệch tồn (gồm nhập NCC + chỉnh kho)
+                        _ncc = "<div class='ncc'>≈ suy ra</div>"
                     # Chưa có quyền đọc kho → để TRỐNG (—) thay vì số dễ hiểu nhầm "không phát sinh".
                     _c_dau = "—" if _io_blocked else f"{_r['dau']:,}"
                     _c_nhap = "—" if _io_blocked else f"{_r['nhap']:,}{_ncc}"
