@@ -406,22 +406,14 @@ def _express_detail(rep):
         return ""
     # GOM NHÓM THEO SẢN PHẨM: các đơn cùng SP nằm cạnh nhau, có dòng tiêu đề nhóm kèm
     # tổng số đơn → dễ soi khi kiểm hàng (thay vì xếp lộn xộn theo giờ).
-    # GOM NHÓM THEO GIAN HÀNG (trong mỗi gian hàng xếp theo sản phẩm rồi tới giờ)
+    # XẾP THEO THỜI GIAN trong ngày (gói → xuất kho): đọc theo trình tự công việc.
+    # KHÔNG chia nhóm gian hàng nữa vì đã có cột Gian hàng riêng.
     def _key(d):
-        return (_shop_only(d.get("gian_hang")), str(d.get("sku") or "~"),
-                str(d.get("issued_time") or "~"), str(d.get("packed_time") or ""))
+        return (str(d.get("packed_time") or "~"), str(d.get("issued_time") or "~"),
+                str(d.get("name") or ""))
     items = sorted(items, key=_key)
-    rows, _prev_shop = "", None
+    rows = ""
     for i, d in enumerate(items, 1):
-        _shop_now = _shop_only(d.get("gian_hang"))
-        if _shop_now != _prev_shop:
-            _prev_shop = _shop_now
-            _grp = [_x for _x in items if _shop_only(_x.get("gian_hang")) == _shop_now]
-            _sp = sum(int(_x.get("sp") or 0) for _x in _grp)
-            rows += (f'<tr><td colspan="8" style="background:#eef2ff;font-weight:800;'
-                     f'padding:3px 6px">🏪 {_e(_shop_now)} '
-                     f'<span style="font-weight:600;color:#475569">— {len(_grp)} đơn'
-                     + (f" · {_sp} SP" if _sp else "") + '</span></td></tr>')
         # MỌI vận đơn của đơn: mã ĐÃ HỦY gạch ngang + ghi "(đã hủy)"; mã đang dùng in đậm.
         _vds = d.get("vd_list") or []
         if _vds:
@@ -461,7 +453,7 @@ def _express_detail(rep):
                  f'<td class="num">{_is_html}</td>'
                  f'<td class="num">{_giao_html}</td></tr>')
     return (f'<div class="sec">⚡ Chi tiết {len(items)} đơn HỎA TỐC trong ngày</div>'
-            '<div class="io2tbl"><table style="font-size:.92em">'
+            '<div class="io2tbl"><table style="font-size:1.06em">'
             '<thead><tr><th>STT</th><th>Mã đơn</th><th>Vận đơn</th><th>Gian hàng</th><th>Sản phẩm</th>'
             '<th>Gói lúc</th><th>Xuất kho</th><th>Giao khách</th></tr></thead><tbody>'
             + rows + '</tbody></table></div>'
