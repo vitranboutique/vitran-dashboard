@@ -2417,7 +2417,7 @@ def load_dohana_inbound_date(date_iso):
 
 # Bump khi ĐỔI CẤU TRÚC dữ liệu báo cáo: cache của Streamlit khoá theo THAM SỐ, mà thân
 # load_daily_report không đổi → thêm khoá mới xong app vẫn trả bản CŨ. Đổi số này = cache mới.
-_RPT_VER = "2026-08-13-pni"
+_RPT_VER = "2026-08-15-pni2"
 
 
 @st.cache_data(ttl=180, show_spinner="Đang tổng hợp báo cáo cuối ngày…")
@@ -10186,15 +10186,23 @@ def _render_daily():
                 "Vận đơn": _x.get("tracking") or "",
                 "ĐVVC": _x.get("carrier") or "",
                 "Gói lúc": _x.get("packed_on") or "",
-                "Trạng thái VĐ": _x.get("shipment_status") or "chưa có",
+                "Trạng thái VĐ": {"cancelled": "⛔ VẬN ĐƠN ĐÃ HỦY", "pending": "⏳ Chờ shipper lấy",
+                                  "": "— chưa tạo VĐ"}.get(str(_x.get("shipment_status") or ""),
+                                                            _x.get("shipment_status")),
                 "SKU": _x.get("sku") or "",
                 "SP": _x.get("sp") or "",
             } for _x in _pni]
             st.error(f"🔎 **{len(_rowsx)} đơn ĐÃ GÓI nhưng CHƯA xuất kho** — đây chính là số đơn hụt "
                      "trong cảnh báo chênh lệch ở trên:")
             st.dataframe(pd.DataFrame(_rowsx), hide_index=True, use_container_width=True)
-            st.caption("Việc cần làm: tìm gói hàng trong kho → bàn giao ĐVVC (bấm xuất kho trên Sapo), "
-                       "hoặc kiểm tra đơn đã đổi ĐVVC / khách hủy chưa.")
+            _cancelled_vd = [r for r in _rowsx if "HỦY" in str(r.get("Trạng thái VĐ") or "")]
+            if _cancelled_vd:
+                st.warning("⛔ Có **{} đơn đã gói nhưng VẬN ĐƠN BỊ HỦY** → hàng nhiều khả năng CÒN TRONG KHO, "
+                           "cần tách ra khỏi hàng chờ giao: {}".format(
+                               len(_cancelled_vd),
+                               " · ".join(str(r.get("Mã đơn")) for r in _cancelled_vd[:6])))
+            st.caption("Việc cần làm: tìm gói hàng trong kho → bàn giao ĐVVC (bấm xuất kho trên Sapo); "
+                       "nếu vận đơn đã hủy thì bóc hàng nhập lại kho hoặc tạo vận đơn mới.")
         elif isinstance(_rep.get("packed_not_issued"), list):
             _bc = _rep.get("by_carrier") or []
             _gap = sum(max(0, (r.get("dg_cu", 0) + r.get("dong_goi", 0)) - r.get("huy", 0) - r.get("xuat_kho", 0))
