@@ -2682,6 +2682,7 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
     dong_goi_codes, huy_goi_codes, dong_goi_order_codes = set(), set(), []
     issued_orders = []
     packed_not_issued = []      # đã gói nhưng CHƯA xuất kho hôm nay (đơn hụt)
+    express_today = []          # MỌI đơn HỎA TỐC trong ngày (để tra khi thiếu đơn)
     xuat_by_sku = {}          # {SKU: SL} — xuất kho hôm nay theo SKU (= đơn shipper đã nhận)
     for o in open_orders:
         f = f0(o)
@@ -2705,6 +2706,16 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
                 ce(c)["dg_cu"] += 1       # đóng gói CŨ (xác nhận hôm trước + đã gói = đơn sót)
             # ĐÃ GÓI nhưng CHƯA XUẤT KHO hôm nay = đúng số đơn hụt mà cảnh báo "chênh lệch giữa
             # các cột" đang báo. Giữ CHI TIẾT (mã đơn/VĐ/ĐVVC/SKU) để chỉ đích danh đơn cần tìm.
+            # LƯU MỌI ĐƠN HỎA TỐC trong ngày (kèm mốc giờ) để sau này tra khi nghi thiếu đơn.
+            if "Hỏa tốc" in str(c):
+                _dx = _odet(o)
+                _pk = _parse_vn(f.get("packed_on"))
+                _is = _parse_vn(f.get("issued_on"))
+                _dx["packed_time"] = _pk.strftime("%H:%M") if _pk else ""
+                _dx["issued_time"] = _is.strftime("%H:%M") if _is else ""
+                _dx["shipment_status"] = f.get("shipment_status") or ""
+                _dx["n_ful"] = len(o.get("fulfillments") or [])
+                express_today.append(_dx)
             if _vn_date_of(f.get("issued_on")) != today and not (
                     o.get("cancelled_on") or str(o.get("status") or "").lower() == "cancelled"):
                 _d_pni = _odet(o)
@@ -2924,6 +2935,7 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
         # Xuất Nhập Tồn đọc được (trước đây lọt vào dict con "funnel" nên Xuất luôn ra 0).
         "xuat_by_sku": xuat_by_sku,
         "packed_not_issued": packed_not_issued,   # đơn ĐÃ GÓI mà CHƯA xuất kho (chi tiết)
+        "express_today": express_today,           # MỌI đơn hỏa tốc trong ngày (tra khi thiếu)
         "dong_goi_codes": dong_goi_codes,
         "huy_goi_codes": huy_goi_codes,
         "dong_goi_order_codes": dong_goi_order_codes,

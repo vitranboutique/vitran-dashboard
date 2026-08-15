@@ -382,6 +382,46 @@ def _batch_rows(batches, tong_don, tong_sp):
     return body
 
 
+def _express_detail(rep):
+    """LIỆT KÊ TỪNG ĐƠN HỎA TỐC trong ngày: mã đơn · vận đơn · SP · giờ gói · giờ xuất kho.
+    Để sau này nghi thiếu đơn thì dò được ngay đơn nào, hàng gì (thay vì chỉ thấy con số)."""
+    items = rep.get("express_today") or []
+    if not items:
+        return ""
+    def _key(d):
+        return (str(d.get("issued_time") or "~"), str(d.get("packed_time") or ""))
+    items = sorted(items, key=_key)
+    rows = ""
+    for i, d in enumerate(items, 1):
+        _tk = str(d.get("tracking") or "")
+        _tk_html = f'<span class="vd">{_e(_tk)}</span>' if _tk and _tk != d.get("name") else "—"
+        _pk = str(d.get("packed_time") or "")
+        _is = str(d.get("issued_time") or "")
+        _st = str(d.get("shipment_status") or "")
+        _stv = {"delivered": "đã giao", "delivering": "đang giao", "pending": "chờ lấy",
+                "returning": "đang hoàn", "returned": "đã hoàn", "cancelled": "VĐ đã hủy",
+                "": "chưa có VĐ"}.get(_st, _st)
+        _warn = (not _is) or _st == "cancelled"
+        _bg = ' style="background:#fff1f2"' if _warn else ""
+        _nf = int(d.get("n_ful") or 1)
+        _nfx = f' <span style="color:#b45309">({_nf} VĐ)</span>' if _nf > 1 else ""
+        _is_html = _e(_is) if _is else '<b style="color:#dc2626">CHƯA</b>' 
+        rows += (f'<tr{_bg}><td class="num">{i}</td>'
+                 f'<td><b>{_e(str(d.get("name", "?")))}</b>{_nfx}</td>'
+                 f'<td>{_tk_html}</td>'
+                 f'<td>{_e(str(d.get("sku", "")))}</td>'
+                 f'<td class="num">{_e(_pk) or "—"}</td>'
+                 f'<td class="num">{_is_html}</td>'
+                 f'<td>{_e(_stv)}</td></tr>')
+    return (f'<div class="sec">⚡ Chi tiết {len(items)} đơn HỎA TỐC trong ngày</div>'
+            '<div class="io2tbl"><table style="font-size:.92em">'
+            '<thead><tr><th>STT</th><th>Mã đơn</th><th>Vận đơn</th><th>Sản phẩm</th>'
+            '<th>Gói lúc</th><th>Xuất kho</th><th>Trạng thái</th></tr></thead><tbody>'
+            + rows + '</tbody></table></div>'
+            '<div class="wb" style="color:#64748b">Dòng nền hồng = chưa xuất kho hoặc vận đơn đã hủy '
+            '— cần kiểm tra. "(2 VĐ)" = đơn đã đổi vận đơn.</div>')
+
+
 def _express_alert(rep):
     """Hộp cảnh báo đơn HỎA TỐC quá hạn giao — liệt kê cụ thể mã đơn cho NV lấy lại / hối shipper."""
     stuck = rep.get("express_stuck") or []
@@ -1117,6 +1157,7 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
   {vid_note}
 
   {_express_alert(rep)}
+  {_express_detail(rep)}
   <div class="io2col">
    <div class="io2c wide">
   <div class="sec">I. Số lượng đơn theo đơn vị vận chuyển</div>
