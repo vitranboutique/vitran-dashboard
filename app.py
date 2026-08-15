@@ -2417,7 +2417,7 @@ def load_dohana_inbound_date(date_iso):
 
 # Bump khi ĐỔI CẤU TRÚC dữ liệu báo cáo: cache của Streamlit khoá theo THAM SỐ, mà thân
 # load_daily_report không đổi → thêm khoá mới xong app vẫn trả bản CŨ. Đổi số này = cache mới.
-_RPT_VER = "2026-08-15-pni2"
+_RPT_VER = "2026-08-15-ful0"
 
 
 @st.cache_data(ttl=180, show_spinner="Đang tổng hợp báo cáo cuối ngày…")
@@ -13649,7 +13649,7 @@ def _render_returns():
 # ───────────────────────── Tiện ích ─────────────────────────
 def _evidence_need(o):
     """Phân loại bằng chứng NV kho cần up cho 1 đơn đã đẩy VC → hủy."""
-    f = (o.get("fulfillments") or [{}])[0]
+    f = L.ful0(o)
     if f.get("packed_status") == "packed":
         return "📦 Ảnh đơn có chữ «HỦY» (cần lấy lại hàng)"
     if f.get("picked_on") or f.get("sorted_on"):
@@ -13662,11 +13662,11 @@ def _evidence_need(o):
 def cancel_table(orders):
     return pd.DataFrame([{
         "Mã đơn": o.get("name"),
-        "Mã vận đơn": (o.get("fulfillments") or [{}])[0].get("tracking_number"),
+        "Mã vận đơn": L.ful0(o).get("tracking_number"),
         "SKU": ", ".join(f'{li.get("sku")} x{li.get("quantity")}'
                          for li in (o.get("line_items") or [])),
         "SL": sum(li.get("quantity", 0) for li in (o.get("line_items") or [])),
-        "ĐVVC": (o.get("fulfillments") or [{}])[0].get("tracking_company")
+        "ĐVVC": L.ful0(o).get("tracking_company")
                 or (o.get("shipping_lines") or [{}])[0].get("carrier_name"),
         "Ngày hủy": (o.get("cancelled_on") or "")[:10],
         "📸 Bằng chứng cần up": _evidence_need(o),
@@ -13827,7 +13827,7 @@ _today_vn = (datetime.now(timezone.utc) + timedelta(hours=7)).date()
 _cancel_today = [o for o in (c["packed"] + c["not_packed"]) if _vn_day(o.get("cancelled_on")) == _today_vn]
 if _cancel_today:
     _pk = sum(1 for o in _cancel_today
-              if (o.get("fulfillments") or [{}])[0].get("packed_status") == "packed")
+              if L.ful0(o).get("packed_status") == "packed")
     _names = ", ".join(o.get("name", "") for o in _cancel_today[:20]) + ("…" if len(_cancel_today) > 20 else "")
     st.error(f"🚨 **{len(_cancel_today)} đơn ĐÃ ĐẨY VC → HỦY trong HÔM NAY** — "
              f"{_pk} đơn đã đóng gói (cần LẤY LẠI hàng ngay), {len(_cancel_today) - _pk} chưa đóng gói. "

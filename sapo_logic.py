@@ -458,7 +458,7 @@ def _summarize_picking(orders):
             q = li.get("quantity", 0) or 0
             sku[s] = sku.get(s, 0) + q
             total_qty += q
-        f = (o.get("fulfillments") or [{}])[0]
+        f = ful0(o)
         xuly_vn = _parse_vn(f.get("shipment_created_on") or f.get("created_on"))
         cre_vn = _parse_vn(o.get("created_on"))
         if xuly_vn:
@@ -1152,7 +1152,7 @@ def _packing_history(orders, gap_min: int = 20, ref_date=None) -> dict:
     today = ref_date or (_now_utc() + timedelta(hours=7)).date()
     rows = []
     for o in orders:
-        f = (o.get("fulfillments") or [{}])[0]
+        f = ful0(o)
         pv = _parse_vn(f.get("packed_on"))
         if pv and pv.date() == today:
             rows.append((pv, o))
@@ -1171,7 +1171,7 @@ def _packing_history(orders, gap_min: int = 20, ref_date=None) -> dict:
         g = _summarize_picking(b["orders"])         # full summary để render phiếu
         g1, g2 = b["_start"].strftime("%H:%M"), b["_last"].strftime("%H:%M")
         xuat = sum(1 for o in b["orders"]
-                   if _vn_date_of((o.get("fulfillments") or [{}])[0].get("issued_on")) == today)
+                   if _vn_date_of(ful0(o).get("issued_on")) == today)
         out.append({
             "dot": i, "gio": g1 if g1 == g2 else f"{g1}–{g2}",
             "don": g["total_orders"], "sp": g["total_qty"], "sku_count": g["sku_count"],
@@ -1193,7 +1193,7 @@ def _packing_reconcile(orders) -> dict:
     soan, xuat = {}, {}
     pend, prev = {}, {}   # sku -> {"qty": int, "pairs": [(mã vận đơn, ĐVVC)]}
     for o in orders:
-        f = (o.get("fulfillments") or [{}])[0]
+        f = ful0(o)
         p_today = _vn_date_of(f.get("packed_on")) == today
         i_today = _vn_date_of(f.get("issued_on")) == today
         if not (p_today or i_today):
@@ -1259,7 +1259,7 @@ def _cancel_after_pick(open_orders, fetch_json) -> dict:
     today = (_now_utc() + timedelta(hours=7)).date()
 
     def f0(o):
-        return (o.get("fulfillments") or [{}])[0]
+        return ful0(o)
 
     # Đợt soạn hôm nay = cụm packed_on của đơn open (giống _packing_history)
     pts = sorted(p for o in open_orders
@@ -1321,7 +1321,7 @@ def get_picking(fetch_json, max_pages: int = 15) -> dict:
         orders += rows
 
     def f0(o):
-        return (o.get("fulfillments") or [{}])[0]
+        return ful0(o)
 
     # cần nhặt = ĐÃ IN phiếu giao + CHƯA đóng gói (labeling/packing... — mọi trạng thái trước "packed")
     pick = [o for o in orders
@@ -1359,13 +1359,32 @@ def pick_shipped_codes(fetch_json, days: int = 6) -> set:
         if not rows:
             break
         for o in rows:
-            f = (o.get("fulfillments") or [{}])[0]
+            f = ful0(o)
             if str(f.get("shipment_status") or "").lower() in ("delivering", "delivered", "returning", "returned"):
                 shipped |= _order_codes(o)
     return shipped
 
 
 # ───────────────────── Tổng quan điều hành (overview) ─────────────────────
+
+def ful0(o):
+    """VẬN ĐƠN ĐANG CÓ HIỆU LỰC của đơn (KHÔNG phải fulfillments[0]).
+
+    ⚠️ Đơn bị HỦY vận đơn rồi tạo lại có NHIỀU fulfillment: cái [0] là bản ĐÃ HỦY
+    (issued_on=null, shipment_status='cancelled'), cái sau mới là bản thật đã giao.
+    Lấy [0] như trước làm báo cáo đếm THIẾU (vd 6 đơn gói nhưng chỉ 5 'đã xuất kho').
+    Ưu tiên: bản CHƯA hủy → trong đó lấy bản có mốc thời gian MỚI NHẤT."""
+    fs = [f for f in (o or {}).get("fulfillments") or [] if isinstance(f, dict)]
+    if not fs:
+        return {}
+    live = [f for f in fs
+            if str(f.get("status") or "").lower() != "cancelled"
+            and str(f.get("shipment_status") or "").lower() != "cancelled"]
+    pool = live or fs
+    return sorted(pool, key=lambda f: (str(f.get("issued_on") or ""),
+                                       str(f.get("packed_on") or ""),
+                                       str(f.get("shipment_created_on") or "")))[-1]
+
 
 def _vn_date_of(iso):
     d = _parse_vn(iso)
@@ -1380,7 +1399,7 @@ def _vn_hm(iso):
 
 def _order_codes(o) -> set:
     """Mã định danh để khớp video Dohana: mã vận đơn + mã đơn + mã sàn/Sapo liên quan."""
-    f = (o.get("fulfillments") or [{}])[0]
+    f = ful0(o)
 
     def add(out, val):
         if val is None:
@@ -1420,7 +1439,7 @@ def get_alerts(fetch_json) -> dict:
     today = (_now_utc() + timedelta(hours=7)).date()
 
     def f0(o):
-        return (o.get("fulfillments") or [{}])[0]
+        return ful0(o)
 
     open_orders = []
     for p in range(1, 30):
@@ -1494,7 +1513,7 @@ def get_week_summary(fetch_json, days: int = 7) -> dict:
             mon[key] += n
 
     def f0(o):
-        return (o.get("fulfillments") or [{}])[0]
+        return ful0(o)
 
     # Đơn open + closed — lùi đủ phủ CẢ THÁNG (packed/issued/delivered trong tháng)
     back = max(days + 10, days_this_month + 10)
@@ -2577,7 +2596,7 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
     is_past = today < real_today
 
     def f0(o):
-        return (o.get("fulfillments") or [{}])[0]
+        return ful0(o)
 
     def carrier(o):
         f = f0(o)
@@ -2604,7 +2623,7 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
         if not rows:
             break
         for o in rows:
-            ff = (o.get("fulfillments") or [{}])[0]
+            ff = ful0(o)
             if (_vn_date_of(ff.get("packed_on")) == today
                     or _vn_date_of(ff.get("issued_on")) == today):
                 open_orders.append(o)
@@ -2956,7 +2975,7 @@ def get_overview(fetch_json, days: int = 7) -> dict:
         if not d or d < week_start or d > today:
             continue
         # Loại đơn khách đặt nhưng CHƯA xử lý (chưa có vận đơn) đã bị HỦY
-        if o.get("cancelled_on") and not (o.get("fulfillments") or [{}])[0].get("shipment_created_on"):
+        if o.get("cancelled_on") and not ful0(o).get("shipment_created_on"):
             if d == today:
                 excl_today += 1
             elif d == yest:
@@ -3005,7 +3024,7 @@ def get_overview(fetch_json, days: int = 7) -> dict:
     _fmtvn = lambda x: (_parse_vn(x).strftime("%d/%m %H:%M") if _parse_vn(x) else "")
 
     for o in open_orders:
-        f = (o.get("fulfillments") or [{}])[0]
+        f = ful0(o)
         ss = f.get("shipment_status")
         is_express = o.get("shipment_category") == "express"
         # "Ngày xử lý" = lúc TẠO VẬN ĐƠN = thời gian xác nhận của shop
@@ -4038,7 +4057,7 @@ def get_stock_io_day(fetch_json, date_iso: str, max_pages: int = 60) -> dict:
     _n_scanned = len(_scan)
     _n_issued_today = 0
     for o in _scan:
-        f = (o.get("fulfillments") or [{}])[0] or {}
+        f = ful0(o)
         _iss = _vn_date_of(f.get("issued_on"))
         if not _iss or _iss.isoformat() != date_iso:
             continue
