@@ -406,19 +406,22 @@ def _express_detail(rep):
         return ""
     # GOM NHÓM THEO SẢN PHẨM: các đơn cùng SP nằm cạnh nhau, có dòng tiêu đề nhóm kèm
     # tổng số đơn → dễ soi khi kiểm hàng (thay vì xếp lộn xộn theo giờ).
+    # GOM NHÓM THEO GIAN HÀNG (trong mỗi gian hàng xếp theo sản phẩm rồi tới giờ)
     def _key(d):
-        return (str(d.get("sku") or "~"), str(d.get("issued_time") or "~"),
-                str(d.get("packed_time") or ""))
+        return (_shop_only(d.get("gian_hang")), str(d.get("sku") or "~"),
+                str(d.get("issued_time") or "~"), str(d.get("packed_time") or ""))
     items = sorted(items, key=_key)
-    rows, _prev_sku = "", None
+    rows, _prev_shop = "", None
     for i, d in enumerate(items, 1):
-        _sku_now = str(d.get("sku") or "")
-        if _sku_now != _prev_sku:
-            _prev_sku = _sku_now
-            _cnt = sum(1 for _x in items if str(_x.get("sku") or "") == _sku_now)
-            rows += (f'<tr><td colspan="10" style="background:#eef2ff;font-weight:800;'
-                     f'padding:3px 6px">▸ {_e(_sku_now) or "(không rõ SP)"} '
-                     f'<span style="font-weight:600;color:#475569">— {_cnt} đơn</span></td></tr>')
+        _shop_now = _shop_only(d.get("gian_hang"))
+        if _shop_now != _prev_shop:
+            _prev_shop = _shop_now
+            _grp = [_x for _x in items if _shop_only(_x.get("gian_hang")) == _shop_now]
+            _sp = sum(int(_x.get("sp") or 0) for _x in _grp)
+            rows += (f'<tr><td colspan="9" style="background:#eef2ff;font-weight:800;'
+                     f'padding:3px 6px">🏪 {_e(_shop_now)} '
+                     f'<span style="font-weight:600;color:#475569">— {len(_grp)} đơn'
+                     + (f" · {_sp} SP" if _sp else "") + '</span></td></tr>')
         # MỌI vận đơn của đơn: mã ĐÃ HỦY gạch ngang + ghi "(đã hủy)"; mã đang dùng in đậm.
         _vds = d.get("vd_list") or []
         if _vds:
@@ -453,12 +456,11 @@ def _express_detail(rep):
                  f'<td class="num">{_e(_pk) or "—"}</td>'
                  f'<td class="num">{_is_html}</td>'
                  f'<td class="num">{_e(str(d.get("delivered_time") or "")) or "—"}</td>'
-                 f'<td class="num">{_e(str(d.get("completed_time") or "")) or "—"}</td>'
                  f'<td>{_e(_stv)}</td></tr>')
     return (f'<div class="sec">⚡ Chi tiết {len(items)} đơn HỎA TỐC trong ngày</div>'
             '<div class="io2tbl"><table style="font-size:.92em">'
             '<thead><tr><th>STT</th><th>Mã đơn</th><th>Vận đơn</th><th>Gian hàng</th><th>Sản phẩm</th>'
-            '<th>Gói lúc</th><th>Xuất kho</th><th>Giao khách</th><th>Hoàn thành</th>'
+            '<th>Gói lúc</th><th>Xuất kho</th><th>Giao khách</th>'
             '<th>Trạng thái</th></tr></thead><tbody>'
             + rows + '</tbody></table></div>'
             '<div class="wb" style="color:#64748b">Dòng nền hồng = chưa xuất kho hoặc vận đơn đã hủy '
