@@ -393,8 +393,21 @@ def _express_detail(rep):
     items = sorted(items, key=_key)
     rows = ""
     for i, d in enumerate(items, 1):
-        _tk = str(d.get("tracking") or "")
-        _tk_html = f'<span class="vd">{_e(_tk)}</span>' if _tk and _tk != d.get("name") else "—"
+        # MỌI vận đơn của đơn: mã ĐÃ HỦY gạch ngang + ghi "(đã hủy)"; mã đang dùng in đậm.
+        _vds = d.get("vd_list") or []
+        if _vds:
+            _parts = []
+            for _v in _vds:
+                _t = _e(str(_v.get("track") or ""))
+                if _v.get("cancelled"):
+                    _parts.append(f'<span style="color:#dc2626;text-decoration:line-through">{_t}</span>'
+                                  ' <span style="color:#dc2626;font-size:.9em">(đã hủy)</span>')
+                else:
+                    _parts.append(f'<b class="vd">{_t}</b>')
+            _tk_html = "<br>".join(_parts)
+        else:
+            _tk = str(d.get("tracking") or "")
+            _tk_html = f'<span class="vd">{_e(_tk)}</span>' if _tk and _tk != d.get("name") else "—"
         _pk = str(d.get("packed_time") or "")
         _is = str(d.get("issued_time") or "")
         _st = str(d.get("shipment_status") or "")
@@ -412,11 +425,14 @@ def _express_detail(rep):
                  f'<td>{_e(str(d.get("sku", "")))}</td>'
                  f'<td class="num">{_e(_pk) or "—"}</td>'
                  f'<td class="num">{_is_html}</td>'
+                 f'<td class="num">{_e(str(d.get("delivered_time") or "")) or "—"}</td>'
+                 f'<td class="num">{_e(str(d.get("completed_time") or "")) or "—"}</td>'
                  f'<td>{_e(_stv)}</td></tr>')
     return (f'<div class="sec">⚡ Chi tiết {len(items)} đơn HỎA TỐC trong ngày</div>'
             '<div class="io2tbl"><table style="font-size:.92em">'
             '<thead><tr><th>STT</th><th>Mã đơn</th><th>Vận đơn</th><th>Sản phẩm</th>'
-            '<th>Gói lúc</th><th>Xuất kho</th><th>Trạng thái</th></tr></thead><tbody>'
+            '<th>Gói lúc</th><th>Xuất kho</th><th>Giao khách</th><th>Hoàn thành</th>'
+            '<th>Trạng thái</th></tr></thead><tbody>'
             + rows + '</tbody></table></div>'
             '<div class="wb" style="color:#64748b">Dòng nền hồng = chưa xuất kho hoặc vận đơn đã hủy '
             '— cần kiểm tra. "(2 VĐ)" = đơn đã đổi vận đơn.</div>')

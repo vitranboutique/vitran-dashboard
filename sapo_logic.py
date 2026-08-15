@@ -2715,6 +2715,19 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
                 _dx["issued_time"] = _is.strftime("%H:%M") if _is else ""
                 _dx["shipment_status"] = f.get("shipment_status") or ""
                 _dx["n_ful"] = len(o.get("fulfillments") or [])
+                # GIAO KHÁCH & HOÀN THÀNH: Sapo lưu ở delivered_on / completed_on (cấp đơn;
+                # fulfillment cũng có delivered_on) — khớp mốc "Giao hàng thành công / Hoàn thành".
+                _gv = _parse_vn(f.get("delivered_on") or o.get("delivered_on"))
+                _ht = _parse_vn(o.get("completed_on") or o.get("closed_on"))
+                _dx["delivered_time"] = _gv.strftime("%H:%M") if _gv else ""
+                _dx["completed_time"] = _ht.strftime("%H:%M") if _ht else ""
+                # LIỆT KÊ MỌI vận đơn của đơn (đơn đổi VĐ có 2 mã) + đánh dấu mã ĐÃ HỦY.
+                _dx["vd_list"] = [
+                    {"track": str(_ff.get("tracking_number") or ""),
+                     "cancelled": (str(_ff.get("status") or "").lower() == "cancelled"
+                                   or str(_ff.get("shipment_status") or "").lower() == "cancelled")}
+                    for _ff in (o.get("fulfillments") or []) if str(_ff.get("tracking_number") or "")
+                ]
                 express_today.append(_dx)
             if _vn_date_of(f.get("issued_on")) != today and not (
                     o.get("cancelled_on") or str(o.get("status") or "").lower() == "cancelled"):
