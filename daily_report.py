@@ -418,7 +418,7 @@ def _express_detail(rep):
             _prev_shop = _shop_now
             _grp = [_x for _x in items if _shop_only(_x.get("gian_hang")) == _shop_now]
             _sp = sum(int(_x.get("sp") or 0) for _x in _grp)
-            rows += (f'<tr><td colspan="9" style="background:#eef2ff;font-weight:800;'
+            rows += (f'<tr><td colspan="8" style="background:#eef2ff;font-weight:800;'
                      f'padding:3px 6px">🏪 {_e(_shop_now)} '
                      f'<span style="font-weight:600;color:#475569">— {len(_grp)} đơn'
                      + (f" · {_sp} SP" if _sp else "") + '</span></td></tr>')
@@ -447,7 +447,11 @@ def _express_detail(rep):
         _bg = ' style="background:#fff1f2"' if _warn else ""
         _nf = int(d.get("n_ful") or 1)
         _nfx = f' <span style="color:#b45309">({_nf} VĐ)</span>' if _nf > 1 else ""
-        _is_html = _e(_is) if _is else '<b style="color:#dc2626">CHƯA</b>' 
+        _is_html = _e(_is) if _is else '<b style="color:#dc2626">CHƯA</b>'
+        # Có GIỜ giao khách = đã giao xong → khỏi cần cột trạng thái riêng.
+        # Chưa giao thì ghi ĐÚNG lý do ngay tại ô này (chờ lấy / VĐ đã hủy / chưa có VĐ).
+        _gv = str(d.get("delivered_time") or "")
+        _giao_html = _e(_gv) if _gv else f'<b style="color:#dc2626">{_e(_stv)}</b>' 
         rows += (f'<tr{_bg}><td class="num">{i}</td>'
                  f'<td><b>{_e(str(d.get("name", "?")))}</b>{_nfx}</td>'
                  f'<td>{_tk_html}</td>'
@@ -455,13 +459,11 @@ def _express_detail(rep):
                  f'<td>{_e(str(d.get("sku", "")))}</td>'
                  f'<td class="num">{_e(_pk) or "—"}</td>'
                  f'<td class="num">{_is_html}</td>'
-                 f'<td class="num">{_e(str(d.get("delivered_time") or "")) or "—"}</td>'
-                 f'<td>{_e(_stv)}</td></tr>')
+                 f'<td class="num">{_giao_html}</td></tr>')
     return (f'<div class="sec">⚡ Chi tiết {len(items)} đơn HỎA TỐC trong ngày</div>'
             '<div class="io2tbl"><table style="font-size:.92em">'
             '<thead><tr><th>STT</th><th>Mã đơn</th><th>Vận đơn</th><th>Gian hàng</th><th>Sản phẩm</th>'
-            '<th>Gói lúc</th><th>Xuất kho</th><th>Giao khách</th>'
-            '<th>Trạng thái</th></tr></thead><tbody>'
+            '<th>Gói lúc</th><th>Xuất kho</th><th>Giao khách</th></tr></thead><tbody>'
             + rows + '</tbody></table></div>'
             '<div class="wb" style="color:#64748b">Dòng nền hồng = chưa xuất kho hoặc vận đơn đã hủy '
             '— cần kiểm tra. "(2 VĐ)" = đơn đã đổi vận đơn.</div>')
