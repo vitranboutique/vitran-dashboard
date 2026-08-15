@@ -10166,58 +10166,27 @@ def _render_daily():
         st.error(f"❌ Lỗi dựng báo cáo A4 (mục đơn trả hàng bên dưới vẫn hiển thị): `{_e}`")
         with st.expander("Chi tiết lỗi (gửi Claude để sửa)"):
             st.code(_tb.format_exc())
-    # ── 🔎 ĐƠN ĐÃ SOẠN NHƯNG CHƯA XUẤT KHO — chỉ đích danh đơn bị hụt (mã đơn + SKU) ──
-    # Bảng ĐVVC chỉ cho biết "Soạn 6 · Đã xuất kho 5" mà không nói đơn nào hụt. Đối chiếu
-    # MÃ trên phiếu nhặt hôm nay với các mã ĐÃ giao shipper để nêu đúng đơn còn thiếu.
+    # ── 🔎 ĐƠN ĐÃ GÓI NHƯNG CHƯA XUẤT KHO — chỉ đích danh đơn hụt (mã đơn + SKU) ──
+    # Đúng nhóm đơn mà cảnh báo "chênh lệch giữa các cột" đang đếm (đóng gói − hủy > xuất kho).
     try:
-        _picked, _pick_alias = set(), {}
-        for _r in (_ps.get("rows") or []):
-            for _c in (_r.get("codes") or []):
-                _n = _ascii_code(str(_c))
-                if _n:
-                    _picked.add(_n)
-                    _pick_alias.setdefault(_n, str(_c))
-            for _g in (_r.get("code_groups") or []):
-                _ns = [_ascii_code(str(x)) for x in (_g or []) if _ascii_code(str(x))]
-                for _n in _ns:
-                    _picked.add(_n)
-                    _pick_alias.setdefault(_n, str(_g[0] if _g else _n))
-        _shipped = set(load_pick_shipped() or set())
-        _shipped_n = {_ascii_code(str(x)) for x in _shipped if _ascii_code(str(x))}
-        # gom theo ĐƠN: 1 đơn có nhiều mã (mã đơn + vận đơn) → chỉ báo khi KHÔNG mã nào đã giao
-        _alias_rows = _rep.get("order_code_aliases") or []
-        _by_norm = {}
-        for _a in _alias_rows:
-            for _c in (_a.get("codes") or []) + [_a.get("name"), _a.get("tracking")]:
-                _n = _ascii_code(str(_c or ""))
-                if _n:
-                    _by_norm[_n] = _a
-        _seen, _stuck = set(), []
-        for _n in _picked:
-            if _n in _shipped_n:
-                continue
-            _a = _by_norm.get(_n)
-            _key = str((_a or {}).get("name") or _n)
-            if _key in _seen:
-                continue
-            if _a and any(_ascii_code(str(_c)) in _shipped_n
-                          for _c in ((_a.get("codes") or []) + [_a.get("name"), _a.get("tracking")]) if _c):
-                continue
-            _seen.add(_key)
-            _stuck.append({
-                "Mã đơn": (_a or {}).get("name") or _pick_alias.get(_n, _n),
-                "Vận đơn": (_a or {}).get("tracking") or _pick_alias.get(_n, _n),
-                "ĐVVC": (_a or {}).get("carrier") or "—",
-                "SKU": (_a or {}).get("sku") or "(không thấy đơn trên Sapo)",
-                "SP": (_a or {}).get("sp") or "",
-            })
-        if _stuck:
-            st.error(f"🔎 **{len(_stuck)} đơn ĐÃ SOẠN nhưng CHƯA giao shipper** — đây chính là số đơn hụt "
-                     "giữa cột *Soạn* và *Shipper thực nhận* ở bảng ĐVVC:")
-            st.dataframe(pd.DataFrame(_stuck), hide_index=True, use_container_width=True)
-            st.caption("Việc cần làm: tìm gói hàng này trong kho → giao shipper, hoặc kiểm tra đơn đã hủy/đổi ĐVVC chưa.")
+        _pni = _rep.get("packed_not_issued") or []
+        if _pni:
+            _rowsx = [{
+                "Mã đơn": _x.get("name") or "",
+                "Vận đơn": _x.get("tracking") or "",
+                "ĐVVC": _x.get("carrier") or "",
+                "Gói lúc": _x.get("packed_on") or "",
+                "Trạng thái VĐ": _x.get("shipment_status") or "chưa có",
+                "SKU": _x.get("sku") or "",
+                "SP": _x.get("sp") or "",
+            } for _x in _pni]
+            st.error(f"🔎 **{len(_rowsx)} đơn ĐÃ GÓI nhưng CHƯA xuất kho** — đây chính là số đơn hụt "
+                     "trong cảnh báo chênh lệch ở trên:")
+            st.dataframe(pd.DataFrame(_rowsx), hide_index=True, use_container_width=True)
+            st.caption("Việc cần làm: tìm gói hàng trong kho → bàn giao ĐVVC (bấm xuất kho trên Sapo), "
+                       "hoặc kiểm tra đơn đã đổi ĐVVC / khách hủy chưa.")
     except Exception as _se:
-        st.caption(f"(Chưa đối chiếu được đơn đã soạn ↔ đã giao: {_se})")
+        st.caption(f"(Chưa liệt kê được đơn đã gói chưa xuất kho: {_se})")
     # CHỐT SỐ hôm nay: ĐỔI SỐ MỚI LƯU (bản cuối trong ngày = số cuối ngày; sau 24h ngày cũ đọc bản này).
     # Dùng session_state để KHÔNG ghi Gist thừa mỗi lần rerun khi số chưa đổi.
     if _html and picklog.configured():

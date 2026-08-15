@@ -2662,6 +2662,7 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
 
     dong_goi_codes, huy_goi_codes, dong_goi_order_codes = set(), set(), []
     issued_orders = []
+    packed_not_issued = []      # đã gói nhưng CHƯA xuất kho hôm nay (đơn hụt)
     xuat_by_sku = {}          # {SKU: SL} — xuất kho hôm nay theo SKU (= đơn shipper đã nhận)
     for o in open_orders:
         f = f0(o)
@@ -2683,6 +2684,14 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
                 ce(c)["dong_goi"] += 1    # đóng gói HÔM NAY (xác nhận hôm nay + đã gói)
             else:
                 ce(c)["dg_cu"] += 1       # đóng gói CŨ (xác nhận hôm trước + đã gói = đơn sót)
+            # ĐÃ GÓI nhưng CHƯA XUẤT KHO hôm nay = đúng số đơn hụt mà cảnh báo "chênh lệch giữa
+            # các cột" đang báo. Giữ CHI TIẾT (mã đơn/VĐ/ĐVVC/SKU) để chỉ đích danh đơn cần tìm.
+            if _vn_date_of(f.get("issued_on")) != today and not (
+                    o.get("cancelled_on") or str(o.get("status") or "").lower() == "cancelled"):
+                _d_pni = _odet(o)
+                _d_pni["shipment_status"] = f.get("shipment_status") or ""
+                _d_pni["packed_on"] = (_pd.isoformat() if _pd else "")
+                packed_not_issued.append(_d_pni)
         if _vn_date_of(f.get("issued_on")) == today:
             ce(c)["xuat_kho"] += 1        # shop ĐÃ XUẤT KHO (issued) — chưa chắc shipper đã nhận
             issued_orders.append(o)
@@ -2895,6 +2904,7 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
         # XUẤT theo SKU (= đơn shipper thực nhận hôm nay) — phải nằm ở TẦNG NGOÀI để phiếu
         # Xuất Nhập Tồn đọc được (trước đây lọt vào dict con "funnel" nên Xuất luôn ra 0).
         "xuat_by_sku": xuat_by_sku,
+        "packed_not_issued": packed_not_issued,   # đơn ĐÃ GÓI mà CHƯA xuất kho (chi tiết)
         "dong_goi_codes": dong_goi_codes,
         "huy_goi_codes": huy_goi_codes,
         "dong_goi_order_codes": dong_goi_order_codes,
