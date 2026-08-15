@@ -2417,7 +2417,7 @@ def load_dohana_inbound_date(date_iso):
 
 # Bump khi ĐỔI CẤU TRÚC dữ liệu báo cáo: cache của Streamlit khoá theo THAM SỐ, mà thân
 # load_daily_report không đổi → thêm khoá mới xong app vẫn trả bản CŨ. Đổi số này = cache mới.
-_RPT_VER = "2026-08-15-layout"
+_RPT_VER = "2026-08-15-layout2"
 
 
 @st.cache_data(ttl=180, show_spinner="Đang tổng hợp báo cáo cuối ngày…")

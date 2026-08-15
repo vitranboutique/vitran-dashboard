@@ -453,7 +453,7 @@ def _express_detail(rep):
                  f'<td class="num">{_is_html}</td>'
                  f'<td class="num">{_giao_html}</td></tr>')
     return (f'<div class="sec">⚡ Chi tiết {len(items)} đơn HỎA TỐC trong ngày</div>'
-            '<div class="io2tbl"><table style="font-size:1.06em">'
+            '<div class="io2tbl"><table>'
             '<thead><tr><th>STT</th><th>Mã đơn</th><th>Vận đơn</th><th>Gian hàng</th><th>Sản phẩm</th>'
             '<th>Gói lúc</th><th>Xuất kho</th><th>Giao khách</th></tr></thead><tbody>'
             + rows + '</tbody></table></div>'
@@ -1248,15 +1248,9 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
     if not _chunks:
         _chunks, _starts = [[]], [0]
     _ns = len(_chunks)
-    # TRANG 2 = ĐỢT SOẠN HÀNG (+ ô ký). Tách khỏi trang 1 để trang 1 chỉ còn 2 bảng
-    # (ĐVVC + hỏa tốc) → cơ chế tự-co-chữ không phải thu nhỏ, chữ to dễ đọc.
-    batch_page = f'''<div class="page"><div class="pfit">
-  <div class="hd">
-    <div><div class="brand">VITRAN BOUTIQUE</div>
-      <div class="sub">Đợt soạn hàng trong ngày</div></div>
-    <div class="meta">Ngày báo cáo<br><b>{_e(rep["date"])}</b></div>
-  </div>
-  <div class="sec">II. Số lượng hàng theo đợt soạn</div>
+    # BẢNG ĐỢT SOẠN HÀNG: đặt ở CUỐI trang báo cáo đơn trả (trang cuối) theo yêu cầu,
+    # thay vì chiếm riêng 1 tờ.
+    batch_block = f'''<div class="sec">II. Số lượng hàng theo đợt soạn</div>
   <div class="batchsign">
     <div class="bs-tbl"><table>
       <thead><tr><th class="l">Đợt lấy hàng</th><th>Giờ</th><th>Số đơn <span style="font-weight:600;font-size:.85em">(⚡=HT)</span></th><th>Số SP</th></tr></thead>
@@ -1264,9 +1258,7 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
     </table></div>
     <div class="bs-sign">{sign1}</div>
   </div>
-  {sec2_note}
-  <div class="foot">VITRAN BOUTIQUE · Trang 2 — Đợt soạn hàng · {_e(rep["date"])}</div>
-</div></div>'''
+  {sec2_note}'''
 
     page2 = ""
     for _si, _chunk in enumerate(_chunks):
@@ -1275,7 +1267,7 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
         _pno = f"Trang 2.{_si + 1}/{_ns}" if _ns > 1 else "Trang 2/2"
         _kpi = f'<div class="kpis kf5">{r_kpis_html}</div>{concl_box}{warn_box}' if _first else ''
         _badge = recon_badge if _first else ''
-        _tail = (_legend + _ghichu + sign2) if _last else ''
+        _tail = ((_legend + _ghichu + batch_block + sign2) if _last else '')
         page2 += f"""<div class="page page2"><div class="pfit">
   <div class="hd">
     <div><div class="brand">VITRAN BOUTIQUE</div>
@@ -1292,7 +1284,7 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
   <div class="foot">VITRAN BOUTIQUE · {_pno} — Đơn hàng hoàn trả · {_e(rep["date"])}</div>
 </div></div>"""
 
-    body = page1 + batch_page + page2      # 1: ĐVVC + hỏa tốc · 2: đợt soạn · 3: hàng hoàn
+    body = page1 + page2      # 1: ĐVVC + hỏa tốc · 2: hàng hoàn (cuối trang có đợt soạn)
 
     # Auto-fit: tìm cỡ chữ LỚN NHẤT mà mỗi trang vẫn lọt 1 tờ A4 (nhiều đơn → chữ nhỏ lại,
     # ít đơn → chữ to ra). Dùng nhị phân trên --fs của .pfit so với chiều cao .page (297mm).
