@@ -10169,7 +10169,12 @@ def _render_daily():
     # ── 🔎 ĐƠN ĐÃ GÓI NHƯNG CHƯA XUẤT KHO — chỉ đích danh đơn hụt (mã đơn + SKU) ──
     # Đúng nhóm đơn mà cảnh báo "chênh lệch giữa các cột" đang đếm (đóng gói − hủy > xuất kho).
     try:
-        _pni = _rep.get("packed_not_issued") or []
+        _pni = _rep.get("packed_not_issued")
+        if _pni is None:
+            # Báo cáo trong bộ nhớ là bản CŨ (chưa có khoá này) → nhắc bấm tải lại.
+            st.info("ℹ️ Muốn xem **mã đơn cụ thể** của phần chênh lệch ở trên, bấm **🔄 Tải lại số liệu** "
+                    "(app đang dùng bản báo cáo cũ trong bộ nhớ).")
+            _pni = []
         if _pni:
             _rowsx = [{
                 "Mã đơn": _x.get("name") or "",
@@ -10185,6 +10190,14 @@ def _render_daily():
             st.dataframe(pd.DataFrame(_rowsx), hide_index=True, use_container_width=True)
             st.caption("Việc cần làm: tìm gói hàng trong kho → bàn giao ĐVVC (bấm xuất kho trên Sapo), "
                        "hoặc kiểm tra đơn đã đổi ĐVVC / khách hủy chưa.")
+        elif isinstance(_rep.get("packed_not_issued"), list):
+            _bc = _rep.get("by_carrier") or []
+            _gap = sum(max(0, (r.get("dg_cu", 0) + r.get("dong_goi", 0)) - r.get("huy", 0) - r.get("xuat_kho", 0))
+                       for r in _bc)
+            if _gap:
+                st.warning(f"⚠️ Cảnh báo báo hụt **{_gap} đơn** nhưng app KHÔNG tìm thấy đơn nào đã gói mà "
+                           "chưa xuất kho — có thể đơn đã bị hủy sau khi gói, hoặc đổi ĐVVC. "
+                           "Bấm 🔄 Tải lại số liệu; nếu vẫn vậy báo Claude để soi tiếp.")
     except Exception as _se:
         st.caption(f"(Chưa liệt kê được đơn đã gói chưa xuất kho: {_se})")
     # CHỐT SỐ hôm nay: ĐỔI SỐ MỚI LƯU (bản cuối trong ngày = số cuối ngày; sau 24h ngày cũ đọc bản này).
