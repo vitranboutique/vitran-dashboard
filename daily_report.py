@@ -382,6 +382,22 @@ def _batch_rows(batches, tong_don, tong_sp):
     return body
 
 
+def _shop_only(value):
+    """TÊN SHOP đúng như cột 'Gian hàng' của Sapo (VITRAN BOUTIQUE / SMOSS / MUN AI…),
+    bỏ đuôi kênh vì bảng hỏa tốc toàn SPX Instant → ghi '· Shopee' là thừa."""
+    raw = str(value or "").strip()
+    if not raw:
+        return "—"
+    key = raw.lower()
+    if "smoss" in key:
+        return "SMOSS"
+    if "mun" in key and "ai" in key:
+        return "MUN AI"
+    if "vitran" in key:
+        return "VITRAN BOUTIQUE"
+    return raw.split(" - ")[0].strip()
+
+
 def _express_detail(rep):
     """LIỆT KÊ TỪNG ĐƠN HỎA TỐC trong ngày: mã đơn · vận đơn · SP · giờ gói · giờ xuất kho.
     Để sau này nghi thiếu đơn thì dò được ngay đơn nào, hàng gì (thay vì chỉ thấy con số)."""
@@ -432,7 +448,7 @@ def _express_detail(rep):
         rows += (f'<tr{_bg}><td class="num">{i}</td>'
                  f'<td><b>{_e(str(d.get("name", "?")))}</b>{_nfx}</td>'
                  f'<td>{_tk_html}</td>'
-                 f'<td>{_e(_short_store_label(d.get("gian_hang")))}</td>'
+                 f'<td>{_e(_shop_only(d.get("gian_hang")))}</td>'
                  f'<td>{_e(str(d.get("sku", "")))}</td>'
                  f'<td class="num">{_e(_pk) or "—"}</td>'
                  f'<td class="num">{_is_html}</td>'
