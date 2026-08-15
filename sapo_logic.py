@@ -2722,6 +2722,9 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
                 _dx["delivered_time"] = _gv.strftime("%H:%M") if _gv else ""
                 _dx["completed_time"] = _ht.strftime("%H:%M") if _ht else ""
                 # LIỆT KÊ MỌI vận đơn của đơn (đơn đổi VĐ có 2 mã) + đánh dấu mã ĐÃ HỦY.
+                _ch = (o.get("channel_definition") or {})
+                _dx["gian_hang"] = (_ch.get("branch_name") or _ch.get("main_name")
+                                    or (o.get("source_name") or "").title() or "—")
                 _dx["vd_list"] = [
                     {"track": str(_ff.get("tracking_number") or ""),
                      "cancelled": (str(_ff.get("status") or "").lower() == "cancelled"
