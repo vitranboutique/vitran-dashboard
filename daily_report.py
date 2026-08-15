@@ -1196,8 +1196,6 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
   {vid_note}
 
   {_express_alert(rep)}
-  <div class="io2col">
-   <div class="io2c wide">
   <div class="sec">I. Số lượng đơn theo đơn vị vận chuyển</div>
   <div class="io2tbl"><table>
     <thead>
@@ -1213,25 +1211,13 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
   </table></div>
   {sec1_note}
   {lech_html}
-   </div>
-   <div class="io2c narrow">
-  <div class="sec">II. Số lượng hàng theo đợt soạn</div>
-  <div class="batchsign">
-    <div class="bs-tbl"><table>
-      <thead><tr><th class="l">Đợt lấy hàng</th><th>Giờ</th><th>Số đơn <span style="font-weight:600;font-size:.85em">(⚡=HT)</span></th><th>Số SP</th></tr></thead>
-      <tbody>{_batch_rows(rep["batches"], rep["tong_don_soan"], rep["tong_sp_soan"])}</tbody>
-    </table></div>
-    <div class="bs-sign">{sign1}</div>
-  </div>
-  {sec2_note}
-   </div>
-  </div>
+  {_express_detail(rep)}
 
   <div class="sec">III. Ghi chú / Sự cố trong ngày</div>
   <div class="note"><span style="color:#9aa3af;font-size:.95em">(Ghi tay: đơn GHN còn lại, hỏa tốc tìm tài xế, đơn lỗi…)</span>
     <div class="lines"><div></div></div></div>
 
-  <div class="foot">VITRAN BOUTIQUE · Trang 1/2 — Vận hành đơn giao đi{_p1note} · {_e(rep["date"])}</div>
+  <div class="foot">VITRAN BOUTIQUE · Trang 1 — Vận hành đơn giao đi{_p1note} · {_e(rep["date"])}</div>
 </div></div>"""
 
     # ===== TRANG 2: bảng 5 cột; tag (nếu có) nằm ngay trong cột clip =====
@@ -1262,19 +1248,25 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
     if not _chunks:
         _chunks, _starts = [[]], [0]
     _ns = len(_chunks)
-    # TRANG RIÊNG cho bảng hỏa tốc: để chung trang 1 làm trang dài ra → cơ chế tự-co-chữ
-    # (fitPages) thu nhỏ chữ CẢ TRANG. Tách ra, trang 1 ngắn lại nên chữ to trở lại, còn
-    # bảng này nằm 1 mình nên cũng được phóng to.
-    _exp_html = _express_detail(rep)
-    express_page = ("" if not _exp_html else f'''<div class="page"><div class="pfit">
+    # TRANG 2 = ĐỢT SOẠN HÀNG (+ ô ký). Tách khỏi trang 1 để trang 1 chỉ còn 2 bảng
+    # (ĐVVC + hỏa tốc) → cơ chế tự-co-chữ không phải thu nhỏ, chữ to dễ đọc.
+    batch_page = f'''<div class="page"><div class="pfit">
   <div class="hd">
     <div><div class="brand">VITRAN BOUTIQUE</div>
-      <div class="sub">Đơn hỏa tốc trong ngày</div></div>
+      <div class="sub">Đợt soạn hàng trong ngày</div></div>
     <div class="meta">Ngày báo cáo<br><b>{_e(rep["date"])}</b></div>
   </div>
-  {_exp_html}
-  <div class="foot">VITRAN BOUTIQUE · Đơn hỏa tốc · {_e(rep["date"])}</div>
-</div></div>''')
+  <div class="sec">II. Số lượng hàng theo đợt soạn</div>
+  <div class="batchsign">
+    <div class="bs-tbl"><table>
+      <thead><tr><th class="l">Đợt lấy hàng</th><th>Giờ</th><th>Số đơn <span style="font-weight:600;font-size:.85em">(⚡=HT)</span></th><th>Số SP</th></tr></thead>
+      <tbody>{_batch_rows(rep["batches"], rep["tong_don_soan"], rep["tong_sp_soan"])}</tbody>
+    </table></div>
+    <div class="bs-sign">{sign1}</div>
+  </div>
+  {sec2_note}
+  <div class="foot">VITRAN BOUTIQUE · Trang 2 — Đợt soạn hàng · {_e(rep["date"])}</div>
+</div></div>'''
 
     page2 = ""
     for _si, _chunk in enumerate(_chunks):
@@ -1300,7 +1292,7 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
   <div class="foot">VITRAN BOUTIQUE · {_pno} — Đơn hàng hoàn trả · {_e(rep["date"])}</div>
 </div></div>"""
 
-    body = page1 + express_page + page2      # trang hỏa tốc nằm giữa: tra nhanh sau trang tổng
+    body = page1 + batch_page + page2      # 1: ĐVVC + hỏa tốc · 2: đợt soạn · 3: hàng hoàn
 
     # Auto-fit: tìm cỡ chữ LỚN NHẤT mà mỗi trang vẫn lọt 1 tờ A4 (nhiều đơn → chữ nhỏ lại,
     # ít đơn → chữ to ra). Dùng nhị phân trên --fs của .pfit so với chiều cao .page (297mm).
