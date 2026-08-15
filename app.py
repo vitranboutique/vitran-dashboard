@@ -2415,15 +2415,20 @@ def load_dohana_inbound_date(date_iso):
     return _dohana_inb_from_store(date_iso) if picklog.configured() else None
 
 
+# Bump khi ĐỔI CẤU TRÚC dữ liệu báo cáo: cache của Streamlit khoá theo THAM SỐ, mà thân
+# load_daily_report không đổi → thêm khoá mới xong app vẫn trả bản CŨ. Đổi số này = cache mới.
+_RPT_VER = "2026-08-13-pni"
+
+
 @st.cache_data(ttl=180, show_spinner="Đang tổng hợp báo cáo cuối ngày…")
-def load_daily_report(date_iso=None):
+def load_daily_report(date_iso=None, ver=_RPT_VER):
     from datetime import date as _date
     td = _date.fromisoformat(date_iso) if date_iso else None
     return L.get_daily_report(make_fetch_json(build_session()), target_date=td)
 
 
 @st.cache_data(ttl=21600, show_spinner="Đang tải báo cáo ngày cũ…")
-def load_daily_report_archive(date_iso):
+def load_daily_report_archive(date_iso, ver=_RPT_VER):
     """Ngày cũ không đổi: giữ 6 giờ để xem/chuyển video mà không quét lại Sapo."""
     from datetime import date as _date
     return L.get_daily_report(
