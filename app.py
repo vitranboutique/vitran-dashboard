@@ -2417,7 +2417,7 @@ def load_dohana_inbound_date(date_iso):
 
 # Bump khi ĐỔI CẤU TRÚC dữ liệu báo cáo: cache của Streamlit khoá theo THAM SỐ, mà thân
 # load_daily_report không đổi → thêm khoá mới xong app vẫn trả bản CŨ. Đổi số này = cache mới.
-_RPT_VER = "2026-08-15-layout2"
+_RPT_VER = "2026-08-17-vd"
 
 
 @st.cache_data(ttl=180, show_spinner="Đang tổng hợp báo cáo cuối ngày…")
@@ -2761,11 +2761,33 @@ def _apply_picklog_soan_to_daily(rep, rows, dvr=None, dup_orders=0):
         def _order_has_video(i):
             _grp = code_groups[i] if i < len(code_groups) else []
             return any(_ascii_code(c) in _vset_norm for c in _grp)
+        # Map mã (chuẩn hoá) → VẬN ĐƠN lấy từ dữ liệu Sapo, để khi phiếu nhặt KHÔNG lưu vận đơn
+        # thì cảnh báo vẫn nêu được mã vận đơn — Dohana tra theo vận đơn, mã đơn tra không ra.
+        _track_by_norm = {}
+        for _it in ((rep.get("dong_goi_order_codes") or [])
+                    + (rep.get("confirmed_today_order_codes") or [])
+                    + (rep.get("order_code_aliases") or [])):
+            _tk = str(_it.get("track") or _it.get("tracking") or "").strip()
+            if not _tk or not _is_ship_waybill(_tk):
+                continue
+            for _c in (list(_it.get("codes") or []) + [_it.get("name"), _tk]):
+                _n = _ascii_code(str(_c or ""))
+                if _n:
+                    _track_by_norm.setdefault(_n, _tk)
+
         def _missing_label(i):
             _grp = code_groups[i] if i < len(code_groups) else []
             # CHỈ hiện vận đơn THẬT đang vắng video (SPXVN/VTP/86…) — KHÔNG hiện mã ngắn shop_id (179135299).
             _wb_absent = [c for c in _grp if _is_ship_waybill(c) and _ascii_code(c) not in _vset_norm]
-            return _prefer_video_lookup_code(_wb_absent) if _wb_absent else code_labels[i]
+            if _wb_absent:
+                return _prefer_video_lookup_code(_wb_absent)
+            # Không có vận đơn trong phiếu nhặt → tra từ Sapo rồi ghi KÈM mã đơn để tra Dohana được.
+            _lbl = code_labels[i]
+            for _c in (list(_grp) + [_lbl]):
+                _tk = _track_by_norm.get(_ascii_code(str(_c or "")))
+                if _tk and _ascii_code(_tk) not in _vset_norm:
+                    return f"{_lbl} (VĐ {_tk})"
+            return _lbl
         # Đơn CHỈ tính THIẾU khi KHÔNG mã nào của nó nằm trong kho video. Nếu vận đơn của đơn ĐÃ có clip
         # (dù bị gom nhóm trùng nhiều đơn cùng 1 vận đơn) → coi như ĐÃ quay, KHÔNG báo thiếu oan.
         _missing_idx = [i for i in range(len(code_groups)) if i not in matched and not _order_has_video(i)]
