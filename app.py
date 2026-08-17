@@ -11848,26 +11848,6 @@ def _render_returns():
                 if _mm_codes:
                     _missing = [_e for _e in _missing
                                 if not (_mm_codes & set(_ids(str(_e.get("label") or ""))))]
-                # QUAY NHẦM MỤC: đơn báo thiếu video KHUI nhưng có video CÙNG MÃ bên ĐÓNG HÀNG
-                # (vd VĐ 862244641901 quay ở mục "ĐÓNG HÀNG") → KHÔNG phải NV nhập kho sai.
-                # Tách riêng để khỏi báo oan, vẫn nêu ra để NV chuyển lại đúng mục.
-                _pkg_by_day = (_report.get("package_video_codes_by_day") or {})
-                _pkg_all = set()
-                for _v in _pkg_by_day.values():
-                    _pkg_all |= set(_v or [])
-                _wrong_cat = []
-                if _pkg_all:
-                    _keep = []
-                    for _e in _missing:
-                        _cs = set(_ids(str(_e.get("label") or "")))
-                        if _cs & _pkg_all:
-                            _e["_wrong_category"] = True
-                            _wrong_cat.append(_e)
-                        else:
-                            _keep.append(_e)
-                    _missing = _keep
-                    if _wrong_cat:
-                        _restock_novideo_rows._wrong_cat = _wrong_cat
 
 
                 _candidate_by_code = {}
@@ -13514,13 +13494,6 @@ def _render_returns():
                         _nvrows = sorted(_nvrows, key=lambda r: str(r.get("created_on") or ""), reverse=True)
                         _nvrows = sorted(_nvrows, key=lambda r: 0 if r.get("need_kn") else 1)   # vàng (cần KN) lên đầu
                         _nvneed = sum(1 for r in _nvrows if r.get("need_kn"))
-                    _wc = getattr(_restock_novideo_rows, "_wrong_cat", []) or []
-                    if _wc:
-                        st.info(f"🎥 Đã loại **{len(_wc)} đơn quay NHẦM MỤC** khỏi danh sách này "
-                                "(có video cùng mã nhưng nằm ở mục **ĐÓNG HÀNG** thay vì KHUI HÀNG) — "
-                                "không phải NV nhập kho sai. Vào mục **↪️ chuyển Đóng hàng → Khui hoàn** "
-                                "để xếp lại cho đúng: "
-                                + " · ".join(str((_x.get("label") or ""))[:26] for _x in _wc[:5]))
                         st.warning(f"⚠️ **{len(_nvrows)}** đơn ĐÃ nhập kho nhưng KHÔNG có video khui"
                                    + (f" · 🟡 **{_nvneed}** chưa có ghi chú chuẩn (tô vàng, cần KN)" if _nvneed else ""))
 
