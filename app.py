@@ -10149,6 +10149,18 @@ def _render_daily():
                      "**Cách xử lý (chủ shop):** vào Streamlit Cloud → menu **Manage app** → **Reboot app**. "
                      "Khởi động lại thường đổi sang IP khác là chạy lại ngay. "
                      "Nếu vẫn chặn thì chờ Cloudflare tự mở (thường vài giờ) — số liệu vẫn còn nguyên.")
+            # CỨU VÃN: vẫn cho xem BẢN ĐÃ CHỐT gần nhất của hôm nay (lưu trên Gist) để không
+            # trắng trang — số của lần chốt cuối, đủ dùng trong lúc chờ Cloudflare mở lại.
+            try:
+                _fz = picklog.read_daily_frozen(_today_iso_vn()) if picklog.configured() else None
+                if _fz and _fz.get("html"):
+                    st.info(f"📄 Đang hiển thị **bản đã chốt lúc {_fz.get('at', '?')}** của hôm nay "
+                            "(số của lần chốt cuối, không phải thời gian thực).")
+                    components.html(_fz["html"], height=int(_fz.get("h") or 2200), scrolling=True)
+                else:
+                    st.caption("Chưa có bản chốt nào của hôm nay để hiển thị tạm.")
+            except Exception:
+                pass
             return
         st.error(f"❌ Lỗi tổng hợp báo cáo: `{e}`")
         # CHẨN ĐOÁN: raise_for_status() nuốt mất NỘI DUNG Sapo trả về — mà chính nội dung đó
