@@ -487,6 +487,76 @@ def _soquy_tab():
               disabled=not new_rows, key="soquy_save", on_click=_do_save_soquy, args=(new_rows,))
 
 
+def _esc_c(v):
+    return (str(v if v is not None else "").replace("&", "&amp;")
+            .replace("<", "&lt;").replace(">", "&gt;"))
+
+
+def _detail_print_html(x):
+    """Dựng lại CHỨNG TỪ đã lưu để XEM + IN A4 (dữ liệu lấy từ entry['detail'] lúc lưu)."""
+    d = x.get("detail") or {}
+    typ = x.get("type") or ""
+    ttl = {"gia_cong": "BIÊN BẢN GIAO NHẬN VÀ THANH TOÁN GIA CÔNG",
+           "mua_vai_ke": "BẢNG KÊ MUA VẢI",
+           "thanh_toan_mua_vai": "PHIẾU THANH TOÁN MUA VẢI",
+           "so_quy_chi": "PHIẾU CHI (SỔ QUỸ)"}.get(typ, "CHỨNG TỪ CHI PHÍ ĐẦU VÀO")
+    rows = ""
+    for k, lb in (("so_lo", "Số lô"), ("gross", "Tiền gia công"), ("defect", "Trừ hàng lỗi"),
+                  ("adv", "Đã tạm ứng"), ("mat", "Trừ vật tư"), ("count", "Số dòng SP"),
+                  ("voucher_code", "Mã phiếu"), ("sender", "Người nộp/nhận")):
+        if d.get(k) not in (None, "", 0):
+            v = _fmt(d[k]) + "đ" if k in ("gross", "defect", "adv", "mat") else d[k]
+            rows += f'<tr><td class="l">{lb}</td><td class="r">{_esc_c(v)}</td></tr>'
+    sku_tbl = ""
+    _skus = d.get("skus") or d.get("items") or []
+    if isinstance(_skus, list) and _skus:
+        _tr = ""
+        for i, it in enumerate(_skus, 1):
+            if not isinstance(it, dict):
+                continue
+            _tr += (f'<tr><td class="c">{i}</td><td>{_esc_c(it.get("sku"))}</td>'
+                    f'<td class="c">{_esc_c(it.get("qty"))}</td>'
+                    f'<td class="r">{_esc_c(it.get("unit"))}</td>'
+                    f'<td class="c">{_esc_c(it.get("bad") or "")}</td></tr>')
+        if _tr:
+            sku_tbl = ('<table class="tb"><thead><tr><th>#</th><th>SKU / Mặt hàng</th>'
+                       '<th>SL</th><th>Đơn giá</th><th>Lỗi</th></tr></thead>'
+                       f'<tbody>{_tr}</tbody></table>')
+    css = ("*{box-sizing:border-box}body{margin:0;font-family:Tahoma,Arial,sans-serif;color:#111}"
+           ".wrap{max-width:190mm;margin:0 auto;padding:6mm}"
+           ".ttl{text-align:center;font-size:19px;font-weight:800;margin:4px 0 10px}"
+           ".meta{font-size:13px;margin-bottom:10px;line-height:1.7}"
+           "table{border-collapse:collapse;width:100%;font-size:13px;margin-top:8px}"
+           "th,td{border:1px solid #999;padding:5px 8px}th{background:#eee}"
+           "td.l{width:45%;font-weight:600}td.r{text-align:right}td.c{text-align:center}"
+           ".tot{margin-top:12px;font-size:16px;font-weight:800;text-align:right}"
+           ".sign{display:flex;justify-content:space-around;margin-top:26px;font-size:13px;text-align:center}"
+           "@page{size:A4;margin:12mm}")
+    body = (f'<div class="wrap"><div class="ttl">{ttl}</div>'
+            f'<div class="meta"><b>Đối tác:</b> {_esc_c(x.get("partner") or "—")}<br>'
+            f'<b>Ngày:</b> {_esc_c(x.get("date") or "—")} &nbsp;·&nbsp; '
+            f'<b>Lưu lúc:</b> {_esc_c(x.get("saved_at") or "")}</div>'
+            + (f'<table>{rows}</table>' if rows else "")
+            + sku_tbl
+            + f'<div class="tot">TỔNG THỰC TRẢ: {_fmt(x.get("amount"))}đ</div>'
+            '<div class="sign"><div>BÊN A (đặt gia công)<br><br><br>_______________</div>'
+            '<div>BÊN B (nhận gia công)<br><br><br>_______________</div></div></div>')
+    js = ("function pr(){var h=document.getElementById('doc').innerHTML;"
+          "var f=document.createElement('iframe');"
+          "f.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0';"
+          "document.body.appendChild(f);var d=f.contentWindow.document;d.open();"
+          "d.write('<!doctype html><html><head><meta charset=\"utf-8\"><style>'+"
+          + json.dumps(css) +
+          "+'</style></head><body>'+h+'</body></html>');d.close();"
+          "f.onload=function(){f.contentWindow.focus();f.contentWindow.print();"
+          "setTimeout(function(){try{document.body.removeChild(f);}catch(e){}},800);};}")
+    return ("<style>" + css + ".btn{background:#2563eb;color:#fff;border:0;border-radius:6px;"
+            "padding:8px 16px;font-weight:700;cursor:pointer}</style>"
+            "<div style='text-align:right;margin:6px'>"
+            "<button class='btn' onclick='pr()'>🖨️ In A4 / Lưu PDF</button></div>"
+            "<div id='doc'>" + body + "</div><script>" + js + "</script>")
+
+
 def _saved_tab():
     items = list(picklog.read_input_costs() or [])
     items.sort(key=lambda x: str(x.get("saved_at", "")), reverse=True)
@@ -517,12 +587,12 @@ def _saved_tab():
     if not view:
         st.info("Chưa có chi phí nào được lưu. Nhập ở 3 tab công cụ rồi bấm Lưu, hoặc thêm tay bên dưới.")
     else:
-        h = st.columns([2.2, 1.3, 3, 1.8, 0.9])
-        for col, t in zip(h, ["Loại", "Ngày", "Đối tác / nội dung", "Số tiền", ""]):
+        h = st.columns([2.2, 1.3, 3, 1.8, 0.7, 0.7])
+        for col, t in zip(h, ["Loại", "Ngày", "Đối tác / nội dung", "Số tiền", "Xem", ""]):
             col.markdown(f"**{t}**")
         for x in view:
             cid = str(x.get("id") or "")
-            c = st.columns([2.2, 1.3, 3, 1.8, 0.9])
+            c = st.columns([2.2, 1.3, 3, 1.8, 0.7, 0.7])
             c[0].write(f"{_TYPE_ICON.get(x.get('type'), '📌')} {_TYPE_LABEL.get(x.get('type'), x.get('type'))}")
             c[1].write(x.get("date") or "—")
             _extra = ""
@@ -537,7 +607,21 @@ def _saved_tab():
                 _extra = f" · {det.get('voucher_code')}"
             c[2].write((x.get("partner") or "—") + _extra + (f" — {x.get('note')}" if x.get("note") else ""))
             c[3].write(f"**{_fmt(x.get('amount'))}đ**")
-            c[4].button("🗑️", key=f"del_{cid}", help="Xoá chi phí này", on_click=_do_delete, args=(cid,))
+            if c[4].button("👁️", key=f"view_{cid}", help="Xem lại & IN chứng từ đã lưu"):
+                st.session_state["cost_view_id"] = ("" if st.session_state.get("cost_view_id") == cid else cid)
+            c[5].button("🗑️", key=f"del_{cid}", help="Xoá chi phí này", on_click=_do_delete, args=(cid,))
+
+        # XEM LẠI + IN chứng từ đã lưu (dựng từ dữ liệu đã lưu lúc bấm Lưu)
+        _vid = str(st.session_state.get("cost_view_id") or "")
+        if _vid:
+            _x = next((y for y in view if str(y.get("id") or "") == _vid), None)
+            if _x:
+                st.divider()
+                st.markdown(f"#### 🧾 Chứng từ: {_TYPE_LABEL.get(_x.get('type'), _x.get('type'))}"
+                            f" — {_x.get('partner') or ''} · {_x.get('date') or ''}")
+                components.html(_detail_print_html(_x), height=760, scrolling=True)
+                st.caption("Bản dựng lại từ dữ liệu đã lưu (số liệu + danh sách SP). "
+                           "Muốn bản gốc đầy đủ CCCD/địa chỉ thì nhập lại ở tab công cụ rồi bấm In A4 tại đó.")
 
     st.divider()
     with st.expander("➕ Thêm chi phí khác (nhập tay) — cho khoản không dùng 3 công cụ trên"):
