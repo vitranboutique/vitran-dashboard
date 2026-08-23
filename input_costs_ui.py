@@ -138,11 +138,26 @@ _COLLECT = {
       var g=function(c){ var el=tr.querySelector('input.'+c); return el?el.value:''; };
       if(g('sku')||g('qty')||g('unit')) skus.push({sku:g('sku'),qty:g('qty'),unit:g('unit'),bad:g('bad')});
     });
-    __vitranEmit({type:'gia_cong', date:date, partner:partner, so_lo:((document.getElementById('so_lo')||{}).value)||'', amount:net,
+    var gv=function(id){var el=document.getElementById(id); if(!el) return '';
+      return (el.value!==undefined && el.value!==null)? el.value : (el.textContent||''); };
+    var advs=[]; document.querySelectorAll('#advBody tr').forEach(function(tr){
+      var n=tr.querySelector('input.advNote'), a=tr.querySelector('input.advAmt');
+      if((n&&n.value)||(a&&a.value)) advs.push({note:n?n.value:'', amt:a?a.value:''}); });
+    var mats=[]; document.querySelectorAll('#matBody tr').forEach(function(tr){
+      var n=tr.querySelector('input.matName'), q=tr.querySelector('input.matQty'), u=tr.querySelector('input.matUnit');
+      if((n&&n.value)||(q&&q.value)) mats.push({name:n?n.value:'', qty:q?q.value:'', unit:u?u.value:''}); });
+    __vitranEmit({type:'gia_cong', date:date, partner:partner, so_lo:gv('so_lo'), amount:net,
       gross:num((document.getElementById('sumGross')||{}).textContent),
       defect:num((document.getElementById('sumDefect')||{}).textContent),
       adv:num((document.getElementById('sumAdv')||{}).textContent),
-      mat:num((document.getElementById('sumMat')||{}).textContent), count:skus.length, skus:skus});
+      mat:num((document.getElementById('sumMat')||{}).textContent),
+      qty:num((document.getElementById('sumQty')||{}).textContent),
+      bad_qty:num((document.getElementById('sumBadQty')||{}).textContent),
+      tai:gv('tai'), ngay_giao:gv('ngay_giao'), pttt:gv('pttt'), hinh_thuc:gv('hinh_thuc'),
+      ctk:gv('ctk'), stk:gv('stk'), tdtt:gv('tdtt'),
+      ben_a:{ten:gv('a_ten'), daidien:gv('a_daidien'), cccd:gv('a_cccd'), diachi:gv('a_diachi'), sdt:gv('a_sdt')},
+      ben_b:{ten:gv('b_ten'), cccd:gv('b_cccd'), diachi:gv('b_diachi'), sdt:gv('b_sdt')},
+      advs:advs, mats:mats, count:skus.length, skus:skus});
     ''',
 }
 
@@ -493,53 +508,82 @@ def _esc_c(v):
 
 
 def _detail_print_html(x):
-    """Dựng lại CHỨNG TỪ đã lưu để XEM + IN A4 (dữ liệu lấy từ entry['detail'] lúc lưu)."""
+    """Dựng lại CHỨNG TỪ đã lưu để XEM + IN A4 — đầy đủ như bản gốc (2 bên, lô hàng,
+    bảng SP, tạm ứng, NVL, hình thức thanh toán, ô ký)."""
     d = x.get("detail") or {}
     typ = x.get("type") or ""
     ttl = {"gia_cong": "BIÊN BẢN GIAO NHẬN VÀ THANH TOÁN GIA CÔNG",
            "mua_vai_ke": "BẢNG KÊ MUA VẢI",
            "thanh_toan_mua_vai": "PHIẾU THANH TOÁN MUA VẢI",
            "so_quy_chi": "PHIẾU CHI (SỔ QUỸ)"}.get(typ, "CHỨNG TỪ CHI PHÍ ĐẦU VÀO")
+    A, B = d.get("ben_a") or {}, d.get("ben_b") or {}
+
+    def _party(t, o, extra_daidien=False):
+        r = f'<div class="pt"><div class="pth">{t}</div>'
+        r += f'<div><b>Tên:</b> {_esc_c(o.get("ten") or x.get("partner") or "—")}</div>'
+        if extra_daidien and o.get("daidien"):
+            r += f'<div><b>Đại diện:</b> {_esc_c(o.get("daidien"))}</div>'
+        for k, lb in (("cccd", "CMND/CCCD"), ("diachi", "Địa chỉ"), ("sdt", "Điện thoại")):
+            if o.get(k):
+                r += f'<div><b>{lb}:</b> {_esc_c(o[k])}</div>'
+        return r + "</div>"
+
+    money = [("gross", "Tiền gia công"), ("defect", "Trừ hàng lỗi"),
+             ("adv", "Đã tạm ứng"), ("mat", "NVL bên B mua hộ")]
     rows = ""
-    for k, lb in (("so_lo", "Số lô"), ("gross", "Tiền gia công"), ("defect", "Trừ hàng lỗi"),
-                  ("adv", "Đã tạm ứng"), ("mat", "Trừ vật tư"), ("count", "Số dòng SP"),
-                  ("voucher_code", "Mã phiếu"), ("sender", "Người nộp/nhận")):
+    for k, lb in money:
+        if d.get(k):
+            rows += f'<tr><td class="l">{lb}</td><td class="r">{_fmt(d[k])}đ</td></tr>'
+    for k, lb in (("qty", "Tổng SL nhận"), ("bad_qty", "SL lỗi"), ("so_lo", "Số lô"),
+                  ("ngay_giao", "Ngày giao"), ("pttt", "Phương thức TT"),
+                  ("hinh_thuc", "Hình thức"), ("ctk", "Chủ tài khoản"), ("stk", "Số tài khoản")):
         if d.get(k) not in (None, "", 0):
-            v = _fmt(d[k]) + "đ" if k in ("gross", "defect", "adv", "mat") else d[k]
-            rows += f'<tr><td class="l">{lb}</td><td class="r">{_esc_c(v)}</td></tr>'
-    sku_tbl = ""
-    _skus = d.get("skus") or d.get("items") or []
-    if isinstance(_skus, list) and _skus:
-        _tr = ""
-        for i, it in enumerate(_skus, 1):
+            rows += f'<tr><td class="l">{lb}</td><td class="r">{_esc_c(d[k])}</td></tr>'
+
+    def _tbl(items, cols, keys, title):
+        if not isinstance(items, list) or not items:
+            return ""
+        tr = ""
+        for n, it in enumerate(items, 1):
             if not isinstance(it, dict):
                 continue
-            _tr += (f'<tr><td class="c">{i}</td><td>{_esc_c(it.get("sku"))}</td>'
-                    f'<td class="c">{_esc_c(it.get("qty"))}</td>'
-                    f'<td class="r">{_esc_c(it.get("unit"))}</td>'
-                    f'<td class="c">{_esc_c(it.get("bad") or "")}</td></tr>')
-        if _tr:
-            sku_tbl = ('<table class="tb"><thead><tr><th>#</th><th>SKU / Mặt hàng</th>'
-                       '<th>SL</th><th>Đơn giá</th><th>Lỗi</th></tr></thead>'
-                       f'<tbody>{_tr}</tbody></table>')
+            tr += f'<tr><td class="c">{n}</td>' + "".join(
+                f'<td class="{("r" if _k not in keys[:1] else "")}">{_esc_c(it.get(_k))}</td>' for _k in keys) + "</tr>"
+        if not tr:
+            return ""
+        th = "".join(f"<th>{c}</th>" for c in cols)
+        return (f'<div class="sec">{title}</div><table class="tb"><thead><tr><th>#</th>{th}</tr></thead>'
+                f'<tbody>{tr}</tbody></table>')
+
     css = ("*{box-sizing:border-box}body{margin:0;font-family:Tahoma,Arial,sans-serif;color:#111}"
            ".wrap{max-width:190mm;margin:0 auto;padding:6mm}"
-           ".ttl{text-align:center;font-size:19px;font-weight:800;margin:4px 0 10px}"
-           ".meta{font-size:13px;margin-bottom:10px;line-height:1.7}"
-           "table{border-collapse:collapse;width:100%;font-size:13px;margin-top:8px}"
-           "th,td{border:1px solid #999;padding:5px 8px}th{background:#eee}"
-           "td.l{width:45%;font-weight:600}td.r{text-align:right}td.c{text-align:center}"
-           ".tot{margin-top:12px;font-size:16px;font-weight:800;text-align:right}"
-           ".sign{display:flex;justify-content:space-around;margin-top:26px;font-size:13px;text-align:center}"
+           ".ttl{text-align:center;font-size:18px;font-weight:800;margin:2px 0 8px}"
+           ".meta{font-size:12.5px;margin-bottom:8px}"
+           ".pts{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}"
+           ".pt{border:1px solid #999;padding:6px 8px;font-size:12.5px;line-height:1.55}"
+           ".pth{font-weight:800;margin-bottom:3px}"
+           ".sec{font-weight:800;font-size:13px;margin:10px 0 3px}"
+           "table{border-collapse:collapse;width:100%;font-size:12.5px}"
+           "th,td{border:1px solid #999;padding:4px 7px}th{background:#eee}"
+           "td.l{width:45%;font-weight:600}td.r{text-align:right}td.c{text-align:center;width:9mm}"
+           ".tot{margin-top:10px;font-size:16px;font-weight:800;text-align:right}"
+           ".sign{display:flex;justify-content:space-around;margin-top:22px;font-size:12.5px;text-align:center}"
            "@page{size:A4;margin:12mm}")
     body = (f'<div class="wrap"><div class="ttl">{ttl}</div>'
-            f'<div class="meta"><b>Đối tác:</b> {_esc_c(x.get("partner") or "—")}<br>'
-            f'<b>Ngày:</b> {_esc_c(x.get("date") or "—")} &nbsp;·&nbsp; '
-            f'<b>Lưu lúc:</b> {_esc_c(x.get("saved_at") or "")}</div>'
-            + (f'<table>{rows}</table>' if rows else "")
-            + sku_tbl
+            f'<div class="meta">Hôm nay, ngày <b>{_esc_c(x.get("date") or "—")}</b>'
+            + (f' &nbsp;tại: <b>{_esc_c(d.get("tai"))}</b>' if d.get("tai") else "")
+            + f' &nbsp;·&nbsp; <span style="color:#666">lưu lúc {_esc_c(x.get("saved_at") or "")}</span></div>'
+            + '<div class="pts">' + _party("BÊN A (BÊN ĐẶT GIA CÔNG)", A, True)
+            + _party("BÊN B (BÊN NHẬN GIA CÔNG)", B) + '</div>'
+            + (f'<div class="sec">I. THÔNG TIN LÔ HÀNG & THANH TOÁN</div><table>{rows}</table>' if rows else "")
+            + _tbl(d.get("skus"), ["SKU / Mặt hàng", "SL", "Đơn giá", "Lỗi"],
+                   ["sku", "qty", "unit", "bad"], "II. CHI TIẾT SẢN PHẨM")
+            + _tbl(d.get("advs"), ["Nội dung tạm ứng", "Số tiền"], ["note", "amt"], "III. TẠM ỨNG")
+            + _tbl(d.get("mats"), ["Nội dung NVL", "SL", "Đơn giá"], ["name", "qty", "unit"],
+                   "IV. NVL BÊN B MUA HỘ")
             + f'<div class="tot">TỔNG THỰC TRẢ: {_fmt(x.get("amount"))}đ</div>'
-            '<div class="sign"><div>BÊN A (đặt gia công)<br><br><br>_______________</div>'
+            + (f'<div class="meta">{_esc_c(d.get("tdtt"))}</div>' if d.get("tdtt") else "")
+            + '<div class="sign"><div>BÊN A (đặt gia công)<br><br><br>_______________</div>'
             '<div>BÊN B (nhận gia công)<br><br><br>_______________</div></div></div>')
     js = ("function pr(){var h=document.getElementById('doc').innerHTML;"
           "var f=document.createElement('iframe');"
