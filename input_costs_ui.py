@@ -518,14 +518,17 @@ def _detail_print_html(x):
            "so_quy_chi": "PHIẾU CHI (SỔ QUỸ)"}.get(typ, "CHỨNG TỪ CHI PHÍ ĐẦU VÀO")
     A, B = d.get("ben_a") or {}, d.get("ben_b") or {}
 
-    def _party(t, o, extra_daidien=False):
+    _BL = '<span class="bl"></span>'          # gạch trống để ĐIỀN TAY khi chưa có dữ liệu
+
+    def _party(t, o, is_a=False):
+        """Chưa lưu trường nào thì CHỪA GẠCH TRỐNG để điền tay (không mượn tên bên kia)."""
         r = f'<div class="pt"><div class="pth">{t}</div>'
-        r += f'<div><b>Tên:</b> {_esc_c(o.get("ten") or x.get("partner") or "—")}</div>'
-        if extra_daidien and o.get("daidien"):
-            r += f'<div><b>Đại diện:</b> {_esc_c(o.get("daidien"))}</div>'
+        _ten = o.get("ten") or ("" if is_a else (x.get("partner") or ""))
+        r += f'<div><b>Tên:</b> {_esc_c(_ten) if _ten else _BL}</div>'
+        if is_a:
+            r += f'<div><b>Đại diện:</b> {_esc_c(o.get("daidien")) if o.get("daidien") else _BL}</div>'
         for k, lb in (("cccd", "CMND/CCCD"), ("diachi", "Địa chỉ"), ("sdt", "Điện thoại")):
-            if o.get(k):
-                r += f'<div><b>{lb}:</b> {_esc_c(o[k])}</div>'
+            r += f'<div><b>{lb}:</b> {_esc_c(o[k]) if o.get(k) else _BL}</div>'
         return r + "</div>"
 
     money = [("gross", "Tiền gia công"), ("defect", "Trừ hàng lỗi"),
@@ -535,8 +538,7 @@ def _detail_print_html(x):
         if d.get(k):
             rows += f'<tr><td class="l">{lb}</td><td class="r">{_fmt(d[k])}đ</td></tr>'
     for k, lb in (("qty", "Tổng SL nhận"), ("bad_qty", "SL lỗi"), ("so_lo", "Số lô"),
-                  ("ngay_giao", "Ngày giao"), ("pttt", "Phương thức TT"),
-                  ("hinh_thuc", "Hình thức"), ("ctk", "Chủ tài khoản"), ("stk", "Số tài khoản")):
+                  ("ngay_giao", "Ngày giao")):
         if d.get(k) not in (None, "", 0):
             rows += f'<tr><td class="l">{lb}</td><td class="r">{_esc_c(d[k])}</td></tr>'
 
@@ -567,6 +569,7 @@ def _detail_print_html(x):
            "th,td{border:1px solid #999;padding:4px 7px}th{background:#eee}"
            "td.l{width:45%;font-weight:600}td.r{text-align:right}td.c{text-align:center;width:9mm}"
            ".tot{margin-top:10px;font-size:16px;font-weight:800;text-align:right}"
+           ".bl{display:inline-block;min-width:42mm;border-bottom:1px dotted #666;height:12px}"
            ".sign{display:flex;justify-content:space-around;margin-top:22px;font-size:12.5px;text-align:center}"
            "@page{size:A4;margin:12mm}")
     body = (f'<div class="wrap"><div class="ttl">{ttl}</div>'
@@ -582,6 +585,16 @@ def _detail_print_html(x):
             + _tbl(d.get("mats"), ["Nội dung NVL", "SL", "Đơn giá"], ["name", "qty", "unit"],
                    "IV. NVL BÊN B MUA HỘ")
             + f'<div class="tot">TỔNG THỰC TRẢ: {_fmt(x.get("amount"))}đ</div>'
+            + '<div class="sec">V. THÔNG TIN CHUYỂN KHOẢN</div>'
+            + '<table>'
+            + f'<tr><td class="l">Hình thức thanh toán</td><td class="r">{_esc_c(d.get("pttt")) or _BL}</td></tr>'
+            + f'<tr><td class="l">Ngân hàng</td><td class="r">{_esc_c(d.get("hinh_thuc")) or _BL}</td></tr>'
+            + f'<tr><td class="l">Chủ tài khoản</td><td class="r">{_esc_c(d.get("ctk")) or _BL}</td></tr>'
+            + f'<tr><td class="l">Số tài khoản</td><td class="r">{_esc_c(d.get("stk")) or _BL}</td></tr>'
+            + f'<tr><td class="l">Ngày chuyển khoản</td><td class="r">{_BL}</td></tr>'
+            + f'<tr><td class="l">Số tiền đã chuyển</td><td class="r">{_BL}</td></tr>'
+            + f'<tr><td class="l">Nội dung / mã giao dịch</td><td class="r">{_BL}</td></tr>'
+            + '</table>'
             + (f'<div class="meta">{_esc_c(d.get("tdtt"))}</div>' if d.get("tdtt") else "")
             + '<div class="sign"><div>BÊN A (đặt gia công)<br><br><br>_______________</div>'
             '<div>BÊN B (nhận gia công)<br><br><br>_______________</div></div></div>')
