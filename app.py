@@ -2028,23 +2028,31 @@ def _standard_result_note_text(note: str) -> str:
         if token in compact and label not in first:
             suffix = first.split("|", 1)[1].strip() if "|" in first else ""
             lines[0] = f"{label} | {suffix}".rstrip(" |")
-            break
+            return "\n".join(lines).strip()
+    # Kết quả KN nằm ở DÒNG SAU (dòng đầu là trạng thái như "chờ quyết toán") → chèn nhãn kết quả lên đầu
+    compact_pre = "".join(ch for ch in _ascii_code(note.split("|", 1)[0]) if ch.isalnum())
+    for token, label in standards:
+        if token != "CANKN" and token in compact_pre and label not in first:
+            return f"{label} · {first}\n" + "\n".join(lines[1:])
     return "\n".join(lines).strip()
 
 
 def _note_is_standard(note: str) -> bool:
-    """Ghi chú CHUẨN = dòng đầu có nhãn kết quả KN (KHÔNG CẦN KN / HẾT HẠN / THẮNG / THUA / HỦY / CẦN KN)."""
-    first = (str(note or "").strip().splitlines() or [""])[0]
-    compact = "".join(ch for ch in _ascii_code(first) if ch.isalnum())
+    """Ghi chú CHUẨN = có nhãn kết quả KN ở phần TRƯỚC dấu '|' (KHÔNG CẦN KN / HẾT HẠN / THẮNG /
+    THUA / HỦY / CẦN KN). Đọc cả phần trước '|' (khớp _resolved) vì có note đặt trạng thái như
+    'chờ quyết toán' ở dòng đầu, kết quả THẮNG ở dòng sau."""
+    pre = str(note or "").split("|", 1)[0]
+    compact = "".join(ch for ch in _ascii_code(pre) if ch.isalnum())
     return any(t in compact for t in
                ("KHONGCANKN", "KHONGCANKHIEUNAI", "HETHAN", "THANG", "THUA", "HUY", "CANKN"))
 
 
 def _note_is_concluded(note: str) -> bool:
     """Ghi chú ĐÃ KẾT LUẬN (hết cần KN): THẮNG / THUA / KHÔNG CẦN KN / HẾT HẠN / HỦY.
-    ⚠️ 'CẦN KN' KHÔNG tính kết luận (vẫn phải khiếu nại → giữ tô vàng + nằm trong bảng Cần KN)."""
-    first = (str(note or "").strip().splitlines() or [""])[0]
-    compact = "".join(ch for ch in _ascii_code(first) if ch.isalnum())
+    Đọc phần TRƯỚC dấu '|' (span nhiều dòng, khớp _resolved) — vì có note đặt 'chờ quyết toán' ở
+    dòng đầu, kết quả THẮNG ở dòng sau. ⚠️ 'CẦN KN' KHÔNG tính kết luận (vẫn phải khiếu nại)."""
+    pre = str(note or "").split("|", 1)[0]
+    compact = "".join(ch for ch in _ascii_code(pre) if ch.isalnum())
     return any(t in compact for t in
                ("KHONGCANKN", "KHONGCANKHIEUNAI", "HETHAN", "THANG", "THUA", "HUY"))
 
@@ -12556,7 +12564,8 @@ def _render_returns():
                         _prev_lt = _lt
                     bg = "background:#fff3cd" if d.get("need_kn") and _is_need_kn_shape(d) else ""
                     note = d.get("note") or ""
-                    note_display = f"📝 APP · {note}" if d.get("app_note") else note
+                    _disp_note = _standard_result_note_text(note) or note   # hoist kết quả KN (THẮNG/THUA…) lên đầu
+                    note_display = f"📝 APP · {_disp_note}" if d.get("app_note") else _disp_note
                     tds = [f"<td class='r'>{i}</td>"]
                     if show_reason:
                         tds.append(f"<td>{_reason_brief_cell(d)}</td>")
