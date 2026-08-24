@@ -24,11 +24,12 @@ _TYPE_LABEL = {
     "mua_vai_ke": "Bảng kê mua vải",
     "thanh_toan_mua_vai": "Thanh toán mua vải",
     "gia_cong": "Thanh toán gia công",
+    "cat_tay": "Cắt tay phát sinh",
     "so_quy_chi": "Sổ quỹ (chi)",
     "khac": "Chi phí khác",
 }
 _TYPE_ICON = {"mua_vai_ke": "🧾", "thanh_toan_mua_vai": "💳", "gia_cong": "🧵",
-              "so_quy_chi": "🏦", "khac": "📌"}
+              "cat_tay": "✂️", "so_quy_chi": "🏦", "khac": "📌"}
 
 
 def _fmt(n):
@@ -311,6 +312,26 @@ def _num(v):
     return -n if neg else n
 
 
+def _numf(v):
+    """Số từ ô data_editor: có thể là float/NaN → KHÔNG dùng _num (nó lọc chữ số nên 3000.0 → 30000)."""
+    if v is None:
+        return 0
+    if isinstance(v, bool):
+        return 0
+    if isinstance(v, (int, float)):
+        try:
+            return 0 if v != v else int(round(float(v)))   # NaN → 0
+        except Exception:
+            return 0
+    t = str(v).strip().replace(" ", "")
+    if re.fullmatch(r"-?\d{1,3}(\.\d{3})+", t):      # "3.500" kiểu VN = 3500, KHÔNG phải 3.5
+        return _num(t)
+    try:
+        return int(round(float(t.replace(",", ""))))
+    except Exception:
+        return _num(v)
+
+
 def _date_str(v):
     if hasattr(v, "strftime"):
         try:
@@ -569,11 +590,88 @@ def _partner_book():
     return book
 
 
+def _cattay_print_html(x):
+    """PHIẾU CẮT TAY PHÁT SINH — A4 dọc, có bảng SL × giá cắt / giá công và ô ký nhận."""
+    d = x.get("detail") or {}
+    rows = [r for r in (d.get("rows") or []) if isinstance(r, dict)]
+    _BL = '<span class="bl"></span>'
+    tr = ""
+    for n, r in enumerate(rows, 1):
+        tr += ('<tr>'
+               f'<td class="c">{n}</td>'
+               f'<td>{_esc_c(r.get("sku"))}</td>'
+               f'<td class="r">{_fmt(r.get("qty"))}</td>'
+               f'<td class="r">{_fmt(r.get("gia_cat"))}</td>'
+               f'<td class="r">{_fmt(r.get("tien_cat"))}</td>'
+               f'<td class="r">{_fmt(r.get("gia_cong"))}</td>'
+               f'<td class="r">{_fmt(r.get("tien_cong"))}</td>'
+               f'<td class="r"><b>{_fmt(r.get("thanh_tien"))}</b></td></tr>')
+    _q = sum(_numf(r.get("qty")) for r in rows)
+    _tc = sum(_numf(r.get("tien_cat")) for r in rows)
+    _tn = sum(_numf(r.get("tien_cong")) for r in rows)
+    tr += ('<tr class="sum"><td class="c"></td><td><b>CỘNG</b></td>'
+           f'<td class="r"><b>{_fmt(_q)}</b></td><td></td>'
+           f'<td class="r"><b>{_fmt(_tc)}</b></td><td></td>'
+           f'<td class="r"><b>{_fmt(_tn)}</b></td>'
+           f'<td class="r"><b>{_fmt(_tc + _tn)}</b></td></tr>')
+
+    css = ("*{box-sizing:border-box}body{margin:0;font-family:Tahoma,Arial,sans-serif;color:#111}"
+           ".wrap{max-width:190mm;margin:0 auto;padding:6mm}"
+           ".ttl{text-align:center;font-size:18px;font-weight:800;margin:2px 0 2px}"
+           ".sub{text-align:center;font-size:12.5px;color:#555;margin-bottom:10px}"
+           ".meta{font-size:12.5px;margin-bottom:8px;line-height:1.7}"
+           ".sec{font-weight:800;font-size:13px;margin:10px 0 3px}"
+           "table{border-collapse:collapse;width:100%;font-size:12.5px}"
+           "th,td{border:1px solid #999;padding:4px 7px}th{background:#eee;text-align:center}"
+           "td.r{text-align:right}td.c{text-align:center;width:9mm}tr.sum td{background:#f3f4f6}"
+           ".tot{margin-top:10px;font-size:16px;font-weight:800;text-align:right}"
+           ".bl{display:inline-block;min-width:42mm;border-bottom:1px dotted #666;height:12px}"
+           ".sign{display:flex;justify-content:space-around;margin-top:26px;font-size:12.5px;text-align:center}"
+           "@page{size:A4;margin:12mm}")
+    body = ('<div class="wrap"><div class="ttl">PHIẾU CẮT TAY PHÁT SINH</div>'
+            '<div class="sub">(Tính tiền cắt &amp; tiền công theo số lượng)</div>'
+            f'<div class="meta">Ngày: <b>{_esc_c(x.get("date") or "—")}</b>'
+            f' &nbsp;·&nbsp; Người cắt / đối tác: <b>{_esc_c(x.get("partner")) or _BL}</b>'
+            + (f' &nbsp;·&nbsp; Số lô/đợt: <b>{_esc_c(d.get("so_lo"))}</b>' if d.get("so_lo") else "")
+            + f'<br><span style="color:#666">Lưu lúc {_esc_c(x.get("saved_at") or "")}</span></div>'
+            '<div class="sec">CHI TIẾT</div>'
+            '<table><thead><tr><th>#</th><th>Mã SKU / Mặt hàng</th><th>SL</th>'
+            '<th>Giá cắt/SP</th><th>Tiền cắt</th><th>Giá công/SP</th><th>Tiền công</th>'
+            f'<th>Thành tiền</th></tr></thead><tbody>{tr}</tbody></table>'
+            + (f'<div class="meta"><b>Ghi chú:</b> {_esc_c(x.get("note"))}</div>' if x.get("note") else "")
+            + f'<div class="tot">TỔNG THỰC TRẢ: {_fmt(x.get("amount"))}đ</div>'
+            + '<div class="sec">THÔNG TIN CHUYỂN KHOẢN</div><table>'
+            + f'<tr><td style="width:45%;font-weight:600">Ngân hàng</td><td class="r">{_BL}</td></tr>'
+            + f'<tr><td style="font-weight:600">Chủ tài khoản</td><td class="r">{_BL}</td></tr>'
+            + f'<tr><td style="font-weight:600">Số tài khoản</td><td class="r">{_BL}</td></tr>'
+            + f'<tr><td style="font-weight:600">Ngày chuyển khoản</td><td class="r">{_esc_c(x.get("date")) or _BL}</td></tr>'
+            + f'<tr><td style="font-weight:600">Số tiền đã chuyển</td><td class="r"><b>{_fmt(x.get("amount"))}đ</b></td></tr>'
+            + '</table>'
+            + '<div class="sign"><div>NGƯỜI LẬP PHIẾU<br><br><br>_______________</div>'
+            '<div>NGƯỜI NHẬN TIỀN<br><br><br>_______________</div></div></div>')
+    js = ("function pr(){var h=document.getElementById('doc').innerHTML;"
+          "var f=document.createElement('iframe');"
+          "f.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0';"
+          "document.body.appendChild(f);var d=f.contentWindow.document;d.open();"
+          "d.write('<!doctype html><html><head><meta charset=\"utf-8\"><style>'+"
+          + json.dumps(css) +
+          "+'</style></head><body>'+h+'</body></html>');d.close();"
+          "f.onload=function(){f.contentWindow.focus();f.contentWindow.print();"
+          "setTimeout(function(){try{document.body.removeChild(f);}catch(e){}},800);};}")
+    return ("<style>" + css + ".btn{background:#2563eb;color:#fff;border:0;border-radius:6px;"
+            "padding:8px 16px;font-weight:700;cursor:pointer}</style>"
+            "<div style='text-align:right;margin:6px'>"
+            "<button class='btn' onclick='pr()'>🖨️ In A4 / Lưu PDF</button></div>"
+            "<div id='doc'>" + body + "</div><script>" + js + "</script>")
+
+
 def _detail_print_html(x):
     """Dựng lại CHỨNG TỪ đã lưu để XEM + IN A4 — đầy đủ như bản gốc (2 bên, lô hàng,
     bảng SP, tạm ứng, NVL, hình thức thanh toán, ô ký)."""
     d = x.get("detail") or {}
     typ = x.get("type") or ""
+    if typ == "cat_tay":
+        return _cattay_print_html(x)
     ttl = {"gia_cong": "BIÊN BẢN GIAO NHẬN VÀ THANH TOÁN GIA CÔNG",
            "mua_vai_ke": "BẢNG KÊ MUA VẢI",
            "thanh_toan_mua_vai": "PHIẾU THANH TOÁN MUA VẢI",
@@ -692,6 +790,95 @@ def _detail_print_html(x):
             "<div id='doc'>" + body + "</div><script>" + js + "</script>")
 
 
+def _do_save_cattay():
+    """Lưu bảng CẮT TAY PHÁT SINH vào chi phí đầu vào."""
+    df = st.session_state.get("cattay_rows")
+    rows = []
+    if df is not None:
+        for r in (df.to_dict("records") if hasattr(df, "to_dict") else list(df)):
+            sku = str(r.get("Mã SKU") or "").strip()
+            qty = _numf(r.get("SL"))
+            gc = _numf(r.get("Giá cắt/SP"))
+            gcn = _numf(r.get("Giá công/SP"))
+            if qty <= 0:            # dòng trống / chưa nhập SL thì bỏ, không in lên phiếu
+                continue
+            rows.append({"sku": sku, "qty": qty, "gia_cat": gc, "gia_cong": gcn,
+                         "tien_cat": qty * gc, "tien_cong": qty * gcn,
+                         "thanh_tien": qty * (gc + gcn)})
+    if not rows:
+        st.session_state["msg_cat_tay"] = ("warning", "Chưa nhập dòng nào có SKU hoặc số lượng.")
+        return
+    tong = int(round(sum(r["thanh_tien"] for r in rows)))
+    if tong <= 0:
+        st.session_state["msg_cat_tay"] = ("warning", "Tổng tiền đang = 0 — kiểm tra lại đơn giá.")
+        return
+    _d = st.session_state.get("cattay_date")
+    entry = {
+        "type": "cat_tay",
+        "date": _d.strftime("%d/%m/%Y") if hasattr(_d, "strftime") else str(_d or ""),
+        "amount": tong,
+        "partner": str(st.session_state.get("cattay_partner") or "").strip(),
+        "note": str(st.session_state.get("cattay_note") or "").strip(),
+        "detail": {"type": "cat_tay", "rows": rows, "count": len(rows),
+                   "qty": int(round(sum(r["qty"] for r in rows))),
+                   "tien_cat": int(round(sum(r["tien_cat"] for r in rows))),
+                   "tien_cong": int(round(sum(r["tien_cong"] for r in rows))),
+                   "so_lo": str(st.session_state.get("cattay_lo") or "").strip()},
+    }
+    if picklog.add_input_cost(entry):
+        st.session_state["msg_cat_tay"] = ("success", f"Đã lưu Cắt tay phát sinh — {_fmt(tong)}đ.")
+    else:
+        st.session_state["msg_cat_tay"] = ("error", "Lưu thất bại (không ghi được vào kho dữ liệu).")
+
+
+def _cattay_tab():
+    """BẢNG CẮT TAY PHÁT SINH — tính tiền CẮT và tiền CÔNG theo SỐ LƯỢNG."""
+    st.caption("Dùng cho hàng cắt tay phát sinh ngoài lô gia công. Nhập SL và đơn giá → "
+               "app tự tính **tiền cắt**, **tiền công** và **tổng phải trả**.")
+    msg = st.session_state.pop("msg_cat_tay", None)
+    if msg:
+        getattr(st, msg[0])(msg[1])
+
+    c = st.columns([1.2, 2, 1.6])
+    c[0].date_input("Ngày", key="cattay_date")
+    _book = _partner_book()
+    _names = ["(nhập tay)"] + [v["ten"] for v in _book.values()]
+    _pick = c[1].selectbox("Người cắt / đối tác", _names, key="cattay_pick")
+    if _pick == "(nhập tay)":
+        c[1].text_input("Tên người cắt", key="cattay_partner")
+    else:
+        st.session_state["cattay_partner"] = _pick
+    c[2].text_input("Số lô/đợt (nếu có)", key="cattay_lo")
+
+    if "cattay_rows" not in st.session_state:
+        st.session_state["cattay_rows"] = pd.DataFrame(
+            [{"Mã SKU": "", "SL": 0, "Giá cắt/SP": 0, "Giá công/SP": 0} for _ in range(5)])
+    df = st.data_editor(
+        st.session_state["cattay_rows"], key="cattay_editor", num_rows="dynamic",
+        use_container_width=True,
+        column_config={
+            "Mã SKU": st.column_config.TextColumn("Mã SKU", width="medium"),
+            "SL": st.column_config.NumberColumn("SL", min_value=0, step=1),
+            "Giá cắt/SP": st.column_config.NumberColumn("Giá cắt/SP (đ)", min_value=0, step=500),
+            "Giá công/SP": st.column_config.NumberColumn("Giá công/SP (đ)", min_value=0, step=500),
+        })
+    st.session_state["cattay_rows"] = df
+
+    _q = _tc = _tcn = 0
+    for r in df.to_dict("records"):
+        q, gc, gn = _numf(r.get("SL")), _numf(r.get("Giá cắt/SP")), _numf(r.get("Giá công/SP"))
+        _q += q; _tc += q * gc; _tcn += q * gn
+    m = st.columns(4)
+    m[0].metric("Tổng SL", f"{int(round(_q)):,}".replace(",", "."))
+    m[1].metric("✂️ Tiền cắt", _fmt(_tc) + "đ")
+    m[2].metric("🧵 Tiền công", _fmt(_tcn) + "đ")
+    m[3].metric("💰 TỔNG TRẢ", _fmt(_tc + _tcn) + "đ")
+    st.text_input("Ghi chú", key="cattay_note")
+    st.button("💾 Lưu vào chi phí đầu vào", key="cattay_save", type="primary",
+              on_click=_do_save_cattay)
+    st.caption("Lưu xong xem lại & IN ở tab **📊 Chi phí đã lưu** (nút 👁️).")
+
+
 def _saved_tab():
     items = list(picklog.read_input_costs() or [])
     items.sort(key=lambda x: str(x.get("saved_at", "")), reverse=True)
@@ -780,6 +967,7 @@ def render():
         "🧾 Bảng kê mua vải",
         "💳 Thanh toán mua vải",
         "🧵 Thanh toán gia công",
+        "✂️ Cắt tay phát sinh",
         "🏦 Sổ quỹ Sapo",
         "📊 Chi phí đã lưu",
     ])
@@ -793,6 +981,8 @@ def render():
         _tool_tab("gia_cong", "bien-ban-gia-cong.html", 1550,
                   "Biên bản giao nhận & thanh toán gia công. Lưu theo TỔNG TIỀN THỰC NHẬN của bên gia công.")
     with tabs[3]:
-        _soquy_tab()
+        _cattay_tab()
     with tabs[4]:
+        _soquy_tab()
+    with tabs[5]:
         _saved_tab()
