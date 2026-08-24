@@ -528,6 +528,32 @@ def _esc_c(v):
             .replace("<", "&lt;").replace(">", "&gt;"))
 
 
+def _partner_book():
+    """Danh bạ đối tác gia công — ĐỌC THẲNG từ mảng PARTNERS trong công cụ gốc
+    (không chép cứng: thêm/sửa đối tác trong file công cụ là bản in cũng cập nhật theo).
+    Trả {tên chuẩn hoá: {ten, cccd, sdt, diachi}}."""
+    if getattr(_partner_book, "_c", None) is not None:
+        return _partner_book._c
+    book = {}
+    try:
+        html = _read_tool("bien-ban-gia-cong.html") or ""
+        blk = html.split("const PARTNERS", 1)[1].split("];", 1)[0] if "const PARTNERS" in html else ""
+        for m in re.finditer(r"\{([^{}]*)\}", blk):
+            row = m.group(1)
+
+            def _f(key):
+                mm = re.search(key + r'\s*:\s*"([^"]*)"', row)
+                return mm.group(1).strip() if mm else ""
+            nm = _f("name")
+            if nm:
+                book[_norm(nm)] = {"ten": nm, "cccd": _f("cccd"),
+                                   "sdt": _f("phone"), "diachi": _f("address")}
+    except Exception:
+        book = {}
+    _partner_book._c = book
+    return book
+
+
 def _detail_print_html(x):
     """Dựng lại CHỨNG TỪ đã lưu để XEM + IN A4 — đầy đủ như bản gốc (2 bên, lô hàng,
     bảng SP, tạm ứng, NVL, hình thức thanh toán, ô ký)."""
@@ -544,7 +570,14 @@ def _detail_print_html(x):
                    "sdt": "0902470840"}
     A = dict(_A_MAC_DINH)
     A.update({k: v for k, v in (d.get("ben_a") or {}).items() if str(v or "").strip()})
-    B = d.get("ben_b") or {}
+    B = dict(d.get("ben_b") or {})
+    # Phiếu CŨ chỉ lưu tên đối tác → tra danh bạ trong công cụ để điền CCCD/địa chỉ/SĐT.
+    _bn = B.get("ten") or x.get("partner") or ""
+    _pb = _partner_book().get(_norm(_bn)) if _bn else None
+    if _pb:
+        for _k, _v in _pb.items():
+            if not str(B.get(_k) or "").strip():
+                B[_k] = _v
 
     _BL = '<span class="bl"></span>'          # gạch trống để ĐIỀN TAY khi chưa có dữ liệu
 
