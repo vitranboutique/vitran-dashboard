@@ -4695,7 +4695,7 @@ def _render_fabric_groups(groups):
     for g in groups:
         fams[g.get("family") or "(khác)"].append(g)
     fam_order = sorted(fams.items(), key=lambda kv: -sum(float(x.get("totalNeed") or 0) for x in kv[1]))
-    headers = ["Mức", "Mã", "Màu", "Màu vải", "Tồn cuối", "Đủ bán (size thiếu)", "Cần SX", "Cây (cả màu)", "Size cần"]
+    headers = ["Mức", "Mã", "Màu", "Màu vải", "Tồn cuối", "Đủ bán (size thiếu)", _SX_COL, "Cây (cả màu)", "Size cần"]
     for fam, items in fam_order:
         by_color = defaultdict(list)
         for g in items:
@@ -4762,7 +4762,7 @@ def _manual_cut_print_html(groups):
                 rows.append("<tr>" + "".join(f"<td{bd}>{_esc(str(v))}</td>" for v in vals) + "</tr>")
         blocks.append(
             f"<h3>🧵 {_esc(fam)} — {fam_need} cái</h3><table>"
-            "<thead><tr><th>Màu vải</th><th>Mã</th><th>Cần SX</th><th>Size cần</th><th>Đã cắt</th></tr></thead>"
+            "<thead><tr><th>Màu vải</th><th>Mã</th><th>Cần SX<br><span style='font-weight:400;font-size:11px'>(đủ bán ~" + str(_SX_TARGET_DAYS) + " ngày)</span></th><th>Size cần</th><th>Đã cắt</th></tr></thead>"
             f"<tbody>{''.join(rows)}</tbody></table>")
     css = ("@page{size:A4;margin:12mm}*{font-family:Arial,'Segoe UI',sans-serif}"
            "h1{font-size:18px;margin:0}.sub{color:#444;font-size:12px;margin:2px 0 10px}"
@@ -4772,7 +4772,8 @@ def _manual_cut_print_html(groups):
            "td:last-child,th:last-child{width:64px}")
     return (f"<!doctype html><html lang='vi'><head><meta charset='utf-8'><title>Phiếu cắt tay</title>"
             f"<style>{css}</style></head><body><h1>PHIẾU CẮT TAY</h1>"
-            f"<div class='sub'>Tổng {total} cái · in lúc {now} · (Cần SX ≤ 5 cái/nhóm)</div>"
+            f"<div class='sub'>Tổng {total} cái · in lúc {now} · (Cần SX ≤ 5 cái/nhóm) · "
+            f"Số cần SX = đủ bán ~{_SX_TARGET_DAYS} ngày theo nhịp bán 3 tháng gần nhất</div>"
             f"{''.join(blocks) or '<p>Không có nhóm cắt tay.</p>'}</body></html>")
 
 
@@ -4909,6 +4910,12 @@ def _render_cutbatch_by_material(cut_batches):
                     unsafe_allow_html=True)
 
 
+# CÔNG THỨC SX (khớp với chỗ đặt tham số ở trang Dự đoán sản xuất):
+#   tồn mục tiêu = bán TB/tháng × forecast_months × safety_factor
+_SX_FORECAST_MONTHS, _SX_SAFETY = 1, 1.5
+_SX_TARGET_DAYS = int(round(_SX_FORECAST_MONTHS * _SX_SAFETY * 30))
+_SX_COL = f"Cần SX (đủ bán ~{_SX_TARGET_DAYS} ngày)"
+
 def _render_stock_cover_grouped(skus_flat):
     """Tồn còn bán bao lâu — CHIA THEO MÃ (1 mã = 1 nhóm, gồm mọi màu+size), nhóm ngăn nhau
     bằng GẠCH NGANG ĐẬM; nhóm còn ÍT HÀNG NHẤT lên đầu; trong nhóm, màu/size sắp hết lên trên."""
@@ -4931,7 +4938,7 @@ def _render_stock_cover_grouped(skus_flat):
     order = sorted(groups.items(), key=lambda kv: _gsort(kv[1]))
     _TD = "padding:4px 9px;border-bottom:1px solid rgba(148,163,184,.22);white-space:nowrap;"
     _TH = "padding:5px 9px;border-bottom:2px solid #94a3b8;font-weight:700;text-align:left;white-space:nowrap;"
-    headers = ["Mã", "Màu", "Chất liệu", "Size", "Tồn", "Bán/th", "Đủ bán", "Cần SX"]
+    headers = ["Mã", "Màu", "Chất liệu", "Size", "Tồn", "Bán/th", "Đủ bán", _SX_COL]
     rows = []
     for gi, (_code, items) in enumerate(order):
         items.sort(key=_sku_cover)   # màu/size sắp hết lên trên trong nhóm
@@ -5089,7 +5096,7 @@ def _render_skus_grouped(skus, order_by="stock", limit=250):
     order = sorted(groups.items(), key=lambda kv: -_gv(kv[1]))
     _TD = "padding:4px 9px;border-bottom:1px solid rgba(148,163,184,.22);white-space:nowrap;"
     _TH = "padding:5px 9px;border-bottom:2px solid #94a3b8;font-weight:700;text-align:left;white-space:nowrap;"
-    headers = ["Mã", "Màu", "Size", "Tồn", "Bán/th", "Đủ bán", "Cần SX"]
+    headers = ["Mã", "Màu", "Size", "Tồn", "Bán/th", "Đủ bán", _SX_COL]
     rows = []
     for gi, (_k, items) in enumerate(order[:limit]):
         items.sort(key=lambda s: -(float(s.get("needQty") or 0) if order_by == "need" else float(s.get("endingStock") or 0)))
@@ -5117,7 +5124,7 @@ def _render_skus_grouped(skus, order_by="stock", limit=250):
 
 
 _SKU_HDR = {"ma": "Mã", "mau": "Màu", "chatlieu": "Chất liệu", "size": "Size", "ton": "Tồn",
-            "banth": "Bán/th", "duban": "Đủ bán", "cansx": "Cần SX"}
+            "banth": "Bán/th", "duban": "Đủ bán", "cansx": _SX_COL}
 
 
 def _sku_group_html(skus, cols, sort="cover", max_groups=None):
