@@ -12514,7 +12514,11 @@ def _render_returns():
                     elif ("TRAO" in compact or "SAIHANG" in compact or "SAISP" in compact
                           or "KHACVOMOTA" in compact or "KHONGKHOPVOIMOTA" in compact):
                         base_label = "🔁 Tráo/sai hàng"
-                    elif "DASUDUNG" in compact or "DADUNG" in compact or "SUDUNG" in compact:
+                    elif (("CHUAQUASUDUNG" in compact or "CHUASUDUNG" in compact or "KHONGCONNHUCAU" in compact)
+                          and not ("DASUDUNG" in compact or "DADUNG" in compact)):
+                        # Note "Hàng CHƯA qua sử dụng" / "Không còn nhu cầu" = KHÔNG phải đã dùng (đừng khớp nhầm "sử dụng")
+                        base_label = "🔄 Đổi ý · chưa dùng"
+                    elif "DASUDUNG" in compact or "DADUNG" in compact or "DAQUASUDUNG" in compact:
                         base_label = "♻️ Đã sử dụng"
                     elif "NHAPKHO1PHAN" in compact or "PARTIAL" in stock_code:
                         base_label = "📦 Nhập thiếu"
