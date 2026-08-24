@@ -146,7 +146,9 @@ _COLLECT = {
     var mats=[]; document.querySelectorAll('#matBody tr').forEach(function(tr){
       var n=tr.querySelector('input.matName'), q=tr.querySelector('input.matQty'), u=tr.querySelector('input.matUnit');
       if((n&&n.value)||(q&&q.value)) mats.push({name:n?n.value:'', qty:q?q.value:'', unit:u?u.value:''}); });
-    __vitranEmit({type:'gia_cong', date:date, partner:partner, so_lo:gv('so_lo'), amount:net,
+    var _lo=[gv('so_lo'), gv('so_lo_2')].map(function(v){return String(v||'').trim();})
+              .filter(function(v){return v;}).join(' + ');
+    __vitranEmit({type:'gia_cong', date:date, partner:partner, so_lo:_lo, amount:net,
       gross:num((document.getElementById('sumGross')||{}).textContent),
       defect:num((document.getElementById('sumDefect')||{}).textContent),
       adv:num((document.getElementById('sumAdv')||{}).textContent),
@@ -174,6 +176,19 @@ _PREFILL_JS = r"""
     try{ el.dispatchEvent(new Event('input', {bubbles:true})); }catch(e){}
     try{ el.dispatchEvent(new Event('change', {bubbles:true})); }catch(e){}
   }
+  // Có ngày giao 2 lô cùng lúc → chèn thêm Ô LÔ THỨ 2 ngay dưới ô lô 1 (giữ nguyên file gốc).
+  (function(){
+    var lo1 = document.getElementById('so_lo');
+    if(!lo1 || document.getElementById('so_lo_2')) return;
+    var wrap = lo1.parentNode;                       // div.field
+    var lo2 = document.createElement('input');
+    lo2.type = 'text'; lo2.id = 'so_lo_2';
+    lo2.placeholder = 'Số lô/đợt 2 (nếu giao 2 lô cùng ngày)';
+    lo2.style.marginTop = '6px';
+    try{ lo2.className = lo1.className; }catch(e){}
+    lo2.style.width = lo1.offsetWidth ? (lo1.offsetWidth + 'px') : '100%';
+    wrap.appendChild(lo2);
+  })();
   var d = new Date();
   var dd = ('0'+d.getDate()).slice(-2), mm = ('0'+(d.getMonth()+1)).slice(-2);
   setIfEmpty('ngay', dd+'/'+mm+'/'+d.getFullYear());
