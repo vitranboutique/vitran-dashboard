@@ -24,12 +24,11 @@ _TYPE_LABEL = {
     "mua_vai_ke": "Bảng kê mua vải",
     "thanh_toan_mua_vai": "Thanh toán mua vải",
     "gia_cong": "Thanh toán gia công",
-    "cat_tay": "Cắt tay phát sinh",
     "so_quy_chi": "Sổ quỹ (chi)",
     "khac": "Chi phí khác",
 }
 _TYPE_ICON = {"mua_vai_ke": "🧾", "thanh_toan_mua_vai": "💳", "gia_cong": "🧵",
-              "cat_tay": "✂️", "so_quy_chi": "🏦", "khac": "📌"}
+              "so_quy_chi": "🏦", "khac": "📌"}
 
 
 def _fmt(n):
@@ -147,6 +146,13 @@ _COLLECT = {
     var mats=[]; document.querySelectorAll('#matBody tr').forEach(function(tr){
       var n=tr.querySelector('input.matName'), q=tr.querySelector('input.matQty'), u=tr.querySelector('input.matUnit');
       if((n&&n.value)||(q&&q.value)) mats.push({name:n?n.value:'', qty:q?q.value:'', unit:u?u.value:''}); });
+    var cats=[]; document.querySelectorAll('#catBody tr').forEach(function(tr){
+      var g=function(c){ var el=tr.querySelector('input.'+c); return el?el.value:''; };
+      var q=Number(g('ctQty'))||0, gc=Number(g('ctCut'))||0, gn=Number(g('ctWage'))||0;
+      if(g('ctSku')||q||gc||gn) cats.push({sku:g('ctSku'), qty:q, gia_cat:gc, gia_cong:gn,
+        tien_cat:q*gc, tien_cong:q*gn, thanh_tien:q*(gc+gn)});
+    });
+    var catTotal=cats.reduce(function(t,r){ return t+r.thanh_tien; },0);
     var _lo=[gv('so_lo'), gv('so_lo_2')].map(function(v){return String(v||'').trim();})
               .filter(function(v){return v;}).join(' + ');
     __vitranEmit({type:'gia_cong', date:date, partner:partner, so_lo:_lo, amount:net,
@@ -154,6 +160,7 @@ _COLLECT = {
       defect:num((document.getElementById('sumDefect')||{}).textContent),
       adv:num((document.getElementById('sumAdv')||{}).textContent),
       mat:num((document.getElementById('sumMat')||{}).textContent),
+      cat_tay:cats, cat_tay_total:catTotal,
       qty:num((document.getElementById('sumQty')||{}).textContent),
       bad_qty:num((document.getElementById('sumBadQty')||{}).textContent),
       tai:gv('tai'), ngay_giao:gv('ngay_giao'), pttt:gv('pttt'), hinh_thuc:gv('hinh_thuc'),
@@ -199,9 +206,103 @@ _PREFILL_JS = r"""
 """
 
 
+# Bảng CẮT TAY PHÁT SINH — chèn thẳng vào BIÊN BẢN GIA CÔNG (giữ nguyên file công cụ gốc).
+_CATTAY_JS = r"""
+(function(){
+  if(document.getElementById('catBody')) return;
+  var totals = document.querySelector('.totals');
+  if(!totals || !document.getElementById('netPay')) return;
+  var F = (typeof fmt==='function') ? fmt : function(n){ return Number(n||0).toLocaleString('vi-VN'); };
+  var N = (typeof toNum==='function') ? toNum : function(v){ var n=Number(v); return isFinite(n)?n:0; };
+
+  var box = document.createElement('div');
+  box.className = 'box'; box.style.marginTop = '10px';
+  box.innerHTML =
+    '<h2>IV-B. CẮT TAY PHÁT SINH (TÍNH THEO SỐ LƯỢNG)</h2>'
+  + '<table><thead><tr>'
+  + '<th style="width:9mm;">STT</th><th style="width:33mm;">Mã SKU</th>'
+  + '<th style="width:20mm;">SL</th><th style="width:23mm;">Giá cắt/SP</th>'
+  + '<th style="width:25mm;">Tiền cắt</th><th style="width:23mm;">Giá công/SP</th>'
+  + '<th style="width:25mm;">Tiền công</th><th style="width:28mm;">Thành tiền</th>'
+  + '<th style="width:11mm;">Xoá</th></tr></thead><tbody id="catBody"></tbody></table>'
+  + '<div class="muted">Tiền cắt = SL × giá cắt · Tiền công = SL × giá công. '
+  + 'Tổng cắt tay phát sinh được CỘNG vào tiền thực nhận.</div>';
+  totals.parentNode.insertBefore(box, totals);
+
+  var line = document.createElement('div');
+  line.className = 'line';
+  line.innerHTML = '<div><span class="bold">TỔNG CẮT TAY PHÁT SINH</span></div>'
+                 + '<div class="value" id="sumCatTay">0</div>';
+  totals.insertBefore(line, document.getElementById('netPay').parentNode);
+
+  var mu = totals.querySelector('.muted');
+  if(mu) mu.textContent = 'Công thức: Thực nhận = (Tổng gia công − Trừ lỗi − Tổng ứng) '
+                        + '+ Tổng NVL mua hộ + Tổng cắt tay phát sinh';
+
+  var tb = document.getElementById('catBody');
+  function rn(){ Array.from(tb.children).forEach(function(tr,i){ tr.children[0].textContent = String(i+1); }); }
+  function mk(t, cls, ph){ var i=document.createElement('input'); i.type=t; i.className=cls;
+                           if(ph) i.placeholder=ph; return i; }
+  function rowCalc(tr){
+    var q  = N(tr.querySelector('input.ctQty').value),
+        gc = N(tr.querySelector('input.ctCut').value),
+        gn = N(tr.querySelector('input.ctWage').value);
+    var tc = q*gc, tn = q*gn;
+    tr.dataset.ctCutMoney = String(tc); tr.dataset.ctWageMoney = String(tn);
+    tr.querySelector('[data-ct-cut]').textContent  = F(tc);
+    tr.querySelector('[data-ct-wage]').textContent = F(tn);
+    tr.querySelector('[data-ct-line]').textContent = F(tc+tn);
+  }
+  window.__ctSum = function(){
+    var s=0; Array.from(tb.children).forEach(function(tr){
+      s += N(tr.dataset.ctCutMoney) + N(tr.dataset.ctWageMoney); });
+    return s;
+  };
+  function addRow(){
+    var tr = document.createElement('tr');
+    function td(cls){ var t=document.createElement('td'); if(cls) t.className=cls; tr.appendChild(t); return t; }
+    td('center').textContent = '';
+    td().appendChild(mk('text','ctSku','VD: sd-xl'));
+    var q = mk('number','ctQty');  td('right').appendChild(q);
+    var c = mk('number','ctCut');  c.step='500'; td('right').appendChild(c);
+    var t1 = td('right nowrap'); t1.dataset.ctCut='1';  t1.textContent='0';
+    var w = mk('number','ctWage'); w.step='500'; td('right').appendChild(w);
+    var t2 = td('right nowrap'); t2.dataset.ctWage='1'; t2.textContent='0';
+    var t3 = td('right nowrap'); t3.dataset.ctLine='1'; t3.textContent='0';
+    var b = document.createElement('button');
+    b.type='button'; b.textContent='X'; b.style.padding='4px 8px';
+    b.onclick = function(){ tr.remove(); rn(); recalcAll(); };
+    td('center').appendChild(b);
+    [q,c,w].forEach(function(i){ i.addEventListener('input', function(){ rowCalc(tr); recalcAll(); }); });
+    tb.appendChild(tr); rn(); rowCalc(tr); recalcAll();
+  }
+  var acts = document.querySelector('.actions');
+  if(acts){
+    var ab = document.createElement('button');
+    ab.type='button'; ab.id='addCatRowBtn'; ab.textContent='+ Thêm dòng cắt tay';
+    ab.onclick = addRow;
+    acts.insertBefore(ab, document.getElementById('printBtn') || null);
+  }
+
+  var _orig = window.recalcAll;                       // cộng cắt tay vào TỔNG THỰC NHẬN
+  if(typeof _orig === 'function'){
+    window.recalcAll = function(){
+      _orig.apply(this, arguments);
+      var ct = window.__ctSum();
+      var el = document.getElementById('sumCatTay'); if(el) el.textContent = F(ct);
+      var np = document.getElementById('netPay');
+      if(np) np.textContent = F(N(String(np.textContent).replace(/[^\d-]/g,'')) + ct);
+    };
+    window.recalcAll();
+  }
+})();
+"""
+
+
 def _bridged(html, typ):
     """Nối thanh lưu + JS đọc dữ liệu vào cuối công cụ (không sửa nội dung công cụ)."""
-    bridge = (_BAR_HTML + "<script>" + _PREFILL_JS + _EMIT_JS
+    bridge = (_BAR_HTML + "<script>" + _PREFILL_JS
+              + (_CATTAY_JS if typ == "gia_cong" else "") + _EMIT_JS
               + "document.getElementById('__vitran_btn').addEventListener('click', function(){"
               + _COLLECT[typ] + "});</script>")
     if "</body>" in html:
@@ -310,26 +411,6 @@ def _num(v):
         return 0
     n = int(digits)
     return -n if neg else n
-
-
-def _numf(v):
-    """Số từ ô data_editor: có thể là float/NaN → KHÔNG dùng _num (nó lọc chữ số nên 3000.0 → 30000)."""
-    if v is None:
-        return 0
-    if isinstance(v, bool):
-        return 0
-    if isinstance(v, (int, float)):
-        try:
-            return 0 if v != v else int(round(float(v)))   # NaN → 0
-        except Exception:
-            return 0
-    t = str(v).strip().replace(" ", "")
-    if re.fullmatch(r"-?\d{1,3}(\.\d{3})+", t):      # "3.500" kiểu VN = 3500, KHÔNG phải 3.5
-        return _num(t)
-    try:
-        return int(round(float(t.replace(",", ""))))
-    except Exception:
-        return _num(v)
 
 
 def _date_str(v):
@@ -590,88 +671,11 @@ def _partner_book():
     return book
 
 
-def _cattay_print_html(x):
-    """PHIẾU CẮT TAY PHÁT SINH — A4 dọc, có bảng SL × giá cắt / giá công và ô ký nhận."""
-    d = x.get("detail") or {}
-    rows = [r for r in (d.get("rows") or []) if isinstance(r, dict)]
-    _BL = '<span class="bl"></span>'
-    tr = ""
-    for n, r in enumerate(rows, 1):
-        tr += ('<tr>'
-               f'<td class="c">{n}</td>'
-               f'<td>{_esc_c(r.get("sku"))}</td>'
-               f'<td class="r">{_fmt(r.get("qty"))}</td>'
-               f'<td class="r">{_fmt(r.get("gia_cat"))}</td>'
-               f'<td class="r">{_fmt(r.get("tien_cat"))}</td>'
-               f'<td class="r">{_fmt(r.get("gia_cong"))}</td>'
-               f'<td class="r">{_fmt(r.get("tien_cong"))}</td>'
-               f'<td class="r"><b>{_fmt(r.get("thanh_tien"))}</b></td></tr>')
-    _q = sum(_numf(r.get("qty")) for r in rows)
-    _tc = sum(_numf(r.get("tien_cat")) for r in rows)
-    _tn = sum(_numf(r.get("tien_cong")) for r in rows)
-    tr += ('<tr class="sum"><td class="c"></td><td><b>CỘNG</b></td>'
-           f'<td class="r"><b>{_fmt(_q)}</b></td><td></td>'
-           f'<td class="r"><b>{_fmt(_tc)}</b></td><td></td>'
-           f'<td class="r"><b>{_fmt(_tn)}</b></td>'
-           f'<td class="r"><b>{_fmt(_tc + _tn)}</b></td></tr>')
-
-    css = ("*{box-sizing:border-box}body{margin:0;font-family:Tahoma,Arial,sans-serif;color:#111}"
-           ".wrap{max-width:190mm;margin:0 auto;padding:6mm}"
-           ".ttl{text-align:center;font-size:18px;font-weight:800;margin:2px 0 2px}"
-           ".sub{text-align:center;font-size:12.5px;color:#555;margin-bottom:10px}"
-           ".meta{font-size:12.5px;margin-bottom:8px;line-height:1.7}"
-           ".sec{font-weight:800;font-size:13px;margin:10px 0 3px}"
-           "table{border-collapse:collapse;width:100%;font-size:12.5px}"
-           "th,td{border:1px solid #999;padding:4px 7px}th{background:#eee;text-align:center}"
-           "td.r{text-align:right}td.c{text-align:center;width:9mm}tr.sum td{background:#f3f4f6}"
-           ".tot{margin-top:10px;font-size:16px;font-weight:800;text-align:right}"
-           ".bl{display:inline-block;min-width:42mm;border-bottom:1px dotted #666;height:12px}"
-           ".sign{display:flex;justify-content:space-around;margin-top:26px;font-size:12.5px;text-align:center}"
-           "@page{size:A4;margin:12mm}")
-    body = ('<div class="wrap"><div class="ttl">PHIẾU CẮT TAY PHÁT SINH</div>'
-            '<div class="sub">(Tính tiền cắt &amp; tiền công theo số lượng)</div>'
-            f'<div class="meta">Ngày: <b>{_esc_c(x.get("date") or "—")}</b>'
-            f' &nbsp;·&nbsp; Người cắt / đối tác: <b>{_esc_c(x.get("partner")) or _BL}</b>'
-            + (f' &nbsp;·&nbsp; Số lô/đợt: <b>{_esc_c(d.get("so_lo"))}</b>' if d.get("so_lo") else "")
-            + f'<br><span style="color:#666">Lưu lúc {_esc_c(x.get("saved_at") or "")}</span></div>'
-            '<div class="sec">CHI TIẾT</div>'
-            '<table><thead><tr><th>#</th><th>Mã SKU / Mặt hàng</th><th>SL</th>'
-            '<th>Giá cắt/SP</th><th>Tiền cắt</th><th>Giá công/SP</th><th>Tiền công</th>'
-            f'<th>Thành tiền</th></tr></thead><tbody>{tr}</tbody></table>'
-            + (f'<div class="meta"><b>Ghi chú:</b> {_esc_c(x.get("note"))}</div>' if x.get("note") else "")
-            + f'<div class="tot">TỔNG THỰC TRẢ: {_fmt(x.get("amount"))}đ</div>'
-            + '<div class="sec">THÔNG TIN CHUYỂN KHOẢN</div><table>'
-            + f'<tr><td style="width:45%;font-weight:600">Ngân hàng</td><td class="r">{_BL}</td></tr>'
-            + f'<tr><td style="font-weight:600">Chủ tài khoản</td><td class="r">{_BL}</td></tr>'
-            + f'<tr><td style="font-weight:600">Số tài khoản</td><td class="r">{_BL}</td></tr>'
-            + f'<tr><td style="font-weight:600">Ngày chuyển khoản</td><td class="r">{_esc_c(x.get("date")) or _BL}</td></tr>'
-            + f'<tr><td style="font-weight:600">Số tiền đã chuyển</td><td class="r"><b>{_fmt(x.get("amount"))}đ</b></td></tr>'
-            + '</table>'
-            + '<div class="sign"><div>NGƯỜI LẬP PHIẾU<br><br><br>_______________</div>'
-            '<div>NGƯỜI NHẬN TIỀN<br><br><br>_______________</div></div></div>')
-    js = ("function pr(){var h=document.getElementById('doc').innerHTML;"
-          "var f=document.createElement('iframe');"
-          "f.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0';"
-          "document.body.appendChild(f);var d=f.contentWindow.document;d.open();"
-          "d.write('<!doctype html><html><head><meta charset=\"utf-8\"><style>'+"
-          + json.dumps(css) +
-          "+'</style></head><body>'+h+'</body></html>');d.close();"
-          "f.onload=function(){f.contentWindow.focus();f.contentWindow.print();"
-          "setTimeout(function(){try{document.body.removeChild(f);}catch(e){}},800);};}")
-    return ("<style>" + css + ".btn{background:#2563eb;color:#fff;border:0;border-radius:6px;"
-            "padding:8px 16px;font-weight:700;cursor:pointer}</style>"
-            "<div style='text-align:right;margin:6px'>"
-            "<button class='btn' onclick='pr()'>🖨️ In A4 / Lưu PDF</button></div>"
-            "<div id='doc'>" + body + "</div><script>" + js + "</script>")
-
-
 def _detail_print_html(x):
     """Dựng lại CHỨNG TỪ đã lưu để XEM + IN A4 — đầy đủ như bản gốc (2 bên, lô hàng,
     bảng SP, tạm ứng, NVL, hình thức thanh toán, ô ký)."""
     d = x.get("detail") or {}
     typ = x.get("type") or ""
-    if typ == "cat_tay":
-        return _cattay_print_html(x)
     ttl = {"gia_cong": "BIÊN BẢN GIAO NHẬN VÀ THANH TOÁN GIA CÔNG",
            "mua_vai_ke": "BẢNG KÊ MUA VẢI",
            "thanh_toan_mua_vai": "PHIẾU THANH TOÁN MUA VẢI",
@@ -706,7 +710,8 @@ def _detail_print_html(x):
         return r + "</div>"
 
     money = [("gross", "Tiền gia công"), ("defect", "Trừ hàng lỗi"),
-             ("adv", "Đã tạm ứng"), ("mat", "NVL bên B mua hộ")]
+             ("adv", "Đã tạm ứng"), ("mat", "NVL bên B mua hộ"),
+             ("cat_tay_total", "Cắt tay phát sinh")]
     rows = ""
     for k, lb in money:
         if d.get(k):
@@ -730,6 +735,15 @@ def _detail_print_html(x):
         th = "".join(f"<th>{c}</th>" for c in cols)
         return (f'<div class="sec">{title}</div><table class="tb"><thead><tr><th>#</th>{th}</tr></thead>'
                 f'<tbody>{tr}</tbody></table>')
+
+    _ct_rows = []                       # bảng cắt tay: định dạng số cho dễ đọc trên giấy
+    for _it in (d.get("cat_tay") or []):
+        if not isinstance(_it, dict):
+            continue
+        _ct_rows.append({"sku": _it.get("sku") or "", "qty": _fmt(_it.get("qty")),
+                         "gia_cat": _fmt(_it.get("gia_cat")), "tien_cat": _fmt(_it.get("tien_cat")),
+                         "gia_cong": _fmt(_it.get("gia_cong")), "tien_cong": _fmt(_it.get("tien_cong")),
+                         "thanh_tien": _fmt(_it.get("thanh_tien"))})
 
     css = ("*{box-sizing:border-box}body{margin:0;font-family:Tahoma,Arial,sans-serif;color:#111}"
            ".wrap{max-width:190mm;margin:0 auto;padding:6mm}"
@@ -758,6 +772,10 @@ def _detail_print_html(x):
             + _tbl(d.get("advs"), ["Nội dung tạm ứng", "Số tiền"], ["note", "amt"], "III. TẠM ỨNG")
             + _tbl(d.get("mats"), ["Nội dung NVL", "SL", "Đơn giá"], ["name", "qty", "unit"],
                    "IV. NVL BÊN B MUA HỘ")
+            + _tbl(_ct_rows, ["SKU / Mặt hàng", "SL", "Giá cắt/SP", "Tiền cắt",
+                              "Giá công/SP", "Tiền công", "Thành tiền"],
+                   ["sku", "qty", "gia_cat", "tien_cat", "gia_cong", "tien_cong", "thanh_tien"],
+                   "IV-B. CẮT TAY PHÁT SINH")
             + f'<div class="tot">TỔNG THỰC TRẢ: {_fmt(x.get("amount"))}đ</div>'
             + '<div class="sec">V. THÔNG TIN CHUYỂN KHOẢN</div>'
             + '<table>'
@@ -788,95 +806,6 @@ def _detail_print_html(x):
             "<div style='text-align:right;margin:6px'>"
             "<button class='btn' onclick='pr()'>🖨️ In A4 / Lưu PDF</button></div>"
             "<div id='doc'>" + body + "</div><script>" + js + "</script>")
-
-
-def _do_save_cattay():
-    """Lưu bảng CẮT TAY PHÁT SINH vào chi phí đầu vào."""
-    df = st.session_state.get("cattay_rows")
-    rows = []
-    if df is not None:
-        for r in (df.to_dict("records") if hasattr(df, "to_dict") else list(df)):
-            sku = str(r.get("Mã SKU") or "").strip()
-            qty = _numf(r.get("SL"))
-            gc = _numf(r.get("Giá cắt/SP"))
-            gcn = _numf(r.get("Giá công/SP"))
-            if qty <= 0:            # dòng trống / chưa nhập SL thì bỏ, không in lên phiếu
-                continue
-            rows.append({"sku": sku, "qty": qty, "gia_cat": gc, "gia_cong": gcn,
-                         "tien_cat": qty * gc, "tien_cong": qty * gcn,
-                         "thanh_tien": qty * (gc + gcn)})
-    if not rows:
-        st.session_state["msg_cat_tay"] = ("warning", "Chưa nhập dòng nào có SKU hoặc số lượng.")
-        return
-    tong = int(round(sum(r["thanh_tien"] for r in rows)))
-    if tong <= 0:
-        st.session_state["msg_cat_tay"] = ("warning", "Tổng tiền đang = 0 — kiểm tra lại đơn giá.")
-        return
-    _d = st.session_state.get("cattay_date")
-    entry = {
-        "type": "cat_tay",
-        "date": _d.strftime("%d/%m/%Y") if hasattr(_d, "strftime") else str(_d or ""),
-        "amount": tong,
-        "partner": str(st.session_state.get("cattay_partner") or "").strip(),
-        "note": str(st.session_state.get("cattay_note") or "").strip(),
-        "detail": {"type": "cat_tay", "rows": rows, "count": len(rows),
-                   "qty": int(round(sum(r["qty"] for r in rows))),
-                   "tien_cat": int(round(sum(r["tien_cat"] for r in rows))),
-                   "tien_cong": int(round(sum(r["tien_cong"] for r in rows))),
-                   "so_lo": str(st.session_state.get("cattay_lo") or "").strip()},
-    }
-    if picklog.add_input_cost(entry):
-        st.session_state["msg_cat_tay"] = ("success", f"Đã lưu Cắt tay phát sinh — {_fmt(tong)}đ.")
-    else:
-        st.session_state["msg_cat_tay"] = ("error", "Lưu thất bại (không ghi được vào kho dữ liệu).")
-
-
-def _cattay_tab():
-    """BẢNG CẮT TAY PHÁT SINH — tính tiền CẮT và tiền CÔNG theo SỐ LƯỢNG."""
-    st.caption("Dùng cho hàng cắt tay phát sinh ngoài lô gia công. Nhập SL và đơn giá → "
-               "app tự tính **tiền cắt**, **tiền công** và **tổng phải trả**.")
-    msg = st.session_state.pop("msg_cat_tay", None)
-    if msg:
-        getattr(st, msg[0])(msg[1])
-
-    c = st.columns([1.2, 2, 1.6])
-    c[0].date_input("Ngày", key="cattay_date")
-    _book = _partner_book()
-    _names = ["(nhập tay)"] + [v["ten"] for v in _book.values()]
-    _pick = c[1].selectbox("Người cắt / đối tác", _names, key="cattay_pick")
-    if _pick == "(nhập tay)":
-        c[1].text_input("Tên người cắt", key="cattay_partner")
-    else:
-        st.session_state["cattay_partner"] = _pick
-    c[2].text_input("Số lô/đợt (nếu có)", key="cattay_lo")
-
-    if "cattay_rows" not in st.session_state:
-        st.session_state["cattay_rows"] = pd.DataFrame(
-            [{"Mã SKU": "", "SL": 0, "Giá cắt/SP": 0, "Giá công/SP": 0} for _ in range(5)])
-    df = st.data_editor(
-        st.session_state["cattay_rows"], key="cattay_editor", num_rows="dynamic",
-        use_container_width=True,
-        column_config={
-            "Mã SKU": st.column_config.TextColumn("Mã SKU", width="medium"),
-            "SL": st.column_config.NumberColumn("SL", min_value=0, step=1),
-            "Giá cắt/SP": st.column_config.NumberColumn("Giá cắt/SP (đ)", min_value=0, step=500),
-            "Giá công/SP": st.column_config.NumberColumn("Giá công/SP (đ)", min_value=0, step=500),
-        })
-    st.session_state["cattay_rows"] = df
-
-    _q = _tc = _tcn = 0
-    for r in df.to_dict("records"):
-        q, gc, gn = _numf(r.get("SL")), _numf(r.get("Giá cắt/SP")), _numf(r.get("Giá công/SP"))
-        _q += q; _tc += q * gc; _tcn += q * gn
-    m = st.columns(4)
-    m[0].metric("Tổng SL", f"{int(round(_q)):,}".replace(",", "."))
-    m[1].metric("✂️ Tiền cắt", _fmt(_tc) + "đ")
-    m[2].metric("🧵 Tiền công", _fmt(_tcn) + "đ")
-    m[3].metric("💰 TỔNG TRẢ", _fmt(_tc + _tcn) + "đ")
-    st.text_input("Ghi chú", key="cattay_note")
-    st.button("💾 Lưu vào chi phí đầu vào", key="cattay_save", type="primary",
-              on_click=_do_save_cattay)
-    st.caption("Lưu xong xem lại & IN ở tab **📊 Chi phí đã lưu** (nút 👁️).")
 
 
 def _saved_tab():
@@ -967,7 +896,6 @@ def render():
         "🧾 Bảng kê mua vải",
         "💳 Thanh toán mua vải",
         "🧵 Thanh toán gia công",
-        "✂️ Cắt tay phát sinh",
         "🏦 Sổ quỹ Sapo",
         "📊 Chi phí đã lưu",
     ])
@@ -981,8 +909,6 @@ def render():
         _tool_tab("gia_cong", "bien-ban-gia-cong.html", 1550,
                   "Biên bản giao nhận & thanh toán gia công. Lưu theo TỔNG TIỀN THỰC NHẬN của bên gia công.")
     with tabs[3]:
-        _cattay_tab()
-    with tabs[4]:
         _soquy_tab()
-    with tabs[5]:
+    with tabs[4]:
         _saved_tab()
