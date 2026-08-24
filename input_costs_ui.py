@@ -162,9 +162,30 @@ _COLLECT = {
 }
 
 
+# Tự ĐIỀN SẴN các ô hay phải gõ lại (chỉ điền khi ô đang TRỐNG — không đè dữ liệu người dùng).
+_PREFILL_JS = r"""
+(function(){
+  function setIfEmpty(id, val){
+    var el = document.getElementById(id);
+    if(!el || !val) return;
+    var cur = String(el.value == null ? '' : el.value).trim();
+    if(cur) return;                       // đã có dữ liệu → KHÔNG đè
+    el.value = val;
+    try{ el.dispatchEvent(new Event('input', {bubbles:true})); }catch(e){}
+    try{ el.dispatchEvent(new Event('change', {bubbles:true})); }catch(e){}
+  }
+  var d = new Date();
+  var dd = ('0'+d.getDate()).slice(-2), mm = ('0'+(d.getMonth()+1)).slice(-2);
+  setIfEmpty('ngay', dd+'/'+mm+'/'+d.getFullYear());
+  setIfEmpty('ngay_giao', d.getFullYear()+'-'+mm+'-'+dd);
+  setIfEmpty('tai', '6 đường 32, phường An Lạc, quận Bình Tân, TP.HCM');
+})();
+"""
+
+
 def _bridged(html, typ):
     """Nối thanh lưu + JS đọc dữ liệu vào cuối công cụ (không sửa nội dung công cụ)."""
-    bridge = (_BAR_HTML + "<script>" + _EMIT_JS
+    bridge = (_BAR_HTML + "<script>" + _PREFILL_JS + _EMIT_JS
               + "document.getElementById('__vitran_btn').addEventListener('click', function(){"
               + _COLLECT[typ] + "});</script>")
     if "</body>" in html:
@@ -516,7 +537,14 @@ def _detail_print_html(x):
            "mua_vai_ke": "BẢNG KÊ MUA VẢI",
            "thanh_toan_mua_vai": "PHIẾU THANH TOÁN MUA VẢI",
            "so_quy_chi": "PHIẾU CHI (SỔ QUỸ)"}.get(typ, "CHỨNG TỪ CHI PHÍ ĐẦU VÀO")
-    A, B = d.get("ben_a") or {}, d.get("ben_b") or {}
+    # BÊN A luôn là shop → điền sẵn mặc định cho phiếu CŨ (lưu trước khi app thu đủ trường).
+    _A_MAC_DINH = {"ten": "VITRAN BOUTIQUE", "daidien": "TRẦN THỊ THÚY VI",
+                   "cccd": "079191025624",
+                   "diachi": "6 đường 32, phường An Lạc, quận Bình Tân, TP.HCM",
+                   "sdt": "0902470840"}
+    A = dict(_A_MAC_DINH)
+    A.update({k: v for k, v in (d.get("ben_a") or {}).items() if str(v or "").strip()})
+    B = d.get("ben_b") or {}
 
     _BL = '<span class="bl"></span>'          # gạch trống để ĐIỀN TAY khi chưa có dữ liệu
 
@@ -591,9 +619,11 @@ def _detail_print_html(x):
             + f'<tr><td class="l">Ngân hàng</td><td class="r">{_esc_c(d.get("hinh_thuc")) or _BL}</td></tr>'
             + f'<tr><td class="l">Chủ tài khoản</td><td class="r">{_esc_c(d.get("ctk")) or _BL}</td></tr>'
             + f'<tr><td class="l">Số tài khoản</td><td class="r">{_esc_c(d.get("stk")) or _BL}</td></tr>'
-            + f'<tr><td class="l">Ngày chuyển khoản</td><td class="r">{_BL}</td></tr>'
-            + f'<tr><td class="l">Số tiền đã chuyển</td><td class="r">{_BL}</td></tr>'
-            + f'<tr><td class="l">Nội dung / mã giao dịch</td><td class="r">{_BL}</td></tr>'
+            + f'<tr><td class="l">Ngày chuyển khoản</td><td class="r">{_esc_c(x.get("date")) or _BL}</td></tr>'
+            + f'<tr><td class="l">Số tiền đã chuyển</td><td class="r"><b>{_fmt(x.get("amount"))}đ</b></td></tr>'
+            + f'<tr><td class="l">Nội dung / mã giao dịch</td><td class="r">'
+            + _esc_c(("Thanh toan gia cong lo " + str(d.get("so_lo"))) if d.get("so_lo")
+                     else "Thanh toan gia cong") + '</td></tr>'
             + '</table>'
             + (f'<div class="meta">{_esc_c(d.get("tdtt"))}</div>' if d.get("tdtt") else "")
             + '<div class="sign"><div>BÊN A (đặt gia công)<br><br><br>_______________</div>'
