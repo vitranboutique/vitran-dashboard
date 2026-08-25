@@ -10683,7 +10683,12 @@ def _render_returns():
                     break
             if not note:
                 continue
-            d["sapo_note"] = str(d.get("note") or "").strip()
+            _sapo = str(d.get("note") or "").strip()
+            d["sapo_note"] = _sapo
+            # Sapo đang ghi "ĐANG KN" (khiếu nại CÒN hoạt động) = nguồn MỚI NHẤT → KHÔNG để app note
+            # (kết luận cũ, vd HỦY/THẮNG) đè. App note chỉ để cho đơn KHÔNG ghi được Sapo / Sapo chưa có kết quả.
+            if "DANGKN" in _ascii_code(_sapo.split("|", 1)[0]):
+                continue
             d["app_note"] = note
             d["_note_source"] = "App"
             d["note"] = note
