@@ -10749,6 +10749,11 @@ def _render_returns():
             # (kết luận cũ, vd HỦY/THẮNG) đè. App note chỉ để cho đơn KHÔNG ghi được Sapo / Sapo chưa có kết quả.
             if "DANGKN" in _ascii_code(_sapo.split("|", 1)[0]):
                 continue
+            # Sapo ĐÃ ghi chú KẾT LUẬN (THẮNG/THUA/HỦY/HẾT HẠN/KHÔNG CẦN KN) = nguồn MỚI NHẤT →
+            # KHÔNG để ghi chú app (workaround lúc chưa ghi được Sapo) đè, kẻo đơn cứ nằm mãi ở Cần KN.
+            if _note_is_concluded(_sapo):
+                d["_app_note_stale"] = note
+                continue
             d["app_note"] = note
             d["_note_source"] = "App"
             d["note"] = note
@@ -10787,9 +10792,24 @@ def _render_returns():
                  "vì còn phải xử lý. Bỏ tick để xem/sửa lại tất cả.",
         )
 
+        def _sapo_note_of(_d):
+            """Ghi chú SAPO thật của dòng (khi app note đang đè thì note = app note)."""
+            _d = _d or {}
+            return str((_d.get("sapo_note") if "sapo_note" in _d else _d.get("note")) or "").strip()
+
+        def _app_note_of(_k, _d):
+            _txt = _closed_return_app_note_text((notes or {}).get(_k))
+            if _txt:
+                return _txt
+            for _kk in _closed_return_note_keys(_d or {}):
+                _txt = _closed_return_app_note_text((notes or {}).get(_kk))
+                if _txt:
+                    return _txt
+            return ""
+
         def _has_std_note(_k, _d):
-            _app = _closed_return_app_note_text((notes or {}).get(_k))
-            return _note_is_concluded(_app or str(_d.get("note") or ""))
+            # Sapo chuẩn LÀ chốt (dù ghi chú app cũ còn dính) — app luôn ưu tiên ghi chú Sapo.
+            return _note_is_concluded(_sapo_note_of(_d)) or _note_is_concluded(_app_note_of(_k, _d))
 
         if _only_unstd:
             choices = [k for k in all_choices if not _has_std_note(k, row_map.get(k) or {})]
@@ -10829,6 +10849,28 @@ def _render_returns():
                     store.pop(key, None)
                     removed += 1
             return removed
+
+        _stale_keys = [k for k in all_choices
+                       if _app_note_of(k, row_map.get(k) or {})
+                       and _note_is_concluded(_sapo_note_of(row_map.get(k)))]
+        if _stale_keys:
+            st.caption(f"🧹 {len(_stale_keys)} đơn đã có ghi chú SAPO chuẩn nhưng còn dính ghi chú app cũ. "
+                       "App đang ưu tiên ghi chú Sapo (đơn KHÔNG còn nằm ở Cần KN) — xoá cho sạch dữ liệu.")
+            if st.button(f"🧹 Xoá {len(_stale_keys)} ghi chú app thừa (Sapo đã ghi chuẩn)",
+                         key=f"{key_prefix}_purge_stale"):
+                _new_store = dict(notes or {})
+                _removed = 0
+                for _k in _stale_keys:
+                    _removed += _delete_closed_note_aliases(_new_store, row_map.get(_k) or {})
+                    if _new_store.pop(_k, None) is not None:
+                        _removed += 1
+                if not _removed:
+                    st.info("Không còn ghi chú app nào để xoá.")
+                elif _save_closed_return_app_notes(_new_store):
+                    st.success(f"Đã xoá {_removed} ghi chú app thừa — từ giờ chỉ dùng ghi chú Sapo.")
+                    st.rerun(scope="app")
+                else:
+                    st.error("Xoá ghi chú app lỗi. Kiểm tra token picklog/Gist.")
 
         def _match_closed_note_keys(text):
             tokens = re.findall(r"[A-Za-z0-9][A-Za-z0-9_\-]{4,}", str(text or ""))
@@ -13309,7 +13351,12 @@ def _render_returns():
                         _app_note = _closed_return_app_note_text((_closed_return_app_notes or {}).get(_k))
                         if _app_note:
                             break
-                    if _app_note:
+                    # Sapo đã ghi chú KẾT LUẬN → Sapo thắng (ghi chú app cũ không được đè, xem _apply_...).
+                    _sapo_row_note = str((d.get("sapo_note") if "sapo_note" in d else d.get("note")) or "").strip()
+                    if _sapo_row_note and _note_is_concluded(_sapo_row_note):
+                        note = _sapo_row_note
+                        _concluded = True
+                    elif _app_note:
                         note = _app_note
                         _concluded = _note_is_concluded(_app_note)
                     elif matches:
