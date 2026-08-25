@@ -3381,6 +3381,8 @@ def _sales_fetch_range(fetch_json, start, end, max_pages=280):
     by_grp_qty = defaultdict(int)                         # SỐ LƯỢNG bán / nhóm SKU
     store_qty = defaultdict(int)                          # SỐ LƯỢNG bán / gian hàng
     store_grp_qty = defaultdict(lambda: defaultdict(int)) # SỐ LƯỢNG {gian hàng: {nhóm SKU}}
+    grp_cancel_qty = defaultdict(int)                     # SL HỦY / nhóm SKU (đơn đặt rồi hủy) — cho tỉ lệ hủy
+    store_grp_cancel_qty = defaultdict(lambda: defaultdict(int))  # {gian hàng: {nhóm SKU: SL hủy}}
     placed_n, gross_val, cancelled_n, cancelled_val = 0, 0.0, 0, 0.0   # đơn ĐẶT (gồm hủy) + đơn HỦY
     store_placed = defaultdict(int)                       # đơn ĐẶT / gian hàng (gồm hủy)
     store_placed_val = defaultdict(float)                 # GIÁ TRỊ đơn đặt / gian hàng (gồm hủy)
@@ -3420,6 +3422,12 @@ def _sales_fetch_range(fetch_json, start, end, max_pages=280):
                     store_cancelled_val[store] += tp
                     store_cancelled_qty[store] += sum(int(round(li.get("quantity") or 0))
                                                       for li in (o.get("line_items") or []))
+                    for li in (o.get("line_items") or []):   # SL HỦY theo nhóm SKU (khớp cách gộp doanh thu)
+                        _cg = (parse_sku(li.get("sku")).get("productCode") or "?") if parse_sku \
+                            else (str(li.get("sku") or "?").split("-")[0] or "?")
+                        _cq = int(round(li.get("quantity") or 0))
+                        grp_cancel_qty[_cg] += _cq
+                        store_grp_cancel_qty[store][_cg] += _cq
                     continue
                 rf = float(o.get("total_refunded") or 0)
                 net = tp - rf
@@ -3474,6 +3482,8 @@ def _sales_fetch_range(fetch_json, start, end, max_pages=280):
             "store_grp": {k: dict(v) for k, v in store_grp.items()},
             "by_grp_qty": dict(by_grp_qty), "store_qty": dict(store_qty),
             "store_grp_qty": {k: dict(v) for k, v in store_grp_qty.items()},
+            "grp_cancel_qty": dict(grp_cancel_qty),
+            "store_grp_cancel_qty": {k: dict(v) for k, v in store_grp_cancel_qty.items()},
             "placed_n": placed_n, "gross_val": gross_val,
             "cancelled_n": cancelled_n, "cancelled_val": cancelled_val,
             "store_placed": dict(store_placed), "store_placed_val": dict(store_placed_val),
@@ -3557,8 +3567,8 @@ def _merge_range_results(parts):
     _flat = ("by_store", "by_grp", "store_orders", "by_brand", "by_grp_qty",
              "store_qty", "store_placed", "store_cancelled_n", "store_cancelled_val",
              "store_cancelled_qty", "store_paid_n", "store_paid_val", "store_paid_qty",
-             "store_placed_val")
-    _nested = ("store_grp", "store_grp_qty")
+             "store_placed_val", "grp_cancel_qty")
+    _nested = ("store_grp", "store_grp_qty", "store_grp_cancel_qty")
     out = {k: 0 for k in _scalars}
     for k in _flat:
         out[k] = defaultdict(float)
@@ -3662,7 +3672,7 @@ def _cached_by_month(fetch_json, start, end, gist_prefix, fetch_one, merge_fn):
 def _sales_fetch_range_cached(fetch_json, start, end):
     """_sales_fetch_range + cache tháng đã kết thúc (Gist) → 'Năm này' nhanh hơn nhiều sau lần đầu.
     Prefix có version (v5 = thêm store_placed_val) — đổi version khi đổi cấu trúc để tính lại."""
-    return _cached_by_month(fetch_json, start, end, "vitran_srng5", _sales_fetch_range, _merge_range_results)
+    return _cached_by_month(fetch_json, start, end, "vitran_srng6", _sales_fetch_range, _merge_range_results)
 
 
 def _sales_returns_period_cached(fetch_json, start, end):
@@ -3689,17 +3699,20 @@ def get_sales_analysis(fetch_json, period="thangnay", _v=None):
             return None if not c else 100.0
         return (c - p) / p * 100.0
 
-    def _merge(cd, pd, qd=None, topn=None, rqd=None):
+    def _merge(cd, pd, qd=None, topn=None, rqd=None, cqd=None):
         out = []
         for k in set(cd) | set(pd):
             row = {"name": k, "cur": cd.get(k, 0.0), "prev": pd.get(k, 0.0),
                    "pct": _pct(cd.get(k, 0.0), pd.get(k, 0.0))}
             if qd is not None:
                 row["qty"] = qd.get(k, 0)
-                _sold = qd.get(k, 0) or 0                 # SL bán → mẫu số tỉ lệ hoàn
+                _sold = qd.get(k, 0) or 0                 # SL bán (đơn KHÔNG hủy) → mẫu số tỉ lệ hoàn
                 _ret = (rqd or {}).get(k, 0) or 0         # SL hoàn của nhóm SKU
                 row["ret_qty"] = _ret
                 row["ret_rate"] = (_ret / _sold * 100.0) if _sold else 0.0
+                _canc = (cqd or {}).get(k, 0) or 0        # SL trong đơn đặt-rồi-hủy
+                row["cancel_qty"] = _canc
+                row["cancel_rate"] = (_canc / (_sold + _canc) * 100.0) if (_sold + _canc) else 0.0
             out.append(row)
         out.sort(key=lambda x: -x["cur"])
         return out[:topn] if topn else out
@@ -3782,17 +3795,22 @@ def get_sales_analysis(fetch_json, period="thangnay", _v=None):
     # doanh thu + SỐ LƯỢNG bán NHÓM SKU theo TỪNG gian hàng (current vs prev)
     store_groups = {}
     _sgr = ret_b.get("store_grp_ret_qty") or {}
+    _scc = cur.get("store_grp_cancel_qty") or {}
     for st in set(cur["store_grp"]) | set(prev["store_grp"]):
         cg, pg = cur["store_grp"].get(st, {}), prev["store_grp"].get(st, {})
         cq = cur["store_grp_qty"].get(st, {})
         rq = _sgr.get(st, {})
+        kq = _scc.get(st, {})
         lst = []
         for g in set(cg) | set(pg):
             _sold = cq.get(g, 0) or 0
             _ret = rq.get(g, 0) or 0
+            _canc = kq.get(g, 0) or 0
             lst.append({"name": g, "cur": cg.get(g, 0.0), "prev": pg.get(g, 0.0),
                         "pct": _pct(cg.get(g, 0.0), pg.get(g, 0.0)), "qty": cq.get(g, 0),
-                        "ret_qty": _ret, "ret_rate": (_ret / _sold * 100.0) if _sold else 0.0})
+                        "ret_qty": _ret, "ret_rate": (_ret / _sold * 100.0) if _sold else 0.0,
+                        "cancel_qty": _canc,
+                        "cancel_rate": (_canc / (_sold + _canc) * 100.0) if (_sold + _canc) else 0.0})
         lst.sort(key=lambda x: -x["cur"])
         store_groups[st] = lst
 
@@ -3872,7 +3890,7 @@ def get_sales_analysis(fetch_json, period="thangnay", _v=None):
         "orders": cur["orders"], "prev_orders": prev["orders"], "orders_pct": _pct(cur["orders"], prev["orders"]),
         "stores": stores,
         "groups": _merge(cur["by_grp"], prev["by_grp"], cur["by_grp_qty"], topn=25,
-                         rqd=ret_b.get("grp_ret_qty")),
+                         rqd=ret_b.get("grp_ret_qty"), cqd=cur.get("grp_cancel_qty")),
         "store_groups": store_groups,
         "quality": quality,
         "flow": {
