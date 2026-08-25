@@ -3500,6 +3500,15 @@ def _sales_returns_period(fetch_json, start, end, max_pages=60):
     store_cnt = defaultdict(lambda: defaultdict(int))     # {gian hàng: {return_type: số phiếu}}
     store_val = defaultdict(lambda: defaultdict(float))   # {gian hàng: {return_type: số tiền}}
     store_qty = defaultdict(lambda: defaultdict(float))   # {gian hàng: {return_type: SỐ SP trả}}
+    grp_ret_qty = defaultdict(float)                      # {nhóm SKU: SL SP trả} — cho tỉ lệ hoàn theo SKU
+    store_grp_ret_qty = defaultdict(lambda: defaultdict(float))  # {gian hàng: {nhóm SKU: SL SP trả}}
+    try:
+        from sapo_tools import parse_sku
+    except Exception:
+        parse_sku = None
+
+    def _grp(sku):
+        return (parse_sku(sku).get("productCode") or "?") if parse_sku else (str(sku or "?").split("-")[0] or "?")
     for p in range(1, max_pages + 1):
         rows = fetch_json("/admin/order_returns.json", limit=250, page=p,
                           created_on_min=cmin, created_on_max=cmax).get("order_returns", [])
@@ -3522,10 +3531,17 @@ def _sales_returns_period(fetch_json, start, end, max_pages=60):
             store_cnt[store][rt] += 1
             store_val[store][rt] += amt
             store_qty[store][rt] += float(x.get("total_quantity") or 0)
+            for li in (x.get("line_items") or []):        # SL hoàn theo TỪNG nhóm SKU (khớp cách gộp doanh thu)
+                _g = _grp(li.get("sku"))
+                _q = float(li.get("quantity") or 0)
+                grp_ret_qty[_g] += _q
+                store_grp_ret_qty[store][_g] += _q
     return {"cnt": dict(cnt), "val": dict(val), "won_n": won_n, "won_val": won_val,
             "store_cnt": {k: dict(v) for k, v in store_cnt.items()},
             "store_val": {k: dict(v) for k, v in store_val.items()},
-            "store_qty": {k: dict(v) for k, v in store_qty.items()}}
+            "store_qty": {k: dict(v) for k, v in store_qty.items()},
+            "grp_ret_qty": dict(grp_ret_qty),
+            "store_grp_ret_qty": {k: dict(v) for k, v in store_grp_ret_qty.items()}}
 
 
 # ── GỘP + CACHE THEO THÁNG ──────────────────────────────────────────────────
@@ -3578,7 +3594,9 @@ def _merge_returns_results(parts):
     out = {"cnt": defaultdict(int), "val": defaultdict(float), "won_n": 0, "won_val": 0.0,
            "store_cnt": defaultdict(lambda: defaultdict(int)),
            "store_val": defaultdict(lambda: defaultdict(float)),
-           "store_qty": defaultdict(lambda: defaultdict(float))}
+           "store_qty": defaultdict(lambda: defaultdict(float)),
+           "grp_ret_qty": defaultdict(float),
+           "store_grp_ret_qty": defaultdict(lambda: defaultdict(float))}
     for p in parts:
         for kk, vv in (p.get("cnt") or {}).items():
             out["cnt"][kk] += vv
@@ -3586,13 +3604,16 @@ def _merge_returns_results(parts):
             out["val"][kk] += vv
         out["won_n"] += p.get("won_n", 0) or 0
         out["won_val"] += p.get("won_val", 0.0) or 0.0
-        for _key in ("store_cnt", "store_val", "store_qty"):
+        for kk, vv in (p.get("grp_ret_qty") or {}).items():
+            out["grp_ret_qty"][kk] += vv
+        for _key in ("store_cnt", "store_val", "store_qty", "store_grp_ret_qty"):
             for kk, sub in (p.get(_key) or {}).items():
                 for skk, vv in (sub or {}).items():
                     out[_key][kk][skk] += vv
     out["cnt"] = dict(out["cnt"])
     out["val"] = dict(out["val"])
-    for _key in ("store_cnt", "store_val", "store_qty"):
+    out["grp_ret_qty"] = dict(out["grp_ret_qty"])
+    for _key in ("store_cnt", "store_val", "store_qty", "store_grp_ret_qty"):
         out[_key] = {k: dict(v) for k, v in out[_key].items()}
     return out
 
@@ -3645,8 +3666,8 @@ def _sales_fetch_range_cached(fetch_json, start, end):
 
 
 def _sales_returns_period_cached(fetch_json, start, end):
-    """_sales_returns_period + cache tháng đã kết thúc (Gist). Prefix v2 = thêm store_qty (SP trả)."""
-    return _cached_by_month(fetch_json, start, end, "vitran_sret2", _sales_returns_period, _merge_returns_results)
+    """_sales_returns_period + cache tháng đã kết thúc (Gist). Prefix v3 = thêm SL hoàn theo nhóm SKU."""
+    return _cached_by_month(fetch_json, start, end, "vitran_sret3", _sales_returns_period, _merge_returns_results)
 
 
 def get_sales_analysis(fetch_json, period="thangnay", _v=None):
@@ -3668,13 +3689,17 @@ def get_sales_analysis(fetch_json, period="thangnay", _v=None):
             return None if not c else 100.0
         return (c - p) / p * 100.0
 
-    def _merge(cd, pd, qd=None, topn=None):
+    def _merge(cd, pd, qd=None, topn=None, rqd=None):
         out = []
         for k in set(cd) | set(pd):
             row = {"name": k, "cur": cd.get(k, 0.0), "prev": pd.get(k, 0.0),
                    "pct": _pct(cd.get(k, 0.0), pd.get(k, 0.0))}
             if qd is not None:
                 row["qty"] = qd.get(k, 0)
+                _sold = qd.get(k, 0) or 0                 # SL bán → mẫu số tỉ lệ hoàn
+                _ret = (rqd or {}).get(k, 0) or 0         # SL hoàn của nhóm SKU
+                row["ret_qty"] = _ret
+                row["ret_rate"] = (_ret / _sold * 100.0) if _sold else 0.0
             out.append(row)
         out.sort(key=lambda x: -x["cur"])
         return out[:topn] if topn else out
@@ -3756,12 +3781,18 @@ def get_sales_analysis(fetch_json, period="thangnay", _v=None):
 
     # doanh thu + SỐ LƯỢNG bán NHÓM SKU theo TỪNG gian hàng (current vs prev)
     store_groups = {}
+    _sgr = ret_b.get("store_grp_ret_qty") or {}
     for st in set(cur["store_grp"]) | set(prev["store_grp"]):
         cg, pg = cur["store_grp"].get(st, {}), prev["store_grp"].get(st, {})
         cq = cur["store_grp_qty"].get(st, {})
-        lst = [{"name": g, "cur": cg.get(g, 0.0), "prev": pg.get(g, 0.0),
-                "pct": _pct(cg.get(g, 0.0), pg.get(g, 0.0)), "qty": cq.get(g, 0)}
-               for g in set(cg) | set(pg)]
+        rq = _sgr.get(st, {})
+        lst = []
+        for g in set(cg) | set(pg):
+            _sold = cq.get(g, 0) or 0
+            _ret = rq.get(g, 0) or 0
+            lst.append({"name": g, "cur": cg.get(g, 0.0), "prev": pg.get(g, 0.0),
+                        "pct": _pct(cg.get(g, 0.0), pg.get(g, 0.0)), "qty": cq.get(g, 0),
+                        "ret_qty": _ret, "ret_rate": (_ret / _sold * 100.0) if _sold else 0.0})
         lst.sort(key=lambda x: -x["cur"])
         store_groups[st] = lst
 
@@ -3840,7 +3871,8 @@ def get_sales_analysis(fetch_json, period="thangnay", _v=None):
         "net_real_pct": _pct(net_real, net_real_prev), "net_real_deduct": net_real_deduct,
         "orders": cur["orders"], "prev_orders": prev["orders"], "orders_pct": _pct(cur["orders"], prev["orders"]),
         "stores": stores,
-        "groups": _merge(cur["by_grp"], prev["by_grp"], cur["by_grp_qty"], topn=25),
+        "groups": _merge(cur["by_grp"], prev["by_grp"], cur["by_grp_qty"], topn=25,
+                         rqd=ret_b.get("grp_ret_qty")),
         "store_groups": store_groups,
         "quality": quality,
         "flow": {

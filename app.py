@@ -1934,7 +1934,7 @@ def load_overview():
 
 @st.cache_data(ttl=900, show_spinner="Đang phân tích doanh thu từ Sapo…")
 def load_sales(period):
-    _cache_ver = "2026-08-07-placedval"     # ĐỔI chuỗi này mỗi khi sửa get_sales_analysis → BUST cache cũ
+    _cache_ver = "2026-08-25-sku-rethoan"   # ĐỔI chuỗi này mỗi khi sửa get_sales_analysis → BUST cache cũ
     return L.get_sales_analysis(make_fetch_json(build_session()), period=period, _v=_cache_ver)
 
 
@@ -6332,6 +6332,16 @@ def _render_sales():
         _top = g[:15]
         st.plotly_chart(_hbar([x["name"] for x in _top], [x["cur"] for x in _top], "#16a34a"),
                         width="stretch")
+        _rows = [{"Nhóm SKU": x["name"], "Doanh thu (tr)": round(x["cur"] / 1e6, 1),
+                  "SL bán": int(x.get("qty", 0) or 0), "SL hoàn": int(round(x.get("ret_qty", 0) or 0)),
+                  "↩️ Tỉ lệ hoàn %": round(x.get("ret_rate", 0.0) or 0.0, 1)} for x in _top]
+        st.caption("↩️ **Tỉ lệ hoàn** = SL sản phẩm HOÀN về ÷ SL BÁN của nhóm SKU đó (phiếu trả TẠO trong kỳ). "
+                   "Bấm tên cột để sắp xếp ↑↓ — tìm SKU bị hoàn nhiều nhất.")
+        st.dataframe(pd.DataFrame(_rows), width="stretch", hide_index=True, column_config={
+            "Doanh thu (tr)": st.column_config.NumberColumn(format="%.1f"),
+            "SL bán": st.column_config.NumberColumn(format="%d"),
+            "SL hoàn": st.column_config.NumberColumn(format="%d"),
+            "↩️ Tỉ lệ hoàn %": st.column_config.NumberColumn(format="%.1f%%")})
 
     with st.expander("🏷️ Doanh thu theo NHÓM SKU — thế mạnh sản phẩm từng gian hàng (bấm mở)"):
         _sg = sa.get("store_groups") or {}
