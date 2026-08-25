@@ -2043,6 +2043,8 @@ def _note_is_standard(note: str) -> bool:
     'chờ quyết toán' ở dòng đầu, kết quả THẮNG ở dòng sau."""
     pre = str(note or "").split("|", 1)[0]
     compact = "".join(ch for ch in _ascii_code(pre) if ch.isalnum())
+    if "CHOQUYETTOAN" in compact or "CHUAQUYETTOAN" in compact:
+        return False       # THẮNG nhưng còn "chờ quyết toán" = CHƯA thật sự xong → chưa coi là chuẩn/chốt
     return any(t in compact for t in
                ("KHONGCANKN", "KHONGCANKHIEUNAI", "HETHAN", "THANG", "THUA", "HUY", "CANKN"))
 
@@ -2053,6 +2055,8 @@ def _note_is_concluded(note: str) -> bool:
     dòng đầu, kết quả THẮNG ở dòng sau. ⚠️ 'CẦN KN' KHÔNG tính kết luận (vẫn phải khiếu nại)."""
     pre = str(note or "").split("|", 1)[0]
     compact = "".join(ch for ch in _ascii_code(pre) if ch.isalnum())
+    if "CHOQUYETTOAN" in compact or "CHUAQUYETTOAN" in compact:
+        return False       # THẮNG nhưng còn "chờ quyết toán" = CHƯA thật sự thắng → VẪN cần theo dõi/KN
     return any(t in compact for t in
                ("KHONGCANKN", "KHONGCANKHIEUNAI", "HETHAN", "THANG", "THUA", "HUY"))
 

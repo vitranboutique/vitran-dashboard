@@ -2069,6 +2069,8 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120, canceled_max_pages
 
     def _resolved(pre):   # chỉ kết luận đã chốt mới ra khỏi bảng CẦN KN
         compact = _compact_pre(pre)
+        if "CHOQUYETTOAN" in compact or "CHUAQUYETTOAN" in compact:
+            return False   # THẮNG nhưng còn "chờ quyết toán" = CHƯA thật sự xong → GIỮ trong CẦN KN
         return any(t in compact for t in ("THANG", "THUA", "HUY", "HETHAN")) or _is_khong_can_kn(pre)
     oc = {k: {"n": 0, "money": 0} for k in ("thang", "thua", "khong_kn", "can_kn", "het_han")}
     all_oc = {k: {"n": 0, "money": 0} for k in ("thang", "thua", "khong_kn", "het_han")}
