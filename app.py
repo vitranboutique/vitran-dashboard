@@ -6325,13 +6325,32 @@ def _render_sales():
                 '<th>💸 Tổng mất <span title="= hủy + trả hàng + giao thất bại" style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
                 f'</tr></thead><tbody>{_totrow}{_rows}</tbody></table></div>', unsafe_allow_html=True)
 
-    def _sku_block(g):
+    def _sku_block(g, key=""):
         if not g:
             st.caption("Gian hàng này chưa có doanh thu trong kỳ.")
             return
-        _top = g[:15]
-        st.plotly_chart(_hbar([x["name"] for x in _top], [x["cur"] for x in _top], "#16a34a"),
+        _chart = g[:15]
+        st.plotly_chart(_hbar([x["name"] for x in _chart], [x["cur"] for x in _chart], "#16a34a"),
                         width="stretch")
+        _SORTS = {
+            "💵 Doanh thu (cao → thấp)": ("cur", True),
+            "❌ Tỉ lệ hủy (cao → thấp)": ("cancel_rate", True),
+            "❌ Tỉ lệ hủy (thấp → cao)": ("cancel_rate", False),
+            "↩️ Tỉ lệ hoàn (cao → thấp)": ("ret_rate", True),
+            "↩️ Tỉ lệ hoàn (thấp → cao)": ("ret_rate", False),
+            "📦 SL đặt (nhiều → ít)": ("_dat", True),
+            "📦 SL đặt (ít → nhiều)": ("_dat", False),
+        }
+        _pick = st.columns([2, 3])[0].selectbox("🔀 Sắp xếp bảng theo", list(_SORTS),
+                                                key=f"skusort_{key}")
+        _fld, _rev = _SORTS[_pick]
+
+        def _kv(x):
+            if _fld == "_dat":
+                return (x.get("qty", 0) or 0) + (x.get("cancel_qty", 0) or 0)
+            return x.get(_fld, 0) or 0
+        _tbl = sorted(g, key=_kv, reverse=_rev)[:25]
+
         def _vni(n):
             return f"{int(round(n or 0)):,}"
 
@@ -6339,7 +6358,7 @@ def _render_sales():
             _bg = "background:#fef2f2;" if r >= 15 else ""
             return f'<td style="{_bg}color:{color};font-weight:700">{r:.1f}%</td>'
         _body = ""
-        for x in _top:
+        for x in _tbl:
             _ban = int(x.get("qty", 0) or 0)
             _huy = int(round(x.get("cancel_qty", 0) or 0))
             _hoan = int(round(x.get("ret_qty", 0) or 0))
@@ -6372,16 +6391,16 @@ def _render_sales():
             '<th>↩️ SL hoàn</th>'
             '<th>↩️ Tỉ lệ hoàn <span title="= SL hoàn về ÷ SL bán (phiếu trả tạo trong kỳ)" style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
             f'</tr></thead><tbody>{_body}</tbody></table></div>', unsafe_allow_html=True)
-        st.caption("Sắp theo doanh thu giảm dần · ô tỉ lệ ≥15% tô nền đỏ nhạt.")
+        st.caption("🔀 Đổi ô sắp xếp ở trên để xem tăng/giảm theo cột · ô tỉ lệ ≥15% tô nền đỏ nhạt.")
 
     with st.expander("🏷️ Doanh thu theo NHÓM SKU — thế mạnh sản phẩm từng gian hàng (bấm mở)"):
         _sg = sa.get("store_groups") or {}
         _tabs = st.tabs(["🏬 Tất cả"] + [s["name"] for s in _stores])
         with _tabs[0]:
-            _sku_block(sa["groups"])
+            _sku_block(sa["groups"], key="all")
         for _i, _s in enumerate(_stores, start=1):
             with _tabs[_i]:
-                _sku_block(_sg.get(_s["name"], []))
+                _sku_block(_sg.get(_s["name"], []), key=f"st{_i}")
 
     _render_tax_warning(sa["tax"])
 
