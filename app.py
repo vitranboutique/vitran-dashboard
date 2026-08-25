@@ -6332,24 +6332,47 @@ def _render_sales():
         _top = g[:15]
         st.plotly_chart(_hbar([x["name"] for x in _top], [x["cur"] for x in _top], "#16a34a"),
                         width="stretch")
-        def _row(x):
+        def _vni(n):
+            return f"{int(round(n or 0)):,}"
+
+        def _rc(r, color):        # ô tỉ lệ: tô màu + nền đỏ nhạt khi ≥ 15% (dễ thấy SKU hay bị hủy/hoàn)
+            _bg = "background:#fef2f2;" if r >= 15 else ""
+            return f'<td style="{_bg}color:{color};font-weight:700">{r:.1f}%</td>'
+        _body = ""
+        for x in _top:
             _ban = int(x.get("qty", 0) or 0)
             _huy = int(round(x.get("cancel_qty", 0) or 0))
-            return {"Nhóm SKU": x["name"], "💵 Doanh thu": f"{int(round(x['cur'])):,}đ",
-                    "SL đặt": _ban + _huy, "SL hủy": _huy,
-                    "🚫 Tỉ lệ hủy %": round(x.get("cancel_rate", 0.0) or 0.0, 1),
-                    "SL bán": _ban, "SL hoàn": int(round(x.get("ret_qty", 0) or 0)),
-                    "↩️ Tỉ lệ hoàn %": round(x.get("ret_rate", 0.0) or 0.0, 1)}
-        _rows = [_row(x) for x in _top]
-        st.caption("🚫 **Tỉ lệ hủy** = SL hủy ÷ **SL đặt** (SL đặt = SL bán + SL hủy — đơn đặt rồi hủy chưa giao).  "
-                   "↩️ **Tỉ lệ hoàn** = SL hoàn ÷ SL bán (phiếu trả tạo trong kỳ).  Bấm cột để sắp xếp ↑↓.")
-        st.dataframe(pd.DataFrame(_rows), width="stretch", hide_index=True, column_config={
-            "SL đặt": st.column_config.NumberColumn(format="%d"),
-            "SL hủy": st.column_config.NumberColumn(format="%d"),
-            "🚫 Tỉ lệ hủy %": st.column_config.NumberColumn(format="%.1f%%"),
-            "SL bán": st.column_config.NumberColumn(format="%d"),
-            "SL hoàn": st.column_config.NumberColumn(format="%d"),
-            "↩️ Tỉ lệ hoàn %": st.column_config.NumberColumn(format="%.1f%%")})
+            _hoan = int(round(x.get("ret_qty", 0) or 0))
+            _nm = str(x["name"]).replace("<", "&lt;").replace(">", "&gt;")
+            _body += (
+                f'<tr><td class="nm">{_nm}</td>'
+                f'<td><div class="main">{_vni(x["cur"])}đ</div></td>'
+                f'<td>{_vni(_ban + _huy)}</td>'
+                f'<td style="color:#dc2626">{_vni(_huy)}</td>'
+                + _rc(x.get("cancel_rate", 0.0) or 0.0, "#dc2626")
+                + f'<td>{_vni(_ban)}</td>'
+                f'<td style="color:#c2410c">{_vni(_hoan)}</td>'
+                + _rc(x.get("ret_rate", 0.0) or 0.0, "#c2410c") + '</tr>')
+        _dt_tip = ("Doanh thu NET = tiền khách trả (đã bỏ đơn HỦY, đã trừ tiền hoàn ghi trên đơn). "
+                   "CHƯA trừ phí sàn / thuế / giá vốn — và CHƯA trừ trọn đơn trả hàng &amp; giao thất bại, "
+                   "nên CHƯA phải 'Thực bán'. (Giống cột Doanh thu ở bảng gian hàng.)")
+        st.markdown(
+            '<style>.skutbl{border-collapse:collapse;width:100%;font-size:.9em}'
+            '.skutbl th,.skutbl td{padding:6px 10px;border-bottom:1px solid #e5eaf1;text-align:right;white-space:nowrap}'
+            '.skutbl th{background:#1e293b;color:#fff;font-weight:600}'
+            '.skutbl td.nm,.skutbl th.nm{text-align:left;font-weight:700;color:#16233f}'
+            '.skutbl .main{font-weight:700}</style>'
+            '<div style="overflow-x:auto"><table class="skutbl"><thead><tr>'
+            '<th class="nm">Nhóm SKU</th>'
+            f'<th>💵 Doanh thu <span title="{_dt_tip}" style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
+            '<th>SL đặt <span title="= SL bán + SL hủy" style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
+            '<th>❌ SL hủy</th>'
+            '<th>❌ Tỉ lệ hủy <span title="= SL hủy ÷ SL đặt (đơn đặt rồi HỦY, chưa kịp giao)" style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
+            '<th>SL bán</th>'
+            '<th>↩️ SL hoàn</th>'
+            '<th>↩️ Tỉ lệ hoàn <span title="= SL hoàn về ÷ SL bán (phiếu trả tạo trong kỳ)" style="cursor:help;opacity:.6;font-weight:400">&#9432;</span></th>'
+            f'</tr></thead><tbody>{_body}</tbody></table></div>', unsafe_allow_html=True)
+        st.caption("Sắp theo doanh thu giảm dần · ô tỉ lệ ≥15% tô nền đỏ nhạt.")
 
     with st.expander("🏷️ Doanh thu theo NHÓM SKU — thế mạnh sản phẩm từng gian hàng (bấm mở)"):
         _sg = sa.get("store_groups") or {}
