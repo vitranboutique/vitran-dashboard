@@ -6332,20 +6332,22 @@ def _render_sales():
         _top = g[:15]
         st.plotly_chart(_hbar([x["name"] for x in _top], [x["cur"] for x in _top], "#16a34a"),
                         width="stretch")
-        _rows = [{"Nhóm SKU": x["name"], "Doanh thu (tr)": round(x["cur"] / 1e6, 1),
-                  "SL bán": int(x.get("qty", 0) or 0),
-                  "SL hủy": int(round(x.get("cancel_qty", 0) or 0)),
-                  "🚫 Tỉ lệ hủy %": round(x.get("cancel_rate", 0.0) or 0.0, 1),
-                  "SL hoàn": int(round(x.get("ret_qty", 0) or 0)),
-                  "↩️ Tỉ lệ hoàn %": round(x.get("ret_rate", 0.0) or 0.0, 1)} for x in _top]
-        st.caption("🚫 **Tỉ lệ hủy** = SL trong đơn đặt-rồi-HỦY (chưa giao) ÷ SL ĐẶT.  "
-                   "↩️ **Tỉ lệ hoàn** = SL HOÀN về ÷ SL BÁN (phiếu trả tạo trong kỳ).  "
-                   "Bấm tên cột để sắp xếp ↑↓ — tìm SKU hay bị hủy/hoàn nhất.")
+        def _row(x):
+            _ban = int(x.get("qty", 0) or 0)
+            _huy = int(round(x.get("cancel_qty", 0) or 0))
+            return {"Nhóm SKU": x["name"], "💵 Doanh thu": f"{int(round(x['cur'])):,}đ",
+                    "SL đặt": _ban + _huy, "SL hủy": _huy,
+                    "🚫 Tỉ lệ hủy %": round(x.get("cancel_rate", 0.0) or 0.0, 1),
+                    "SL bán": _ban, "SL hoàn": int(round(x.get("ret_qty", 0) or 0)),
+                    "↩️ Tỉ lệ hoàn %": round(x.get("ret_rate", 0.0) or 0.0, 1)}
+        _rows = [_row(x) for x in _top]
+        st.caption("🚫 **Tỉ lệ hủy** = SL hủy ÷ **SL đặt** (SL đặt = SL bán + SL hủy — đơn đặt rồi hủy chưa giao).  "
+                   "↩️ **Tỉ lệ hoàn** = SL hoàn ÷ SL bán (phiếu trả tạo trong kỳ).  Bấm cột để sắp xếp ↑↓.")
         st.dataframe(pd.DataFrame(_rows), width="stretch", hide_index=True, column_config={
-            "Doanh thu (tr)": st.column_config.NumberColumn(format="%.1f"),
-            "SL bán": st.column_config.NumberColumn(format="%d"),
+            "SL đặt": st.column_config.NumberColumn(format="%d"),
             "SL hủy": st.column_config.NumberColumn(format="%d"),
             "🚫 Tỉ lệ hủy %": st.column_config.NumberColumn(format="%.1f%%"),
+            "SL bán": st.column_config.NumberColumn(format="%d"),
             "SL hoàn": st.column_config.NumberColumn(format="%d"),
             "↩️ Tỉ lệ hoàn %": st.column_config.NumberColumn(format="%.1f%%")})
 
