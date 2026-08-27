@@ -1809,6 +1809,38 @@ if _dv_nv and cham_cong.verify_device(_dv_nv, st.query_params.get("k")):
         cham_cong_ui.render_checkin_dev(_dv_nv)
     st.stop()
 
+
+def _build_stamp():
+    """Bản code app ĐANG CHẠY (mã commit + giờ file app.py) — để biết Cloud đã nạp bản mới chưa."""
+    _root = os.path.dirname(os.path.abspath(__file__))
+    _rev = ""
+    try:
+        _head = open(os.path.join(_root, ".git", "HEAD"), encoding="utf-8").read().strip()
+        if _head.startswith("ref:"):
+            _ref = _head.split(" ", 1)[1].strip()
+            _pf = os.path.join(_root, ".git", *_ref.split("/"))
+            if os.path.exists(_pf):
+                _rev = open(_pf, encoding="utf-8").read().strip()[:7]
+            else:                       # ref nằm trong packed-refs
+                for _ln in open(os.path.join(_root, ".git", "packed-refs"), encoding="utf-8"):
+                    if _ln.strip().endswith(" " + _ref):
+                        _rev = _ln.split()[0][:7]
+                        break
+        else:
+            _rev = _head[:7]
+    except Exception:
+        _rev = ""
+    try:
+        _mt = (datetime.fromtimestamp(os.path.getmtime(os.path.join(_root, "app.py")), timezone.utc)
+               + timedelta(hours=7)).strftime("%H:%M %d/%m")
+    except Exception:
+        _mt = ""
+    return " · ".join(x for x in (_rev, _mt) if x) or "không rõ"
+
+# Hiện NGAY Ở TRANG ĐĂNG NHẬP để biết Streamlit Cloud đã nạp code mới chưa (khỏi phải đăng nhập).
+st.sidebar.caption(f"🧩 Bản đang chạy: {_build_stamp()}")
+st.caption(f"🧩 Bản đang chạy: {_build_stamp()}")
+
 CUR_NAME, CUR_USER, CUR_ROLE = require_login()
 
 
@@ -1884,35 +1916,6 @@ if st.session_state.get("main_nav") not in _opts:
 _page = st.sidebar.radio("Trang", _opts, key="main_nav")
 
 
-def _build_stamp():
-    """Bản code app ĐANG CHẠY (mã commit + giờ file app.py) — để biết Cloud đã nạp bản mới chưa."""
-    _root = os.path.dirname(os.path.abspath(__file__))
-    _rev = ""
-    try:
-        _head = open(os.path.join(_root, ".git", "HEAD"), encoding="utf-8").read().strip()
-        if _head.startswith("ref:"):
-            _ref = _head.split(" ", 1)[1].strip()
-            _pf = os.path.join(_root, ".git", *_ref.split("/"))
-            if os.path.exists(_pf):
-                _rev = open(_pf, encoding="utf-8").read().strip()[:7]
-            else:                       # ref nằm trong packed-refs
-                for _ln in open(os.path.join(_root, ".git", "packed-refs"), encoding="utf-8"):
-                    if _ln.strip().endswith(" " + _ref):
-                        _rev = _ln.split()[0][:7]
-                        break
-        else:
-            _rev = _head[:7]
-    except Exception:
-        _rev = ""
-    try:
-        _mt = (datetime.fromtimestamp(os.path.getmtime(os.path.join(_root, "app.py")), timezone.utc)
-               + timedelta(hours=7)).strftime("%H:%M %d/%m")
-    except Exception:
-        _mt = ""
-    return " · ".join(x for x in (_rev, _mt) if x) or "không rõ"
-
-
-st.sidebar.caption(f"🧩 Bản đang chạy: {_build_stamp()}")
 st.sidebar.divider()
 
 # ── Trang CHẤM CÔNG (tách riêng — không cần dữ liệu Sapo) ──
