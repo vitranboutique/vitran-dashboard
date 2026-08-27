@@ -2063,6 +2063,10 @@ def _standard_result_note_text(note: str) -> str:
         ("CANKN", "🚨 CẦN KN"),
     ]
     for token, label in standards:
+        # "KHÔNG CẦN KN" viết liền thành KHONGCANKN — CHỨA luôn chuỗi "CANKN" → nếu không chặn,
+        # ghi chú đã chốt "KHÔNG CẦN KN" bị hiển thị NGƯỢC thành "🚨 CẦN KN".
+        if token == "CANKN" and _compact_is_khong_can_kn(compact):
+            continue
         if token in compact and label not in first:
             suffix = first.split("|", 1)[1].strip() if "|" in first else ""
             lines[0] = f"{label} | {suffix}".rstrip(" |")
@@ -12526,6 +12530,25 @@ def _render_returns():
                          ("tiktok", "mk-tiktok", "T", "TikTok Shop"),
                          ("lazada", "mk-lazada", "L", "Lazada"))
 
+            _KQ_STYLE = (("THANG", "kq-thang", "THẮNG"), ("THUA", "kq-thua", "THUA"),
+                         ("HETHAN", "kq-hethan", "HẾT HẠN"), ("HUY", "kq-huy", "HỦY"))
+
+            def _kq_badge(d):
+                """Kết quả KN (THẮNG/THUA/…) đọc từ ghi chú, gắn cạnh mã đơn để KHỎI kéo sang cột
+                Ghi chú. KHÔNG đụng cột Lý do KN — đó là lý do đơn vào bảng, khác với kết quả."""
+                _n = str((d or {}).get("note") or "")
+                _c = _note_prefix_compact(_standard_result_note_text(_n) or _n)
+                if _compact_is_khong_can_kn(_c):
+                    _cls, _tx = "kq-khong", "KO CẦN KN"
+                elif _compact_is_can_kn(_c):
+                    _cls, _tx = "kq-can", "CẦN KN"
+                else:
+                    _hit = next(((c, t) for k, c, t in _KQ_STYLE if k in _c), None)
+                    if not _hit:
+                        return ""
+                    _cls, _tx = _hit
+                return f" <span class='kq {_cls}' title='Kết quả khiếu nại theo ghi chú'>{_tx}</span>"
+
             def _mk_badge(d):
                 """Icon SÀN ngay trước mã đơn: S cam = Shopee · T đen = TikTok · L tím = Lazada.
                 ⚠️ KHÔNG dò chữ 'sapo' vì link đơn nào cũng có tên miền mysapo.net."""
@@ -12852,7 +12875,8 @@ def _render_returns():
                         tds.append(f"<td>{_ticket_cell(d)}</td>")
                     tds += [
                         f"<td>{_safe(d.get('created'))}</td>",
-                        f"<td>{_mk_badge(d)}{_code_cell(d['order_code'], _order_link_for_row(d))}</td>",
+                        f"<td>{_mk_badge(d)}{_code_cell(d['order_code'], _order_link_for_row(d))}"
+                        f"{_kq_badge(d)}</td>",
                     ]
                     tds.append(f"<td>{_return_code_cell(d)}</td>")
                     if merge_delivery_vd:
@@ -12900,6 +12924,14 @@ def _render_returns():
  .mk{{display:inline-block;min-width:15px;height:15px;line-height:15px;text-align:center;border-radius:3px;
    font-size:10px;font-weight:800;color:#fff;margin-right:5px;vertical-align:middle}}
  .mk-shopee{{background:#ee4d2d}} .mk-tiktok{{background:#111827}} .mk-lazada{{background:#0f146d}}
+ .kq{{display:inline-block;border-radius:4px;padding:0 5px;font-size:10.5px;font-weight:800;
+   white-space:nowrap;vertical-align:middle}}
+ .kq-thang{{background:#dcfce7;color:#166534;border:1px solid #86efac}}
+ .kq-thua{{background:#fee2e2;color:#991b1b;border:1px solid #fca5a5}}
+ .kq-hethan{{background:#e5e7eb;color:#111827;border:1px solid #cbd5e1}}
+ .kq-huy{{background:#f3f4f6;color:#4b5563;border:1px solid #d1d5db}}
+ .kq-khong{{background:#dbeafe;color:#1e40af;border:1px solid #93c5fd}}
+ .kq-can{{background:#fef3c7;color:#92400e;border:1px solid #fcd34d}}
  .reason-badge{{display:inline-block;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700;color:#7c2d12}}
  td.note{{max-width:240px;white-space:normal}}
  .note-detail summary{{cursor:pointer;color:#1d4ed8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}}
@@ -13548,7 +13580,8 @@ def _render_returns():
                     tds = [
                         f"<td class='r'>{i}</td>",
                         f"<td>{_safe(d.get('created'))}</td>",
-                        f"<td>{_mk_badge(d)}{_code_cell(d.get('order_code'), _order_link_for_row(d))}</td>",
+                        f"<td>{_mk_badge(d)}{_code_cell(d.get('order_code'), _order_link_for_row(d))}"
+                        f"{_kq_badge(d)}</td>",
                         f"<td>{_return_code_cell(d)}</td>",
                         f"<td>{_code_cell(d.get('vd_di'))}</td>",
                         f"<td>{_vd_ve_dohana_cell(d.get('vd_tra'), code)}</td>",
@@ -13581,6 +13614,14 @@ def _render_returns():
  .mk{{display:inline-block;min-width:15px;height:15px;line-height:15px;text-align:center;border-radius:3px;
    font-size:10px;font-weight:800;color:#fff;margin-right:5px;vertical-align:middle}}
  .mk-shopee{{background:#ee4d2d}} .mk-tiktok{{background:#111827}} .mk-lazada{{background:#0f146d}}
+ .kq{{display:inline-block;border-radius:4px;padding:0 5px;font-size:10.5px;font-weight:800;
+   white-space:nowrap;vertical-align:middle}}
+ .kq-thang{{background:#dcfce7;color:#166534;border:1px solid #86efac}}
+ .kq-thua{{background:#fee2e2;color:#991b1b;border:1px solid #fca5a5}}
+ .kq-hethan{{background:#e5e7eb;color:#111827;border:1px solid #cbd5e1}}
+ .kq-huy{{background:#f3f4f6;color:#4b5563;border:1px solid #d1d5db}}
+ .kq-khong{{background:#dbeafe;color:#1e40af;border:1px solid #93c5fd}}
+ .kq-can{{background:#fef3c7;color:#92400e;border:1px solid #fcd34d}}
  .sub{{color:#64748b;font-size:11px}}
  td.shipper{{max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
  td.note{{max-width:260px;white-space:normal}}
