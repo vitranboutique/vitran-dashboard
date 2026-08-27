@@ -12453,6 +12453,20 @@ def _render_returns():
                 title = f"Mo Dohana nhap hang hoan; copy ma {code}" if code else None
                 return _code_cell(val or code, link, link_copy=code, link_title=title)
 
+            _MK_STYLE = (("shopee", "mk-shopee", "S", "Shopee"),
+                         ("tiktok", "mk-tiktok", "T", "TikTok Shop"),
+                         ("lazada", "mk-lazada", "L", "Lazada"))
+
+            def _mk_badge(d):
+                """Icon SÀN ngay trước mã đơn: S cam = Shopee · T đen = TikTok · L tím = Lazada.
+                ⚠️ KHÔNG dò chữ 'sapo' vì link đơn nào cũng có tên miền mysapo.net."""
+                _s = " ".join(str((d or {}).get(k) or "")
+                              for k in ("gian_hang", "order_source", "order_link")).lower()
+                for _key, _cls, _ch, _tt in _MK_STYLE:
+                    if _key in _s:
+                        return f"<span class='mk {_cls}' title='{_tt}'>{_ch}</span>"
+                return ""
+
             def _order_link_for_row(d):
                 link = str((d or {}).get("order_link") or "").strip()
                 if (d or {}).get("_restock_novideo") and link:   # link đã dựng sẵn (cnsc_shop_id, KHÔNG launcher)
@@ -12766,7 +12780,7 @@ def _render_returns():
                         tds.append(f"<td>{_reason_brief_cell(d)}</td>")
                     if show_ticket:
                         tds.append(f"<td>{_ticket_cell(d)}</td>")
-                    _oc_html = _code_cell(d['order_code'], _order_link_for_row(d))
+                    _oc_html = _mk_badge(d) + _code_cell(d['order_code'], _order_link_for_row(d))
                     _mn = int(d.get("_multi_return_n") or 0)
                     if _mn >= 2:      # đơn bị trả NHIỀU LẦN → cảnh báo ngay cạnh mã đơn
                         _oc_html += (f" <span class='multi-badge' title='Đơn này có {_mn} phiếu trả "
@@ -12818,6 +12832,9 @@ def _render_returns():
  .muted{{color:#cbd5e1}}
  .no-video{{color:#dc2626;font-weight:700}}
  .multi-badge{{color:#b91c1c;background:#fee2e2;border:1px solid #fecaca;border-radius:4px;padding:0 4px;font-size:11px;font-weight:800;white-space:nowrap}}
+ .mk{{display:inline-block;min-width:15px;height:15px;line-height:15px;text-align:center;border-radius:3px;
+   font-size:10px;font-weight:800;color:#fff;margin-right:5px;vertical-align:middle}}
+ .mk-shopee{{background:#ee4d2d}} .mk-tiktok{{background:#111827}} .mk-lazada{{background:#0f146d}}
  .reason-badge{{display:inline-block;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700;color:#7c2d12}}
  td.note{{max-width:240px;white-space:normal}}
  .note-detail summary{{cursor:pointer;color:#1d4ed8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}}
@@ -13466,7 +13483,7 @@ def _render_returns():
                     tds = [
                         f"<td class='r'>{i}</td>",
                         f"<td>{_safe(d.get('created'))}</td>",
-                        f"<td>{_code_cell(d.get('order_code'), _order_link_for_row(d))}</td>",
+                        f"<td>{_mk_badge(d)}{_code_cell(d.get('order_code'), _order_link_for_row(d))}</td>",
                         f"<td>{_return_code_cell(d)}</td>",
                         f"<td>{_code_cell(d.get('vd_di'))}</td>",
                         f"<td>{_vd_ve_dohana_cell(d.get('vd_tra'), code)}</td>",
@@ -13496,6 +13513,9 @@ def _render_returns():
  .muted{{color:#cbd5e1}}
  .no-video{{color:#dc2626;font-weight:700}}
  .multi-badge{{color:#b91c1c;background:#fee2e2;border:1px solid #fecaca;border-radius:4px;padding:0 4px;font-size:11px;font-weight:800;white-space:nowrap}}
+ .mk{{display:inline-block;min-width:15px;height:15px;line-height:15px;text-align:center;border-radius:3px;
+   font-size:10px;font-weight:800;color:#fff;margin-right:5px;vertical-align:middle}}
+ .mk-shopee{{background:#ee4d2d}} .mk-tiktok{{background:#111827}} .mk-lazada{{background:#0f146d}}
  .sub{{color:#64748b;font-size:11px}}
  td.shipper{{max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
  td.note{{max-width:260px;white-space:normal}}
