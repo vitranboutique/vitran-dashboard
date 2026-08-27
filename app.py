@@ -2046,6 +2046,13 @@ def _sapo_lookup_key(value) -> str:
     return re.sub(r"\s+", "", str(value or "")).upper()
 
 
+def _note_says_can_kn(note) -> bool:
+    """Ghi chú (Sapo HOẶC app) ghi 'CẦN KN' → đơn PHẢI nằm ở bảng Cần KN, bất kể có VĐ hoàn hay
+    không, phiếu đóng hay mở. Chủ shop đã ghi cần KN nghĩa là còn phải đi khiếu nại."""
+    _n = str(note or "")
+    return _compact_is_can_kn(_note_prefix_compact(_standard_result_note_text(_n) or _n))
+
+
 def _standard_result_note_text(note: str) -> str:
     note = str(note or "").strip()
     if not note:
@@ -10816,6 +10823,9 @@ def _render_returns():
             d["app_note"] = note
             d["_note_source"] = "App"
             d["note"] = note
+            if _note_says_can_kn(note):     # ghi CẦN KN bằng app → phải lên bảng Cần KN
+                d["need_kn"] = True
+                d["_force_can_kn"] = True
         return rows
 
     @st.fragment   # chọn đơn / gõ ghi chú chỉ tải lại KHỐI này, không tải lại cả trang (nhanh). Lưu xong mới rerun cả app.
@@ -11928,14 +11938,18 @@ def _render_returns():
             """Hàng ĐÃ VỀ TỚI SHOP → luôn thuộc diện Cần KN, dù phiếu chưa có mã vận đơn hoàn."""
             return str((d or {}).get("ship_code") or "").strip().lower() == "returned"
 
+        def _row_forces_can_kn(d):
+            """Đã ghi CẦN KN (app hoặc Sapo) → LUÔN giữ ở Cần KN, kể cả phiếu không có VĐ hoàn."""
+            return bool((d or {}).get("_force_can_kn")) or _note_says_can_kn((d or {}).get("note"))
+
         def _is_need_kn_shape(d):
             return (_has_return_waybill(d) or _is_refund_only(d) or _is_delivered_to_shop(d)
-                    or bool((d or {}).get("_restock_novideo")))
+                    or _row_forces_can_kn(d) or bool((d or {}).get("_restock_novideo")))
 
         def _drop_need_kn_without_return_waybill(rows):
             for d in rows or []:
                 if (not _has_return_waybill(d) and not _is_refund_only(d)
-                        and not _is_delivered_to_shop(d)):
+                        and not _is_delivered_to_shop(d) and not _row_forces_can_kn(d)):
                     d["need_kn"] = False
             return rows
 
@@ -12188,7 +12202,7 @@ def _render_returns():
                 return _rows
             _closed_returns_with_waybill_detail = [
                 d for d in _canceled_returns_detail
-                if str(d.get("vd_tra") or "").strip()
+                if str(d.get("vd_tra") or "").strip() or _row_forces_can_kn(d)
             ]
             _closed_returns_need_kn_detail = []
             for _d in _closed_returns_with_waybill_detail:
