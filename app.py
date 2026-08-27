@@ -11886,12 +11886,18 @@ def _render_returns():
             return (str((d or {}).get("loai_tra_code") or "").strip().lower() == "refund"
                     and str((d or {}).get("ship_code") or "").strip().lower() == "no_return")
 
+        def _is_delivered_to_shop(d):
+            """Hàng ĐÃ VỀ TỚI SHOP → luôn thuộc diện Cần KN, dù phiếu chưa có mã vận đơn hoàn."""
+            return str((d or {}).get("ship_code") or "").strip().lower() == "returned"
+
         def _is_need_kn_shape(d):
-            return _has_return_waybill(d) or _is_refund_only(d) or bool((d or {}).get("_restock_novideo"))
+            return (_has_return_waybill(d) or _is_refund_only(d) or _is_delivered_to_shop(d)
+                    or bool((d or {}).get("_restock_novideo")))
 
         def _drop_need_kn_without_return_waybill(rows):
             for d in rows or []:
-                if not _has_return_waybill(d) and not _is_refund_only(d):
+                if (not _has_return_waybill(d) and not _is_refund_only(d)
+                        and not _is_delivered_to_shop(d)):
                     d["need_kn"] = False
             return rows
 

@@ -2116,6 +2116,7 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120, canceled_max_pages
     # CẦN KN (cờ need_kn, dùng cho highlight + đếm). LOẠI đơn đã có ghi chú KẾT QUẢ chuẩn.
     #  • ĐÃ GIAO NGƯỜI BÁN (returned) → MẶC ĐỊNH cần KN (bất kể tuổi).
     #  • CHỈ HOÀN TIỀN không có VĐ trả về → vẫn CẦN KN tới khi có kết luận chuẩn.
+    #  • ĐÃ GIAO NGƯỜI BÁN (returned) → CẦN KN NGAY, kể cả khi phiếu không có VĐ trả về.
     #  • Các loại đơn khác không có VĐ trả về → không highlight và không đưa vào CẦN KN.
     #  • ĐANG HOÀN HÀNG (returning) → cần KN nếu QUÁ 7 ngày; chỉ chưa cần khi refund 1 VĐ và chưa quá 7 ngày.
     for d in detail:
@@ -2136,10 +2137,12 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120, canceled_max_pages
             _rs = str(d.get("reason") or "").strip()
             if not _rs or "không cần" in _rs.lower():   # lý do cũ ghi ngược → sửa cho đúng
                 d["reason"] = "Chỉ hoàn tiền chưa có kết luận chuẩn — cần khiếu nại"
+        elif d.get("ship_code") == "returned":
+            # HÀNG ĐÃ VỀ TỚI SHOP mà chưa nhập kho → LÊN CẦN KN NGAY, kể cả phiếu không có mã
+            # vận đơn hoàn (chủ shop chốt 28/08: "đã giao shop là lên bảng KN liền").
+            d["need_kn"] = True
         elif not has_return_waybill:
             d["need_kn"] = False
-        elif d.get("ship_code") == "returned":
-            d["need_kn"] = True
         elif d.get("ship_code") == "no_return":
             d["need_kn"] = False
         elif d.get("loai_tra_code") == "return_and_refund" and (d.get("n_track") or 0) < 2 and (d.get("age") or 0) < _kn_days:
