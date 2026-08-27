@@ -12632,7 +12632,10 @@ def _render_returns():
                         except Exception:
                             m = re.search(r"(\d+)\s*ngày", full, flags=re.IGNORECASE)
                             age = int(m.group(1)) if m else 0
-                        return f"⏳ Quá hạn {age}n" if age > 0 else "⏳ Hoàn quá hạn"
+                        if age >= L.KN_DAYS:
+                            return f"⏳ Quá hạn {age}n"
+                        # chưa tới mốc KN thì ĐỪNG ghi "quá hạn" (trước đây 2 ngày cũng ghi quá hạn)
+                        return f"🚚 Đang hoàn {age}n" if age > 0 else "🚚 Đang hoàn về"
                     _is_closed_row = bool((d or {}).get("_closed_return_need_kn")) or any(
                         marker in compact for marker in (
                             "BITDONG", "DONGCOVD", "SAPODAHUY", "SAPODADONG",
@@ -12652,6 +12655,10 @@ def _render_returns():
                     elif ("TRAO" in compact or "SAIHANG" in compact or "SAISP" in compact
                           or "KHACVOMOTA" in compact or "KHONGKHOPVOIMOTA" in compact):
                         base_label = "🔁 Tráo/sai hàng"
+                    elif ship_code == "returned":
+                        # ĐÃ GIAO NGƯỜI BÁN mà chưa nhập kho = chính LÝ DO phải KN. Lý do khách trả
+                        # (đổi ý / chưa dùng…) chỉ là bối cảnh → để trong tooltip, đừng đè lên cột này.
+                        base_label = "📥 Đã giao shop chưa nhập"
                     elif (("CHUAQUASUDUNG" in compact or "CHUASUDUNG" in compact or "KHONGCONNHUCAU" in compact)
                           and not ("DASUDUNG" in compact or "DADUNG" in compact)):
                         # Note "Hàng CHƯA qua sử dụng" / "Không còn nhu cầu" = KHÔNG phải đã dùng (đừng khớp nhầm "sử dụng")
@@ -12664,8 +12671,6 @@ def _render_returns():
                         base_label = "📕 Giao thất bại"
                     elif ship_code == "returning":
                         base_label = _age_label()
-                    elif ship_code == "returned":
-                        base_label = "📍 Đã giao shop"
                     elif return_type == "refund" and ship_code == "no_return":
                         base_label = "💸 Chỉ hoàn tiền"
                     elif stock_code in ("unstocked", "unrestock", "not_stocked", "not_restocked", "no_stock", "no_restock"):
