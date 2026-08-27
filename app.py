@@ -12007,6 +12007,12 @@ def _render_returns():
                        or str((_d or {}).get("sapo_return_id") or "").strip())
                 if not _oc or _oc == "?" or not _rc or (_oc, _rc) in _seen_ret:
                     continue
+                # CHỈ tính phiếu CÓ HÀNG THẬT: chưa huỷ, hoặc đã huỷ nhưng CÓ mã vận đơn hoàn.
+                # Yêu cầu trả bị huỷ mà KHÔNG có vận đơn = khách đòi trả rồi thôi, không có kiện
+                # nào về → đếm vào là báo oan (đơn giao thất bại chỉ có 1 kiện quay về vẫn bị ghi
+                # "phiếu thứ 2" vì dính 1 yêu cầu huỷ từ mấy ngày trước).
+                if bool(_d.get("is_canceled")) and not str(_d.get("vd_tra") or "").strip():
+                    continue
                 _seen_ret.add((_oc, _rc))
                 _ret_by_order.setdefault(_oc, []).append(_d)
             _multi_return_orders = {k: v for k, v in _ret_by_order.items() if len(v) >= 2}
@@ -12392,8 +12398,9 @@ def _render_returns():
                     })
                 _mr_rows.sort(key=lambda r: (-r["Số phiếu trả"], r["Mã đơn"]))
                 st.error(f"⚠️ **{len(_mr_rows)} đơn bị trả NHIỀU LẦN** — cùng 1 mã đơn có từ 2 phiếu trả "
-                         "trở lên. Kiểm tra kỹ: có phiếu bị huỷ nhưng hàng vẫn về, hoặc khách trả 2 kiện "
-                         "mà shop chỉ bán 1 → dễ mất hàng/hoàn trùng tiền.")
+                         "CÓ HÀNG VỀ trở lên. Kiểm tra kỹ: có phiếu bị huỷ nhưng hàng vẫn về, hoặc khách "
+                         "trả 2 kiện mà shop chỉ bán 1 → dễ mất hàng/hoàn trùng tiền. "
+                         "(Yêu cầu trả bị huỷ mà chưa có mã vận đơn thì KHÔNG tính.)")
                 with st.expander(f"⚠️ Xem {len(_mr_rows)} đơn bị trả nhiều lần", expanded=False):
                     st.dataframe(pd.DataFrame(_mr_rows), use_container_width=True, hide_index=True,
                                  column_config={
@@ -12464,6 +12471,7 @@ def _render_returns():
                 if _mi >= 2:      # đơn bị trả nhiều lần → ghi ĐÂY LÀ PHIẾU THỨ MẤY (thứ 1 khỏi ghi)
                     _mn = int((d or {}).get("_multi_return_n") or 0)
                     _cell += (f"{' ' if _cell else ''}<span class='multi-badge' title='Đơn này có {_mn} phiếu trả "
+                              f"CÓ HÀNG VỀ (không tính yêu cầu đã huỷ mà chưa có vận đơn) "
                               f"— đây là phiếu thứ {_mi}'>⚠️ Phiếu thứ {_mi}</span>")
                 return _cell
 
