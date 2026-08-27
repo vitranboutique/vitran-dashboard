@@ -11996,6 +11996,26 @@ def _render_returns():
             _apply_closed_return_app_notes(_all_returns_detail, _closed_return_app_notes)
             _apply_closed_return_app_notes(_canceled_returns_detail, _closed_return_app_notes)
 
+            # ⚠️ ĐƠN BỊ TRẢ NHIỀU LẦN: 1 mã đơn có TỪ 2 PHIẾU TRẢ trở lên (sàn cho khách tạo nhiều
+            # yêu cầu trả trên cùng đơn — có phiếu bị huỷ, có phiếu vẫn chạy) → dễ bị hoàn trùng /
+            # mất hàng. Gắn cờ vào TỪNG dòng để mọi bảng đều cảnh báo.
+            _ret_by_order, _seen_ret = {}, set()
+            for _d in (list(_detail_rows or []) + list(_all_returns_detail or [])
+                       + list(_canceled_returns_detail or [])):
+                _oc = str((_d or {}).get("order_code") or "").strip()
+                _rc = (str((_d or {}).get("return_code") or "").strip()
+                       or str((_d or {}).get("sapo_return_id") or "").strip())
+                if not _oc or _oc == "?" or not _rc or (_oc, _rc) in _seen_ret:
+                    continue
+                _seen_ret.add((_oc, _rc))
+                _ret_by_order.setdefault(_oc, []).append(_d)
+            _multi_return_orders = {k: v for k, v in _ret_by_order.items() if len(v) >= 2}
+            for _lst in (_detail_rows, _all_returns_detail, _canceled_returns_detail):
+                for _d in _lst or []:
+                    _mn = len(_multi_return_orders.get(str((_d or {}).get("order_code") or "").strip()) or ())
+                    if _mn >= 2:
+                        _d["_multi_return_n"] = _mn
+
             def _restock_novideo_rows():
                 # NGUỒN DUY NHẤT: đúng danh sách còn lại sau cột Chốt video của Báo cáo vận hành cuối ngày.
                 # API/Sapo chỉ dùng để bổ sung metadata, không tự quyết định đơn nào vào bảng này.
@@ -12334,6 +12354,41 @@ def _render_returns():
                          "VĐ đi = mã vận đơn giao đi. VĐ trả về = mã vận đơn hoàn về. "
                          "Giao thất bại: 2 mã trùng nhau; chỉ hoàn tiền: không có kiện hàng hoàn về."
                          + (" Đã chạm giới hạn quét, có thể còn đơn cũ hơn." if _rip.get("capped") else ""))
+
+            # ⚠️ CẢNH BÁO: 1 đơn bị khách trả NHIỀU LẦN (sàn cho tạo nhiều yêu cầu trả trên cùng đơn)
+            if _multi_return_orders:
+                _mr_rows = []
+                for _oc, _lst in _multi_return_orders.items():
+                    _ls = sorted(_lst, key=lambda r: str(r.get("created_on") or r.get("created") or ""))
+                    _mr_rows.append({
+                        "Mã đơn": _oc,
+                        "Số phiếu trả": len(_ls),
+                        "Gian hàng": next((str(r.get("gian_hang") or "") for r in _ls if r.get("gian_hang")), ""),
+                        "SKU": next((str(r.get("sku") or "") for r in _ls if r.get("sku")), ""),
+                        "Các phiếu trả": " · ".join(
+                            f"{_display_return_code(r) or r.get('return_code') or '?'}"
+                            f" ({r.get('created') or '?'}"
+                            + (" · ĐÃ HỦY" if r.get("is_canceled") else
+                               f" · {r.get('ship_status') or r.get('stock_status') or ''}").rstrip(" ·")
+                            + ")"
+                            for r in _ls),
+                        "VĐ trả về": " · ".join(sorted({str(r.get("vd_tra") or "").strip()
+                                                        for r in _ls if str(r.get("vd_tra") or "").strip()})),
+                        "Tổng tiền": sum(int(r.get("money") or 0) for r in _ls),
+                    })
+                _mr_rows.sort(key=lambda r: (-r["Số phiếu trả"], r["Mã đơn"]))
+                st.error(f"⚠️ **{len(_mr_rows)} đơn bị trả NHIỀU LẦN** — cùng 1 mã đơn có từ 2 phiếu trả "
+                         "trở lên. Kiểm tra kỹ: có phiếu bị huỷ nhưng hàng vẫn về, hoặc khách trả 2 kiện "
+                         "mà shop chỉ bán 1 → dễ mất hàng/hoàn trùng tiền.")
+                with st.expander(f"⚠️ Xem {len(_mr_rows)} đơn bị trả nhiều lần", expanded=False):
+                    st.dataframe(pd.DataFrame(_mr_rows), use_container_width=True, hide_index=True,
+                                 column_config={
+                                     "Mã đơn": st.column_config.TextColumn("Mã đơn", width="medium"),
+                                     "Số phiếu trả": st.column_config.NumberColumn("Số phiếu", width="small"),
+                                     "Các phiếu trả": st.column_config.TextColumn("Các phiếu trả", width="large"),
+                                     "Tổng tiền": st.column_config.NumberColumn("Tổng tiền", format="%d"),
+                                 })
+                    st.caption("Trong các bảng bên dưới, mã đơn kiểu này có gắn nhãn đỏ ⚠️ N phiếu trả.")
 
             def _jss(s):       # escape chuỗi cho onclick JS
                 return str(s or "").replace("\\", "\\\\").replace("'", "\\'")
@@ -12711,9 +12766,14 @@ def _render_returns():
                         tds.append(f"<td>{_reason_brief_cell(d)}</td>")
                     if show_ticket:
                         tds.append(f"<td>{_ticket_cell(d)}</td>")
+                    _oc_html = _code_cell(d['order_code'], _order_link_for_row(d))
+                    _mn = int(d.get("_multi_return_n") or 0)
+                    if _mn >= 2:      # đơn bị trả NHIỀU LẦN → cảnh báo ngay cạnh mã đơn
+                        _oc_html += (f" <span class='multi-badge' title='Đơn này có {_mn} phiếu trả "
+                                     f"— kiểm tra kỹ, khách trả nhiều lần trên cùng 1 đơn'>⚠️ {_mn} phiếu trả</span>")
                     tds += [
                         f"<td>{_safe(d.get('created'))}</td>",
-                        f"<td>{_code_cell(d['order_code'], _order_link_for_row(d))}</td>",
+                        f"<td>{_oc_html}</td>",
                     ]
                     tds.append(f"<td>{_return_code_cell(d)}</td>")
                     if merge_delivery_vd:
@@ -12757,6 +12817,7 @@ def _render_returns():
  td.r{{text-align:right}}
  .muted{{color:#cbd5e1}}
  .no-video{{color:#dc2626;font-weight:700}}
+ .multi-badge{{color:#b91c1c;background:#fee2e2;border:1px solid #fecaca;border-radius:4px;padding:0 4px;font-size:11px;font-weight:800;white-space:nowrap}}
  .reason-badge{{display:inline-block;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700;color:#7c2d12}}
  td.note{{max-width:240px;white-space:normal}}
  .note-detail summary{{cursor:pointer;color:#1d4ed8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}}
@@ -13434,6 +13495,7 @@ def _render_returns():
  td.r{{text-align:right}}
  .muted{{color:#cbd5e1}}
  .no-video{{color:#dc2626;font-weight:700}}
+ .multi-badge{{color:#b91c1c;background:#fee2e2;border:1px solid #fecaca;border-radius:4px;padding:0 4px;font-size:11px;font-weight:800;white-space:nowrap}}
  .sub{{color:#64748b;font-size:11px}}
  td.shipper{{max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
  td.note{{max-width:260px;white-space:normal}}
