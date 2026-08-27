@@ -12,6 +12,7 @@ from __future__ import annotations
 from html import unescape
 from html.parser import HTMLParser
 import os
+import random
 import re
 import time
 from urllib.parse import urljoin
@@ -76,6 +77,31 @@ class SapoBlockedError(RuntimeError):
     """Cloudflare (lá chắn của Sapo) CHẶN IP máy chủ — không phải lỗi key/quyền."""
 
 
+# ── HẠ NHIỆT sau khi bị Cloudflare chặn ────────────────────────────────────────────────
+# Bị chặn rồi mà mỗi lần đổi trang / F5 lại bắn tiếp hàng loạt request → Cloudflare thấy IP
+# vẫn "đập cửa" nên giữ chặn lâu hơn, app thì đứng chờ timeout. Ghi mốc chặn ở cấp MODULE
+# (dùng chung cho mọi phiên trong cùng tiến trình vì chặn là theo IP máy chủ) rồi NGHỈ hẳn
+# vài phút: không gọi mạng nữa, báo lỗi ngay cho UI hiện bản đã chốt.
+_BLOCK_COOLDOWN = 300.0        # nghỉ 5 phút rồi mới thử lại 1 lần
+_block_until = 0.0
+
+
+def blocked_remaining() -> float:
+    """Còn bao nhiêu giây trong thời gian nghỉ vì bị chặn (0 = đang cho gọi bình thường)."""
+    return max(0.0, _block_until - time.monotonic())
+
+
+def note_block() -> None:
+    global _block_until
+    _block_until = time.monotonic() + _BLOCK_COOLDOWN
+
+
+def clear_block() -> None:
+    """Người dùng bấm 'Tải lại số liệu' → cho thử lại ngay, không chờ hết giờ nghỉ."""
+    global _block_until
+    _block_until = 0.0
+
+
 def _is_cloudflare_block(resp) -> bool:
     """CHỈ đúng khi Cloudflare CHẶN (trang challenge HTML). ⚠️ KHÔNG dựa vào header
     Server: Sapo luôn chạy sau Cloudflare nên header đó có ở MỌI phản hồi — dựa vào nó
@@ -96,13 +122,21 @@ def make_fetch_json(session: requests.Session):
 
     def fetch_json(path: str, **params):
         nonlocal last_call
+        _left = blocked_remaining()
+        if _left > 0:               # đang nghỉ vì bị chặn → KHÔNG gọi mạng nữa cho đỡ bị giữ chặn
+            raise SapoBlockedError(
+                f"Cloudflare của Sapo đang CHẶN IP máy chủ app. App tạm NGHỈ gọi Sapo "
+                f"{int(_left) // 60} phút {int(_left) % 60} giây nữa rồi tự thử lại."
+            )
         for attempt in range(5):
             elapsed = time.monotonic() - last_call
-            if elapsed < 0.34:          # ~3 req/s: chậm hơn để KHÔNG bị Cloudflare chặn IP
-                time.sleep(0.34 - elapsed)
+            _gap = 0.40 + random.uniform(0, 0.10)   # ~2 req/s + nhịp lệch: đỡ bị Cloudflare soi
+            if elapsed < _gap:
+                time.sleep(_gap - elapsed)
             r = session.get(f"{BASE}{path}", params=params, timeout=30)
             last_call = time.monotonic()
             if _is_cloudflare_block(r):
+                note_block()
                 raise SapoBlockedError(
                     "Cloudflare của Sapo đang CHẶN IP máy chủ app (gọi API quá dày). "
                     "KHÔNG phải hỏng key hay mất quyền. Cách xử lý: bấm Reboot app trên "
@@ -110,6 +144,8 @@ def make_fetch_json(session: requests.Session):
                 )
             if r.status_code != 429:
                 r.raise_for_status()
+                if _block_until:
+                    clear_block()       # gọi được rồi → hết chặn, thôi nghỉ
                 return r.json()
             if attempt >= 4:
                 r.raise_for_status()

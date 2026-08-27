@@ -37,6 +37,7 @@ from sapo_client import (
     update_order_customer_info, update_order_note, update_order_return_note,
     customer_exists_by_phone, update_customer_address_from_info, upsert_customer_from_info,
     find_orders_by_phone, update_customer_note_lines,
+    blocked_remaining as _sapo_blocked_left, clear_block as _sapo_clear_block,
 )
 from picking_render import picking_html, history_slips_html
 
@@ -2435,7 +2436,7 @@ def load_dohana_inbound_date(date_iso):
 _RPT_VER = "2026-08-17-vd"
 
 
-@st.cache_data(ttl=180, show_spinner="Đang tổng hợp báo cáo cuối ngày…")
+@st.cache_data(ttl=600, show_spinner="Đang tổng hợp báo cáo cuối ngày…")   # 10': ít quét lại Sapo → đỡ bị Cloudflare chặn
 def load_daily_report(date_iso=None, ver=_RPT_VER):
     from datetime import date as _date
     td = _date.fromisoformat(date_iso) if date_iso else None
@@ -5258,6 +5259,7 @@ def _render_production_page():
     max_product_pages, max_report_pages = 80, 250
     end_date = (datetime.now(timezone.utc) + timedelta(hours=7)).date()
     if st.button("🔄 Làm mới dữ liệu Sapo", key="prod_refresh"):
+        _sapo_clear_block()      # bấm tải lại = cho gọi Sapo lại ngay, khỏi chờ hết giờ nghỉ
         st.cache_data.clear()
         st.rerun()
 
@@ -6141,6 +6143,7 @@ def _render_sales():
                      label_visibility="collapsed", key="sales_period")
     period = _PERIODS[_pick]
     if st.button("🔄 Tải lại số liệu", key="sales_reload"):
+        _sapo_clear_block()      # bấm tải lại = cho gọi Sapo lại ngay, khỏi chờ hết giờ nghỉ
         st.cache_data.clear()
         st.rerun()
     if period == "namnay":
@@ -6418,6 +6421,7 @@ def _render_overview():
         st.warning("⚠️ Trang này cần kết nối Sapo (LIVE).")
         return
     if st.button("🔄 Tải lại số liệu", key="ov_reload"):
+        _sapo_clear_block()      # bấm tải lại = cho gọi Sapo lại ngay, khỏi chờ hết giờ nghỉ
         st.cache_data.clear()
         st.rerun()
     try:
@@ -6538,6 +6542,7 @@ def _render_pick():
         st.warning("⚠️ Trang này cần kết nối Sapo (API LIVE) — hiện chưa có credential.")
         return
     if st.button("🔄 Tải lại đơn cần nhặt"):
+        _sapo_clear_block()      # bấm tải lại = cho gọi Sapo lại ngay, khỏi chờ hết giờ nghỉ
         st.cache_data.clear()
         st.rerun()
     try:
@@ -10220,17 +10225,27 @@ def _render_daily():
 
     # ---- Hôm nay (trực tiếp) ----
     if st.button("🔄 Tải lại số liệu", key="daily_reload"):
+        _sapo_clear_block()      # bấm tải lại = cho gọi Sapo lại ngay, khỏi chờ hết giờ nghỉ
         st.cache_data.clear()
         st.rerun()
     try:
         _rep = load_daily_report()
     except Exception as e:
         if "Cloudflare" in str(e) or type(e).__name__ == "SapoBlockedError":
+            _left = int(_sapo_blocked_left())
             st.error("🛡️ **Cloudflare của Sapo đang CHẶN IP máy chủ app** — không phải hỏng key, "
                      "không mất dữ liệu.\n\n"
-                     "**Cách xử lý (chủ shop):** vào Streamlit Cloud → menu **Manage app** → **Reboot app**. "
-                     "Khởi động lại thường đổi sang IP khác là chạy lại ngay. "
-                     "Nếu vẫn chặn thì chờ Cloudflare tự mở (thường vài giờ) — số liệu vẫn còn nguyên.")
+                     "**Cách xử lý (chủ shop):** mở **share.streamlit.io** → dòng app *vitranboutique* "
+                     "→ bấm dấu **⋮** bên phải → **Reboot app**. Khởi động lại thường đổi sang IP khác "
+                     "là chạy lại ngay. Nếu vẫn chặn thì chờ Cloudflare tự mở (thường vài giờ) — "
+                     "số liệu vẫn còn nguyên.")
+            if _left > 0:
+                st.caption(f"⏸️ App đang tạm NGHỈ gọi Sapo {_left // 60} phút {_left % 60} giây nữa "
+                           "rồi tự thử lại (nghỉ cho Cloudflare sớm mở IP).")
+            if st.button("🔁 Thử lại ngay", key="daily_unblock"):
+                _sapo_clear_block()
+                st.cache_data.clear()
+                st.rerun()
             # CỨU VÃN: vẫn cho xem BẢN ĐÃ CHỐT gần nhất của hôm nay (lưu trên Gist) để không
             # trắng trang — số của lần chốt cuối, đủ dùng trong lúc chờ Cloudflare mở lại.
             try:
@@ -10432,6 +10447,7 @@ def _render_returns():
         st.warning("⚠️ Cần kết nối Sapo (API LIVE).")
         return
     if st.button("🔄 Tải lại số liệu", key="returns_reload"):
+        _sapo_clear_block()      # bấm tải lại = cho gọi Sapo lại ngay, khỏi chờ hết giờ nghỉ
         st.cache_data.clear()
         st.rerun()
     _return_info(
@@ -13938,6 +13954,7 @@ with st.sidebar:
         else "⚠️ Chưa có credential LIVE (xem README để gọi API trực tiếp)."
     )
     if st.button("🔄 Làm mới dữ liệu", width="stretch"):
+        _sapo_clear_block()      # bấm tải lại = cho gọi Sapo lại ngay, khỏi chờ hết giờ nghỉ
         st.cache_data.clear()
         st.rerun()
     auto_refresh = st.toggle(
