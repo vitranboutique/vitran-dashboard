@@ -13799,19 +13799,22 @@ def _render_returns():
                 if st.button("🔎 Đối chiếu sâu Dohana/Sapo cho các mã thiếu", key="returns_dohana_deep_lookup_btn"):
                     st.session_state["returns_dohana_deep_lookup"] = True
                     st.rerun()
+            # MỌI đơn đang nằm ở bảng Cần KN đều ghi chú được (kể cả Shopee, kể cả đơn không có VĐ
+            # hoàn) — trước đây loại Shopee nên có đơn trong bảng mà không chọn được để ghi.
             _active_ckn_annotatable = [
                 d for d in _ckn_render_list
-                if not _is_shopee_row(d)
-                and any(str(d.get(field) or "").strip()
-                        for field in ("order_code", "return_code", "vd_tra", "vd_di"))
+                if any(str(d.get(field) or "").strip()
+                       for field in ("order_code", "return_code", "vd_tra", "vd_di"))
             ]
             _render_closed_return_app_note_editor(
                 _active_ckn_annotatable,
                 _closed_return_app_notes,
-                title="✍️ Cập nhật đơn sàn đã đóng nhưng SAPO còn mở",
-                help_text=("Sau khi kiểm tra TikTok/Shopee đã đóng yêu cầu, chọn đơn và bấm "
-                           "'Sàn đã đóng yêu cầu'. App giữ nguyên lý do ban đầu, đưa đơn vào bảng bị đóng "
-                           "và vẫn giữ trong Cần KN cho tới khi có kết quả cuối."),
+                title=f"✍️ Ghi chú cho {len(_active_ckn_annotatable)} đơn ở bảng CẦN KN (ngay trên)",
+                help_text=("Ô này ghi chú cho ĐÚNG các đơn đang nằm ở bảng Cần KN phía trên. "
+                           "Ghi kết quả (THẮNG / THUA / HẾT HẠN / KHÔNG CẦN KN) thì đơn tự rớt khỏi bảng; "
+                           "ghi CẦN KN thì đơn vẫn ở lại để xử lý tiếp. "
+                           "Nút 'Sàn đã đóng yêu cầu' dùng khi TikTok/Shopee đã đóng yêu cầu mà Sapo còn mở "
+                           "— app giữ nguyên lý do ban đầu và vẫn giữ đơn trong Cần KN tới khi có kết quả cuối."),
                 key_prefix="marketplace_closed",
             )
             # 🧹 DỌN app note THỪA (chỉ chủ shop). App note chỉ cần cho đơn BỊ ĐÓNG (không ghi Sapo
@@ -13927,6 +13930,9 @@ def _render_returns():
                 _render_closed_return_app_note_editor(
                     _closed_returns_with_waybill_detail,
                     _closed_return_app_notes,
+                    help_text=("Ô này CHỈ có các phiếu Sapo ĐÃ ĐÓNG/HỦY (không ghi chú Sapo được nữa). "
+                               "Đơn đang nằm ở bảng 🚨 CẦN KN thì ghi ở ô ngay DƯỚI bảng Cần KN "
+                               "(“✍️ Ghi chú cho … đơn ở bảng CẦN KN”), không phải ở đây."),
                 )
                 _sub_table(
                     _closed_returns_with_waybill_detail,
