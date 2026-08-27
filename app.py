@@ -12010,11 +12010,25 @@ def _render_returns():
                 _seen_ret.add((_oc, _rc))
                 _ret_by_order.setdefault(_oc, []).append(_d)
             _multi_return_orders = {k: v for k, v in _ret_by_order.items() if len(v) >= 2}
+
+            def _ret_key(_d):
+                return (str((_d or {}).get("order_code") or "").strip(),
+                        str((_d or {}).get("return_code") or "").strip()
+                        or str((_d or {}).get("sapo_return_id") or "").strip())
+            # phiếu CŨ NHẤT = thứ 1 → phiếu sau là thứ 2, thứ 3… (dòng khác nhau của cùng 1 phiếu
+            # nằm ở nhiều danh sách nên phải tra theo MÃ, không theo object)
+            _multi_idx = {}
+            for _oc, _lst in _multi_return_orders.items():
+                for _i, _d in enumerate(sorted(_lst, key=lambda r: (str(r.get("created_on") or ""),
+                                                                    str(r.get("created") or ""),
+                                                                    _ret_key(r)[1])), 1):
+                    _multi_idx[_ret_key(_d)] = _i
             for _lst in (_detail_rows, _all_returns_detail, _canceled_returns_detail):
                 for _d in _lst or []:
                     _mn = len(_multi_return_orders.get(str((_d or {}).get("order_code") or "").strip()) or ())
                     if _mn >= 2:
                         _d["_multi_return_n"] = _mn
+                        _d["_multi_return_idx"] = _multi_idx.get(_ret_key(_d), 0)
 
             def _restock_novideo_rows():
                 # NGUỒN DUY NHẤT: đúng danh sách còn lại sau cột Chốt video của Báo cáo vận hành cuối ngày.
@@ -12388,7 +12402,8 @@ def _render_returns():
                                      "Các phiếu trả": st.column_config.TextColumn("Các phiếu trả", width="large"),
                                      "Tổng tiền": st.column_config.NumberColumn("Tổng tiền", format="%d"),
                                  })
-                    st.caption("Trong các bảng bên dưới, mã đơn kiểu này có gắn nhãn đỏ ⚠️ N phiếu trả.")
+                    st.caption("Trong các bảng bên dưới, cột **Mã trả hàng** của phiếu thứ 2 trở đi có nhãn đỏ "
+                               "⚠️ Phiếu thứ N (phiếu đầu tiên không ghi).")
 
             def _jss(s):       # escape chuỗi cho onclick JS
                 return str(s or "").replace("\\", "\\\\").replace("'", "\\'")
@@ -12444,7 +12459,13 @@ def _render_returns():
                         except Exception:
                             pass
                     link = _shopee_chrome_launcher_url(link, d)
-                return _code_cell(code, link) if code else ""
+                _cell = _code_cell(code, link) if code else ""
+                _mi = int((d or {}).get("_multi_return_idx") or 0)
+                if _mi >= 2:      # đơn bị trả nhiều lần → ghi ĐÂY LÀ PHIẾU THỨ MẤY (thứ 1 khỏi ghi)
+                    _mn = int((d or {}).get("_multi_return_n") or 0)
+                    _cell += (f"{' ' if _cell else ''}<span class='multi-badge' title='Đơn này có {_mn} phiếu trả "
+                              f"— đây là phiếu thứ {_mi}'>⚠️ Phiếu thứ {_mi}</span>")
+                return _cell
 
             def _return_waybill_cell(d):
                 val = str((d or {}).get("vd_tra") or "").strip()
@@ -12780,14 +12801,9 @@ def _render_returns():
                         tds.append(f"<td>{_reason_brief_cell(d)}</td>")
                     if show_ticket:
                         tds.append(f"<td>{_ticket_cell(d)}</td>")
-                    _oc_html = _mk_badge(d) + _code_cell(d['order_code'], _order_link_for_row(d))
-                    _mn = int(d.get("_multi_return_n") or 0)
-                    if _mn >= 2:      # đơn bị trả NHIỀU LẦN → cảnh báo ngay cạnh mã đơn
-                        _oc_html += (f" <span class='multi-badge' title='Đơn này có {_mn} phiếu trả "
-                                     f"— kiểm tra kỹ, khách trả nhiều lần trên cùng 1 đơn'>⚠️ {_mn} phiếu trả</span>")
                     tds += [
                         f"<td>{_safe(d.get('created'))}</td>",
-                        f"<td>{_oc_html}</td>",
+                        f"<td>{_mk_badge(d)}{_code_cell(d['order_code'], _order_link_for_row(d))}</td>",
                     ]
                     tds.append(f"<td>{_return_code_cell(d)}</td>")
                     if merge_delivery_vd:
