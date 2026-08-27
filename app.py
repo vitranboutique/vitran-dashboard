@@ -1825,7 +1825,8 @@ PAGE_LUONG = "💰 Lương của tôi"
 PAGE_QRSHOP = "📲 QR chấm công (shop)"
 PAGE_QLCC = "🛠️ Quản lý chấm công"
 PAGE_TIKTOK_INBOX = "💬 TikTok Inbox"
-PAGE_COSTS = "💸 Chi phí đầu vào"   # 3 công cụ mua vải / gia công → lưu chi phí đầu vào (chủ shop + admin)
+PAGE_COSTS = "💸 Chi phí đầu vào"   # công cụ mua vải / gia công → lưu chi phí đầu vào
+# (chủ shop + admin: đủ quyền · NV KHO: chỉ LƯU / XEM / IN, KHÔNG được xoá)
 PAGE_OPS = "📊 Vận hành"   # tab: Báo cáo cuối ngày + Đơn trả + Phiếu nhặt (CSKH chỉ thấy Báo cáo)
 # TÁCH RIÊNG khỏi trang Vận hành: quét kho rất nặng, để chung sẽ đốt hạn mức API và
 # làm hỏng Báo cáo cuối ngày (đã từng gây 403). Trang riêng → không ảnh hưởng nhau.
@@ -1847,7 +1848,8 @@ _can_match_clip = bool(_is_owner or _cc_role == "admin" or _cc_emp == "kho")
 # PAGE_OPS (Vận hành) gồm: Báo cáo cuối ngày (mặc định) + Đơn trả + Phiếu nhặt (tab ngang).
 if _cc_role == "nv":
     # NV kho: thêm trang Tồn kho & kiểm kê (để in phiếu đi đếm hàng).
-    _rolepg = [PAGE_PRODUCTION, PAGE_STOCK] if _cc_emp == "kho" else [PAGE_TTKH]
+    # NV kho còn lập chứng từ mua vải / gia công → cho vào trang Chi phí đầu vào (không xoá được).
+    _rolepg = [PAGE_PRODUCTION, PAGE_STOCK, PAGE_COSTS] if _cc_emp == "kho" else [PAGE_TTKH]
     _opts = [PAGE_OPS] + _rolepg + [PAGE_CHAMCONG, PAGE_LUONG]
     _default = PAGE_CHAMCONG if st.query_params.get("tk") else PAGE_OPS   # quét QR → về Chấm công
 elif _cc_role == "shop":                    # máy shop: CHỈ thấy trang hiện mã QR chấm công
@@ -1893,7 +1895,8 @@ if _page == PAGE_QLCC:
 if _page == PAGE_TIKTOK_INBOX:
     tiktok_inbox_ui.render(); st.stop()
 if _page == PAGE_COSTS:
-    input_costs_ui.render(); st.stop()
+    # Xoá chi phí đã lưu: CHỈ chủ shop + quản lý. NV kho chỉ lưu / xem / in.
+    input_costs_ui.render(can_delete=bool(_is_owner or _cc_role == "admin")); st.stop()
 
 
 # ── Biểu đồ dùng chung ──

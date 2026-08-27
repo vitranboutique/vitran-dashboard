@@ -344,6 +344,9 @@ def _do_save(typ):
 
 
 def _do_delete(cid):
+    if not st.session_state.get("_cost_can_delete"):
+        st.session_state["msg_list"] = ("error", "Tài khoản của bạn KHÔNG được xoá chi phí đã lưu.")
+        return
     ok = picklog.remove_input_cost(cid)
     st.session_state["msg_list"] = ("success", "Đã xoá 1 chi phí.") if ok else ("error", "Xoá thất bại.")
 
@@ -808,13 +811,15 @@ def _detail_print_html(x):
             "<div id='doc'>" + body + "</div><script>" + js + "</script>")
 
 
-def _saved_tab():
+def _saved_tab(can_delete=True):
     items = list(picklog.read_input_costs() or [])
     items.sort(key=lambda x: str(x.get("saved_at", "")), reverse=True)
 
     msg = st.session_state.pop("msg_list", None)
     if msg:
         getattr(st, msg[0])(msg[1])
+    if not can_delete:
+        st.caption("🔒 Tài khoản của bạn chỉ được **lưu · xem · in** chứng từ. Muốn xoá thì báo chủ shop.")
 
     # bộ lọc tháng
     months = sorted({_month_of(x.get("date")) for x in items if _month_of(x.get("date"))}, reverse=True)
@@ -860,7 +865,10 @@ def _saved_tab():
             c[3].write(f"**{_fmt(x.get('amount'))}đ**")
             if c[4].button("👁️", key=f"view_{cid}", help="Xem lại & IN chứng từ đã lưu"):
                 st.session_state["cost_view_id"] = ("" if st.session_state.get("cost_view_id") == cid else cid)
-            c[5].button("🗑️", key=f"del_{cid}", help="Xoá chi phí này", on_click=_do_delete, args=(cid,))
+            if can_delete:
+                c[5].button("🗑️", key=f"del_{cid}", help="Xoá chi phí này", on_click=_do_delete, args=(cid,))
+            else:
+                c[5].write("")          # NV kho: chỉ lưu / xem / in — KHÔNG có nút xoá
 
         # XEM LẠI + IN chứng từ đã lưu (dựng từ dữ liệu đã lưu lúc bấm Lưu)
         _vid = str(st.session_state.get("cost_view_id") or "")
@@ -887,7 +895,8 @@ def _saved_tab():
         b[2].button("Thêm", use_container_width=True, on_click=_do_manual_add)
 
 
-def render():
+def render(can_delete=True):
+    st.session_state["_cost_can_delete"] = bool(can_delete)
     st.title("💸 Chi phí đầu vào")
     st.caption("3 công cụ lập chứng từ mua vải / gia công (giữ nguyên như bản gốc). Nhập xong bấm "
                "**💾 Lưu vào chi phí đầu vào** ở cuối mỗi khung để ghi nhận vào sổ. Nút **In A4 / Xuất Excel / "
@@ -911,4 +920,4 @@ def render():
     with tabs[3]:
         _soquy_tab()
     with tabs[4]:
-        _saved_tab()
+        _saved_tab(can_delete)
