@@ -12625,13 +12625,16 @@ def _render_returns():
                     ship_code = str((d or {}).get("ship_code") or "").strip().lower()
                     stock_code = str((d or {}).get("stock_code") or "").strip().lower()
                     return_type = str((d or {}).get("loai_tra_code") or "").strip().lower()
-                    def _age_label():
+                    def _age_num():
                         age = (d or {}).get("age")
                         try:
-                            age = int(age)
+                            return int(age)
                         except Exception:
                             m = re.search(r"(\d+)\s*ngày", full, flags=re.IGNORECASE)
-                            age = int(m.group(1)) if m else 0
+                            return int(m.group(1)) if m else 0
+
+                    def _age_label():
+                        age = _age_num()
                         if age >= L.KN_DAYS:
                             return f"⏳ Quá hạn {age}n"
                         # chưa tới mốc KN thì ĐỪNG ghi "quá hạn" (trước đây 2 ngày cũng ghi quá hạn)
@@ -12655,16 +12658,16 @@ def _render_returns():
                     elif ("TRAO" in compact or "SAIHANG" in compact or "SAISP" in compact
                           or "KHACVOMOTA" in compact or "KHONGKHOPVOIMOTA" in compact):
                         base_label = "🔁 Tráo/sai hàng"
-                    elif ship_code == "returned":
-                        # ĐÃ GIAO NGƯỜI BÁN mà chưa nhập kho = chính LÝ DO phải KN. Lý do khách trả
-                        # (đổi ý / chưa dùng…) chỉ là bối cảnh → để trong tooltip, đừng đè lên cột này.
-                        base_label = "📥 Đã giao shop chưa nhập"
-                    elif (("CHUAQUASUDUNG" in compact or "CHUASUDUNG" in compact or "KHONGCONNHUCAU" in compact)
-                          and not ("DASUDUNG" in compact or "DADUNG" in compact)):
-                        # Note "Hàng CHƯA qua sử dụng" / "Không còn nhu cầu" = KHÔNG phải đã dùng (đừng khớp nhầm "sử dụng")
-                        base_label = "🔄 Đổi ý · chưa dùng"
                     elif "DASUDUNG" in compact or "DADUNG" in compact or "DAQUASUDUNG" in compact:
                         base_label = "♻️ Đã sử dụng"
+                    elif ship_code in ("returning", "returned") and _age_num() >= L.KN_DAYS:
+                        # QUÁ HẠN = lý do đơn bị đưa vào Cần KN. Loại trả (giao thất bại) và lý do
+                        # khách trả (đổi ý / chưa dùng…) chỉ là bối cảnh → nằm ở cột Loại trả + tooltip.
+                        base_label = (f"⏳ Quá hạn {_age_num()}n · đã giao"
+                                      if ship_code == "returned" else f"⏳ Quá hạn {_age_num()}n")
+                    elif ship_code == "returned":
+                        # Hàng vừa về tới shop, chưa quá hạn nhưng kho chưa nhập → vẫn phải KN ngay.
+                        base_label = "📥 Đã giao shop chưa nhập"
                     elif "NHAPKHO1PHAN" in compact or "PARTIAL" in stock_code:
                         base_label = "📦 Nhập thiếu"
                     elif return_type == "delivery_failed":
