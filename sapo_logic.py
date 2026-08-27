@@ -1787,6 +1787,9 @@ def _lost_waybill(x):
     return m.group(1) if m else ""
 
 
+KN_DAYS = 3   # đơn trả ĐANG HOÀN từ N ngày trở đi → CẦN KN (user đổi 27/08/2026: quá 5 → quá hạn 3)
+
+
 def get_returns_in_progress(fetch_json, max_pages: int = 120, canceled_max_pages: int = 120) -> dict:
     """ĐƠN TRẢ HÀNG ĐANG XỬ LÝ — CHƯA nhập kho (bổ sung cho mục 'đã nhận hàng trả').
     Tổng đơn trả lấy theo tab TẤT CẢ của phiếu trả trong NĂM NAY, loại phiếu hủy/gạch ngang.
@@ -1794,13 +1797,13 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120, canceled_max_pages
     {returning=Đang hoàn hàng, returned=Đã giao người bán, no_return=Không cần trả lại}.
     Cờ CẦN KHIẾU NẠI:
       • đã giao người bán (returned) mà chưa nhập kho → khiếu nại
-      • đang hoàn hàng (returning) HƠN 5 ngày → khiếu nại
-      • 'Trả hàng hoàn tiền' có mã hoàn về và đang hoàn quá 5 ngày → vẫn khiếu nại
-      • NGOẠI LỆ: 'Trả hàng hoàn tiền' chỉ 1 VĐ và chưa quá 5 ngày → CHƯA khiếu nại
+      • đang hoàn hàng (returning) QUÁ KN_DAYS ngày → khiếu nại
+      • 'Trả hàng hoàn tiền' có mã hoàn về và đang hoàn quá KN_DAYS ngày → vẫn khiếu nại
+      • NGOẠI LỆ: 'Trả hàng hoàn tiền' chỉ 1 VĐ và chưa quá KN_DAYS ngày → CHƯA khiếu nại
     (Giao hàng thất bại có 1 VĐ trả là bình thường; Trả hàng hoàn tiền phải có 2 VĐ.)
     Kèm SKU, SL SP, tổng tiền (total_price) mỗi đơn."""
     today = (_now_utc() + timedelta(hours=7)).date()
-    _kn_days = 5   # đang hoàn hàng HƠN N ngày → CẦN KN (user đổi 01/07: 7 → 5)
+    _kn_days = KN_DAYS   # đang hoàn hàng QUÁ N ngày → CẦN KN (7 → 5 ngày 01/07 → 3 ngày 27/08)
     _type_vn = {"return_and_refund": "Trả hàng hoàn tiền", "delivery_failed": "Giao hàng thất bại",
                 "refund": "Chỉ hoàn tiền"}
     _ship_vn = {"returning": "Đang hoàn hàng", "returned": "Đã giao người bán",
@@ -1997,14 +2000,14 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120, canceled_max_pages
         # Quá ngưỡng thì vào CẦN KN theo số ngày hoàn quá hạn, không lấy thiếu shipper làm lý do.
         if sstat == "no_return":
             complaint, reason = False, "Không có VĐ trả về — không cần highlight/KN"
-        elif rtype == "return_and_refund" and sstat == "returning" and n_track < 2 and (age or 0) <= _kn_days:
+        elif rtype == "return_and_refund" and sstat == "returning" and n_track < 2 and (age or 0) < _kn_days:
             complaint, reason = False, "Người mua chưa giao ĐVVC (1 VĐ) — chưa cần khiếu nại"
         elif sstat == "returned":
             complaint, reason = True, "Đã giao người bán mà chưa nhập kho — cần khiếu nại"
-        elif rtype == "return_and_refund" and sstat == "returning" and has_return_waybill and not return_shipper and age is not None and age > _kn_days:
-            complaint, reason = True, f"Đang hoàn hàng {age} ngày (quá 5 ngày) — cần khiếu nại"
-        elif sstat == "returning" and age is not None and age > _kn_days:
-            complaint, reason = True, f"Đang hoàn hàng {age} ngày (quá 5 ngày) — cần khiếu nại"
+        elif rtype == "return_and_refund" and sstat == "returning" and has_return_waybill and not return_shipper and age is not None and age >= _kn_days:
+            complaint, reason = True, f"Đang hoàn hàng {age} ngày (quá hạn {_kn_days} ngày) — cần khiếu nại"
+        elif sstat == "returning" and age is not None and age >= _kn_days:
+            complaint, reason = True, f"Đang hoàn hàng {age} ngày (quá hạn {_kn_days} ngày) — cần khiếu nại"
         else:
             complaint, reason = False, ("Đang hoàn hàng — theo dõi" if sstat == "returning" else "")
         if complaint:
@@ -2130,7 +2133,8 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120, canceled_max_pages
             # Refund-only records have no return waybill. Keep them in CAN KN
             # until SAPO has a standard final-result note.
             d["need_kn"] = True
-            if not str(d.get("reason") or "").strip():
+            _rs = str(d.get("reason") or "").strip()
+            if not _rs or "không cần" in _rs.lower():   # lý do cũ ghi ngược → sửa cho đúng
                 d["reason"] = "Chỉ hoàn tiền chưa có kết luận chuẩn — cần khiếu nại"
         elif not has_return_waybill:
             d["need_kn"] = False
@@ -2138,10 +2142,10 @@ def get_returns_in_progress(fetch_json, max_pages: int = 120, canceled_max_pages
             d["need_kn"] = True
         elif d.get("ship_code") == "no_return":
             d["need_kn"] = False
-        elif d.get("loai_tra_code") == "return_and_refund" and (d.get("n_track") or 0) < 2 and (d.get("age") or 0) <= _kn_days:
+        elif d.get("loai_tra_code") == "return_and_refund" and (d.get("n_track") or 0) < 2 and (d.get("age") or 0) < _kn_days:
             d["need_kn"] = False
         else:
-            d["need_kn"] = (d.get("age") or 0) > _kn_days
+            d["need_kn"] = (d.get("age") or 0) >= _kn_days
         if not d["need_kn"]:
             continue
         amt = _amt(d.get("note"))

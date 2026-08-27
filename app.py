@@ -11860,7 +11860,7 @@ def _render_returns():
         st.warning(f"Chưa lấy được đơn trả đang xử lý: `{_e}`")
     if _rip:
         # KẾT QUẢ KHIẾU NẠI (đang xử lý năm nay): Thắng/Thua/Không cần KN/Hết hạn theo prefix note;
-        # CẦN KN = TỰ TÍNH (đơn đang xử lý hơn 5 ngày, chưa có ghi chú kết quả).
+        # CẦN KN = TỰ TÍNH (đơn đang xử lý quá L.KN_DAYS ngày, chưa có ghi chú kết quả).
         _oc = _rip.get("outcomes") or {}
 
         def _vnd(m):
@@ -12321,14 +12321,14 @@ def _render_returns():
                 st.divider()
         with _tabs[0]:
             st.markdown("##### 📊 Đang xử lý (chưa nhập kho)")
-            _old_n = sum(1 for d in _rip["detail"] if (d.get("age") or 0) > 5)
+            _old_n = sum(1 for d in _rip["detail"] if (d.get("age") or 0) >= L.KN_DAYS)
             _m = st.columns(5)
             _m[0].metric("Tổng đang xử lý", f"{_rip['total']:,}")
             _m[1].metric("🚚 Đang hoàn hàng", f"{_rip['tot_returning']:,}")
             _m[2].metric("📥 Đã giao người bán", f"{_rip['tot_returned']:,}")
             _m[3].metric("🚫 Không có hàng hoàn về", f"{len(_no_return_list):,}")
-            _m[4].metric("🟡 Hơn 5 ngày", f"{_old_n:,}")
-            _return_info("🟡 Dòng tô vàng = đơn CẦN KN (hơn 5 ngày và chưa có ghi chú kết quả). "
+            _m[4].metric(f"🟡 Quá hạn {L.KN_DAYS} ngày", f"{_old_n:,}")
+            _return_info(f"🟡 Dòng tô vàng = đơn CẦN KN (đang hoàn quá hạn {L.KN_DAYS} ngày và chưa có ghi chú kết quả). "
                          "VĐ đi = mã vận đơn giao đi. VĐ trả về = mã vận đơn hoàn về. "
                          "Giao thất bại: 2 mã trùng nhau; chỉ hoàn tiền: không có kiện hàng hoàn về."
                          + (" Đã chạm giới hạn quét, có thể còn đơn cũ hơn." if _rip.get("capped") else ""))
@@ -13549,7 +13549,7 @@ def _render_returns():
             st.subheader("🚨 Đơn cần KN — lấy làm khiếu nại", anchor="don-can-kn")
             _need_kn_info = ("Gồm các đơn chưa chốt THẮNG / THUA / KHÔNG CẦN KN. "
                              "Note CẦN KN vẫn nằm ở bảng này để nhân viên tiếp tục xử lý. "
-                             "Đơn có VĐ trả về: đã giao người bán chưa nhập kho, hoặc đang hoàn hơn 5 ngày. "
+                             f"Đơn có VĐ trả về: đã giao người bán chưa nhập kho, hoặc đang hoàn QUÁ HẠN {L.KN_DAYS} NGÀY. "
                              "Riêng đơn CHỈ HOÀN TIỀN không có VĐ hoàn vẫn tô vàng và đưa vào Cần KN cho tới khi có kết luận chuẩn. "
                              "Đây chính là các dòng tô vàng — NV lấy làm khiếu nại.")
             if _closed_returns_need_kn_detail:
