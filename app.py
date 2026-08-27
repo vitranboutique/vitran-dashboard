@@ -10452,7 +10452,9 @@ def _render_returns():
         st.rerun()
     _return_info(
         "Đơn trả CHƯA nhập kho (năm nay), chia theo loại trả và tình trạng vận chuyển. "
-        "Bấm 📋 để copy mã. Dòng tô vàng là đơn cần khiếu nại hoặc chưa có ghi chú chuẩn."
+        "Bấm 📋 để copy mã. Dòng tô vàng là đơn cần khiếu nại hoặc chưa có ghi chú chuẩn. "
+        "⏱️ Số liệu Sapo được nhớ tạm 10 phút — vừa ghi chú thẳng trong Sapo mà app chưa thấy thì "
+        "bấm 🔄 Tải lại số liệu."
     )
     _return_top_search_slot = st.container()
     _return_top_drill_slot = st.container()
