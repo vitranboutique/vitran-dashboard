@@ -13933,25 +13933,54 @@ def _render_returns():
                         _return_info("Chỉ CHỦ SHOP, quản lý và NV KHO mới gắn được tag. Bạn chỉ xem.")
                     else:
                         _tags_now = _load_kn_tags()
-                        _opts, _seen_tag_key = [], set()
+                        _rows_tag, _seen_tag_key = [], set()
                         for _d in _ckn_render_list:
                             _k = _closed_return_note_key(_d)
                             if not _k or _k in _seen_tag_key:
                                 continue
                             _seen_tag_key.add(_k)
-                            _opts.append(_k)
-
-                        def _tag_label(_k):
-                            _d = next((x for x in _ckn_render_list
-                                       if _closed_return_note_key(x) == _k), {})
-                            _cur = _row_kn_tag(_d, _tags_now)
-                            _txt = " · ".join(x for x in (
-                                str(_d.get("created") or ""), str(_d.get("order_code") or ""),
-                                _display_return_code(_d)) if x)
-                            return f"{_txt}   [{_cur}]" if _cur else _txt
-
-                        _sel = st.multiselect("Chọn đơn (chọn nhiều được)", _opts,
-                                              format_func=_tag_label, key="kn_tag_pick")
+                            _rows_tag.append({
+                                "_key": _k,
+                                "Ngày tạo": str(_d.get("created") or ""),
+                                "Mã đơn": str(_d.get("order_code") or ""),
+                                "Mã trả": _display_return_code(_d),
+                                "Lý do KN": str(_d.get("reason") or "")[:60],
+                                "Tag hiện tại": _row_kn_tag(_d, _tags_now),
+                            })
+                        _tf = st.columns([3, 1.4])
+                        _q_tag = _tf[0].text_input("Lọc nhanh (mã đơn / mã trả)", key="kn_tag_q",
+                                                   placeholder="gõ vài số cuối của mã…")
+                        if _q_tag.strip():
+                            _qn = _search_norm(_q_tag)
+                            _rows_tag = [r for r in _rows_tag
+                                         if _qn in _search_norm(r["Mã đơn"] + r["Mã trả"])]
+                        _tick_all = _tf[1].checkbox("✅ Tick tất cả", key="kn_tag_all",
+                                                    help="Tick sẵn toàn bộ đơn đang hiện trong bảng dưới")
+                        if not _rows_tag:
+                            st.info("Không có đơn nào khớp bộ lọc — xoá bớt chữ trong ô lọc.")
+                        st.caption(f"{len(_rows_tag)} đơn — tick vào cột ✓ (tick bao nhiêu đơn cũng được), "
+                                   "rồi chọn tag và bấm Gắn tag.")
+                        _df_tag = pd.DataFrame([{"✓": bool(_tick_all), **r} for r in _rows_tag]
+                                               or [{"✓": False, "_key": "", "Ngày tạo": "", "Mã đơn": "",
+                                                    "Mã trả": "", "Lý do KN": "", "Tag hiện tại": ""}])
+                        _ed_tag = st.data_editor(
+                            _df_tag, hide_index=True, use_container_width=True, height=320,
+                            # đổi KEY theo trạng thái "tick tất cả" + bộ lọc → bảng vẽ lại đúng
+                            key=f"kn_tag_editor_{int(bool(_tick_all))}_{_search_norm(_q_tag)[:12]}",
+                            disabled=["_key", "Ngày tạo", "Mã đơn", "Mã trả", "Lý do KN", "Tag hiện tại"],
+                            column_config={
+                                "_key": None,
+                                "✓": st.column_config.CheckboxColumn("✓", width="small"),
+                                "Ngày tạo": st.column_config.TextColumn("Ngày tạo", width="small"),
+                                "Mã đơn": st.column_config.TextColumn("Mã đơn", width="medium"),
+                                "Mã trả": st.column_config.TextColumn("Mã trả", width="medium"),
+                                "Lý do KN": st.column_config.TextColumn("Lý do KN", width="medium"),
+                                "Tag hiện tại": st.column_config.TextColumn("Tag hiện tại", width="medium"),
+                            })
+                        _sel = [str(r.get("_key") or "") for r in _ed_tag.to_dict("records")
+                                if r.get("✓") and r.get("_key")]
+                        if _sel:
+                            st.caption(f"Đang chọn **{len(_sel)}** đơn.")
                         _tc = st.columns([2, 1, 1])
                         _tag_new = _tc[0].selectbox("Tag", list(_KN_TAGS), key="kn_tag_value")
                         _do_set = _tc[1].button("🏷️ Gắn tag", key="kn_tag_set",
