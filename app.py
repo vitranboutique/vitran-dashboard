@@ -10691,6 +10691,31 @@ def _render_returns():
         ("260403T7DMM822", "2604080975NJ4Y1", "SPXVN068228865454"),
     ]
 
+    # ── TAG TIẾN ĐỘ KN (chủ shop + NV kho gắn được) ─────────────────────────────────────
+    _KN_TAG_FILE = "vitran_kn_tags.json"
+    _KN_TAGS = ("🟠 Đang kháng nghị", "🧾 Đang tạo phiếu", "✅ Đã có kết quả")
+    _KN_TAG_CLS = {"🟠 Đang kháng nghị": "tg-kn", "🧾 Đang tạo phiếu": "tg-pt", "✅ Đã có kết quả": "tg-kq"}
+    # Gắn/bỏ tag: CHỦ SHOP + QUẢN LÝ + NV KHO (khác ghi chú app — cái đó chỉ chủ shop).
+    _can_tag_kn = bool(_is_owner or _cc_role == "admin" or _cc_emp == "kho")
+
+    def _load_kn_tags():
+        if not picklog.configured():
+            return {}
+        raw = picklog._read_gist_file(_KN_TAG_FILE) or {}
+        tags = raw.get("tags") if isinstance(raw, dict) else None
+        return tags if isinstance(tags, dict) else {}
+
+    def _save_kn_tags(tags):
+        return bool(picklog._write_gist_file(_KN_TAG_FILE, {"tags": tags or {}}))
+
+    def _row_kn_tag(d, tags):
+        for k in _closed_return_note_keys(d):
+            rec = (tags or {}).get(k)
+            _t = (rec.get("tag") if isinstance(rec, dict) else rec) or ""
+            if str(_t).strip():
+                return str(_t).strip()
+        return ""
+
     def _closed_return_note_keys(d):
         keys = []
         for field in ("return_code", "order_code", "vd_tra", "vd_di", "_dohana_code", "clip_code"):
@@ -12742,7 +12767,7 @@ def _render_returns():
                     "📨 Xem / tạo</a>"
                 )
 
-            def _sub_table(items, h, show_type=False, show_reason=False, show_clip=False, merge_delivery_vd=False, show_location=False, pg_key=None, per_page=14, show_ticket=False):
+            def _sub_table(items, h, show_type=False, show_reason=False, show_clip=False, merge_delivery_vd=False, show_location=False, pg_key=None, per_page=14, show_ticket=False, show_tag=False):
                 if not items:
                     st.caption("— Không có —")
                     return
@@ -12765,9 +12790,12 @@ def _render_returns():
                     _pc[1].caption(f"Đang xem đơn {_start + 1}–{_start + len(items)} / {_total}")
                 def _safe(v, default=""):
                     return _esc(str(v if v not in (None, "") else default))
+                _tag_map = _load_kn_tags() if show_tag else {}
                 cols = ["STT"]
                 if show_reason:
                     cols += ["Lý do KN"]
+                if show_tag:
+                    cols += ["🏷️ Tag"]
                 if show_ticket:
                     cols += ["Phiếu yêu cầu"]
                 cols += ["Ngày tạo", "Mã đơn"]
@@ -12885,6 +12913,10 @@ def _render_returns():
                     tds = [f"<td class='r'>{i}</td>"]
                     if show_reason:
                         tds.append(f"<td>{_reason_brief_cell(d)}</td>")
+                    if show_tag:
+                        _tg = _row_kn_tag(d, _tag_map)
+                        tds.append("<td>" + (f"<span class='tg {_KN_TAG_CLS.get(_tg, '')}'>{_safe(_tg)}</span>"
+                                             if _tg else "<span class='muted'>—</span>") + "</td>")
                     if show_ticket:
                         tds.append(f"<td>{_ticket_cell(d)}</td>")
                     tds += [
@@ -12946,6 +12978,10 @@ def _render_returns():
  .kq-huy{{background:#f3f4f6;color:#4b5563;border:1px solid #d1d5db}}
  .kq-khong{{background:#dbeafe;color:#1e40af;border:1px solid #93c5fd}}
  .kq-can{{background:#fef3c7;color:#92400e;border:1px solid #fcd34d}}
+ .tg{{display:inline-block;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:800;white-space:nowrap}}
+ .tg-kn{{background:#ffedd5;color:#9a3412;border:1px solid #fdba74}}
+ .tg-pt{{background:#e0e7ff;color:#3730a3;border:1px solid #a5b4fc}}
+ .tg-kq{{background:#dcfce7;color:#166534;border:1px solid #86efac}}
  .reason-badge{{display:inline-block;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700;color:#7c2d12}}
  td.note{{max-width:240px;white-space:normal}}
  .note-detail summary{{cursor:pointer;color:#1d4ed8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}}
@@ -13636,6 +13672,10 @@ def _render_returns():
  .kq-huy{{background:#f3f4f6;color:#4b5563;border:1px solid #d1d5db}}
  .kq-khong{{background:#dbeafe;color:#1e40af;border:1px solid #93c5fd}}
  .kq-can{{background:#fef3c7;color:#92400e;border:1px solid #fcd34d}}
+ .tg{{display:inline-block;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:800;white-space:nowrap}}
+ .tg-kn{{background:#ffedd5;color:#9a3412;border:1px solid #fdba74}}
+ .tg-pt{{background:#e0e7ff;color:#3730a3;border:1px solid #a5b4fc}}
+ .tg-kq{{background:#dcfce7;color:#166534;border:1px solid #86efac}}
  .sub{{color:#64748b;font-size:11px}}
  td.shipper{{max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
  td.note{{max-width:260px;white-space:normal}}
@@ -13863,7 +13903,63 @@ def _render_returns():
                     except Exception as _ce:
                         st.caption(f"Chưa dò được app note thừa: {_ce}")
             _sub_table(_ckn_render_list, 520, show_reason=True, show_location=True,
-                       show_type=True, pg_key="ckn", per_page=50, show_ticket=True)
+                       show_type=True, pg_key="ckn", per_page=50, show_ticket=True, show_tag=True)
+            # 🏷️ GẮN TAG TIẾN ĐỘ — chủ shop + NV kho đều làm được (ghi chú app thì chỉ chủ shop).
+            if picklog.configured() and _ckn_render_list:
+                with st.expander("🏷️ Gắn tag tiến độ cho đơn Cần KN", expanded=False):
+                    if not _can_tag_kn:
+                        _return_info("Chỉ CHỦ SHOP, quản lý và NV KHO mới gắn được tag. Bạn chỉ xem.")
+                    else:
+                        _tags_now = _load_kn_tags()
+                        _opts, _seen_tag_key = [], set()
+                        for _d in _ckn_render_list:
+                            _k = _closed_return_note_key(_d)
+                            if not _k or _k in _seen_tag_key:
+                                continue
+                            _seen_tag_key.add(_k)
+                            _opts.append(_k)
+
+                        def _tag_label(_k):
+                            _d = next((x for x in _ckn_render_list
+                                       if _closed_return_note_key(x) == _k), {})
+                            _cur = _row_kn_tag(_d, _tags_now)
+                            _txt = " · ".join(x for x in (
+                                str(_d.get("created") or ""), str(_d.get("order_code") or ""),
+                                _display_return_code(_d)) if x)
+                            return f"{_txt}   [{_cur}]" if _cur else _txt
+
+                        _sel = st.multiselect("Chọn đơn (chọn nhiều được)", _opts,
+                                              format_func=_tag_label, key="kn_tag_pick")
+                        _tc = st.columns([2, 1, 1])
+                        _tag_new = _tc[0].selectbox("Tag", list(_KN_TAGS), key="kn_tag_value")
+                        _do_set = _tc[1].button("🏷️ Gắn tag", key="kn_tag_set",
+                                                use_container_width=True, type="primary")
+                        _do_clr = _tc[2].button("🧹 Bỏ tag", key="kn_tag_clear",
+                                                use_container_width=True)
+                        if (_do_set or _do_clr) and not _sel:
+                            st.warning("Chưa chọn đơn nào.")
+                        elif _do_set or _do_clr:
+                            _store = dict(_tags_now)
+                            _now = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%d/%m/%Y %H:%M")
+                            _n = 0
+                            for _k in _sel:
+                                _d = next((x for x in _ckn_render_list
+                                           if _closed_return_note_key(x) == _k), {})
+                                _keys = _closed_return_note_keys(_d) or [_k]
+                                for _kk in _keys:            # ghi theo MỌI mã (mã đơn/mã trả/VĐ)
+                                    if _do_clr:
+                                        _store.pop(_kk, None)
+                                    else:
+                                        _store[_kk] = {"tag": _tag_new, "by": CUR_USER, "at": _now}
+                                _n += 1
+                            if _save_kn_tags(_store):
+                                st.success(f"Đã {'bỏ tag' if _do_clr else 'gắn tag'} cho {_n} đơn.")
+                                st.rerun()
+                            else:
+                                st.error("Lưu tag lỗi — kiểm tra token picklog/Gist.")
+                        st.caption("Tag hiện ở cột 🏷️ Tag của bảng Cần KN ngay trên. "
+                                   "Tag chỉ để theo dõi tiến độ, KHÔNG làm đơn rớt khỏi bảng — "
+                                   "muốn đơn rớt thì ghi kết quả ở ô ghi chú bên dưới.")
             st.divider()
             st.markdown("### 🔽 Phần dưới: ĐÃ XONG & TRA CỨU")
             st.caption("Các đơn đã kết luận + bảng đối chiếu — thu gọn sẵn, KHÔNG cần cho việc lấy KN hằng ngày. Bấm mở từng mục khi cần tra.")
