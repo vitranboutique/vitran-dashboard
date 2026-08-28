@@ -4413,15 +4413,32 @@ def render_alert_popup(sees_production=False):
         unsafe_allow_html=True)
 
 
-@st.cache_data(ttl=900, show_spinner="Đang quét đơn trả cả năm…")
+@st.cache_data(ttl=60, show_spinner=False)
+def _returns_snapshot():
+    """Đọc snapshot đơn trả từ Gist (GitHub Actions quét nền ~15'/lần → vitran_returns.json).
+    Nhờ vậy app KHÔNG phải quét live hàng trăm trang Sapo (hết cảnh chờ ~2 phút).
+    Trả None nếu chưa có snapshot → hàm gọi sẽ tự quét trực tiếp (fallback)."""
+    try:
+        return picklog._read_gist_file("vitran_returns.json")
+    except Exception:
+        return None
+
+
+@st.cache_data(ttl=120, show_spinner="Đang quét đơn trả cả năm…")
 def load_returns_followup():
-    return L.get_returns_followup(make_fetch_json(build_session()))
+    snap = _returns_snapshot()
+    if snap and isinstance(snap.get("followup"), list):
+        return snap["followup"]
+    return L.get_returns_followup(make_fetch_json(build_session()))   # fallback: quét trực tiếp
 
 
-@st.cache_data(ttl=600, show_spinner="Đang quét đơn trả đang xử lý…")
+@st.cache_data(ttl=120, show_spinner="Đang quét đơn trả đang xử lý…")
 def load_returns_inprogress():
-    _cache_ver = 15  # bump khi đổi cấu trúc trả về → buộc tính lại (tránh cache cũ gây lỗi)
-    return L.get_returns_in_progress(make_fetch_json(build_session()), canceled_max_pages=120)
+    _cache_ver = 16  # bump khi đổi cấu trúc trả về → buộc tính lại (tránh cache cũ gây lỗi)
+    snap = _returns_snapshot()
+    if snap and isinstance(snap.get("in_progress"), dict):
+        return snap["in_progress"]
+    return L.get_returns_in_progress(make_fetch_json(build_session()), canceled_max_pages=120)  # fallback
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
