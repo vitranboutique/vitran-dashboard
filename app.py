@@ -11978,6 +11978,28 @@ def _render_returns():
                     d["need_kn"] = False
             return rows
 
+        @st.cache_data(ttl=120, show_spinner=False)
+        def _manual_match_codes(_ver=1):
+            """Mọi mã (đơn hoàn + clip) đã KHỚP TAY — hàng đã về & đã khui, KHỎI khiếu nại."""
+            out = set()
+            try:
+                for _m in (picklog.read_khui_manual_match() or []):
+                    for _f in ("ret", "clip", "ret_raw", "clip_raw"):
+                        _v = _ascii_code(str(_m.get(_f) or ""))
+                        if len(_v) >= 6:
+                            out.add(_v)
+            except Exception:
+                return set()
+            return out
+
+        def _row_manual_matched(d):
+            _mm = _manual_match_codes()
+            if not _mm:
+                return False
+            _c = {_ascii_code(str((d or {}).get(k) or "")) for k in
+                  ("return_code", "order_code", "vd_tra", "vd_di", "clip_code", "_dohana_code")}
+            return bool({x for x in _c if len(x) >= 6} & _mm)
+
         def _is_shopee_row(d):
             """Đơn Shopee (để loại đơn Shopee ĐÃ ĐÓNG khỏi Cần KN — Shopee đóng = hủy thật)."""
             _s = (str((d or {}).get("gian_hang") or "") + " " + str((d or {}).get("order_link") or "")
@@ -12140,15 +12162,7 @@ def _render_returns():
 
                 # CHỐT CHẶN CUỐI: mã đã KHỚP TAY (clip ↔ đơn) thì KHÔNG được vào Cần KN nữa,
                 # dù luồng nào tạo ra dòng đó. Trước đây khớp tay xong đơn vẫn còn báo thiếu video.
-                _mm_codes = set()
-                try:
-                    for _m in (picklog.read_khui_manual_match() or []):
-                        for _f in ("ret", "clip", "ret_raw", "clip_raw"):
-                            _v = _ascii_code(str(_m.get(_f) or ""))
-                            if len(_v) >= 6:
-                                _mm_codes.add(_v)
-                except Exception:
-                    _mm_codes = set()
+                _mm_codes = _manual_match_codes()
                 if _mm_codes:
                     _missing = [_e for _e in _missing
                                 if not (_mm_codes & set(_ids(str(_e.get("label") or ""))))]
@@ -12234,6 +12248,13 @@ def _render_returns():
                 if _is_shopee_row(_d):        # Shopee ĐÓNG = HỦY THẬT → KHÔNG đưa lên Cần KN (vẫn hiện ở danh sách)
                     _d["need_kn"] = False
                     _d["_shopee_closed_real"] = True
+                    continue
+                if _row_manual_matched(_d):   # đã KHỚP TAY clip khui = hàng đã về & đã khui → hết cần KN
+                    _d["need_kn"] = False
+                    _d["_manual_matched"] = True
+                    _rs0 = str(_d.get("reason") or "").strip()
+                    _d["reason"] = (f"{_rs0} — đã khớp tay clip khui" if _rs0
+                                    else "Đã khớp tay clip khui — hàng đã về")
                     continue
                 if not _is_closed_kn_result(_d):
                     _d["need_kn"] = True
@@ -13796,6 +13817,7 @@ def _render_returns():
             _ckn_render_list = [
                 d for d in _ckn_render_raw_list
                 if _is_need_kn_shape(d) and not _is_closed_kn_result(d)
+                and not _row_manual_matched(d)      # khớp tay = đã nhận hàng → khỏi bảng Cần KN
             ]
             _ckn_render_list.sort(key=lambda d: str(d.get("created_on") or d.get("created") or ""), reverse=True)
             st.subheader("🚨 Đơn cần KN — lấy làm khiếu nại", anchor="don-can-kn")
