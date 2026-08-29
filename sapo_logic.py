@@ -76,6 +76,11 @@ def manual_video_match_resolves_need_kn(record, is_manual_matched: bool) -> bool
     return bool(is_manual_matched and not bool((record or {}).get("_closed_return_need_kn")))
 
 
+def closed_return_needs_review(record, forced_can_kn: bool = False) -> bool:
+    """Closed return needs action only when a return waybill exists or KN was forced."""
+    return bool(str((record or {}).get("vd_tra") or "").strip() or forced_can_kn)
+
+
 def _walk_doc_values(obj, path=()):
     if isinstance(obj, dict):
         for key, value in obj.items():

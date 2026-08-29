@@ -12270,13 +12270,11 @@ def _render_returns():
                     _d["need_kn"] = not _note_is_concluded(_d.get("note", ""))
                 _restock_novideo_rows._cache = [dict(r) for r in _rows]
                 return _rows
-            # TikTok can close a return before SAPO exposes the return waybill. A closed,
-            # unconcluded TikTok profile must remain actionable even without ``vd_tra``.
-            # Shopee keeps its existing rule below: a closed Shopee profile is a real cancel.
+            # Phiếu trả ĐÃ ĐÓNG mà KHÔNG có VĐ hoàn = khách chưa gửi hàng về, không còn việc
+            # xử lý. Chỉ giữ trong CẦN KN khi có VĐ hoàn thật hoặc nhân viên đã ghi CẦN KN.
             _closed_returns_with_waybill_detail = [
                 d for d in _canceled_returns_detail
-                if (str(d.get("vd_tra") or "").strip() or _row_forces_can_kn(d)
-                    or bool(d.get("is_closed")))
+                if L.closed_return_needs_review(d, _row_forces_can_kn(d))
             ]
             _closed_returns_need_kn_detail = []
             for _d in _closed_returns_with_waybill_detail:
