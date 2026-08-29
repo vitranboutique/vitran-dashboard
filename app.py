@@ -4413,32 +4413,15 @@ def render_alert_popup(sees_production=False):
         unsafe_allow_html=True)
 
 
-@st.cache_data(ttl=60, show_spinner=False)
-def _returns_snapshot():
-    """Đọc snapshot đơn trả từ Gist (GitHub Actions quét nền ~15'/lần → vitran_returns.json).
-    Nhờ vậy app KHÔNG phải quét live hàng trăm trang Sapo (hết cảnh chờ ~2 phút).
-    Trả None nếu chưa có snapshot → hàm gọi sẽ tự quét trực tiếp (fallback)."""
-    try:
-        return picklog._read_gist_file("vitran_returns.json")
-    except Exception:
-        return None
-
-
-@st.cache_data(ttl=120, show_spinner="Đang quét đơn trả cả năm…")
+@st.cache_data(ttl=900, show_spinner="Đang quét đơn trả cả năm…")
 def load_returns_followup():
-    snap = _returns_snapshot()
-    if snap and isinstance(snap.get("followup"), list):
-        return snap["followup"]
-    return L.get_returns_followup(make_fetch_json(build_session()))   # fallback: quét trực tiếp
+    return L.get_returns_followup(make_fetch_json(build_session()))
 
 
-@st.cache_data(ttl=120, show_spinner="Đang quét đơn trả đang xử lý…")
+@st.cache_data(ttl=600, show_spinner="Đang quét đơn trả đang xử lý…")
 def load_returns_inprogress():
-    _cache_ver = 16  # bump khi đổi cấu trúc trả về → buộc tính lại (tránh cache cũ gây lỗi)
-    snap = _returns_snapshot()
-    if snap and isinstance(snap.get("in_progress"), dict):
-        return snap["in_progress"]
-    return L.get_returns_in_progress(make_fetch_json(build_session()), canceled_max_pages=120)  # fallback
+    _cache_ver = 15  # bump khi đổi cấu trúc trả về → buộc tính lại (tránh cache cũ gây lỗi)
+    return L.get_returns_in_progress(make_fetch_json(build_session()), canceled_max_pages=120)
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -4458,11 +4441,7 @@ def load_restock_novideo(days: int = 30):
     """Đối chiếu đơn ĐÃ nhập kho (Sapo, ~days ngày) với KHO VIDEO KHUI đã lưu (Gist, vĩnh viễn).
     Đơn không khớp clip khui nào → ghi vào SỔ vĩnh viễn (tích luỹ, KHÔNG mất khi Dohana xoá video);
     video hiện sau → tự chuyển 'resolved'. Trả {active, resolved, dismissed, total_scanned}."""
-    _snap = _returns_snapshot()
-    if days == 30 and _snap and isinstance(_snap.get("restocked"), list):
-        cands = _snap["restocked"]                       # đọc từ snapshot nền -> KHÔNG gọi Sapo live (né Cloudflare)
-    else:
-        cands = L.get_restocked_returns_range(make_fetch_json(build_session()), days=days)  # fallback
+    cands = L.get_restocked_returns_range(make_fetch_json(build_session()), days=days)
 
     def _norm(c):                       # chuẩn hoá để khớp chịu lỗi hoa/thường/space
         return str(c or "").strip().upper()
