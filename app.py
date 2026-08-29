@@ -4459,7 +4459,7 @@ def load_returns_followup():
 
 @st.cache_data(ttl=120, show_spinner="Đang đọc đơn trả đang xử lý…")
 def load_returns_inprogress():
-    _cache_ver = 17
+    _cache_ver = 18
     snapshot = _require_returns_snapshot("đơn đang xử lý")
     data = snapshot.get("in_progress")
     if not isinstance(data, dict):
@@ -11994,7 +11994,9 @@ def _render_returns():
 
         def _row_forces_can_kn(d):
             """Đã ghi CẦN KN (app hoặc Sapo) → LUÔN giữ ở Cần KN, kể cả phiếu không có VĐ hoàn."""
-            return bool((d or {}).get("_force_can_kn")) or _note_says_can_kn((d or {}).get("note"))
+            return (bool((d or {}).get("_force_can_kn"))
+                    or bool((d or {}).get("_closed_return_need_kn"))
+                    or _note_says_can_kn((d or {}).get("note")))
 
         def _is_need_kn_shape(d):
             return (_has_return_waybill(d) or _is_refund_only(d) or _is_delivered_to_shop(d)
@@ -12268,9 +12270,13 @@ def _render_returns():
                     _d["need_kn"] = not _note_is_concluded(_d.get("note", ""))
                 _restock_novideo_rows._cache = [dict(r) for r in _rows]
                 return _rows
+            # TikTok can close a return before SAPO exposes the return waybill. A closed,
+            # unconcluded TikTok profile must remain actionable even without ``vd_tra``.
+            # Shopee keeps its existing rule below: a closed Shopee profile is a real cancel.
             _closed_returns_with_waybill_detail = [
                 d for d in _canceled_returns_detail
-                if str(d.get("vd_tra") or "").strip() or _row_forces_can_kn(d)
+                if (str(d.get("vd_tra") or "").strip() or _row_forces_can_kn(d)
+                    or bool(d.get("is_closed")))
             ]
             _closed_returns_need_kn_detail = []
             for _d in _closed_returns_with_waybill_detail:
@@ -13798,35 +13804,14 @@ def _render_returns():
                 pass
             _apply_closed_return_app_notes(_ckn_render_raw_list, _closed_return_app_notes)
 
-            # The Sapo list endpoint can keep a return as "returning" after its
-            # detail profile has already been closed/canceled. Verify only the
-            # small CKN worklist against the authoritative detail endpoint.
-            _sapo_detail_closed_rows = []
-            _sapo_detail_check_errors = 0
-            for _d in _ckn_render_raw_list:
-                _return_id = str((_d or {}).get("sapo_return_id") or "").strip()
-                if not _return_id or (_d or {}).get("is_canceled") or (_d or {}).get("is_closed"):
-                    continue
-                try:
-                    _return_detail = load_return_detail_for_link(_return_id)
-                except Exception:
-                    _sapo_detail_check_errors += 1
-                    continue
-                if not L.order_return_is_closed(_return_detail):
-                    continue
-                _detail_status = str((_return_detail or {}).get("status") or "").strip()
-                _closed_on = next((str((_return_detail or {}).get(k) or "").strip() for k in (
-                    "cancelled_on", "canceled_on", "closed_on", "closed_at",
-                    "cancelled_at", "canceled_at",
-                ) if str((_return_detail or {}).get(k) or "").strip()), "")
-                _d["return_status"] = _detail_status or "closed"
-                _d["is_canceled"] = _detail_status.lower() in ("canceled", "cancelled") or bool(_closed_on)
-                _d["is_closed"] = True
-                _d["canceled_on"] = _closed_on
-                _d["_sapo_closed_verified"] = True
-                _d["_closed_return_need_kn"] = not _is_closed_kn_result(_d)
-                _d["_location"] = "SAPO đã đóng/hủy phiếu; chưa có kết quả KN"
-                _sapo_detail_closed_rows.append(_d)
+            # The background snapshot verifies every unresolved active return against
+            # SAPO's detail endpoint. Do not call SAPO from Streamlit here: doing so both
+            # misses young rows (not yet in CKN) and triggers Cloudflare throttling.
+            _sapo_detail_closed_rows = [
+                d for d in _ckn_render_raw_list if bool((d or {}).get("_snapshot_closed_verified"))
+            ]
+            _detail_check = _rip.get("_detail_check") or {}
+            _sapo_detail_check_errors = int(_detail_check.get("errors") or 0)
 
             _marketplace_closed_app_rows = [
                 d for d in _ckn_render_raw_list
