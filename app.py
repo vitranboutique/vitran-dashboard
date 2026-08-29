@@ -10712,6 +10712,8 @@ def _render_returns():
     _KN_TAG_FILE = "vitran_kn_tags.json"
     _KN_TAGS = ("🟠 Đang kháng nghị", "🧾 Đang tạo phiếu", "✅ Đã có kết quả")
     _KN_TAG_CLS = {"🟠 Đang kháng nghị": "tg-kn", "🧾 Đang tạo phiếu": "tg-pt", "✅ Đã có kết quả": "tg-kq"}
+    # Trong bảng chỉ hiện ICON cho gọn; rê chuột mới hiện chữ (title).
+    _KN_TAG_ICON = {"🟠 Đang kháng nghị": "⚖️", "🧾 Đang tạo phiếu": "🧾", "✅ Đã có kết quả": "✅"}
     # Gắn/bỏ tag: CHỦ SHOP + QUẢN LÝ + NV KHO (khác ghi chú app — cái đó chỉ chủ shop).
     _can_tag_kn = bool(_is_owner or _cc_role == "admin" or _cc_emp == "kho")
 
@@ -12953,8 +12955,13 @@ def _render_returns():
                         tds.append(f"<td>{_reason_brief_cell(d)}</td>")
                     if show_tag:
                         _tg = _row_kn_tag(d, _tag_map)
-                        tds.append("<td>" + (f"<span class='tg {_KN_TAG_CLS.get(_tg, '')}'>{_safe(_tg)}</span>"
-                                             if _tg else "<span class='muted'>—</span>") + "</td>")
+                        if _tg:
+                            _ic = _KN_TAG_ICON.get(_tg) or _tg.split(" ", 1)[0]
+                            _tx = _tg.split(" ", 1)[1] if " " in _tg else _tg
+                            tds.append(f"<td class='c'><span class='tg {_KN_TAG_CLS.get(_tg, '')}' "
+                                       f"title='{_safe(_tx)}'>{_ic}</span></td>")
+                        else:
+                            tds.append("<td class='c'><span class='muted'>—</span></td>")
                     if show_ticket:
                         tds.append(f"<td>{_ticket_cell(d)}</td>")
                     tds += [
@@ -13016,7 +13023,9 @@ def _render_returns():
  .kq-huy{{background:#f3f4f6;color:#4b5563;border:1px solid #d1d5db}}
  .kq-khong{{background:#dbeafe;color:#1e40af;border:1px solid #93c5fd}}
  .kq-can{{background:#fef3c7;color:#92400e;border:1px solid #fcd34d}}
- .tg{{display:inline-block;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:800;white-space:nowrap}}
+ .tg{{display:inline-block;border-radius:50%;width:20px;height:20px;line-height:19px;text-align:center;
+   font-size:12px;font-weight:800;white-space:nowrap;cursor:help}}
+ td.c{{text-align:center}}
  .tg-kn{{background:#ffedd5;color:#9a3412;border:1px solid #fdba74}}
  .tg-pt{{background:#e0e7ff;color:#3730a3;border:1px solid #a5b4fc}}
  .tg-kq{{background:#dcfce7;color:#166534;border:1px solid #86efac}}
@@ -13710,7 +13719,9 @@ def _render_returns():
  .kq-huy{{background:#f3f4f6;color:#4b5563;border:1px solid #d1d5db}}
  .kq-khong{{background:#dbeafe;color:#1e40af;border:1px solid #93c5fd}}
  .kq-can{{background:#fef3c7;color:#92400e;border:1px solid #fcd34d}}
- .tg{{display:inline-block;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:800;white-space:nowrap}}
+ .tg{{display:inline-block;border-radius:50%;width:20px;height:20px;line-height:19px;text-align:center;
+   font-size:12px;font-weight:800;white-space:nowrap;cursor:help}}
+ td.c{{text-align:center}}
  .tg-kn{{background:#ffedd5;color:#9a3412;border:1px solid #fdba74}}
  .tg-pt{{background:#e0e7ff;color:#3730a3;border:1px solid #a5b4fc}}
  .tg-kq{{background:#dcfce7;color:#166534;border:1px solid #86efac}}
