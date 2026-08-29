@@ -82,9 +82,10 @@ def push_to_gist(token, fname, data):
 def main():
     fj = make_fetch_json(build_session())
 
-    # Hai bộ quét CHẬM (chính là thứ khiến app chờ 2 phút) — nay chạy nền:
-    in_progress = L.get_returns_in_progress(fj)   # dict: đơn trả đang xử lý + CỜ CẦN KN
-    followup = L.get_returns_followup(fj)          # list: đơn trả năm nay cần theo dõi
+    # Các bộ quét CHẬM (khiến app chờ + bị Cloudflare chặn) — nay chạy nền:
+    in_progress = L.get_returns_in_progress(fj)             # dict: đơn trả đang xử lý + CỜ CẦN KN
+    followup = L.get_returns_followup(fj)                    # list: đơn trả năm nay cần theo dõi
+    restocked = L.get_restocked_returns_range(fj, days=30)  # list: ứng viên "nhập kho thiếu video khui"
 
     now_vn = datetime.now(timezone.utc) + timedelta(hours=7)
     payload = {
@@ -92,6 +93,8 @@ def main():
         "at_epoch": int(time.time()),
         "in_progress": in_progress,
         "followup": followup,
+        "restocked": restocked,
+        "restocked_days": 30,
     }
     push_to_gist(os.environ["GITHUB_TOKEN"], "vitran_returns.json", payload)
 

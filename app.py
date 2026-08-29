@@ -4458,7 +4458,11 @@ def load_restock_novideo(days: int = 30):
     """Đối chiếu đơn ĐÃ nhập kho (Sapo, ~days ngày) với KHO VIDEO KHUI đã lưu (Gist, vĩnh viễn).
     Đơn không khớp clip khui nào → ghi vào SỔ vĩnh viễn (tích luỹ, KHÔNG mất khi Dohana xoá video);
     video hiện sau → tự chuyển 'resolved'. Trả {active, resolved, dismissed, total_scanned}."""
-    cands = L.get_restocked_returns_range(make_fetch_json(build_session()), days=days)
+    _snap = _returns_snapshot()
+    if days == 30 and _snap and isinstance(_snap.get("restocked"), list):
+        cands = _snap["restocked"]                       # đọc từ snapshot nền -> KHÔNG gọi Sapo live (né Cloudflare)
+    else:
+        cands = L.get_restocked_returns_range(make_fetch_json(build_session()), days=days)  # fallback
 
     def _norm(c):                       # chuẩn hoá để khớp chịu lỗi hoa/thường/space
         return str(c or "").strip().upper()
