@@ -1,0 +1,28 @@
+name: Snapshot don tra / don can KN
+
+# Quet don tra o runner nen; Streamlit chi doc Gist, khong quet hang tram trang Sapo.
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: returns-snapshot
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - name: Quet don tra va day Gist
+        env:
+          SAPO_API_KEY: ${{ secrets.SAPO_API_KEY }}
+          SAPO_API_SECRET: ${{ secrets.SAPO_API_SECRET }}
+          GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
+        run: python snapshot_returns.py

@@ -130,7 +130,7 @@ def make_fetch_json(session: requests.Session):
             )
         for attempt in range(5):
             elapsed = time.monotonic() - last_call
-            _gap = 0.40 + random.uniform(0, 0.10)   # ~2 req/s + nhịp lệch: đỡ bị Cloudflare soi
+            _gap = 0.65 + random.uniform(0, 0.10)   # ~1.4 req/s + nhịp lệch: giảm nguy cơ Cloudflare chặn
             if elapsed < _gap:
                 time.sleep(_gap - elapsed)
             r = session.get(f"{BASE}{path}", params=params, timeout=30)

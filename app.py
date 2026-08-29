@@ -4413,15 +4413,47 @@ def render_alert_popup(sees_production=False):
         unsafe_allow_html=True)
 
 
-@st.cache_data(ttl=900, show_spinner="Đang quét đơn trả cả năm…")
+@st.cache_data(ttl=60, show_spinner=False)
+def _returns_snapshot():
+    """Đọc snapshot do GitHub Actions cập nhật; tuyệt đối không quét Sapo khi thiếu."""
+    try:
+        data = picklog._read_gist_file("vitran_returns.json")
+        return data if isinstance(data, dict) else None
+    except Exception:
+        return None
+
+
+def _require_returns_snapshot(section):
+    snapshot = _returns_snapshot()
+    if not snapshot:
+        raise RuntimeError(
+            f"Chưa có snapshot đơn trả cho {section}. App không quét trực tiếp để tránh Cloudflare chặn SAPO."
+        )
+    return snapshot
+
+
+@st.cache_data(ttl=120, show_spinner="Đang đọc danh sách đơn trả nền…")
 def load_returns_followup():
-    return L.get_returns_followup(make_fetch_json(build_session()))
+    snapshot = _require_returns_snapshot("danh sách theo dõi")
+    rows = snapshot.get("followup")
+    if not isinstance(rows, list):
+        raise RuntimeError("Snapshot đơn trả thiếu danh sách followup; chờ lượt quét nền kế tiếp.")
+    return rows
 
 
-@st.cache_data(ttl=600, show_spinner="Đang quét đơn trả đang xử lý…")
+@st.cache_data(ttl=120, show_spinner="Đang đọc đơn trả đang xử lý…")
 def load_returns_inprogress():
-    _cache_ver = 15  # bump khi đổi cấu trúc trả về → buộc tính lại (tránh cache cũ gây lỗi)
-    return L.get_returns_in_progress(make_fetch_json(build_session()), canceled_max_pages=120)
+    _cache_ver = 17
+    snapshot = _require_returns_snapshot("đơn đang xử lý")
+    data = snapshot.get("in_progress")
+    if not isinstance(data, dict):
+        raise RuntimeError("Snapshot đơn trả thiếu dữ liệu in_progress; chờ lượt quét nền kế tiếp.")
+    data = dict(data)
+    data["_snapshot_at"] = snapshot.get("at") or ""
+    data["_snapshot_age_seconds"] = max(
+        0, int(time.time()) - int(snapshot.get("at_epoch") or int(time.time()))
+    )
+    return data
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -4441,7 +4473,10 @@ def load_restock_novideo(days: int = 30):
     """Đối chiếu đơn ĐÃ nhập kho (Sapo, ~days ngày) với KHO VIDEO KHUI đã lưu (Gist, vĩnh viễn).
     Đơn không khớp clip khui nào → ghi vào SỔ vĩnh viễn (tích luỹ, KHÔNG mất khi Dohana xoá video);
     video hiện sau → tự chuyển 'resolved'. Trả {active, resolved, dismissed, total_scanned}."""
-    cands = L.get_restocked_returns_range(make_fetch_json(build_session()), days=days)
+    snapshot = _require_returns_snapshot("đơn đã nhập kho cần đối chiếu video")
+    cands = snapshot.get("restocked")
+    if days != 30 or not isinstance(cands, list):
+        raise RuntimeError("Snapshot chưa có dữ liệu restocked 30 ngày; chờ lượt quét nền kế tiếp.")
 
     def _norm(c):                       # chuẩn hoá để khớp chịu lỗi hoa/thường/space
         return str(c or "").strip().upper()
@@ -11936,6 +11971,15 @@ def _render_returns():
         _rip = None
         st.warning(f"Chưa lấy được đơn trả đang xử lý: `{_e}`")
     if _rip:
+        _snapshot_at = str(_rip.get("_snapshot_at") or "").strip()
+        _snapshot_age = int(_rip.get("_snapshot_age_seconds") or 0)
+        if _snapshot_at:
+            st.caption(f"Dữ liệu đơn trả nền cập nhật lúc {_snapshot_at}.")
+        if _snapshot_age > 1800:
+            st.warning(
+                "Dữ liệu đơn trả đã quá 30 phút. App đang giữ bản gần nhất và không quét trực tiếp "
+                "SAPO để tránh Cloudflare chặn IP."
+            )
         # KẾT QUẢ KHIẾU NẠI (đang xử lý năm nay): Thắng/Thua/Không cần KN/Hết hạn theo prefix note;
         # CẦN KN = TỰ TÍNH (đơn đang xử lý quá L.KN_DAYS ngày, chưa có ghi chú kết quả).
         _oc = _rip.get("outcomes") or {}
