@@ -2478,14 +2478,26 @@ def load_dohana_inbound_date(date_iso):
 
 # Bump khi ĐỔI CẤU TRÚC dữ liệu báo cáo: cache của Streamlit khoá theo THAM SỐ, mà thân
 # load_daily_report không đổi → thêm khoá mới xong app vẫn trả bản CŨ. Đổi số này = cache mới.
-_RPT_VER = "2026-08-17-vd"
+_RPT_VER = "2026-08-29-snapshot"
 
 
-@st.cache_data(ttl=600, show_spinner="Đang tổng hợp báo cáo cuối ngày…")   # 10': ít quét lại Sapo → đỡ bị Cloudflare chặn
+@st.cache_data(ttl=120, show_spinner="Đang đọc báo cáo cuối ngày nền…")
 def load_daily_report(date_iso=None, ver=_RPT_VER):
-    from datetime import date as _date
-    td = _date.fromisoformat(date_iso) if date_iso else None
-    return L.get_daily_report(make_fetch_json(build_session()), target_date=td)
+    target_iso = str(date_iso or _today_iso_vn())
+    snapshot = _require_returns_snapshot("báo cáo vận hành cuối ngày")
+    if str(snapshot.get("daily_report_date") or "") != target_iso:
+        raise RuntimeError(
+            f"Snapshot báo cáo đang là ngày {snapshot.get('daily_report_date') or '?'}, chưa có ngày {target_iso}."
+        )
+    report = snapshot.get("daily_report")
+    if not isinstance(report, dict):
+        raise RuntimeError("Snapshot chưa có báo cáo cuối ngày; chờ lượt quét nền kế tiếp.")
+    report = dict(report)
+    report["_snapshot_at"] = snapshot.get("at") or ""
+    report["_snapshot_age_seconds"] = max(
+        0, int(time.time()) - int(snapshot.get("at_epoch") or int(time.time()))
+    )
+    return report
 
 
 @st.cache_data(ttl=21600, show_spinner="Đang tải báo cáo ngày cũ…")
@@ -3557,7 +3569,7 @@ def load_week_summary():
             _a4_package_recon_by_day = {}
             try:
                 _today_iso = _today_iso_vn()
-                _a4_rep = L.get_daily_report(make_fetch_json(build_session()), target_date=date.fromisoformat(_today_iso))
+                _a4_rep = load_daily_report(_today_iso)
                 _a4_dvr = load_dohana()
                 if isinstance(_a4_dvr, dict) and _a4_dvr.get("_from_store"):
                     raise RuntimeError("Dohana package live unavailable; skip stale A4 package recon")
@@ -10303,61 +10315,22 @@ def _render_daily():
                 pass
         return
 
-    # ---- Hôm nay (trực tiếp) ----
+    # ---- Hôm nay (snapshot nền; Streamlit không gọi trực tiếp Sapo) ----
     if st.button("🔄 Tải lại số liệu", key="daily_reload"):
-        _sapo_clear_block()      # bấm tải lại = cho gọi Sapo lại ngay, khỏi chờ hết giờ nghỉ
         st.cache_data.clear()
         st.rerun()
     try:
         _rep = load_daily_report()
     except Exception as e:
-        if "Cloudflare" in str(e) or type(e).__name__ == "SapoBlockedError":
-            _left = int(_sapo_blocked_left())
-            st.error("🛡️ **Cloudflare của Sapo đang CHẶN IP máy chủ app** — không phải hỏng key, "
-                     "không mất dữ liệu.\n\n"
-                     "**Cách xử lý (chủ shop):** mở **share.streamlit.io** → dòng app *vitranboutique* "
-                     "→ bấm dấu **⋮** bên phải → **Reboot app**. Khởi động lại thường đổi sang IP khác "
-                     "là chạy lại ngay. Nếu vẫn chặn thì chờ Cloudflare tự mở (thường vài giờ) — "
-                     "số liệu vẫn còn nguyên.")
-            if _left > 0:
-                st.caption(f"⏸️ App đang tạm NGHỈ gọi Sapo {_left // 60} phút {_left % 60} giây nữa "
-                           "rồi tự thử lại (nghỉ cho Cloudflare sớm mở IP).")
-            if st.button("🔁 Thử lại ngay", key="daily_unblock"):
-                _sapo_clear_block()
-                st.cache_data.clear()
-                st.rerun()
-            # CỨU VÃN: vẫn cho xem BẢN ĐÃ CHỐT gần nhất của hôm nay (lưu trên Gist) để không
-            # trắng trang — số của lần chốt cuối, đủ dùng trong lúc chờ Cloudflare mở lại.
-            try:
-                _fz = picklog.read_daily_frozen(_today_iso_vn()) if picklog.configured() else None
-                if _fz and _fz.get("html"):
-                    st.info(f"📄 Đang hiển thị **bản đã chốt lúc {_fz.get('at', '?')}** của hôm nay "
-                            "(số của lần chốt cuối, không phải thời gian thực).")
-                    components.html(_fz["html"], height=int(_fz.get("h") or 2200), scrolling=True)
-                else:
-                    st.caption("Chưa có bản chốt nào của hôm nay để hiển thị tạm.")
-            except Exception:
-                pass
-            return
-        st.error(f"❌ Lỗi tổng hợp báo cáo: `{e}`")
-        # CHẨN ĐOÁN: raise_for_status() nuốt mất NỘI DUNG Sapo trả về — mà chính nội dung đó
-        # mới cho biết 403 là do HẾT HẠN MỨC hay MẤT QUYỀN. Gọi thô 1 lần để đọc nguyên văn.
-        with st.expander("🔎 Xem Sapo trả về gì (để biết vì sao 403)", expanded=True):
-            try:
-                _s = build_session()
-                _hdr_used = [k for k in ("X-Sapo-Access-Token", "Cookie") if k in _s.headers]
-                _auth = (_hdr_used[0] if _hdr_used else ("Basic key/secret" if _s.auth else "?"))
-                st.write(f"**Cách xác thực đang dùng:** `{_auth}`")
-                _r = _s.get("https://vitranboutiquehcm.mysapo.net/admin/orders.json",
-                            params={"limit": 1}, timeout=20)
-                st.write(f"**HTTP:** `{_r.status_code}`")
-                st.code((_r.text or "")[:1500] or "(không có nội dung)")
-                _lim = {k: v for k, v in _r.headers.items()
-                        if any(t in k.lower() for t in ("limit", "quota", "retry", "remain"))}
-                if _lim:
-                    st.write("**Hạn mức Sapo báo:**", _lim)
-            except Exception as _de:
-                st.write(f"Không gọi thử được: `{_de}`")
+        st.error(f"❌ Chưa đọc được báo cáo nền: `{e}`")
+        st.caption("App không gọi trực tiếp SAPO. Tác vụ nền sẽ tự cập nhật lại trong tối đa 15 phút.")
+        try:
+            _fz = picklog.read_daily_frozen(_today_iso_vn()) if picklog.configured() else None
+            if _fz and _fz.get("html"):
+                st.info(f"📄 Tạm hiển thị bản đã chốt lúc **{_fz.get('at', '?')}**; đây không phải số thời gian thực.")
+                components.html(_fz["html"], height=int(_fz.get("h") or 2200), scrolling=True)
+        except Exception:
+            pass
         return
     _dvr = load_dohana() if dohana.configured() else None
     _inb = load_dohana_inbound() if dohana.configured() else None
@@ -10365,6 +10338,12 @@ def _render_daily():
         st.warning("⚠️ Dohana tạm không phản hồi — đang dùng **video đã lưu trong kho** (có thể thiếu clip "
                    "quay trong vài phút gần nhất). Bấm **🔄 Tải lại số liệu** để thử lấy trực tiếp lại.")
     _enrich_daily(_rep, _dvr, _inb)   # gắn clip khui hàng + đối chiếu video đóng gói
+    _snapshot_at = str(_rep.get("_snapshot_at") or "").strip()
+    _snapshot_age = int(_rep.get("_snapshot_age_seconds") or 0)
+    if _snapshot_at:
+        st.caption(f"Dữ liệu SAPO nền cập nhật lúc {_snapshot_at}.")
+    if _snapshot_age > 1800:
+        st.warning("Dữ liệu SAPO nền đã quá 30 phút; đang giữ bản gần nhất và không quét trực tiếp từ app.")
     if picklog.configured():
         _ps = picklog.read_date_summary(_today_iso_vn())
         _apply_picklog_soan_to_daily(_rep, _ps.get("rows") or [], _dvr, _ps.get("dup_orders") or 0)
