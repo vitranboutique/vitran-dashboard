@@ -120,6 +120,7 @@ def main() -> None:
     fetch_json = make_fetch_json(build_session())
     now_vn = datetime.now(timezone.utc) + timedelta(hours=7)
     daily = L.get_daily_report(fetch_json, target_date=now_vn.date())
+    week_summary = L.get_week_summary(fetch_json, days=30)
     in_progress = L.get_returns_in_progress(fetch_json)
     followup = L.get_returns_followup(fetch_json)
     restocked = L.get_restocked_returns_range(fetch_json, days=30)
@@ -128,6 +129,8 @@ def main() -> None:
         "at_epoch": int(time.time()),
         "daily_report_date": now_vn.date().isoformat(),
         "daily_report": daily,
+        "week_summary_days": 30,
+        "week_summary": week_summary,
         "in_progress": in_progress,
         "followup": followup,
         "restocked": restocked,
@@ -138,7 +141,8 @@ def main() -> None:
         raise RuntimeError("Thieu GIST_TOKEN cho workflow snapshot.")
     push_to_gist(gist_token, "vitran_returns.json", payload)
     print(
-        f"Snapshot {payload['at']} | daily={payload['daily_report_date']} | followup={len(followup)} | "
+        f"Snapshot {payload['at']} | daily={payload['daily_report_date']} | "
+        f"week_days={len((week_summary or {}).get('days') or [])} | followup={len(followup)} | "
         f"restocked={len(restocked)} | detail={len((in_progress or {}).get('detail') or [])}"
     )
 

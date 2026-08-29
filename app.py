@@ -2893,7 +2893,11 @@ def _apply_picklog_soan_to_daily(rep, rows, dvr=None, dup_orders=0):
 
 @st.cache_data(ttl=300, show_spinner="Đang tổng hợp 30 ngày (1 tháng)…")
 def load_week_summary():
-    data = L.get_week_summary(make_fetch_json(build_session()), days=30)
+    snapshot = _require_returns_snapshot("bảng khớp mã 30 ngày")
+    data = snapshot.get("week_summary")
+    if int(snapshot.get("week_summary_days") or 0) != 30 or not isinstance(data, dict):
+        raise RuntimeError("Snapshot chưa có bảng khớp mã 30 ngày; chờ lượt quét nền kế tiếp.")
+    data = json.loads(json.dumps(data))
     # SOẠN = tổng đơn các ĐỢT PHIẾU NHẶT đã in trong ngày (picklog so_don) — đúng số ở tab Phiếu nhặt.
     # Ngày CHƯA lưu đợt nào → giữ ước lượng theo shipment_created_on (từ sapo_logic).
     try:
