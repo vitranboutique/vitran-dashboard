@@ -71,6 +71,11 @@ def order_return_is_closed(record) -> bool:
     ))
 
 
+def manual_video_match_resolves_need_kn(record, is_manual_matched: bool) -> bool:
+    """A manual video match clears video-only alerts, never an unresolved closed return."""
+    return bool(is_manual_matched and not bool((record or {}).get("_closed_return_need_kn")))
+
+
 def _walk_doc_values(obj, path=()):
     if isinstance(obj, dict):
         for key, value in obj.items():

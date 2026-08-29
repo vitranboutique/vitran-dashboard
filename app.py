@@ -12284,13 +12284,6 @@ def _render_returns():
                     _d["need_kn"] = False
                     _d["_shopee_closed_real"] = True
                     continue
-                if _row_manual_matched(_d):   # đã KHỚP TAY clip khui = hàng đã về & đã khui → hết cần KN
-                    _d["need_kn"] = False
-                    _d["_manual_matched"] = True
-                    _rs0 = str(_d.get("reason") or "").strip()
-                    _d["reason"] = (f"{_rs0} — đã khớp tay clip khui" if _rs0
-                                    else "Đã khớp tay clip khui — hàng đã về")
-                    continue
                 if not _is_closed_kn_result(_d):
                     _d["need_kn"] = True
                     _d["_closed_return_need_kn"] = True
@@ -12301,6 +12294,11 @@ def _render_returns():
                     _extra = "chưa có ghi chú chốt"
                     _d["reason"] = (_reason if _extra in _reason.lower()
                                     else (f"{_reason} — {_extra}" if _reason else f"Đơn trả hàng bị đóng có VĐ trả về — {_extra}"))
+                    if _row_manual_matched(_d):
+                        # Khớp tay chỉ xác nhận clip thuộc đúng kiện hàng. Nó không phải kết luận
+                        # THẮNG/THUA/KHÔNG CẦN KN, nên hồ sơ đã đóng vẫn phải tiếp tục ở CẦN KN.
+                        _d["_manual_matched"] = True
+                        _d["reason"] += " — đã khớp clip, vẫn chờ kết luận KN"
                     _closed_returns_need_kn_detail.append(_d)
             _return_match_detail = _all_returns_detail + _canceled_returns_detail
             _stock_order = ["Đã nhập kho", "Chưa nhập kho", "Nhập kho 1 phần", "Không nhập kho"]
@@ -13840,7 +13838,9 @@ def _render_returns():
             _ckn_render_list = [
                 d for d in _ckn_render_raw_list
                 if _is_need_kn_shape(d) and not _is_closed_kn_result(d)
-                and not _row_manual_matched(d)      # khớp tay = đã nhận hàng → khỏi bảng Cần KN
+                # Khớp tay chỉ giải quyết cảnh báo thiếu video. Riêng hồ sơ ĐÃ ĐÓNG vẫn phải
+                # nằm ở CẦN KN tới khi có ghi chú kết luận chuẩn.
+                and not L.manual_video_match_resolves_need_kn(d, _row_manual_matched(d))
             ]
             _ckn_render_list.sort(key=lambda d: str(d.get("created_on") or d.get("created") or ""), reverse=True)
             st.subheader("🚨 Đơn cần KN — lấy làm khiếu nại", anchor="don-can-kn")
