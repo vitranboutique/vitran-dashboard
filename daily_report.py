@@ -960,61 +960,9 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
         clip_note = ('' if ok or not n_ret else
                      f'<div style="font-size:.85em;color:#dc2626;margin-top:.46em;font-weight:700">'
                      f'⚠️ Có {n_ret - clip_co} đơn hoàn THIẾU clip khui hàng — cần kiểm tra/khiếu nại ngay.</div>')
-        _manual_note = ''
-        if _manual_matched:
-            _mm_lines = ""
-            for m in _manual_matched:
-                _mt = []
-                if m.get("dur"):
-                    _mt.append(f'{m["dur"]}s')
-                if m.get("recorded"):
-                    _mt.append(str(m["recorded"]))
-                _mts = (' <span style="color:#1e40af">· ' + _e(" · ".join(_mt)) + '</span>') if _mt else ""
-                _mm_lines += (f'<div class="wc" style="margin-top:2px;color:#1d4ed8">'
-                              f'{_e(str(m.get("code", "")))} → đơn gốc {_e(str(m.get("don_goc", "")))}{_mts}</div>')
-            _manual_note = (
-                '<div class="warn" style="background:#eff6ff;border:1px solid #3b82f6;border-left:5px solid #3b82f6">'
-                f'<div class="wh" style="color:#1d4ed8">🔗 {len(_manual_matched)} clip ĐÃ KHỚP TAY → nối vào đơn gốc (admin xác nhận)</div>'
-                '<div class="wb" style="color:#1e40af">Các clip này đã nối đúng đơn hoàn — KHÔNG còn tính là lệch / chưa nhập kho.</div>'
-                + _mm_lines + '</div>')
-        if unmatched_detail:
-            def _clip_lines(items, color="#b45309"):
-                _lines = ""
-                for u in items:
-                    _tag = _tag_label(u.get("tag"), u.get("tag_id"))
-                    _tg = (f' · <span style="background:#fde68a;color:#7c2d12;font-weight:900;'
-                           f'padding:0 4px;border-radius:3px">🏷️ {_e(str(_tag))}</span>'
-                           if _tag else "")
-                    _mt = []
-                    if u.get("dur"):
-                        _mt.append(f'{u["dur"]}s')
-                    if u.get("recorded"):
-                        _mt.append(str(u["recorded"]))
-                    _mts = (' <span style="color:#9a7a3a">· ' + _e(" · ".join(_mt)) + '</span>') if _mt else ""
-                    _lines += (f'<div class="wc" style="margin-top:2px;color:{color}">'
-                               f'{_e(str(u.get("code", "")))}{_tg}{_mts}</div>')
-                return _lines
-
-            _lines = ""
-            if unmatched_tagged:
-                _lines += (
-                    '<div class="warn" style="background:#f0fdf4;border:1px solid #16a34a;border-left:5px solid #16a34a">'
-                    f'<div class="wh" style="color:#15803d">✅ {len(unmatched_tagged)} clip có TAG đang giữ xử lý — không nhập kho Sapo là đúng quy trình</div>'
-                    '<div class="wb" style="color:#166534"><b>Tag hư hỏng · trả thiếu · sai hàng · khách tráo</b> = hàng có vấn đề; '
-                    'nhân viên giữ lại xử lý tranh chấp/khiếu nại sàn và giữ clip làm bằng chứng, không bấm nhập kho.</div>'
-                    + _clip_lines(unmatched_tagged, "#15803d")
-                    + '</div>')
-            if unmatched_plain:
-                _lines += (
-                    '<div class="warn">'
-                    f'<div class="wh">⚠️ {len(unmatched_plain)} clip khui hàng KHÔNG tag có trên Dohana nhưng CHƯA có đơn hoàn nhập kho</div>'
-                    '<div class="wb">Cần kiểm tra: <b>(1)</b> hàng hoàn chưa bấm nhập kho (vào Sapo nhập kho để lên bảng), '
-                    '<b>(2)</b> quay nhầm mục (đóng hàng ↔ khui hàng), <b>(3)</b> quay trùng.</div>'
-                    + _clip_lines(unmatched_plain)
-                    + '</div>')
-            warn_box = _lines + _manual_note
-        else:
-            warn_box = _manual_note
+        # Chi tiết từng mã đã có trong bảng đối chiếu bên dưới. Không lặp lại thành
+        # nhiều hộp cảnh báo ở đầu trang vì vừa tốn giấy vừa khó quét nhanh.
+        warn_box = ''
 
     clip_kpi_v = clip_total if clip_on else "—"
     if clip_on:
@@ -1065,8 +1013,11 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
         _concl.append(f"📦 <b>{_sp_thieu}</b> SP khách trả thiếu")
     if _tag_imported > 0:
         _concl.append(f"🏷️ <b>{_tag_imported}</b> đơn đã nhập Sapo nhưng có tag lỗi")
-    _hold_note = (f'<div class="wb" style="margin-top:3px;color:#166534">🏷️ <b>{_tag_hold}</b> video có tag — giữ xử lý, không nhập Sapo</div>'
-                  if _tag_hold else '')
+    _handled = []
+    if _tag_hold:
+        _handled.append(f'🏷️ <b>{_tag_hold}</b> video có tag giữ xử lý')
+    if _manual_matched:
+        _handled.append(f'🔗 <b>{len(_manual_matched)}</b> video đã khớp tay')
     _moves = rep.get("video_move_summary") or {}
     _move_lines = []
     _move_to_package = int(_moves.get("inbound_to_package") or 0)
@@ -1079,21 +1030,23 @@ def report_html(rep, dv, now_str, sign_on="1", collapse_xot=True):
         _move_lines.append(
             f'↪ Nhân viên quay nhầm bên <b>Đóng hàng</b> → đã chuyển sang <b>Khui hoàn: {_move_to_inbound} mã</b>'
         )
-    _move_note = (
-        '<div class="wb" style="margin-top:3px;color:#166534">' + '<br>'.join(_move_lines) + '</div>'
-        if _move_lines else ''
+    _handled.extend(_move_lines)
+    _handled_note = (
+        '<div class="wb" style="margin-top:3px;color:#166534">Đã xử lý: '
+        + ' · '.join(_handled) + '</div>'
+        if _handled else ''
     )
     if _concl:
         concl_box = (
             '<div class="warn" style="background:#fffbeb;border:1px solid #f59e0b;margin:.3em 0 .5em">'
             '<div class="wh" style="color:#b45309">📌 CẦN KIỂM TRA</div>'
             '<div class="wb">' + '<br>'.join(_concl) + '</div>'
-            + _move_note + _hold_note +
+            + _handled_note +
             '</div>')
     else:
         concl_box = ('<div class="warn" style="background:#f0fdf4;border:1px solid #16a34a;margin:.3em 0 .5em">'
                      '<div class="wh" style="color:#15803d">✅ KẾT LUẬN: Không có sai lệch cần kiểm tra.</div>'
-                     + _move_note + _hold_note +
+                      + _handled_note +
                      '</div>')
     # ── PHỄU: xác nhận → soạn(in phiếu) → video(đóng gói) → ĐVVC nhận | hủy · còn xót ──
     # 4 ô dòng 1 + 2 ô dòng 2. Mỗi ô có ô ☐ để NV KHO TICK xác nhận trước khi ký cuối.

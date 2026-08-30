@@ -1012,31 +1012,38 @@ def _render_khui_manual_match(data):
 
         if _move_options:
             with st.form(f"manual_video_type_move_{_move_source}_30d"):
-                _selected_move = st.selectbox(
-                    "Chọn đúng clip cần chuyển",
-                    _move_options,
-                    format_func=lambda x: f"{x[1]} · {x[0]}" + (f" {x[2]}" if x[2] else ""),
-                )
+                st.markdown(f"**Chọn clip cần chuyển ({len(_move_options)} clip):**")
+                _selected_moves = []
+                _move_cols = st.columns(2)
+                for _idx, (_day, _code, _time) in enumerate(_move_options):
+                    _move_label = f"`{_code}` · {_day}" + (f" {_time}" if _time else "")
+                    with _move_cols[_idx % 2]:
+                        if st.checkbox(
+                            _move_label,
+                            key=f"manual_video_type_move_{_move_source}_{_day}_{_ascii_code(_code)}",
+                        ):
+                            _selected_moves.append((_day, _code))
                 _confirm_move = st.checkbox(
-                    f"Tôi xác nhận clip này bị quay nhầm và cần chuyển sang "
+                    f"Tôi xác nhận các clip đã chọn bị quay nhầm và cần chuyển sang "
                     f"{'Đóng hàng' if _move_target == 'package' else 'Khui hoàn'}"
                 )
                 _submit_move = st.form_submit_button(
-                    f"↪️ Chuyển sang {'Đóng hàng' if _move_target == 'package' else 'Khui hoàn'}",
+                    f"↪️ Chuyển clip đã chọn sang {'Đóng hàng' if _move_target == 'package' else 'Khui hoàn'}",
                     use_container_width=True,
                 )
             if _submit_move:
-                if not _confirm_move:
+                if not _selected_moves:
+                    st.warning("Chưa tick clip nào cần chuyển.")
+                elif not _confirm_move:
                     st.warning("Cần tick xác nhận trước khi chuyển clip.")
                 else:
-                    _day, _code, _ = _selected_move
-                    _saved = picklog.add_video_type_override({
+                    _saved = picklog.add_video_type_overrides([{
                         "date": _day,
                         "code": _code,
                         "type": _move_target,
                         "source_type": _move_source,
                         "reason": "manual_orphan_wrong_video_section",
-                    })
+                    } for _day, _code in _selected_moves])
                     if _saved:
                         for _fn_name in (
                             "load_week_summary", "load_dohana", "load_dohana_inbound",
@@ -1049,7 +1056,7 @@ def _render_khui_manual_match(data):
                             except Exception:
                                 pass
                         st.success(
-                            f"Đã chuyển `{_code}` sang "
+                            f"Đã chuyển {len(_selected_moves)} clip sang "
                             f"{'Đóng hàng' if _move_target == 'package' else 'Khui hoàn'}."
                         )
                         st.rerun()
