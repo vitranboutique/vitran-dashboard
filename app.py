@@ -9406,6 +9406,40 @@ def _daily_sig(rep, dvr):
         return ""
 
 
+def _compact_frozen_return_html(html):
+    """Remove repeated legacy alert cards without changing frozen report data."""
+    out = str(html or "")
+    legacy_markers = (
+        "clip có tag đang giữ xử lý",
+        "clip khui hàng không tag",
+        "clip đã khớp tay",
+    )
+    while True:
+        lowered = out.lower()
+        marker_positions = [lowered.find(marker) for marker in legacy_markers]
+        marker_positions = [pos for pos in marker_positions if pos >= 0]
+        if not marker_positions:
+            break
+        marker_pos = min(marker_positions)
+        start = lowered.rfind('<div class="warn"', 0, marker_pos)
+        if start < 0:
+            break
+        depth = 0
+        end = None
+        for token in re.finditer(r"<div\b|</div\s*>", out[start:], flags=re.IGNORECASE):
+            if token.group(0).lower().startswith("<div"):
+                depth += 1
+            else:
+                depth -= 1
+                if depth == 0:
+                    end = start + token.end()
+                    break
+        if end is None:
+            break
+        out = out[:start] + out[end:]
+    return out
+
+
 _STOCK_FIXED_CODES = ["SD", "ST", "S-TR", "CVBC", "OL-DE", "OL-TR", "OS-DE", "OS-TR"]
 
 
@@ -10368,7 +10402,11 @@ def _render_daily():
             _relock = bool(_is_owner and _c2.button("🔓 Chốt lại", key=f"relock_{_iso}",
                                                     help="Chủ shop: tính lại số hiện tại rồi chốt đè."))
             if not _relock:
-                components.html(_frozen["html"], height=int(_frozen.get("h") or 2200), scrolling=True)
+                components.html(
+                    _compact_frozen_return_html(_frozen["html"]),
+                    height=int(_frozen.get("h") or 2200),
+                    scrolling=True,
+                )
                 return
         # Chưa có bản chốt (ngày cũ trước khi bật) HOẶC chủ shop bấm "Chốt lại" → tính số hiện tại rồi CHỐT.
         try:
@@ -10417,7 +10455,11 @@ def _render_daily():
             _fz = picklog.read_daily_frozen(_today_iso_vn()) if picklog.configured() else None
             if _fz and _fz.get("html"):
                 st.info(f"📄 Tạm hiển thị bản đã chốt lúc **{_fz.get('at', '?')}**; đây không phải số thời gian thực.")
-                components.html(_fz["html"], height=int(_fz.get("h") or 2200), scrolling=True)
+                components.html(
+                    _compact_frozen_return_html(_fz["html"]),
+                    height=int(_fz.get("h") or 2200),
+                    scrolling=True,
+                )
         except Exception:
             pass
         return
