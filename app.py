@@ -928,7 +928,7 @@ def _render_khui_manual_match(data):
     _clip_sugg = list((data or {}).get("clip_don_suggestions") or [])
     _clip_dbg = (data or {}).get("clip_don_debug") or {}
     # GỘP 1 MỤC: gợi ý tự động (cùng đơn gốc + cùng ngày) + gõ tay + lịch sử — cùng 1 việc khớp clip↔đơn.
-    with st.expander(f"🔧 Khớp clip khui ↔ đơn hoàn — {len(_orphans)} mồ côi · {len(_clip_sugg)} gợi ý · {len(_saved_matches)} đã khớp",
+    with st.expander(f"🔧 Khớp mã / chuyển clip quay lộn mục — {len(_orphans)} mồ côi · {len(_clip_sugg)} gợi ý · {len(_saved_matches)} đã khớp",
                      expanded=False):
         # ── (1) GỢI Ý tự động: CÙNG đơn gốc + CÙNG ngày → tick rồi Xác nhận ──
         st.markdown("**🤝 Gợi ý khớp (cùng đơn gốc + cùng ngày) — tick rồi Xác nhận:**")
@@ -982,6 +982,84 @@ def _render_khui_manual_match(data):
             } for o in _orphans[:200]]), hide_index=True, use_container_width=True)
         else:
             st.info("Không có clip khui mồ côi — mọi clip đã khớp đơn.")
+
+        # Clip quay nhầm mục thường không có mã đối ứng để hệ thống tự gợi ý. Cho kho
+        # chuyển tay ngay tại danh sách mồ côi, nhưng chỉ trên các clip Dohana app đã đọc
+        # được và vẫn giữ lịch sử override để hoàn tác ở bảng 30 ngày.
+        _package_extras = list((data or {}).get("extra_package_video_candidates") or [])
+        _move_direction = st.radio(
+            "Clip bị quay lộn mục",
+            ("Khui hoàn → Đóng hàng", "Đóng hàng → Khui hoàn"),
+            horizontal=True,
+            key="manual_video_type_direction_30d",
+        )
+        if _move_direction == "Khui hoàn → Đóng hàng":
+            _move_source, _move_target = "inbound", "package"
+            _move_rows = _orphans
+        else:
+            _move_source, _move_target = "package", "inbound"
+            _move_rows = _package_extras
+
+        _move_options = []
+        _move_seen = set()
+        for _row in _move_rows:
+            _day = str(_row.get("date") or "").strip()
+            _code = str(_row.get("code") or "").strip()
+            if not (_day and _code) or (_day, _ascii_code(_code)) in _move_seen:
+                continue
+            _move_seen.add((_day, _ascii_code(_code)))
+            _move_options.append((_day, _code, str(_row.get("time") or "").strip()))
+
+        if _move_options:
+            with st.form(f"manual_video_type_move_{_move_source}_30d"):
+                _selected_move = st.selectbox(
+                    "Chọn đúng clip cần chuyển",
+                    _move_options,
+                    format_func=lambda x: f"{x[1]} · {x[0]}" + (f" {x[2]}" if x[2] else ""),
+                )
+                _confirm_move = st.checkbox(
+                    f"Tôi xác nhận clip này bị quay nhầm và cần chuyển sang "
+                    f"{'Đóng hàng' if _move_target == 'package' else 'Khui hoàn'}"
+                )
+                _submit_move = st.form_submit_button(
+                    f"↪️ Chuyển sang {'Đóng hàng' if _move_target == 'package' else 'Khui hoàn'}",
+                    use_container_width=True,
+                )
+            if _submit_move:
+                if not _confirm_move:
+                    st.warning("Cần tick xác nhận trước khi chuyển clip.")
+                else:
+                    _day, _code, _ = _selected_move
+                    _saved = picklog.add_video_type_override({
+                        "date": _day,
+                        "code": _code,
+                        "type": _move_target,
+                        "source_type": _move_source,
+                        "reason": "manual_orphan_wrong_video_section",
+                    })
+                    if _saved:
+                        for _fn_name in (
+                            "load_week_summary", "load_dohana", "load_dohana_inbound",
+                            "load_dohana_date", "load_dohana_inbound_date",
+                            "load_dohana_videos", "load_dohana_video_store",
+                        ):
+                            _fn = globals().get(_fn_name)
+                            try:
+                                _fn.clear()
+                            except Exception:
+                                pass
+                        st.success(
+                            f"Đã chuyển `{_code}` sang "
+                            f"{'Đóng hàng' if _move_target == 'package' else 'Khui hoàn'}."
+                        )
+                        st.rerun()
+                    else:
+                        st.error("Không lưu được. Vui lòng kiểm tra kho Gist.")
+        else:
+            _empty_label = "clip khui mồ côi" if _move_source == "inbound" else "clip đóng hàng dư"
+            st.caption(f"Không có {_empty_label} để chuyển theo chiều này.")
+
+        st.divider()
         with st.form("khui_manual_match_form", clear_on_submit=True):
             _fc1, _fc2, _fc3 = st.columns([2, 2, 1])
             _clip_in = _fc1.text_input("Mã clip trên Dohana", placeholder="vd 3Q").strip()
