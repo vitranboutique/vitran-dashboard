@@ -12293,10 +12293,8 @@ def _render_returns():
                     _d["reason"] = (_reason if _extra in _reason.lower()
                                     else (f"{_reason} — {_extra}" if _reason else f"Đơn trả hàng bị đóng có VĐ trả về — {_extra}"))
                     if _row_manual_matched(_d):
-                        # Khớp tay chỉ xác nhận clip thuộc đúng kiện hàng. Nó không phải kết luận
-                        # THẮNG/THUA/KHÔNG CẦN KN, nên hồ sơ đã đóng vẫn phải tiếp tục ở CẦN KN.
                         _d["_manual_matched"] = True
-                        _d["reason"] += " — đã khớp clip, vẫn chờ kết luận KN"
+                        _d["reason"] += " — đã khớp clip"
                     _closed_returns_need_kn_detail.append(_d)
             _return_match_detail = _all_returns_detail + _canceled_returns_detail
             _stock_order = ["Đã nhập kho", "Chưa nhập kho", "Nhập kho 1 phần", "Không nhập kho"]
@@ -13836,8 +13834,8 @@ def _render_returns():
             _ckn_render_list = [
                 d for d in _ckn_render_raw_list
                 if _is_need_kn_shape(d) and not _is_closed_kn_result(d)
-                # Khớp tay chỉ giải quyết cảnh báo thiếu video. Riêng hồ sơ ĐÃ ĐÓNG vẫn phải
-                # nằm ở CẦN KN tới khi có ghi chú kết luận chuẩn.
+                # Đã khớp đúng clip và không có tag bất thường thì không còn việc KN.
+                # Nếu clip có tag Dohana, vẫn giữ để xử lý dù hồ sơ đã đóng.
                 and not L.manual_video_match_resolves_need_kn(d, _row_manual_matched(d))
             ]
             _ckn_render_list.sort(key=lambda d: str(d.get("created_on") or d.get("created") or ""), reverse=True)

@@ -72,8 +72,13 @@ def order_return_is_closed(record) -> bool:
 
 
 def manual_video_match_resolves_need_kn(record, is_manual_matched: bool) -> bool:
-    """A manual video match clears video-only alerts, never an unresolved closed return."""
-    return bool(is_manual_matched and not bool((record or {}).get("_closed_return_need_kn")))
+    """A matched video clears KN unless Dohana still reports an issue tag."""
+    row = record or {}
+    has_issue_tag = any(
+        str(row.get(key) or "").strip()
+        for key in ("_dohana_tag_label", "clip_tag", "clip_tag_id")
+    )
+    return bool(is_manual_matched and not has_issue_tag)
 
 
 def closed_return_needs_review(record, forced_can_kn: bool = False) -> bool:
