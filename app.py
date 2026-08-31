@@ -13019,6 +13019,9 @@ def _render_returns():
                     raw_note = str((d or {}).get("note") or "").strip()
                     full = " · ".join(x for x in (raw_reason, raw_location) if x) or "Cần kiểm tra"
                     compact = _search_norm(full + " " + raw_note + " " + str((d or {}).get("_dohana_tag_label") or ""))
+                    # Product-condition labels are warehouse findings. Do not infer
+                    # "Tráo/sai hàng" merely from the buyer's marketplace return reason;
+                    # Dohana must actually carry that issue tag (or an admin-forced label).
                     ship_code = str((d or {}).get("ship_code") or "").strip().lower()
                     stock_code = str((d or {}).get("stock_code") or "").strip().lower()
                     return_type = str((d or {}).get("loai_tra_code") or "").strip().lower()
@@ -13052,8 +13055,7 @@ def _render_returns():
                         base_label = "💥 Hư hỏng"
                     elif "TRATHIEU" in compact or "THIEU" in compact:
                         base_label = "➖ Trả thiếu"
-                    elif ("TRAO" in compact or "SAIHANG" in compact or "SAISP" in compact
-                          or "KHACVOMOTA" in compact or "KHONGKHOPVOIMOTA" in compact):
+                    elif L.dohana_tag_is_swap_issue(d):
                         base_label = "🔁 Tráo/sai hàng"
                     elif "DASUDUNG" in compact or "DADUNG" in compact or "DAQUASUDUNG" in compact:
                         base_label = "♻️ Đã sử dụng"
@@ -13976,8 +13978,8 @@ def _render_returns():
             _ckn_render_list = [
                 d for d in _ckn_render_raw_list
                 if _is_need_kn_shape(d) and not _is_closed_kn_result(d)
-                # Đã khớp đúng clip và không có tag bất thường thì không còn việc KN.
-                # Nếu clip có tag Dohana, vẫn giữ để xử lý dù hồ sơ đã đóng.
+                # Khớp tay chỉ xóa cảnh báo thiếu video. Đơn quá hạn/đã giao/đã đóng
+                # vẫn là việc KN độc lập; tag Dohana bất thường cũng luôn được giữ.
                 and not L.manual_video_match_resolves_need_kn(d, _row_manual_matched(d))
             ]
             _ckn_render_list.sort(key=lambda d: str(d.get("created_on") or d.get("created") or ""), reverse=True)

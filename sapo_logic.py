@@ -72,13 +72,31 @@ def order_return_is_closed(record) -> bool:
 
 
 def manual_video_match_resolves_need_kn(record, is_manual_matched: bool) -> bool:
-    """A matched video clears KN unless Dohana still reports an issue tag."""
+    """A manual match clears only a video-only alert, not an operational KN case.
+
+    Matching a clip proves which return the video belongs to. It does not resolve an
+    overdue/closed/returned refund case and must not remove those yellow rows from
+    the KN worklist.
+    """
     row = record or {}
     has_issue_tag = any(
         str(row.get(key) or "").strip()
         for key in ("_dohana_tag_label", "clip_tag", "clip_tag_id")
     )
-    return bool(is_manual_matched and not has_issue_tag)
+    if not is_manual_matched or has_issue_tag:
+        return False
+    return bool(row.get("_restock_novideo") or row.get("_video_only_alert"))
+
+
+def dohana_tag_is_swap_issue(record) -> bool:
+    """Return True only when Dohana itself tags the clip as wrong/swapped goods."""
+    row = record or {}
+    compact = _norm_key(" ".join(
+        str(row.get(key) or "") for key in ("_dohana_tag_label", "clip_tag")
+    ))
+    return any(token in compact for token in (
+        "TRAO", "SAIHANG", "SAISP", "KHACVOMOTA", "KHONGKHOPVOIMOTA",
+    ))
 
 
 def closed_return_needs_review(record, forced_can_kn: bool = False) -> bool:
