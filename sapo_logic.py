@@ -1361,6 +1361,17 @@ def get_picking(fetch_json, max_pages: int = 15) -> dict:
     today = (_now_utc() + timedelta(hours=7)).date()
     packed_ids = [[c for c in [f0(o).get("tracking_number"), o.get("name")] if c]
                   for o in orders if _vn_date_of(f0(o).get("packed_on")) == today]
+
+    def _label_value_counts(key):
+        counts = {}
+        for o in orders:
+            f = f0(o)
+            if not f.get("shipping_label_slip_url"):
+                continue
+            value = str(f.get(key) or "<trống>").strip().lower()
+            counts[value] = counts.get(value, 0) + 1
+        return counts
+
     return {
         "express": _summarize_picking(express),
         "normal": _summarize_picking(normal),
@@ -1380,6 +1391,9 @@ def get_picking(fetch_json, max_pages: int = 15) -> dict:
                 1 for o in orders
                 if f0(o).get("shipping_label_slip_url") and f0(o).get("packed_on")
             ),
+            "packed_status_values": _label_value_counts("packed_status"),
+            "shipment_status_values": _label_value_counts("shipment_status"),
+            "fulfillment_status_values": _label_value_counts("status"),
             "pending_pick": len(pick),
         },
     }
