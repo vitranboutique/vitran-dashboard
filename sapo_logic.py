@@ -1338,20 +1338,17 @@ def get_picking(fetch_json, max_pages: int = 15) -> dict:
     def f0(o):
         return ful0(o)
 
-    # Sapo hiện có nhiều đơn chờ đóng gói không trả `packed_status` (None). Trước đây
-    # code loại luôn None nên phiếu nhặt về 0 dù đơn đã in phiếu. Dùng các tín hiệu
-    # thực tế: có phiếu giao hàng, chưa được đánh dấu packed và chưa rời shop.
-    # `packed_on` không dùng làm điều kiện vì Sapo có thể ghi mốc này ngay lúc tạo
-    # kiện/in phiếu, trước khi nhân viên thực sự bấm đóng gói.
+    # API Sapo hiện gắn `packed_status=packed` và `packed_on` ngay khi tạo kiện/in
+    # phiếu cho cả đơn vẫn đang wait_to_confirm. Vì vậy hai trường packed không còn
+    # phân biệt được đơn cần nhặt. Tín hiệu đúng là đã có phiếu và shipment_status
+    # vẫn ở kho; khi đã delivering/delivered/returning... thì mới loại.
     _left_shop = {"delivering", "delivered", "returning", "returned", "cancelled", "canceled"}
 
     def _is_pending_pick(o):
         f = f0(o)
-        packed_status = str(f.get("packed_status") or "").strip().lower()
         shipment_status = str(f.get("shipment_status") or "").strip().lower()
         return bool(
             f.get("shipping_label_slip_url")
-            and packed_status != "packed"
             and shipment_status not in _left_shop
         )
 
