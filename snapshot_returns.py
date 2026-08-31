@@ -255,7 +255,8 @@ def main() -> None:
     print(
         f"Snapshot {payload['at']} | daily={payload['daily_report_date']} | "
         f"week_days={len((week_summary or {}).get('days') or [])} | followup={len(followup)} | "
-        f"picking={int((picking or {}).get('total') or 0)} | "
+        f"picking={int((picking or {}).get('total') or 0)} "
+        f"diag={(picking or {}).get('diagnostics') or {}} | "
         f"restocked={len(restocked)} | detail={len((in_progress or {}).get('detail') or [])} | "
         f"detail_checked={detail_check['checked']} closed={detail_check['closed']} "
         f"errors={detail_check['errors']}"

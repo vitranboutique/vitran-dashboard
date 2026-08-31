@@ -1338,10 +1338,23 @@ def get_picking(fetch_json, max_pages: int = 15) -> dict:
     def f0(o):
         return ful0(o)
 
-    # cần nhặt = ĐÃ IN phiếu giao + CHƯA đóng gói (labeling/packing... — mọi trạng thái trước "packed")
-    pick = [o for o in orders
-            if f0(o).get("shipping_label_slip_url")
-            and f0(o).get("packed_status") not in ("packed", None)]
+    # Sapo hiện có nhiều đơn chờ đóng gói không trả `packed_status` (None). Trước đây
+    # code loại luôn None nên phiếu nhặt về 0 dù đơn đã in phiếu. Dùng các tín hiệu
+    # thực tế: có phiếu giao hàng, chưa có mốc đóng gói và chưa rời shop.
+    _left_shop = {"delivering", "delivered", "returning", "returned", "cancelled", "canceled"}
+
+    def _is_pending_pick(o):
+        f = f0(o)
+        packed_status = str(f.get("packed_status") or "").strip().lower()
+        shipment_status = str(f.get("shipment_status") or "").strip().lower()
+        return bool(
+            f.get("shipping_label_slip_url")
+            and packed_status != "packed"
+            and not f.get("packed_on")
+            and shipment_status not in _left_shop
+        )
+
+    pick = [o for o in orders if _is_pending_pick(o)]
     express = [o for o in pick if o.get("shipment_category") == "express"]
     normal = [o for o in pick if o.get("shipment_category") != "express"]
     today = (_now_utc() + timedelta(hours=7)).date()
@@ -1355,6 +1368,11 @@ def get_picking(fetch_json, max_pages: int = 15) -> dict:
         "reconcile": _packing_reconcile(orders),
         "cancel_pick": _cancel_after_pick(orders, fetch_json),
         "packed_ids": packed_ids,
+        "diagnostics": {
+            "open_orders": len(orders),
+            "with_shipping_label": sum(1 for o in orders if f0(o).get("shipping_label_slip_url")),
+            "pending_pick": len(pick),
+        },
     }
 
 
