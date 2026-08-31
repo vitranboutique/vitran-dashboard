@@ -1340,7 +1340,9 @@ def get_picking(fetch_json, max_pages: int = 15) -> dict:
 
     # Sapo hiện có nhiều đơn chờ đóng gói không trả `packed_status` (None). Trước đây
     # code loại luôn None nên phiếu nhặt về 0 dù đơn đã in phiếu. Dùng các tín hiệu
-    # thực tế: có phiếu giao hàng, chưa có mốc đóng gói và chưa rời shop.
+    # thực tế: có phiếu giao hàng, chưa được đánh dấu packed và chưa rời shop.
+    # `packed_on` không dùng làm điều kiện vì Sapo có thể ghi mốc này ngay lúc tạo
+    # kiện/in phiếu, trước khi nhân viên thực sự bấm đóng gói.
     _left_shop = {"delivering", "delivered", "returning", "returned", "cancelled", "canceled"}
 
     def _is_pending_pick(o):
@@ -1350,7 +1352,6 @@ def get_picking(fetch_json, max_pages: int = 15) -> dict:
         return bool(
             f.get("shipping_label_slip_url")
             and packed_status != "packed"
-            and not f.get("packed_on")
             and shipment_status not in _left_shop
         )
 
@@ -1371,6 +1372,14 @@ def get_picking(fetch_json, max_pages: int = 15) -> dict:
         "diagnostics": {
             "open_orders": len(orders),
             "with_shipping_label": sum(1 for o in orders if f0(o).get("shipping_label_slip_url")),
+            "label_packed_status_empty": sum(
+                1 for o in orders
+                if f0(o).get("shipping_label_slip_url") and not f0(o).get("packed_status")
+            ),
+            "label_packed_on_present": sum(
+                1 for o in orders
+                if f0(o).get("shipping_label_slip_url") and f0(o).get("packed_on")
+            ),
             "pending_pick": len(pick),
         },
     }
