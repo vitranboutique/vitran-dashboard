@@ -2061,9 +2061,18 @@ def load_sales(period):
     return L.get_sales_analysis(make_fetch_json(build_session()), period=period, _v=_cache_ver)
 
 
-@st.cache_data(ttl=120, show_spinner="Đang kéo đơn cần nhặt từ Sapo…")
+@st.cache_data(ttl=120, show_spinner="Đang đọc đơn cần nhặt từ dữ liệu nền…")
 def load_picking():
-    return L.get_picking(make_fetch_json(build_session()))
+    snapshot = _require_returns_snapshot("phiếu nhặt hàng")
+    data = snapshot.get("picking")
+    if not isinstance(data, dict):
+        raise RuntimeError("Dữ liệu nền chưa có phiếu nhặt; chờ lượt cập nhật kế tiếp (tối đa 15 phút).")
+    data = dict(data)
+    data["_snapshot_at"] = snapshot.get("at") or ""
+    data["_snapshot_age_seconds"] = max(
+        0, int(time.time()) - int(snapshot.get("at_epoch") or int(time.time()))
+    )
+    return data
 
 
 @st.cache_data(ttl=180, show_spinner="Đang kiểm đơn đã giao đi…")
@@ -6723,14 +6732,20 @@ def _render_pick():
         st.warning("⚠️ Trang này cần kết nối Sapo (API LIVE) — hiện chưa có credential.")
         return
     if st.button("🔄 Tải lại đơn cần nhặt"):
-        _sapo_clear_block()      # bấm tải lại = cho gọi Sapo lại ngay, khỏi chờ hết giờ nghỉ
         st.cache_data.clear()
         st.rerun()
     try:
         pdata = load_picking()
     except Exception as e:
-        st.error(f"❌ Lỗi kéo đơn từ Sapo: `{e}`")
+        st.error(f"❌ Chưa đọc được phiếu nhặt: `{e}`")
         return
+
+    _pick_snapshot_at = str(pdata.get("_snapshot_at") or "").strip()
+    _pick_snapshot_age = int(pdata.get("_snapshot_age_seconds") or 0)
+    if _pick_snapshot_at:
+        st.caption(f"Dữ liệu nền cập nhật lúc {_pick_snapshot_at}.")
+    if _pick_snapshot_age > 1800:
+        st.warning("Dữ liệu phiếu nhặt đã quá 30 phút; đang giữ bản gần nhất và chờ tác vụ nền cập nhật.")
 
     exp, nor = pdata["express"], pdata["normal"]
 

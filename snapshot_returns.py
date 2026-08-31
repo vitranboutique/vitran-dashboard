@@ -225,6 +225,7 @@ def main() -> None:
     now_vn = datetime.now(timezone.utc) + timedelta(hours=7)
     daily = L.get_daily_report(fetch_json, target_date=now_vn.date())
     week_summary = L.get_week_summary(fetch_json, days=30)
+    picking = L.get_picking(fetch_json)
     in_progress = L.get_returns_in_progress(fetch_json)
     detail_check = enrich_closed_return_details(
         in_progress,
@@ -241,6 +242,7 @@ def main() -> None:
         "daily_report": daily,
         "week_summary_days": 30,
         "week_summary": week_summary,
+        "picking": picking,
         "in_progress": in_progress,
         "followup": followup,
         "restocked": restocked,
@@ -253,6 +255,7 @@ def main() -> None:
     print(
         f"Snapshot {payload['at']} | daily={payload['daily_report_date']} | "
         f"week_days={len((week_summary or {}).get('days') or [])} | followup={len(followup)} | "
+        f"picking={int((picking or {}).get('total') or 0)} | "
         f"restocked={len(restocked)} | detail={len((in_progress or {}).get('detail') or [])} | "
         f"detail_checked={detail_check['checked']} closed={detail_check['closed']} "
         f"errors={detail_check['errors']}"
