@@ -4784,30 +4784,26 @@ def _attach_inbound(rep, inbound):
             _fill_group(g)
 
 
-@st.cache_data(ttl=900, show_spinner="Đang dự đoán sản xuất từ Sapo…")
+@st.cache_data(ttl=300, show_spinner="Đang tải dự đoán sản xuất nền…")
 def load_production_tool(data_months, forecast_months, safety_factor, round_mode, end_date_iso,
                          max_product_pages=80, max_report_pages=80):
-    end_date = datetime.fromisoformat(end_date_iso).date()
-    # Tính từ ĐƠN HÀNG + tồn kho sản phẩm qua Open API (key/secret) — CHẠY NHƯ CÁC TAB KHÁC,
-    # KHÔNG cần phiên admin/cookie (endpoint báo cáo xuất-nhập-tồn bị 403 với key/secret).
-    fetch = make_fetch_json(build_session())
-    rep = PT.get_production_forecast(
-        fetch,
-        data_months=int(data_months),
-        forecast_months=int(forecast_months),
-        safety_factor=float(safety_factor),
-        round_mode=round_mode,
-        end_date=end_date,
-        max_product_pages=int(max_product_pages),
-        max_order_pages=int(max_report_pages),
+    snapshot = picklog._read_gist_file("vitran_production.json")
+    if not isinstance(snapshot, dict) or not isinstance(snapshot.get("report"), dict):
+        raise RuntimeError("Chưa có dữ liệu dự đoán sản xuất nền. Hãy chạy workflow Production snapshot.")
+    expected = {
+        "data_months": int(data_months),
+        "forecast_months": int(forecast_months),
+        "safety_factor": float(safety_factor),
+        "round_mode": round_mode,
+    }
+    actual = snapshot.get("params") or {}
+    if any(actual.get(key) != value for key, value in expected.items()):
+        raise RuntimeError("Dữ liệu dự đoán nền chưa dùng đúng công thức hiện tại.")
+    rep = dict(snapshot["report"])
+    rep["_snapshot_at"] = snapshot.get("at") or ""
+    rep["_snapshot_age_seconds"] = max(
+        0, int(time.time()) - int(snapshot.get("at_epoch") or int(time.time()))
     )
-    # Nhập kho trong kỳ (NCC + hàng hoàn) từ Open API → ghép để hiện đủ Xuất-Nhập-Tồn.
-    _start = end_date - timedelta(days=max(1, int(data_months)) * 30)
-    try:
-        inbound = PT.get_inbound_by_sku(fetch, start_date=_start, end_date=end_date, max_pages=40)
-    except Exception:
-        inbound = {"ncc": {}, "returns": {}}
-    _attach_inbound(rep, inbound)
     return rep
 
 
@@ -5439,18 +5435,13 @@ def _render_production_page():
                "Cần SX = tồn mục tiêu − tồn hiện tại. Phân loại: cần **≤ 5 cái** = Tự cắt tay; "
                "cần > 5 & bán ≥ 30/kỳ = Bắt buộc SX; còn lại = Gợi ý. "
                "(Lấy trung bình 3 tháng gần nhất nên tự bám mùa mua.)")
-    if not credential_present():
-        st.warning("⚠️ Trang này cần credential Sapo LIVE.")
-        st.stop()
-
     # CÔNG THỨC CỐ ĐỊNH (theo yêu cầu shop) — không cho chỉnh tay:
     #   nhu cầu/tháng = tổng bán 3 tháng gần nhất ÷ 3 ; tồn mục tiêu = ×1,5 ; làm tròn LÊN.
     data_months, forecast_months, safety_factor, round_mode = 3, 1, 1.5, "ceil"
     max_product_pages, max_report_pages = 80, 250
     end_date = (datetime.now(timezone.utc) + timedelta(hours=7)).date()
-    if st.button("🔄 Làm mới dữ liệu Sapo", key="prod_refresh"):
-        _sapo_clear_block()      # bấm tải lại = cho gọi Sapo lại ngay, khỏi chờ hết giờ nghỉ
-        st.cache_data.clear()
+    if st.button("🔄 Tải lại dữ liệu nền", key="prod_refresh"):
+        load_production_tool.clear()
         st.rerun()
 
     try:
@@ -5465,6 +5456,12 @@ def _render_production_page():
 
     src = rep.get("source") or {}
     crit = rep.get("critical") or {}
+    _prod_snapshot_at = str(rep.get("_snapshot_at") or "").strip()
+    _prod_snapshot_age = int(rep.get("_snapshot_age_seconds") or 0)
+    if _prod_snapshot_at:
+        st.caption(f"Dữ liệu Sapo nền cập nhật lúc {_prod_snapshot_at}.")
+    if _prod_snapshot_age > 7200:
+        st.warning("Dữ liệu dự đoán đã quá 2 giờ; app đang giữ bản gần nhất trong lúc chờ lần quét nền tiếp theo.")
     # Lưu số việc SX vào session để popup cảnh báo hiện trên MỌI tab của nhân viên kho.
     st.session_state["prod_todo"] = {
         "must": len(crit.get("mustProduceGroups") or []),

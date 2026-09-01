@@ -1,0 +1,28 @@
+name: Snapshot du doan san xuat
+
+# Quet Sapo o runner nen; Streamlit chi doc Gist de tranh Cloudflare va treo trang.
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: production-snapshot
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - name: Tinh du doan san xuat va day Gist
+        env:
+          SAPO_API_KEY: ${{ secrets.SAPO_API_KEY }}
+          SAPO_API_SECRET: ${{ secrets.SAPO_API_SECRET }}
+          GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
+        run: python snapshot_production.py
