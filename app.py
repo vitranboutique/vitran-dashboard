@@ -2050,15 +2050,30 @@ def daily_chart(daily):
     return fig
 
 
-@st.cache_data(ttl=300, show_spinner="Đang tải tổng quan từ Sapo…")
+@st.cache_data(ttl=120, show_spinner="Đang tải tổng quan từ dữ liệu nền…")
+def load_shared_snapshot():
+    if not picklog.configured():
+        raise RuntimeError("Chưa cấu hình kho dữ liệu nền.")
+    data = picklog._read_gist_file("vitran_shared.json")
+    if not isinstance(data, dict):
+        raise RuntimeError("Dữ liệu nền dùng chung chưa sẵn sàng; chờ job cập nhật kế tiếp.")
+    return data
+
+
+@st.cache_data(ttl=120, show_spinner="Đang tải tổng quan từ dữ liệu nền…")
 def load_overview():
-    return L.get_overview(make_fetch_json(build_session()))
+    data = load_shared_snapshot().get("overview")
+    if not isinstance(data, dict):
+        raise RuntimeError("Snapshot chưa có dữ liệu tổng quan.")
+    return data
 
 
-@st.cache_data(ttl=900, show_spinner="Đang phân tích doanh thu từ Sapo…")
+@st.cache_data(ttl=120, show_spinner="Đang đọc phân tích doanh thu từ dữ liệu nền…")
 def load_sales(period):
-    _cache_ver = "2026-08-25-sku-huyhoan"   # ĐỔI chuỗi này mỗi khi sửa get_sales_analysis → BUST cache cũ
-    return L.get_sales_analysis(make_fetch_json(build_session()), period=period, _v=_cache_ver)
+    data = (load_shared_snapshot().get("sales") or {}).get(period)
+    if not isinstance(data, dict):
+        raise RuntimeError(f"Snapshot chưa có kỳ doanh thu {period}.")
+    return data
 
 
 @st.cache_data(ttl=120, show_spinner="Đang đọc đơn cần nhặt từ dữ liệu nền…")
@@ -2081,12 +2096,33 @@ def load_pick_shipped():
     return L.pick_shipped_codes(make_fetch_json(build_session()))
 
 
-@st.cache_data(ttl=180, show_spinner="Đang lọc đơn cần lấy TTKH…")
+@st.cache_data(ttl=120, show_spinner="Đang lọc đơn cần lấy TTKH từ dữ liệu nền…")
 def load_ttkh_candidates(days=15, channel_filter="tiktok"):
     # Đơn CẦN lấy TTKH = đơn chưa có SĐT trên đơn (real-time từ Sapo). Tự hiện/tự mất,
     # KHÔNG dùng danh sách chờ lưu cứng (dễ kẹt). Phần khách text/thiếu → tab Kiểm tra.
-    return L.get_tt_customer_candidates(make_fetch_json(build_session()), days=days,
-                                        channel_filter=channel_filter, pending_ids=None)
+    src = load_shared_snapshot().get("ttkh") or {}
+    rows = list(src.get("multi") or []) + list(src.get("single") or [])
+    cutoff = (datetime.now(timezone.utc) + timedelta(hours=7)).replace(tzinfo=None) - timedelta(days=int(days))
+    channel_key = str(channel_filter or "all").lower()
+    kept = []
+    for row in rows:
+        try:
+            created = datetime.fromisoformat(str(row.get("created_sort") or "").replace("Z", "+00:00"))
+            if created.tzinfo is not None:
+                created = created.astimezone(timezone(timedelta(hours=7))).replace(tzinfo=None)
+        except Exception:
+            continue
+        haystack = f"{row.get('channel') or ''} {row.get('store') or ''}".lower()
+        if created < cutoff or (channel_key != "all" and channel_key not in haystack):
+            continue
+        kept.append(row)
+    multi = sorted((r for r in kept if int(r.get("qty") or 0) >= 2),
+                   key=lambda r: (-int(r.get("qty") or 0), r.get("created_sort") or "", str(r.get("name") or "")))
+    single = sorted((r for r in kept if int(r.get("qty") or 0) == 1),
+                    key=lambda r: (r.get("created_sort") or "", str(r.get("name") or "")))
+    return {"days": int(days), "channel_filter": channel_filter, "multi": multi, "single": single,
+            "total": len(kept), "stopped_by_old": False,
+            "generated_at_vn": load_shared_snapshot().get("at") or src.get("generated_at_vn") or ""}
 
 
 @st.cache_data(ttl=600, show_spinner=False)
@@ -2118,10 +2154,13 @@ def load_ttkh_saved_by_day():
             for _d in (set(_codes) | set(_extra))}
 
 
-@st.cache_data(ttl=900, show_spinner="Đang lấy tồn kho Sapo…")
+@st.cache_data(ttl=120, show_spinner="Đang lấy tồn kho từ dữ liệu nền…")
 def load_stock():
     """Tồn kho theo SKU (2 loại: thực tế + có thể bán). Cache 5 phút."""
-    return L.get_stock_by_sku(make_fetch_json(build_session()))
+    data = load_shared_snapshot().get("stock")
+    if not isinstance(data, dict):
+        raise RuntimeError("Snapshot chưa có dữ liệu tồn kho.")
+    return data
 
 
 @st.cache_data(ttl=900, show_spinner="Đang lấy đơn nhập hàng (NCC)…")
@@ -4743,9 +4782,12 @@ def load_restock_novideo(days: int = 30):
             "total_scanned": len(cands), "video_store": len(inbound_codes), "candidates": cands}
 
 
-@st.cache_data(ttl=900, show_spinner="Đang lấy danh mục sản phẩm + tồn kho từ Sapo…")
+@st.cache_data(ttl=120, show_spinner="Đang lấy danh mục sản phẩm từ dữ liệu nền…")
 def load_sapo_catalog(max_pages=80):
-    return PT.get_catalog_variants(make_fetch_json(build_session()), max_pages=max_pages)
+    data = load_shared_snapshot().get("catalog")
+    if not isinstance(data, list):
+        raise RuntimeError("Snapshot chưa có danh mục sản phẩm.")
+    return data
 
 
 def _attach_inbound(rep, inbound):
