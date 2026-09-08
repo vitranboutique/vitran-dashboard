@@ -269,6 +269,11 @@ def make_cached_fetch_json(real_fetch, *, log=print):
 
     def fetch(path, **params):
         if path == "/admin/orders.json":
+            # ĐƠN ĐANG MỞ (cần nhặt) luôn hỏi thẳng Sapo: chỉ vài chục đơn = 1 request, mà
+            # kho chỉ giữ 35 ngày nên đơn mở lâu ngày có thể lọt — NV giao hàng theo bảng này,
+            # thiếu 1 đơn là thiếu 1 kiện, không đánh đổi được.
+            if str(params.get("status") or "").lower() == "open":
+                return real_fetch(path, **params)
             rows, key = _filter(o_list, params), "orders"
         elif path == "/admin/order_returns.json":
             rows, key = _filter(r_list, params), "order_returns"
