@@ -104,7 +104,7 @@ RETURNS_FILE = "vitran_cache_returns.json"
 
 # Giữ bao nhiêu ngày trong kho (theo created_on). Đơn hàng nặng nên giữ ngắn hơn;
 # đơn hoàn cần cả năm cho bảng Cần KN.
-ORDERS_KEEP_DAYS = int(os.environ.get("CACHE_ORDER_DAYS") or 35)   # đủ cho báo cáo ngày + tổng hợp 30 ngày
+ORDERS_KEEP_DAYS = int(os.environ.get("CACHE_ORDER_DAYS") or 120)  # phủ báo cáo ngày, tổng hợp 30 ngày VÀ dự đoán SX 3 tháng
 RETURNS_KEEP_DAYS = int(os.environ.get("CACHE_RETURN_DAYS") or 400)
 # Lùi lại vài phút mỗi lần đồng bộ để không lọt bản ghi sửa ngay lúc giao thời.
 OVERLAP_MIN = 10
@@ -245,12 +245,31 @@ def _day(v) -> str:
     return str(v or "")[:10]
 
 
+def _out_of_range(params, cache_from: str, allow_unbounded: bool) -> bool:
+    """Câu hỏi vượt quá phạm vi kho → phải ra API thật, không được trả số thiếu.
+
+    allow_unbounded=True (đơn hoàn): kho giữ hơn 1 năm, mà mọi báo cáo đơn hoàn chỉ tính
+    trong NĂM NAY nên hỏi không kèm mốc ngày vẫn phục vụ được từ kho.
+    allow_unbounded=False (đơn hàng): kho chỉ giữ ít ngày → hỏi trống mốc là muốn cả lịch sử."""
+    if not cache_from:
+        return True
+    cmin = _day(params.get("created_on_min"))
+    if not cmin:
+        return not allow_unbounded
+    return cmin < cache_from
+
+
 def make_cached_fetch_json(real_fetch, *, log=print):
     orders, o_at = load("orders")
     returns, r_at = load("returns")
     o_list = sorted(orders.values(), key=lambda r: int((r or {}).get("id") or 0), reverse=True)
     r_list = sorted(returns.values(), key=lambda r: int((r or {}).get("id") or 0), reverse=True)
-    log(f"  kho đệm: {len(o_list)} đơn (đồng bộ tới {o_at}) · {len(r_list)} phiếu trả (tới {r_at})")
+    # PHẠM VI kho: ngày cũ nhất đang giữ. Ai hỏi cũ hơn mốc này mà mình vẫn trả từ kho là
+    # trả THIẾU số mà không ai biết → phải đẩy sang API thật.
+    o_from = min((_day(r.get("created_on")) for r in o_list if r.get("created_on")), default="")
+    r_from = min((_day(r.get("created_on")) for r in r_list if r.get("created_on")), default="")
+    log(f"  kho đệm: {len(o_list)} đơn (từ {o_from}, đồng bộ tới {o_at}) · "
+        f"{len(r_list)} phiếu trả (từ {r_from}, tới {r_at})")
 
     def _filter(rows, params):
         st = str(params.get("status") or "").lower()
@@ -270,12 +289,16 @@ def make_cached_fetch_json(real_fetch, *, log=print):
     def fetch(path, **params):
         if path == "/admin/orders.json":
             # ĐƠN ĐANG MỞ (cần nhặt) luôn hỏi thẳng Sapo: chỉ vài chục đơn = 1 request, mà
-            # kho chỉ giữ 35 ngày nên đơn mở lâu ngày có thể lọt — NV giao hàng theo bảng này,
-            # thiếu 1 đơn là thiếu 1 kiện, không đánh đổi được.
+            # kho chỉ giữ ngần ấy ngày nên đơn mở lâu ngày có thể lọt — NV giao hàng theo bảng
+            # này, thiếu 1 đơn là thiếu 1 kiện, không đánh đổi được.
             if str(params.get("status") or "").lower() == "open":
+                return real_fetch(path, **params)
+            if _out_of_range(params, o_from, False):
                 return real_fetch(path, **params)
             rows, key = _filter(o_list, params), "orders"
         elif path == "/admin/order_returns.json":
+            if _out_of_range(params, r_from, True):
+                return real_fetch(path, **params)
             rows, key = _filter(r_list, params), "order_returns"
         else:
             return real_fetch(path, **params)

@@ -13,7 +13,16 @@ from snapshot_returns import build_session, make_fetch_json, push_to_gist
 
 def main() -> None:
     now_vn = datetime.now(timezone.utc) + timedelta(hours=7)
-    fetch_json = make_fetch_json(build_session())
+    real_fetch = make_fetch_json(build_session())
+    fetch_json = real_fetch
+    try:                      # đọc từ KHO ĐỆM, chỉ ra API khi hỏi ngoài phạm vi kho
+        import sapo_cache
+        _ok, _info = sapo_cache.cache_ready()
+        print(("Kho dem SAN SANG: " if _ok else "Kho dem CHUA DU: ") + _info)
+        if _ok:
+            fetch_json = sapo_cache.make_cached_fetch_json(real_fetch)
+    except Exception as _ce:
+        print(f"Kho dem loi ({type(_ce).__name__}) - dung API truc tiep.")
 
     overview = L.get_overview(fetch_json)
     sales = {
