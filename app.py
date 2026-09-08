@@ -14143,6 +14143,9 @@ def _render_returns():
                     return False
                 return bool(str((d or {}).get("clip_code") or "").strip())
 
+            # Gắn clip cho CHÍNH danh sách sắp render: có dòng được thêm SAU bước gắn clip ở trên
+            # (vd phiếu bị đóng phát hiện qua kiểm tra chi tiết Sapo) → thiếu clip_code là lọt lưới.
+            _annotate_rows_with_dohana_inbound_video(_ckn_render_raw_list)
             for _d in _ckn_render_raw_list:      # ghi lý do để bảng khác thấy vì sao rớt
                 if _row_clip_clean(_d):
                     _rs0 = str(_d.get("reason") or "").strip()
