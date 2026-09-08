@@ -9844,16 +9844,22 @@ def _render_stock_report():
                     # CHỦ SHOP CHỐT 08/09: kiểm kê LẤY THẲNG TỒN SAPO, bỏ cột "Tồn đầu (chốt)" và
                     # cột "Lệch" tự tính — mốc chốt đêm hay bị lệch ngày nên báo lệch oan. Lệch THẬT
                     # là giữa TỒN SAPO và số NV đếm tay ở cột cuối.
+                    # Tồn đầu SUY TỪ SAPO (không cần mốc chốt): đầu = cuối − hoàn + bán ra.
+                    _c_dau2 = ("—" if _io_blocked
+                               else f"{int(_r['cuoi']) - int(_r['nhap'] or 0) + int(_r['xuat'] or 0):,}")
                     _tr += (f"<tr><td>{_e2(_r['sku'])}</td>"
+                            f"<td class='n'>{_c_dau2}</td>"
                             f"<td class='n'>{_c_hoan}</td>"
                             f"<td class='n'>{_c_xuat}</td>"
                             f"<td class='n sapo'>{_r['cuoi']:,}</td>"
                             f"<td class='blank'></td>"
                             f"<td class='blank'></td></tr>")
                 return ("<table><colgroup><col class='c-sku'><col class='c-num'><col class='c-num'>"
-                        "<col class='c-num'><col class='c-cnt'><col class='c-cnt'></colgroup>"
-                        "<thead><tr><th>SKU</th><th>Hoàn<br>hôm nay</th><th>Bán ra<br>hôm nay</th>"
-                        "<th class='sapo'>TỒN SAPO</th>"
+                        "<col class='c-num'><col class='c-num'><col class='c-cnt'>"
+                        "<col class='c-cnt'></colgroup>"
+                        "<thead><tr><th>SKU</th><th>Tồn đầu<br>hôm nay</th><th>Hoàn<br>hôm nay</th>"
+                        "<th>Bán ra<br>hôm nay</th>"
+                        "<th class='sapo'>TỒN CUỐI<br>(SAPO)</th>"
                         "<th>Thực tế đếm</th><th>Lệch đếm</th></tr></thead>"
                         "<tbody>" + _tr + "</tbody></table>")
             def _two_cols(_part):
@@ -9911,7 +9917,8 @@ def _render_stock_report():
                     "th.app{background:#d9f2e3;font-weight:800}"
                     "td.blank{background:#fffdf0}tr{page-break-inside:avoid}thead{display:table-header-group}"
                     "@page{size:A4 landscape;margin:7mm}")
-            _dau_src = "Số kiểm kê lấy THẲNG từ Sapo (tồn thực tế lúc in)"
+            _dau_src = ("Tồn cuối = TỒN SAPO thực tế lúc in · Tồn đầu = Tồn cuối − Hoàn + Bán ra "
+                        "(suy từ Sapo, không dùng mốc chốt)")
 
             def _page(_title, _part, _brk=False):
                 if not _part:
@@ -9927,10 +9934,10 @@ def _render_stock_report():
                         f"NV kiểm: ______________</div></div>"
                         + _two_cols(_part)
                         + f"<div class='foot'>{len(_part)} dòng · "
+                        + f"Tồn đầu {sum(int(r['cuoi']) - int(r['nhap'] or 0) + int(r['xuat'] or 0) for r in _part):,} · "
                         + f"Hoàn {sum(r['nhap'] for r in _part):,} · Bán ra {sum(r['xuat'] for r in _part):,} · "
-                        + f"Tổng tồn Sapo {sum(r['cuoi'] for r in _part):,} · "
-                        + f"Dư/Thiếu {sum((r.get('chenh') or 0) for r in _part):+,} "
-                        + "· cột <b>Thực tế đếm</b> để NV đếm rồi điền tay.</div></div>")
+                        + f"TỒN CUỐI (Sapo) {sum(r['cuoi'] for r in _part):,} "
+                        + "· 2 cột cuối để NV đếm rồi điền tay.</div></div>")
             _content = (_page("PHIẾU XUẤT NHẬP TỒN + KIỂM KÊ", _rows_fx)
                         + _page("PHIẾU KIỂM KÊ — MÃ BỔ SUNG (chọn thêm)", _rows_ex, _brk=bool(_rows_fx)))
             _js = ("function printStock(){var h=document.getElementById('stk').innerHTML;"
