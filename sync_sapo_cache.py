@@ -23,7 +23,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--kind", choices=("orders", "returns", "all"), default="all")
     ap.add_argument("--backfill", type=int, default=None,
-                    help="số ngày nạp lần đầu khi kho còn trống")
+                    help="ÉP nạp lại N ngày (mở rộng kho); bỏ trống = chỉ lấy phần mới/đổi")
     ap.add_argument("--max-pages", type=int, default=120)
     args = ap.parse_args()
 

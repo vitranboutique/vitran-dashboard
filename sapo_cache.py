@@ -206,6 +206,8 @@ def sync(kind: str, fetch_json, *, backfill_days: int | None = None, max_pages: 
     rows, synced_until = load(kind)
 
     now = _now_utc()
+    if backfill_days:      # nêu rõ số ngày = ÉP nạp lại phạm vi đó (mở rộng kho), kể cả khi
+        synced_until = ""  # kho đã có dữ liệu — dùng khi tăng số ngày giữ.
     if synced_until:
         try:
             start = datetime.strptime(synced_until, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
