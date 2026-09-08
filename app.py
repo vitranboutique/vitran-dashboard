@@ -10517,7 +10517,27 @@ def _render_daily():
         try:
             _rep = load_daily_report_archive(_iso)
         except Exception as e:
-            st.error(f"❌ Lỗi tổng hợp báo cáo ngày {_disp}: `{e}`")
+            _blocked = "Cloudflare" in str(e) or type(e).__name__ == "SapoBlockedError"
+            if _blocked:
+                _left = int(_sapo_blocked_left())
+                st.error("🛡️ **Cloudflare của Sapo đang CHẶN IP máy chủ app** — không tính lại được "
+                         f"ngày {_disp} lúc này."
+                         + (f" App tạm NGHỈ gọi Sapo {_left // 60} phút {_left % 60} giây nữa rồi tự thử lại."
+                            if _left > 0 else ""))
+            else:
+                st.error(f"❌ Lỗi tổng hợp báo cáo ngày {_disp}: `{e}`")
+            # CỨU VÃN: có bản chốt của ngày đó thì hiện luôn, đừng để trắng trang.
+            if _frozen and _frozen.get("html"):
+                st.info(f"📄 Đang hiển thị **bản đã chốt lúc {_frozen.get('at', '?')}** của ngày {_disp}.")
+                components.html(_compact_frozen_return_html(_frozen["html"]),
+                                height=int(_frozen.get("h") or 2200), scrolling=True)
+            elif _blocked:
+                st.caption("Ngày này chưa có bản chốt nào để xem tạm. Chờ vài phút rồi mở lại, "
+                           "hoặc mở ngày khác đã chốt.")
+            if _blocked and st.button("🔁 Thử lại ngay", key=f"unblock_{_iso}"):
+                _sapo_clear_block()
+                st.cache_data.clear()
+                st.rerun()
             return
         _dvr = load_dohana_date(_iso) if dohana.configured() else None
         _inb = load_dohana_inbound_date(_iso) if dohana.configured() else None
