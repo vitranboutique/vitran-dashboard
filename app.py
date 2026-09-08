@@ -14136,7 +14136,10 @@ def _render_returns():
                 khui, không thấy vấn đề → HẾT cần khiếu nại, kể cả đơn quá hạn / phiếu bị đóng.
                 (Ca 854157677618: quay Dohana 27/08, 51s, không tag, mà vẫn nằm ở Cần KN.)
                 Vẫn GIỮ khi: clip có tag bất thường, hoặc ghi chú ghi CẦN KN."""
-                if _row_forces_can_kn(d):
+                # ⚠️ KHÔNG dùng _row_forces_can_kn ở đây: hàm đó tính cả cờ "_closed_return_need_kn"
+                # (phiếu Sapo bị đóng) — mà phiếu bị đóng CHÍNH LÀ nhóm cần luật này nhất, dùng vào
+                # là không đơn nào rớt được. Chỉ giữ lại khi CHÍNH CHỦ ghi CẦN KN (app hoặc Sapo).
+                if bool((d or {}).get("_force_can_kn")) or _note_says_can_kn((d or {}).get("note")):
                     return False
                 if any(str((d or {}).get(k) or "").strip()
                        for k in ("_dohana_tag_label", "clip_tag", "clip_tag_id")):
@@ -14274,7 +14277,8 @@ def _render_returns():
                     f"{(d.get('vd_tra') or d.get('order_code') or '?')}"
                     f"[clip={'có' if str(d.get('clip_code') or '').strip() else 'KHÔNG'}"
                     f",tag={(str(d.get('clip_tag') or d.get('_dohana_tag_label') or '').strip() or '—')}"
-                    f",épKN={'có' if _row_forces_can_kn(d) else 'không'}]"
+                    f",épKN={'có' if (d.get('_force_can_kn') or _note_says_can_kn(d.get('note'))) else 'không'}"
+                    f",đóng={'có' if d.get('_closed_return_need_kn') else 'không'}]"
                     for d in _ckn_render_list[:6])
                 st.caption(f"🔎 Chẩn đoán: thô {len(_ckn_render_raw_list)} dòng → loại {len(_dbg_clean)} "
                            f"(clip sạch tag) → còn {len(_ckn_render_list)}. 6 dòng đầu: {_dbg_txt}")
