@@ -35,6 +35,58 @@ _DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _VIDEO_EXT = (".mp4", ".mov", ".mkv", ".avi", ".m4v")
 
 
+def mp4_duration(path: str) -> int:
+    """Thời lượng THẬT đọc từ header MP4 (atom mvhd) — chính xác hơn nhiều so với lấy
+    giờ sửa file trừ giờ trong tên (ghi file xong trễ vài chục giây là sai bét)."""
+    try:
+        with open(path, "rb") as f:
+            end = os.path.getsize(path)
+            pos = 0
+            while pos < end - 8:                    # duyệt atom cấp 1 tìm moov
+                f.seek(pos)
+                head = f.read(8)
+                if len(head) < 8:
+                    return 0
+                size = int.from_bytes(head[:4], "big")
+                typ = head[4:8]
+                if size == 1:                       # size 64-bit
+                    size = int.from_bytes(f.read(8), "big")
+                if size < 8:
+                    return 0
+                if typ == b"moov":
+                    moov_end = pos + size
+                    q = f.tell()
+                    while q < moov_end - 8:          # trong moov tìm mvhd
+                        f.seek(q)
+                        h2 = f.read(8)
+                        if len(h2) < 8:
+                            return 0
+                        s2 = int.from_bytes(h2[:4], "big")
+                        t2 = h2[4:8]
+                        if s2 == 1:
+                            s2 = int.from_bytes(f.read(8), "big")
+                        if s2 < 8:
+                            return 0
+                        if t2 == b"mvhd":
+                            ver = f.read(1)[0]
+                            f.read(3)                # flags
+                            if ver == 1:
+                                f.read(16)           # created + modified (64-bit)
+                                scale = int.from_bytes(f.read(4), "big")
+                                dur = int.from_bytes(f.read(8), "big")
+                            else:
+                                f.read(8)            # created + modified (32-bit)
+                                scale = int.from_bytes(f.read(4), "big")
+                                dur = int.from_bytes(f.read(4), "big")
+                            return int(round(dur / scale)) if scale else 0
+                        q += s2
+                    return 0
+                pos += size
+    except Exception:
+        return 0
+    return 0
+
+
 def _norm_code(value: str) -> str:
     """Bỏ ký tự thừa, viết HOA — khớp với cách app chuẩn hoá mã."""
     return re.sub(r"[^A-Za-z0-9]", "", str(value or "")).upper()
@@ -69,12 +121,13 @@ def scan(root: str = VCAM_ROOT, since: str = VCAM_FROM) -> list[dict]:
                     size = os.path.getsize(path)
                 except OSError:
                     continue
-                dur = 0
-                try:    # thời lượng ≈ lúc ghi xong (mtime) − lúc bắt đầu quay (tên file)
-                    start = datetime.strptime(f"{day} {start_txt}", "%Y-%m-%d %H:%M:%S")
-                    dur = int(round(datetime.fromtimestamp(mtime).timestamp() - start.timestamp()))
-                except Exception:
-                    dur = 0
+                dur = mp4_duration(path)        # ưu tiên thời lượng THẬT trong header MP4
+                if not dur:
+                    try:    # không đọc được header → ước lượng: giờ ghi xong − giờ trong tên
+                        start = datetime.strptime(f"{day} {start_txt}", "%Y-%m-%d %H:%M:%S")
+                        dur = int(round(datetime.fromtimestamp(mtime).timestamp() - start.timestamp()))
+                    except Exception:
+                        dur = 0
                 if not (0 < dur <= 3600):       # giờ máy lệch / file copy lại → bỏ, khỏi báo số bậy
                     dur = 0
                 # mã thứ 2 (mã đơn / mã phiếu trả) cất vào slug để đối chiếu thêm, KHÔNG tạo
@@ -157,6 +210,22 @@ def main() -> int:
             print(f"❌ Đẩy Gist lỗi: {e}")
             _log(f"LOI day Gist: {e}")
             return 4
+        # merge_dohana_videos chỉ ĐIỀN field còn trống → thời lượng/giờ cũ sai vẫn nằm đó.
+        # Bản ghi VCAM là của mình nên cập nhật đè cho đúng (Dohana giữ nguyên, không đụng).
+        _want = {(x["code"], x["type"]): x for x in rows}
+        _fixed = 0
+        for _r in _after:
+            _x = _want.get((_r.get("code"), _r.get("type")))
+            if not _x or str(_r.get("staff") or "").upper() != "VCAM":
+                continue
+            for _k in ("dur", "time", "date", "slug"):
+                if _x.get(_k) not in (None, "") and _r.get(_k) != _x.get(_k):
+                    _r[_k] = _x[_k]
+                    _fixed += 1
+        if _fixed:
+            picklog._write_dohana_store(_after)
+            print(f"🔧 Sửa lại {_fixed} field của bản ghi VCAM đã lưu (thời lượng/giờ).")
+            _log(f"sua {_fixed} field VCAM da luu")
         _saved = sum(1 for r in _after if (r.get("code"), r.get("type")) in
                      {(x["code"], x["type"]) for x in rows})
         if not _saved:
