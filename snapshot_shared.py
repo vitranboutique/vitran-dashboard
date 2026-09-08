@@ -29,7 +29,25 @@ def _age_hours(at_epoch) -> float:
 
 def main() -> None:
     now_vn = datetime.now(timezone.utc) + timedelta(hours=7)
-    real_fetch = make_fetch_json(build_session())
+    _real = make_fetch_json(build_session())
+
+    # ĐẾM lượt gọi Sapo THẬT + đo thời gian từng phần: để biết chỗ nào còn nặng mà cắt tiếp.
+    _calls = {"n": 0}
+
+    def real_fetch(path, **params):
+        _calls["n"] += 1
+        return _real(path, **params)
+
+    _t_last = [time.time(), 0]
+    _diag = []                 # ghi luon vao payload: log cua Actions doc phai co quyen
+
+    def _step(name):
+        _dt = time.time() - _t_last[0]
+        _dn = _calls["n"] - _t_last[1]
+        _diag.append({"buoc": name, "giay": round(_dt, 1), "goi_sapo": _dn})
+        print(f"  [{name}] {_dt:.0f}s · {_dn} luot goi Sapo", flush=True)
+        _t_last[0], _t_last[1] = time.time(), _calls["n"]
+
     fetch_json = real_fetch
     try:                      # đọc từ KHO ĐỆM, chỉ ra API khi hỏi ngoài phạm vi kho
         import sapo_cache
@@ -39,8 +57,10 @@ def main() -> None:
             fetch_json = sapo_cache.make_cached_fetch_json(real_fetch)
     except Exception as _ce:
         print(f"Kho dem loi ({type(_ce).__name__}) - dung API truc tiep.")
+    _step("mo kho dem")
 
     overview = L.get_overview(fetch_json)
+    _step("tong quan")
 
     # "năm nay" phải quét cả năm (~40.000 đơn) — Sapo cảnh báo chính kiểu quét này. Số cả năm
     # thay đổi rất chậm nên chỉ tính LẠI 1 lần/ngày, các lượt khác dùng lại số của lượt trước.
@@ -52,11 +72,17 @@ def main() -> None:
         if period == "namnay" and _prev_sales.get("namnay") and _prev_age_h < 20:
             sales[period] = _prev_sales["namnay"]
             print(f"  sales[namnay]: dung lai so cu ({_prev_age_h:.1f}h truoc) - khoi quet ca nam")
+            _diag.append({"buoc": "doanh thu namnay (dung lai so cu)",
+                          "giay": 0, "goi_sapo": 0, "tuoi_gio": round(_prev_age_h, 1)})
             continue
         sales[period] = L.get_sales_analysis(fetch_json, period=period, _v="shared-snapshot-v1")
+        _step(f"doanh thu {period}")
     ttkh = L.get_tt_customer_candidates(fetch_json, days=30, channel_filter="all", pending_ids=None)
+    _step("khach can chuan hoa")
     catalog = PT.get_catalog_variants(fetch_json, max_pages=80)
+    _step("danh muc")
     stock = L.get_stock_by_sku(fetch_json)
+    _step("ton kho")
 
     payload = {
         "at": now_vn.strftime("%H:%M %d/%m/%Y"),
@@ -66,6 +92,7 @@ def main() -> None:
         "ttkh": ttkh,
         "catalog": catalog,
         "stock": stock,
+        "_diag": {"buoc": _diag, "tong_goi_sapo": _calls["n"]},
     }
     token = os.environ.get("GITHUB_TOKEN")
     if not token:
@@ -73,7 +100,8 @@ def main() -> None:
     push_to_gist(token, "vitran_shared.json", payload)
     print(
         f"Shared snapshot {payload['at']} | catalog={len(catalog)} "
-        f"ttkh={ttkh.get('total', 0)} stock={len(stock)}"
+        f"ttkh={ttkh.get('total', 0)} stock={len(stock)} "
+        f"| TONG {_calls['n']} luot goi Sapo"
     )
 
 
