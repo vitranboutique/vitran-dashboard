@@ -39,13 +39,21 @@ def make_fetch_json(s):
     last = [0.0]
 
     def fj(path, **p):
-        gap = time.monotonic() - last[0]
-        if gap < 0.34:
-            time.sleep(0.34 - gap)
-        r = s.get(f"{BASE}{path}", params=p, timeout=40)
-        last[0] = time.monotonic()
-        if r.status_code in (403, 503) and "cloudflare" in (r.text or "")[:600].lower():
-            sys.exit("Cloudflare của Sapo đang chặn IP runner — thử lại sau.")
+        for attempt in range(5):
+            gap = time.monotonic() - last[0]
+            if gap < 0.34:
+                time.sleep(0.34 - gap)
+            r = s.get(f"{BASE}{path}", params=p, timeout=40)
+            last[0] = time.monotonic()
+            if r.status_code in (403, 503) and "cloudflare" in (r.text or "")[:600].lower():
+                sys.exit("Cloudflare của Sapo đang chặn IP runner — thử lại sau.")
+            # 429/5xx = Sapo quá tải nhất thời → chờ rồi thử lại, đừng bỏ cả lần chốt tồn.
+            if not (r.status_code == 429 or 500 <= r.status_code < 600) or attempt == 4:
+                r.raise_for_status()
+                return r.json()
+            _w = min(30.0, 2.0 * (2 ** attempt))
+            print(f"  HTTP {r.status_code} tại {path} (lần {attempt + 1}/5) — chờ {_w:.0f}s rồi thử lại")
+            time.sleep(_w)
         r.raise_for_status()
         return r.json()
     return fj

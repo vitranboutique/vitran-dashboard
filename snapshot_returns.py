@@ -67,7 +67,10 @@ def make_fetch_json(session: requests.Session):
                     f"Cloudflare chan runner tai {path} (HTTP {response.status_code}); "
                     "giu snapshot cu va thu lai o lich sau."
                 )
-            if response.status_code != 429:
+            # 5xx (502/503/504) = Sapo qua tai NHAT THOI. Truoc day khong retry -> ca lan quet
+            # chet, app dung so hang tieng. Nay thu lai nhu 429.
+            _retryable = response.status_code == 429 or 500 <= response.status_code < 600
+            if not _retryable:
                 response.raise_for_status()
                 return response.json()
             if attempt == 4:
@@ -76,7 +79,10 @@ def make_fetch_json(session: requests.Session):
                 retry_after = float(response.headers.get("Retry-After") or 0)
             except Exception:
                 retry_after = 0
-            time.sleep(min(20.0, max(retry_after, 2.0 * (2**attempt))))
+            _wait = min(30.0, max(retry_after, 2.0 * (2**attempt))) + random.uniform(0, 1.5)
+            print(f"  HTTP {response.status_code} tai {path} (lan {attempt + 1}/5) "
+                  f"- cho {_wait:.1f}s roi thu lai")
+            time.sleep(_wait)
         raise RuntimeError(f"Khong lay duoc du lieu Sapo tai {path}.")
 
     return fetch_json
