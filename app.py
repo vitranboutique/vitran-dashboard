@@ -42,6 +42,9 @@ from sapo_client import (
 from picking_render import picking_html, history_slips_html
 
 _DOHANA_RETENTION = 25  # file video bị xóa sau khoảng 25 ngày; mã trong kho vẫn được giữ để đối chiếu
+# TỪ NGÀY NÀY video do app VCAM quay (ổ LAN máy shop, nạp bằng vcam_scan.py) — Dohana KHÔNG còn
+# video mới. Ngày TRƯỚC mốc vẫn đọc Dohana như cũ để tra lịch sử.
+VCAM_FROM = "2026-09-03"
 
 # ───────── Tự nạp lại module logic mỗi lần chạy → sửa code là CÓ NGAY, khỏi Reboot ─────────
 # app.py hot-reload khi push, nhưng module (sapo_logic, daily_report) thì Streamlit giữ bản cũ
@@ -2589,8 +2592,10 @@ def load_dohana_video_store():
 
 @st.cache_data(ttl=1800, show_spinner=False)  # video ngày cũ không đổi → cache dài, đỡ gọi Dohana
 def load_dohana_date(date_iso):
-    _cache_ver = 2  # A4 ngày cũ phải nhận mã lưu dù file Dohana đã bị xóa
+    _cache_ver = 3  # A4 ngày cũ phải nhận mã lưu dù file Dohana đã bị xóa
     from datetime import date as _date
+    if str(date_iso) >= VCAM_FROM:      # video VCAM nằm trong kho rồi, gọi Dohana chỉ tốn quota
+        return _dohana_pkg_from_store(date_iso) if picklog.configured() else None
     live = dohana.today_package_videos(target_date=_date.fromisoformat(date_iso))
     if live is not None:
         _dohana_merge(live)
@@ -2600,8 +2605,10 @@ def load_dohana_date(date_iso):
 
 @st.cache_data(ttl=1800, show_spinner=False)  # video ngày cũ không đổi → cache dài, đỡ gọi Dohana
 def load_dohana_inbound_date(date_iso):
-    _cache_ver = 2  # A4 ngày cũ phải nhận mã lưu dù file Dohana đã bị xóa
+    _cache_ver = 3  # A4 ngày cũ phải nhận mã lưu dù file Dohana đã bị xóa
     from datetime import date as _date
+    if str(date_iso) >= VCAM_FROM:      # từ mốc VCAM: clip khui nằm trong kho, khỏi gọi Dohana
+        return _dohana_inb_from_store(date_iso) if picklog.configured() else None
     live = dohana.inbound_videos(target_date=_date.fromisoformat(date_iso))
     if live is not None:
         _dohana_merge(live)
@@ -9992,10 +9999,31 @@ def _render_stock_report():
                         st.error(f"❌ {_ep} → {type(_pe).__name__}: {str(_pe)[:100]}")
 
 
+def _video_source_warning(date_iso):
+    """Từ mốc VCAM, video nằm ở ổ LAN máy shop → phải NẠP vào kho. Chưa nạp mà báo cáo vẫn
+    chạy thì mọi đơn đều bị coi là 'không có video' → cảnh báo cho biết là thiếu DỮ LIỆU,
+    KHÔNG phải nhân viên quên quay."""
+    _d = str(date_iso or "")
+    if not _d or _d < VCAM_FROM or not picklog.configured():
+        return
+    try:
+        _n = sum(1 for r in (load_dohana_video_store() or []) if str(r.get("date") or "") == _d)
+    except Exception:
+        return
+    if _n:
+        return
+    st.warning(f"🎥 **Chưa nạp video VCAM ngày {_d[8:10]}/{_d[5:7]}** — từ "
+               f"{VCAM_FROM[8:10]}/{VCAM_FROM[5:7]} video do app VCAM quay (ổ máy shop), Dohana không "
+               "còn video mới. Mọi đơn sẽ hiện 'không có video' cho tới khi nạp. "
+               "Máy trong shop chạy `vcam_scan.py` rồi nạp file ở **Đơn trả → 🎥 Kho video**.")
+
+
 def _render_daily():
     st.title("📄 Báo cáo vận hành cuối ngày")
-    st.caption("Tổng hợp tự động từ Sapo + Dohana — bấm **In báo cáo A4** trong khung để in/lưu PDF.  "
-               "🎥 *Clip nhập hàng hoàn tự cập nhật khoảng 5 phút; bấm “Tải lại số liệu” để cập nhật ngay.*")
+    st.caption("Tổng hợp tự động từ Sapo + video đóng gói/khui hàng — bấm **In báo cáo A4** trong khung "
+               f"để in/lưu PDF.  🎥 *Video: trước {VCAM_FROM[8:10]}/{VCAM_FROM[5:7]} lấy từ Dohana, từ "
+               f"{VCAM_FROM[8:10]}/{VCAM_FROM[5:7]} lấy từ app VCAM (máy shop).*")
+    _video_source_warning(_today_iso_vn())
     # (Tồn kho & kiểm kê ĐÃ TÁCH sang TRANG RIÊNG — quét kho nặng, để chung sẽ đốt hạn mức
     #  API và làm hỏng báo cáo này.)
     with st.expander("🔌 Kiểm tra kết nối Dohana (bấm khi video không lên)"):
