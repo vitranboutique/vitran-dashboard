@@ -128,15 +128,45 @@ def main() -> int:
         json.dump(payload, f, ensure_ascii=False, indent=1)
     print(f"📄 Đã ghi {args.out} — vào app → trang Đơn trả → 🎥 Kho video → nạp file này.")
 
+    def _log(line):        # chạy nền bằng pythonw thì không có màn hình → ghi log cạnh script
+        try:
+            with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "vcam_sync.log"),
+                      "a", encoding="utf-8") as lf:
+                lf.write(f"{datetime.now():%Y-%m-%d %H:%M:%S}  {line}\n")
+        except Exception:
+            pass
+
     if args.push:
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         import picklog
         if not picklog.configured():
             print("❌ Máy này chưa có token picklog/Gist nên KHÔNG đẩy được. "
                   "Dùng file vcam_index.json để nạp trong app, hoặc khai token rồi chạy lại.")
+            _log("LOI: chua co token picklog/Gist -> khong day duoc")
             return 3
-        picklog.merge_dohana_videos(rows)
-        print(f"☁️ Đã đẩy {len(rows)} video vào kho trên Gist — app đọc được ngay.")
+        if not picklog._resolve_gid():
+            # configured() chỉ kiểm tra CÓ chuỗi token, token sai/hết hạn vẫn qua được →
+            # phải hỏi thẳng GitHub, không thì log "OK" mà thực tế chẳng đẩy được gì.
+            print("❌ Token Gist sai hoặc hết hạn (GitHub từ chối). Chưa đẩy được gì.")
+            _log("LOI: token Gist sai/het han -> KHONG day duoc")
+            return 4
+        try:
+            picklog.merge_dohana_videos(rows)
+            _after = picklog.read_dohana_videos() or []
+        except Exception as e:
+            print(f"❌ Đẩy Gist lỗi: {e}")
+            _log(f"LOI day Gist: {e}")
+            return 4
+        _saved = sum(1 for r in _after if (r.get("code"), r.get("type")) in
+                     {(x["code"], x["type"]) for x in rows})
+        if not _saved:
+            print("❌ Đẩy xong nhưng kho KHÔNG có bản ghi nào — kiểm tra quyền gist của token.")
+            _log("LOI: day xong nhung kho khong nhan ban ghi")
+            return 5
+        print(f"☁️ Đã đẩy {len(rows)} video vào kho trên Gist ({_saved} bản ghi có trong kho).")
+        _log(f"OK day {len(rows)} video (kho co {_saved}) | "
+             + " · ".join(f"{d}: khui {v.get('inbound', 0)}/dong {v.get('package', 0)}"
+                          for d, v in sorted(days.items())))
     return 0
 
 

@@ -22,3 +22,7 @@ start_dashboard.bat
 *.log
 khach_chua_chuan.xlsx
 invalid_orders.xlsx
+
+# Video VCAM (chay o may shop)
+vcam_index.json
+vcam_sync.log
