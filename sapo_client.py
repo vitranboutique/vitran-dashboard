@@ -279,6 +279,20 @@ def find_order_returns_by_codes(session: requests.Session, codes: list[str], max
     missing = {code for code in wanted if not found.get(code)}
     if not missing:
         return found
+    # Còn sót mã → TRƯỚC KHI phân trang cả kho đơn hoàn của Sapo (đúng kiểu quét Sapo đã
+    # cảnh báo và chặn IP 08/09/2026), dò trong KHO ĐỆM: nó giữ hơn 9 tháng phiếu trả và
+    # được đồng bộ 30 phút/lần. Tìm thấy ở đây là khỏi gọi Sapo lượt nào; không thấy thì
+    # vẫn quét như cũ nên không mất mã nào.
+    try:
+        import sapo_cache
+        _cached, _ = sapo_cache.load("returns")
+        if _cached:
+            _add_order_return_matches(found, set(missing), list(_cached.values()))
+            missing = {code for code in missing if not found.get(code)}
+    except Exception:
+        pass
+    if not missing:
+        return found
     for page in range(1, int(max_pages) + 1):
         r = session.get(f"{BASE}/admin/order_returns.json", params={"limit": 250, "page": page}, timeout=30)
         r.raise_for_status()
