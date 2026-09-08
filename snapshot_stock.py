@@ -114,11 +114,18 @@ def main():
         sys.exit("Không lấy được tồn kho — KHÔNG ghi đè mốc chốt.")
 
     now_vn = datetime.now(timezone.utc) + timedelta(hours=7)
-    day_iso = now_vn.strftime("%Y-%m-%d")
+    # Cron đặt 23:40 VN nhưng GitHub hay chạy trễ sang 1-2h SÁNG HÔM SAU. Lúc đó vẫn là lần chốt
+    # của NGÀY HÔM TRƯỚC → phải gán đúng ngày đó, không thì "tồn đầu ngày" của app lệch nguyên
+    # một ngày (đã gặp: bản chốt 07/09 thực chất là tồn cuối 06/09 → phiếu kiểm kê báo lệch oan).
+    _late = now_vn.hour < 12
+    day = (now_vn - timedelta(days=1)).date() if _late else now_vn.date()
+    day_iso = day.isoformat()
+    _at = now_vn.strftime("%H:%M %d/%m/%Y") + (
+        " (chốt tự động cuối ngày — chạy trễ sáng hôm sau)" if _late else " (chốt tự động cuối ngày)")
     push_to_gist(os.environ["GITHUB_TOKEN"], f"vitran_stock_{day_iso}.json",
-                 {"at": now_vn.strftime("%H:%M %d/%m/%Y") + " (chốt tự động cuối ngày)",
-                  "on_hand": on_hand})
-    print("Đã chốt tồn ngày", day_iso, "-", len(on_hand), "SKU")
+                 {"at": _at, "on_hand": on_hand})
+    print("Đã chốt tồn ngày", day_iso, "-", len(on_hand), "SKU",
+          "(chạy lúc", now_vn.strftime("%H:%M %d/%m"), ")")
 
 
 if __name__ == "__main__":
