@@ -10022,6 +10022,49 @@ def _render_stock_report():
                         st.error(f"❌ {_ep} → {type(_pe).__name__}: {str(_pe)[:100]}")
 
 
+def _video_day_tables(date_iso, title="🎥 Video trong ngày (không cần Sapo)"):
+    """Danh sách video khui hàng hoàn + đóng gói của 1 ngày, đọc THẲNG kho video.
+    Sapo bị Cloudflare chặn thì phần này VẪN chạy — video là nguồn riêng (VCAM/Dohana)."""
+    _iso = str(date_iso or "")
+    if not _iso or not picklog.configured():
+        return
+    try:
+        _rows = [r for r in (load_dohana_video_store() or []) if str(r.get("date") or "") == _iso]
+    except Exception as _e:
+        st.caption(f"Chưa đọc được kho video: `{_e}`")
+        return
+    _dd = f"{_iso[8:10]}/{_iso[5:7]}"
+    if not _rows:
+        st.caption(f"Kho video chưa có clip nào của ngày {_dd}.")
+        return
+
+    def _tbl(kind, label):
+        _rs = sorted([r for r in _rows if str(r.get("type") or "") == kind],
+                     key=lambda r: str(r.get("time") or ""))
+        st.markdown(f"**{label} — {len(_rs)} clip**")
+        if not _rs:
+            st.caption("— không có —")
+            return
+        st.dataframe(pd.DataFrame([{
+            "STT": _i,
+            "Mã": str(r.get("code") or ""),
+            "Mã đơn kèm": (str(r.get("slug") or "")
+                           if str(r.get("staff") or "").upper() == "VCAM" else ""),
+            "Giờ quay": str(r.get("time") or "")[:8],
+            "Thời lượng": (f"{int(r.get('dur') or 0)}s" if r.get("dur") else "—"),
+            "Nguồn": "VCAM" if str(r.get("staff") or "").upper() == "VCAM" else "Dohana",
+        } for _i, r in enumerate(_rs, 1)]), hide_index=True, use_container_width=True,
+            height=min(38 * len(_rs) + 40, 420))
+
+    with st.expander(f"{title} — ngày {_dd}: "
+                     f"{sum(1 for r in _rows if r.get('type') == 'inbound')} clip khui hoàn · "
+                     f"{sum(1 for r in _rows if r.get('type') == 'package')} video đóng gói",
+                     expanded=True):
+        _tbl("inbound", "📦 Khui hàng hoàn")
+        st.divider()
+        _tbl("package", "🎬 Đóng gói")
+
+
 def _video_source_warning(date_iso):
     """Từ mốc VCAM, video nằm ở ổ LAN máy shop → phải NẠP vào kho. Chưa nạp mà báo cáo vẫn
     chạy thì mọi đơn đều bị coi là 'không có video' → cảnh báo cho biết là thiếu DỮ LIỆU,
@@ -10534,6 +10577,7 @@ def _render_daily():
             elif _blocked:
                 st.caption("Ngày này chưa có bản chốt nào để xem tạm. Chờ vài phút rồi mở lại, "
                            "hoặc mở ngày khác đã chốt.")
+            _video_day_tables(_iso)      # video là kho RIÊNG → Sapo chặn vẫn xem được
             if _blocked and st.button("🔁 Thử lại ngay", key=f"unblock_{_iso}"):
                 _sapo_clear_block()
                 st.cache_data.clear()
@@ -10587,6 +10631,7 @@ def _render_daily():
                 )
         except Exception:
             pass
+        _video_day_tables(_today_iso_vn())    # video kho riêng → Sapo lỗi/chặn vẫn xem được
         return
     _dvr = load_dohana() if dohana.configured() else None
     _inb = load_dohana_inbound() if dohana.configured() else None
