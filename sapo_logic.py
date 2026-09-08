@@ -899,7 +899,7 @@ def _classify_customer_addr(a, contact_phone="") -> str:
 
 
 def audit_customers(fetch_json, max_pages: int = 220, throttle: float = 0.35,
-                    max_order_pages: int | None = None,
+                    max_order_pages: int | None = None, order_days: int | None = None,
                     per_cat_keep: int = 500, progress_cb=None) -> dict:
     """Quét TẤT CẢ khách hàng, phân loại theo nhóm lỗi địa chỉ.
 
@@ -965,12 +965,18 @@ def audit_customers(fetch_json, max_pages: int = 220, throttle: float = 0.35,
     # `sdt:`. Đây là dữ liệu theo đơn, không phải lỗi địa chỉ khách, nên đánh dấu
     # row_type=order để UI mở về Sapo > Đơn hàng thay vì hồ sơ khách.
     order_pages = int(max_order_pages or max_pages)
+    # order_days: chỉ soi đơn trong N ngày gần đây. Có mốc ngày thì kho đệm phục vụ được,
+    # khỏi phân trang cả lịch sử đơn hàng của Sapo (đúng thứ Sapo cảnh báo 08/09/2026).
+    _ord_min = None
+    if order_days:
+        _ord_min = (_now_utc() + timedelta(hours=7)).date() - timedelta(days=int(order_days))
+    _ord_params = {"created_on_min": _ord_min.isoformat()} if _ord_min else {}
     for page in range(1, order_pages + 1):
         data = None
         for attempt in range(4):
             try:
                 time.sleep(throttle)
-                data = fetch_json("/admin/orders.json", limit=250, page=page)
+                data = fetch_json("/admin/orders.json", limit=250, page=page, **_ord_params)
                 break
             except Exception as e:
                 if getattr(getattr(e, "response", None), "status_code", None) == 429:
@@ -982,6 +988,10 @@ def audit_customers(fetch_json, max_pages: int = 220, throttle: float = 0.35,
         if not orders:
             break
         for o in orders:
+            if _ord_min is not None:                 # Sapo hay bỏ qua created_on_min → lọc tay
+                _cv = _parse_vn(o.get("created_on"))
+                if _cv is not None and _cv.date() < _ord_min:
+                    continue
             if _order_not_deliverable(o):
                 continue
             phone = _order_contact_phone(o)

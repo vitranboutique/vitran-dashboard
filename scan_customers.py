@@ -9,30 +9,12 @@ Env cần:
 import json, os, sys, requests
 import sapo_logic as L
 
+# Dùng CHUNG lớp gọi Sapo của snapshot_returns: giãn nhịp 1 request / 2 giây và tự thử lại
+# khi gặp 429/5xx. Trước đây file này gọi thẳng, không giãn nhịp (≈3 request/giây) — đúng
+# kiểu Sapo đã cảnh báo và chặn IP ngày 08/09/2026.
+from snapshot_returns import build_session, make_fetch_json  # noqa: F401
+
 BASE = "https://vitranboutiquehcm.mysapo.net"
-
-
-def build_session():
-    s = requests.Session()
-    s.headers.update({"User-Agent": "Mozilla/5.0", "Accept": "application/json"})
-    tok = os.environ.get("SAPO_ACCESS_TOKEN") or os.environ.get("SAPO_TOKEN")
-    ck = os.environ.get("SAPO_COOKIE")
-    key = os.environ.get("SAPO_API_KEY"); sec = os.environ.get("SAPO_API_SECRET")
-    if tok:
-        s.headers["X-Sapo-Access-Token"] = tok
-    elif ck:
-        s.headers["Cookie"] = ck
-    elif key and sec:
-        s.auth = (key, sec)
-    else:
-        sys.exit("Thiếu credential Sapo.")
-    return s
-
-
-def make_fetch_json(s):
-    def fj(path, **p):
-        r = s.get(f"{BASE}{path}", params=p, timeout=40); r.raise_for_status(); return r.json()
-    return fj
 
 
 def push_to_gist(token, fname, data):
@@ -57,9 +39,21 @@ def push_to_gist(token, fname, data):
 
 
 def main():
-    fj = make_fetch_json(build_session())
+    real_fj = make_fetch_json(build_session())
+    fj = real_fj
+    try:                       # phần ĐƠN HÀNG đọc từ KHO ĐỆM, khỏi phân trang lại lịch sử
+        import sapo_cache
+        _ok, _info = sapo_cache.cache_ready()
+        print(("Kho dem SAN SANG: " if _ok else "Kho dem CHUA DU: ") + _info)
+        if _ok:
+            fj = sapo_cache.make_cached_fetch_json(real_fj)
+    except Exception as _ce:
+        print(f"Kho dem loi ({type(_ce).__name__}) - dung API truc tiep.")
     print("Quét khách hàng…")
-    res = L.audit_customers(fj, per_cat_keep=10000,
+    # throttle=0: nhịp đã do lớp fetch lo (2s/request), khỏi cộng thêm.
+    # order_days=110: nằm gọn trong phạm vi kho đệm (120 ngày) → vòng quét đơn không tốn
+    # lượt gọi Sapo nào. Đơn cũ hơn mốc này không còn được soi "thiếu ghi chú SĐT".
+    res = L.audit_customers(fj, per_cat_keep=10000, throttle=0.0, order_days=110,
                             progress_cb=lambda pg, tot, f: print(f"  trang {pg} · {tot} khách · {f} lỗi") if pg % 20 == 0 else None)
     print("Tổng:", res["total"], "| lỗi:", sum(res["counts"].values()), "|", res["counts"])
     gh = os.environ.get("GITHUB_TOKEN")
