@@ -13039,6 +13039,7 @@ def _render_returns():
                     d["clip_tag"] = _video_tag_label(video)
 
             for _clip_rows in (
+                _detail_rows,
                 _all_returns_detail,
                 _canceled_returns_detail,
                 _closed_returns_with_waybill_detail,
@@ -14130,12 +14131,32 @@ def _render_returns():
                     _closed_returns_with_waybill_detail.append(dict(_d))
                     if _key:
                         _closed_display_keys.add(_key)
+            def _row_clip_clean(d):
+                """CHỦ SHOP CHỐT 08/09: có clip khui hàng khớp mà KHÔNG gắn tag = hàng đã về, đã
+                khui, không thấy vấn đề → HẾT cần khiếu nại, kể cả đơn quá hạn / phiếu bị đóng.
+                (Ca 854157677618: quay Dohana 27/08, 51s, không tag, mà vẫn nằm ở Cần KN.)
+                Vẫn GIỮ khi: clip có tag bất thường, hoặc ghi chú ghi CẦN KN."""
+                if _row_forces_can_kn(d):
+                    return False
+                if any(str((d or {}).get(k) or "").strip()
+                       for k in ("_dohana_tag_label", "clip_tag", "clip_tag_id")):
+                    return False
+                return bool(str((d or {}).get("clip_code") or "").strip())
+
+            for _d in _ckn_render_raw_list:      # ghi lý do để bảng khác thấy vì sao rớt
+                if _row_clip_clean(_d):
+                    _rs0 = str(_d.get("reason") or "").strip()
+                    _txt = "đã có clip khui, không gắn tag"
+                    if _txt not in _rs0.lower():
+                        _d["reason"] = f"{_rs0} — {_txt}" if _rs0 else f"Đã khui: {_txt}"
+
             _ckn_render_list = [
                 d for d in _ckn_render_raw_list
                 if _is_need_kn_shape(d) and not _is_closed_kn_result(d)
                 # Khớp tay chỉ xóa cảnh báo thiếu video. Đơn quá hạn/đã giao/đã đóng
                 # vẫn là việc KN độc lập; tag Dohana bất thường cũng luôn được giữ.
                 and not L.manual_video_match_resolves_need_kn(d, _row_manual_matched(d))
+                and not _row_clip_clean(d)      # clip khui sạch tag → hàng về đủ, hết cần KN
             ]
             _ckn_render_list.sort(key=lambda d: str(d.get("created_on") or d.get("created") or ""), reverse=True)
             st.subheader("🚨 Đơn cần KN — lấy làm khiếu nại", anchor="don-can-kn")
