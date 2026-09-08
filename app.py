@@ -9607,36 +9607,14 @@ def _render_stock_report():
                                   min_value=_vn_now - timedelta(days=60), max_value=_vn_now,
                                   format="DD/MM/YYYY", key="stock_io_date")
         _date_iso = _pick_day.isoformat()
-        # Mốc chốt đêm trước thiếu/cũ (lịch 23h40 chưa chạy) → cho chủ shop đặt lại NGAY.
-        # Hiện RÕ (không giấu trong expander) + cho biết mốc đang dùng chốt lúc nào.
-        if _levels_ok and picklog.configured():
-            try:
-                _snap_info = picklog.read_stock_snapshot((_pick_day - timedelta(days=1)).isoformat()) or {}
-            except Exception:
-                _snap_info = {}
-            _snap_at = str(_snap_info.get("at") or "")
-            _cA, _cB = st.columns([3, 2])
-            if _snap_at:
-                _cA.caption(f"📌 Tồn đầu đang dùng: mốc chốt lúc **{_snap_at}** "
-                            f"({len(_snap_info.get('on_hand') or {})} SKU).")
-            else:
-                _cA.caption("📌 **Chưa có mốc chốt** cho ngày hôm trước → cột Tồn đầu đang suy ra tạm.")
-            if _is_owner and _cB.button("📌 Đặt Tồn đầu = tồn Sapo hiện tại", key="stk_rebase",
-                                        use_container_width=True):
-                try:
-                    if picklog.save_stock_snapshot(
-                            (_pick_day - timedelta(days=1)).isoformat(),
-                            {k: int(v.get("on_hand", 0) or 0) for k, v in _skus.items()},
-                            at=(datetime.now(timezone.utc) + timedelta(hours=7)).strftime(
-                                "%H:%M %d/%m/%Y") + " (đặt lại tay)"):
-                        st.success("Đã đặt lại Tồn đầu = tồn Sapo hiện tại. Cột Lệch sẽ về 0.")
-                        st.rerun()
-                    else:
-                        st.error("Lưu lỗi — kiểm tra kho lưu Gist (picklog).")
-                except Exception as _e:
-                    st.error(f"Lỗi khi lưu: {_e}")
-            if _is_owner:
-                _cB.caption("Chỉ bấm khi ngày đó CHƯA bán/hoàn gì (vd sáng sớm).")
+        # Kiểm kê LẤY THẲNG TỒN SAPO (chủ shop chốt 08/09) — không dùng mốc chốt đêm nữa, vì
+        # job chốt chạy trễ hay gán lệch ngày → báo lệch oan. Mốc chốt vẫn được lưu nền để
+        # dành cho việc khác, chỉ không đưa vào phiếu kiểm kê.
+        if _levels_ok:
+            st.caption(f"📌 Phiếu kiểm kê lấy **TỒN SAPO** đọc lúc "
+                       f"**{(datetime.now(timezone.utc) + timedelta(hours=7)).strftime('%H:%M')}** "
+                       "(số nhớ tạm tối đa 15 phút — bấm 🔄 Tải lại số liệu nếu vừa có đơn mới). "
+                       "NV đếm tay rồi ghi vào cột **Thực tế đếm**.")
 
         # ⚠️ KHÔNG gọi load_stock_io nữa: nó quét lại TOÀN BỘ đơn hàng (~80 request) trong khi
         # Xuất/Hoàn đã lấy sẵn từ Báo cáo cuối ngày → gọi thêm chỉ tổ làm Cloudflare chặn IP.
@@ -9742,18 +9720,9 @@ def _render_stock_report():
                 except Exception:
                     st.session_state[_auto_key] = True
 
-        # LỆCH đã ghi nhận của NGÀY HÔM TRƯỚC → nhắc để sáng ra kiểm lại.
+        # (Đã bỏ cảnh báo "hôm trước có lệch": lệch đó do app tự tính từ mốc chốt đêm, mà mốc
+        #  hay lệch ngày nên báo oan. Kiểm kê nay so TỒN SAPO với số NV đếm tay.)
         _lech_prev, _lech_prev_txt = {}, ""
-        if picklog.configured():
-            try:
-                _lech_prev = picklog.read_stock_lech((_pick_day - timedelta(days=1)).isoformat()) or {}
-            except Exception:
-                _lech_prev = {}
-        if _lech_prev:
-            _lp = sorted(_lech_prev.items(), key=lambda kv: -abs(int(kv[1] or 0)))
-            _lech_prev_txt = " · ".join(f"{k} {int(v):+,}" for k, v in _lp[:10])
-            st.warning(f"⚠️ **Hôm trước ({(_pick_day - timedelta(days=1)).strftime('%d/%m')}) có lệch "
-                       f"{len(_lech_prev)} mã** — cần kiểm lại: {_lech_prev_txt}")
 
         # TỒN CUỐI hôm trước = TỒN ĐẦU hôm nay (mốc đã chốt). Chưa có mốc → suy ra: cuối + xuất − nhập.
         _snap_prev = {}
@@ -9872,19 +9841,20 @@ def _render_stock_report():
                     # KHÔNG ghi lý do (không đoán là nhập NCC hay chỉnh kho).
                     _dt = _r.get("chenh")
                     _c_dt = "—" if _dt is None else (f"<b>{_dt:+,}</b>" if _dt else "0")
+                    # CHỦ SHOP CHỐT 08/09: kiểm kê LẤY THẲNG TỒN SAPO, bỏ cột "Tồn đầu (chốt)" và
+                    # cột "Lệch" tự tính — mốc chốt đêm hay bị lệch ngày nên báo lệch oan. Lệch THẬT
+                    # là giữa TỒN SAPO và số NV đếm tay ở cột cuối.
                     _tr += (f"<tr><td>{_e2(_r['sku'])}</td>"
-                            f"<td class='n'>{_c_dau}</td>"
                             f"<td class='n'>{_c_hoan}</td>"
                             f"<td class='n'>{_c_xuat}</td>"
                             f"<td class='n sapo'>{_r['cuoi']:,}</td>"
-                            f"<td class='n'>{_c_dt}</td>"
+                            f"<td class='blank'></td>"
                             f"<td class='blank'></td></tr>")
                 return ("<table><colgroup><col class='c-sku'><col class='c-num'><col class='c-num'>"
-                        "<col class='c-num'><col class='c-num'><col class='c-num'>"
-                        "<col class='c-cnt'></colgroup>"
-                        "<thead><tr><th>SKU</th><th>Tồn đầu<br>(chốt)</th><th>Hoàn</th><th>Bán ra</th>"
-                        "<th class='sapo'>TỒN SAPO</th><th>Lệch</th>"
-                        "<th>Thực tế đếm</th></tr></thead>"
+                        "<col class='c-num'><col class='c-cnt'><col class='c-cnt'></colgroup>"
+                        "<thead><tr><th>SKU</th><th>Hoàn<br>hôm nay</th><th>Bán ra<br>hôm nay</th>"
+                        "<th class='sapo'>TỒN SAPO</th>"
+                        "<th>Thực tế đếm</th><th>Lệch đếm</th></tr></thead>"
                         "<tbody>" + _tr + "</tbody></table>")
             def _two_cols(_part):
                 """Chia 2 cột nhưng CẮT ĐÚNG RANH GIỚI NHÓM — không để 1 nhóm bị xé đôi
@@ -9941,22 +9911,17 @@ def _render_stock_report():
                     "th.app{background:#d9f2e3;font-weight:800}"
                     "td.blank{background:#fffdf0}tr{page-break-inside:avoid}thead{display:table-header-group}"
                     "@page{size:A4 landscape;margin:7mm}")
-            _dau_src = ("Tồn đầu = tồn CUỐI ngày hôm trước (đã chốt)"
-                        if any(r.get("dau_snap") for r in _rows) else
-                        "Tồn đầu = Tồn cuối + Xuất − Nhập (chưa có mốc chốt hôm trước)")
+            _dau_src = "Số kiểm kê lấy THẲNG từ Sapo (tồn thực tế lúc in)"
 
             def _page(_title, _part, _brk=False):
                 if not _part:
                     return ""
                 return (f"<div class='wrap{' brk' if _brk else ''}'><div class='hd'><div>"
                         f"<div class='ttl'>{_title}</div>"
-                        + (f"<div class='sub' style='color:#b45309'><b>⚠️ Hôm trước "
-                           f"({(_pick_day - timedelta(days=1)).strftime('%d/%m')}) lệch:</b> "
-                           f"{_e2(_lech_prev_txt)} — cần kiểm lại</div>" if _lech_prev_txt else "")
                         + f"<div class='sub'><b>VITRAN BOUTIQUE</b> · {_dau_src} · "
-                        "<b>TỒN SAPO</b> là số chuẩn · "
-                        "<b>Lệch</b> = Tồn Sapo − (Tồn đầu + Hoàn − Bán ra), khác 0 là kho có "
-                        "thay đổi ngoài bán/hoàn</div></div>"
+                        "<b>TỒN SAPO</b> là số chuẩn · NV đếm tay ghi vào cột "
+                        "<b>Thực tế đếm</b>, chênh bao nhiêu ghi cột <b>Lệch đếm</b> "
+                        "(Thực tế − Tồn Sapo)</div></div>"
                         f"<div class='meta'>Ngày: <b>{_today}</b><br>"
                         f"<span style='font-size:11.5px;color:#444'>In lúc: <b>{_now_txt}</b></span><br>"
                         f"NV kiểm: ______________</div></div>"
