@@ -14,6 +14,11 @@ Cần trong `.streamlit/secrets.toml` (file này KHÔNG lên GitHub):
 
 Chạy:  python local_snapshot.py            (quét đơn trả + báo cáo cuối ngày)
        python local_snapshot.py --shared   (quét thêm bộ dữ liệu dùng chung)
+       python local_snapshot.py --force     (quét ngay, bỏ qua chốt an toàn)
+
+⚠️ MỖI LƯỢT QUÉT ~400-500 LƯỢT GỌI SAPO. Đừng đặt lịch quá dày: IP shop bị Cloudflare chặn
+thì nhân viên mất luôn Sapo admin. Mặc định: chỉ quét khi snapshot đã cũ > 25 phút và trong
+giờ 8h-21h (đổi bằng biến môi trường SNAP_MIN_AGE_MIN / SNAP_HOURS).
 """
 from __future__ import annotations
 
@@ -70,10 +75,47 @@ def _load_secrets_into_env() -> bool:
     return True
 
 
+def _snapshot_age_minutes() -> float:
+    """Snapshot hiện có đã cũ bao nhiêu phút (−1 = không đọc được)."""
+    try:
+        sys.path.insert(0, _ROOT)
+        import picklog
+        at = str((picklog._read_gist_file("vitran_returns.json") or {}).get("at") or "")
+        if not at:
+            return -1.0
+        t = datetime.strptime(at.strip(), "%H:%M %d/%m/%Y")
+        return (datetime.now() - t).total_seconds() / 60.0
+    except Exception:
+        return -1.0
+
+
+def _within_hours(rng: str) -> bool:
+    """rng dạng '8-21' → chỉ quét trong giờ làm, đêm khỏi gọi Sapo cho nhẹ."""
+    try:
+        lo, hi = (int(x) for x in rng.split("-", 1))
+    except Exception:
+        return True
+    return lo <= datetime.now().hour < hi
+
+
 def main() -> int:
     if not _load_secrets_into_env():
         return 2
     sys.path.insert(0, _ROOT)
+
+    # ── CHỐT AN TOÀN: mỗi lượt quét tốn ~400-500 lượt gọi Sapo. Quét dày dễ bị Cloudflare
+    #    chặn IP SHOP (nặng hơn chặn app: nhân viên mất luôn Sapo admin). Mặc định chỉ quét
+    #    khi snapshot đã cũ hơn 25 phút và trong giờ làm 8h-21h.
+    _min_age = float(os.environ.get("SNAP_MIN_AGE_MIN") or 25)
+    _hours = os.environ.get("SNAP_HOURS") or "8-21"
+    if "--force" not in sys.argv:
+        if not _within_hours(_hours):
+            _log(f"BO QUA: ngoai gio lam ({_hours}h)")
+            return 0
+        _age = _snapshot_age_minutes()
+        if 0 <= _age < _min_age:
+            _log(f"BO QUA: snapshot moi {_age:.0f} phut (< {_min_age:.0f}) - khoi quet lai")
+            return 0
     _t0 = datetime.now()
     try:
         import snapshot_returns
