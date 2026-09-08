@@ -232,20 +232,37 @@ def enrich_closed_return_details(in_progress: dict, fetch_json, max_checks: int 
 
 
 def main() -> None:
-    fetch_json = make_fetch_json(build_session())
+    real_fetch = make_fetch_json(build_session())
     now_vn = datetime.now(timezone.utc) + timedelta(hours=7)
+
+    # ── ĐỌC TỪ KHO ĐỆM thay vì quét lại toàn bộ lịch sử (Sapo yêu cầu 08/09/2026) ──
+    # Đồng bộ phần MỚI/ĐỔI (vài lượt gọi) rồi dựng báo cáo từ kho. Kho hỏng/trống thì
+    # tự lùi về cách cũ để KHÔNG mất báo cáo.
+    fetch_json = real_fetch
+    try:
+        import sapo_cache
+        for _kind in ("returns", "orders"):
+            sapo_cache.sync(_kind, real_fetch)
+        _ok, _info = sapo_cache.cache_ready()
+        print(("Kho dem SAN SANG: " if _ok else "Kho dem CHUA DU: ") + _info)
+        if _ok:
+            fetch_json = sapo_cache.make_cached_fetch_json(real_fetch)
+    except Exception as _ce:
+        print(f"Kho dem loi ({type(_ce).__name__}: {str(_ce)[:120]}) - tam dung cach cu.")
+
     daily = L.get_daily_report(fetch_json, target_date=now_vn.date())
     week_summary = L.get_week_summary(fetch_json, days=30)
     picking = L.get_picking(fetch_json)
     in_progress = L.get_returns_in_progress(fetch_json)
     detail_check = enrich_closed_return_details(
         in_progress,
-        fetch_json,
+        real_fetch,          # đọc chi tiết TỪNG phiếu → phải gọi API thật
         max_checks=max(1, int(os.environ.get("RETURN_DETAIL_CHECK_LIMIT") or 200)),
     )
     in_progress["_detail_check"] = detail_check
     followup = L.get_returns_followup(fetch_json)
     restocked = L.get_restocked_returns_range(fetch_json, days=30)
+    print(f"Nguon du lieu: {'KHO DEM' if fetch_json is not real_fetch else 'API truc tiep (cach cu)'}")
     payload = {
         "at": now_vn.strftime("%H:%M %d/%m/%Y"),
         "at_epoch": int(time.time()),
