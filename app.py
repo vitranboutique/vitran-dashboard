@@ -14268,6 +14268,16 @@ def _render_returns():
                         st.caption(f"Chưa dò được app note thừa: {_ce}")
             _sub_table(_ckn_render_list, 520, show_reason=True, show_location=True,
                        show_type=True, pg_key="ckn", per_page=50, show_ticket=True, show_tag=True)
+            if _is_owner:      # 🔎 CHẨN ĐOÁN (chỉ chủ shop thấy): vì sao dòng còn/rớt khỏi bảng
+                _dbg_clean = [d for d in _ckn_render_raw_list if _row_clip_clean(d)]
+                _dbg_txt = " · ".join(
+                    f"{(d.get('vd_tra') or d.get('order_code') or '?')}"
+                    f"[clip={'có' if str(d.get('clip_code') or '').strip() else 'KHÔNG'}"
+                    f",tag={(str(d.get('clip_tag') or d.get('_dohana_tag_label') or '').strip() or '—')}"
+                    f",épKN={'có' if _row_forces_can_kn(d) else 'không'}]"
+                    for d in _ckn_render_list[:6])
+                st.caption(f"🔎 Chẩn đoán: thô {len(_ckn_render_raw_list)} dòng → loại {len(_dbg_clean)} "
+                           f"(clip sạch tag) → còn {len(_ckn_render_list)}. 6 dòng đầu: {_dbg_txt}")
             # 🏷️ GẮN TAG TIẾN ĐỘ — chủ shop + NV kho đều làm được (ghi chú app thì chỉ chủ shop).
             if picklog.configured() and _ckn_render_list:
                 with st.expander("🏷️ Gắn tag tiến độ cho đơn Cần KN", expanded=False):
