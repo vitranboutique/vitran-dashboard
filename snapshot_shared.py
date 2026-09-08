@@ -11,6 +11,22 @@ import sapo_tools as PT
 from snapshot_returns import build_session, make_fetch_json, push_to_gist
 
 
+def _read_prev_shared() -> dict:
+    """Đọc snapshot dùng chung của lượt trước (để tái dùng phần số cả năm)."""
+    try:
+        import sapo_cache
+        return sapo_cache._read_file("vitran_shared.json") or {}
+    except Exception:
+        return {}
+
+
+def _age_hours(at_epoch) -> float:
+    try:
+        return max(0.0, (time.time() - float(at_epoch)) / 3600.0)
+    except Exception:
+        return 999.0
+
+
 def main() -> None:
     now_vn = datetime.now(timezone.utc) + timedelta(hours=7)
     real_fetch = make_fetch_json(build_session())
@@ -25,10 +41,19 @@ def main() -> None:
         print(f"Kho dem loi ({type(_ce).__name__}) - dung API truc tiep.")
 
     overview = L.get_overview(fetch_json)
-    sales = {
-        period: L.get_sales_analysis(fetch_json, period=period, _v="shared-snapshot-v1")
-        for period in ("1tuan", "1thang", "thangnay", "namnay")
-    }
+
+    # "năm nay" phải quét cả năm (~40.000 đơn) — Sapo cảnh báo chính kiểu quét này. Số cả năm
+    # thay đổi rất chậm nên chỉ tính LẠI 1 lần/ngày, các lượt khác dùng lại số của lượt trước.
+    _prev = _read_prev_shared()
+    _prev_sales = (_prev.get("sales") or {}) if isinstance(_prev, dict) else {}
+    _prev_age_h = _age_hours(_prev.get("at_epoch") if isinstance(_prev, dict) else None)
+    sales = {}
+    for period in ("1tuan", "1thang", "thangnay", "namnay"):
+        if period == "namnay" and _prev_sales.get("namnay") and _prev_age_h < 20:
+            sales[period] = _prev_sales["namnay"]
+            print(f"  sales[namnay]: dung lai so cu ({_prev_age_h:.1f}h truoc) - khoi quet ca nam")
+            continue
+        sales[period] = L.get_sales_analysis(fetch_json, period=period, _v="shared-snapshot-v1")
     ttkh = L.get_tt_customer_candidates(fetch_json, days=30, channel_filter="all", pending_ids=None)
     catalog = PT.get_catalog_variants(fetch_json, max_pages=80)
     stock = L.get_stock_by_sku(fetch_json)
