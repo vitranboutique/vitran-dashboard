@@ -22,7 +22,82 @@ import json
 import os
 from datetime import datetime, timedelta, timezone
 
-import picklog
+import requests
+
+# picklog kéo theo streamlit — trên GitHub Actions KHÔNG có streamlit, nên chỉ import khi
+# chạy trong app; ngoài runner thì đọc/ghi Gist trực tiếp bằng requests + GITHUB_TOKEN.
+try:
+    import picklog  # type: ignore
+except Exception:          # ModuleNotFoundError: streamlit (runner) hoặc lỗi khác
+    picklog = None
+
+_API = "https://api.github.com"
+_ANCHOR_FILE = "vitran_picklog.json"     # gist chứa file này là kho chung của app
+_GID_CACHE = ""
+
+
+def _token() -> str:
+    return os.environ.get("GITHUB_TOKEN") or os.environ.get("GIST_TOKEN") or ""
+
+
+def _hdr() -> dict:
+    return {"Authorization": f"Bearer {_token()}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28"}
+
+
+def _gid() -> str:
+    """Tìm gist chứa kho chung (cache trong phiên)."""
+    global _GID_CACHE
+    if _GID_CACHE:
+        return _GID_CACHE
+    if not _token():
+        return ""
+    for page in range(1, 6):
+        r = requests.get(f"{_API}/gists", headers=_hdr(),
+                         params={"per_page": 100, "page": page}, timeout=30)
+        r.raise_for_status()
+        rows = r.json()
+        if not rows:
+            break
+        for g in rows:
+            if _ANCHOR_FILE in (g.get("files") or {}):
+                _GID_CACHE = str(g.get("id") or "")
+                return _GID_CACHE
+    return ""
+
+
+def _read_file(fname):
+    if picklog is not None and getattr(picklog, "configured", lambda: False)():
+        return picklog._read_gist_file(fname)
+    gid = _gid()
+    if not gid:
+        return None
+    r = requests.get(f"{_API}/gists/{gid}", headers=_hdr(), timeout=30)
+    if r.status_code != 200:
+        return None
+    f = (r.json().get("files") or {}).get(fname) or {}
+    content = f.get("content") or ""
+    if f.get("truncated") and f.get("raw_url"):      # file lớn → tải bản raw
+        rr = requests.get(f["raw_url"], headers=_hdr(), timeout=60)
+        if rr.status_code == 200:
+            content = rr.text
+    try:
+        d = json.loads(content) if content else None
+        return d if isinstance(d, dict) else None
+    except Exception:
+        return None
+
+
+def _write_file(fname, data) -> bool:
+    if picklog is not None and getattr(picklog, "configured", lambda: False)():
+        return bool(picklog._write_gist_file(fname, data))
+    gid = _gid()
+    if not gid:
+        return False
+    body = {"files": {fname: {"content": json.dumps(data, ensure_ascii=False)}}}
+    r = requests.patch(f"{_API}/gists/{gid}", headers=_hdr(), data=json.dumps(body), timeout=120)
+    return r.status_code == 200
 
 ORDERS_FILE = "vitran_cache_orders.json"
 RETURNS_FILE = "vitran_cache_returns.json"
@@ -70,12 +145,12 @@ def _unpack(blob) -> tuple[dict, str]:
 
 def load(kind: str) -> tuple[dict, str]:
     """kind = 'orders' | 'returns' → ({id: record}, synced_until)."""
-    return _unpack(picklog._read_gist_file(ORDERS_FILE if kind == "orders" else RETURNS_FILE))
+    return _unpack(_read_file(ORDERS_FILE if kind == "orders" else RETURNS_FILE))
 
 
 def save(kind: str, rows: dict, synced_until: str) -> bool:
-    return bool(picklog._write_gist_file(ORDERS_FILE if kind == "orders" else RETURNS_FILE,
-                                         _pack(rows, synced_until)))
+    return bool(_write_file(ORDERS_FILE if kind == "orders" else RETURNS_FILE,
+                            _pack(rows, synced_until)))
 
 
 def _prune(rows: dict, keep_days: int) -> int:
