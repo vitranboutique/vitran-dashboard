@@ -2486,6 +2486,15 @@ def _dohana_records_effective():
     return out
 
 
+def _vcam_alias(r):
+    """Mã THỨ 2 trong tên file VCAM (mã đơn/mã phiếu trả) — dùng để khớp thêm.
+    ⚠️ CHỈ bản ghi VCAM: slug của video Dohana là slug link, KHÔNG phải mã đơn."""
+    if str((r or {}).get("staff") or "").upper() != "VCAM":
+        return ""
+    _sl = re.sub(r"[^A-Za-z0-9]", "", str((r or {}).get("slug") or "")).upper()
+    return _sl if len(_sl) >= 6 else ""
+
+
 def _dohana_pkg_from_store(date_iso, days_match=3, authoritative=False):
     """Dựng lại dict video ĐÓNG GÓI (package) từ kho khi Dohana tạm không lấy được."""
     from datetime import date as _date, timedelta as _td
@@ -2498,9 +2507,16 @@ def _dohana_pkg_from_store(date_iso, days_match=3, authoritative=False):
         c = r.get("code")
         if c:
             codes[c] = codes.get(c, 0) + 1
+    for r in day:                      # mã thứ 2 của VCAM: thêm để khớp, KHÔNG cộng vào số video
+        _al = _vcam_alias(r)
+        if _al and _al not in codes:
+            codes[_al] = 0
+    _match = {r.get("code") for r in recs
+              if r.get("code") and r.get("date") and lo <= r["date"] <= date_iso}
+    _match |= {_vcam_alias(r) for r in recs
+               if r.get("date") and lo <= r["date"] <= date_iso and _vcam_alias(r)}
     return {"total": len(day), "codes": codes, "dup": {},
-            "match": {r.get("code") for r in recs
-                      if r.get("code") and r.get("date") and lo <= r["date"] <= date_iso},
+            "match": _match,
             "records": [], "_from_store": not authoritative}
 
 
@@ -2526,8 +2542,15 @@ def _dohana_inb_from_store(date_iso, days_match=3, authoritative=False):
                        "staff": r.get("staff") or "",
                        "file_deleted": not _dohana_video_active(r),
                        "type_overridden": bool(r.get("_type_overridden"))}
+    for r in win:                      # alias mã thứ 2 (VCAM) dùng chung metadata với clip gốc
+        _al = _vcam_alias(r)
+        if _al and _al not in count:
+            count[_al] = count.get(r.get("code"), 1)
+            if r.get("code") in meta:
+                meta[_al] = meta[r["code"]]
     return {"total": len(day), "count": count, "match": set(count),
-            "today_codes": {r.get("code") for r in day if r.get("code")},
+            "today_codes": ({r.get("code") for r in day if r.get("code")}
+                            | {_vcam_alias(r) for r in day if _vcam_alias(r)}),
             "dup": {}, "meta": meta, "records": [], "_from_store": not authoritative}
 
 
