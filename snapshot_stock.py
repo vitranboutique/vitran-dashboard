@@ -35,14 +35,15 @@ def build_session():
 
 
 def make_fetch_json(s):
-    """Giãn nhịp ~3 req/s: Cloudflare của Sapo sẽ CHẶN IP nếu gọi quá dày."""
+    """Giãn nhịp 1 request / 2 GIÂY — đúng mức Sapo cho phép (gọi dày là Cloudflare chặn IP)."""
     last = [0.0]
 
     def fj(path, **p):
         for attempt in range(5):
             gap = time.monotonic() - last[0]
-            if gap < 0.34:
-                time.sleep(0.34 - gap)
+            _need = float(os.environ.get("SAPO_REQ_GAP") or 2.0)
+            if gap < _need:
+                time.sleep(_need - gap)
             r = s.get(f"{BASE}{path}", params=p, timeout=40)
             last[0] = time.monotonic()
             if r.status_code in (403, 503) and "cloudflare" in (r.text or "")[:600].lower():

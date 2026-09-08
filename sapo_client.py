@@ -82,6 +82,7 @@ class SapoBlockedError(RuntimeError):
 # vẫn "đập cửa" nên giữ chặn lâu hơn, app thì đứng chờ timeout. Ghi mốc chặn ở cấp MODULE
 # (dùng chung cho mọi phiên trong cùng tiến trình vì chặn là theo IP máy chủ) rồi NGHỈ hẳn
 # vài phút: không gọi mạng nữa, báo lỗi ngay cho UI hiện bản đã chốt.
+_REQ_GAP = float(os.environ.get("SAPO_REQ_GAP") or 2.0)   # mức Sapo cho: 1 request / 2 giây
 _BLOCK_COOLDOWN = 300.0        # nghỉ 5 phút rồi mới thử lại 1 lần
 _block_until = 0.0
 
@@ -130,7 +131,8 @@ def make_fetch_json(session: requests.Session):
             )
         for attempt in range(5):
             elapsed = time.monotonic() - last_call
-            _gap = 0.65 + random.uniform(0, 0.10)   # ~1.4 req/s + nhịp lệch: giảm nguy cơ Cloudflare chặn
+            # Sapo cho tối đa 1 REQUEST / 2 GIÂY — nhanh hơn là Cloudflare chặn IP.
+            _gap = _REQ_GAP + random.uniform(0, 0.20)
             if elapsed < _gap:
                 time.sleep(_gap - elapsed)
             r = session.get(f"{BASE}{path}", params=params, timeout=30)

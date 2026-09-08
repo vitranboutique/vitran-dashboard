@@ -49,15 +49,20 @@ def _is_cloudflare_block(response: requests.Response) -> bool:
     )
 
 
+# Sapo cho toi da 1 REQUEST / 2 GIAY. Truoc day chay ~1.4 req/s (nhanh gan 3 lan muc cho phep)
+# nen Cloudflare chan IP. Doi bang bien moi truong SAPO_REQ_GAP neu Sapo noi long.
+REQ_GAP = float(os.environ.get("SAPO_REQ_GAP") or 2.0)
+
+
 def make_fetch_json(session: requests.Session):
-    """Gioi han khoang 1.4 request/giay va retry 429 co Retry-After."""
+    """Gian nhip dung 1 request / REQ_GAP giay (mac dinh 2s) va retry 429/5xx."""
     last_call = 0.0
 
     def fetch_json(path: str, **params):
         nonlocal last_call
         for attempt in range(5):
             elapsed = time.monotonic() - last_call
-            gap = 0.68 + random.uniform(0, 0.10)
+            gap = REQ_GAP + random.uniform(0, 0.20)
             if elapsed < gap:
                 time.sleep(gap - elapsed)
             response = session.get(f"{BASE}{path}", params=params, timeout=40)
