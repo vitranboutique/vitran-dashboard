@@ -14357,6 +14357,49 @@ def _render_returns():
                     st.caption("Không có đơn nào nằm ở nhiều bảng.")
 
         with _tabs[2]:
+            # ── 📥 NẠP VIDEO TỪ APP VCAM (máy shop) ──────────────────────────────────────────
+            # Từ 03/09/2026 video do app VCAM quay, nằm ở ổ chia sẻ LAN \192.168.1.3\VideoDongHang.
+            # Streamlit Cloud KHÔNG vào được LAN → máy trong shop chạy `python vcam_scan.py`
+            # để xuất vcam_index.json rồi nạp ở đây (hoặc chạy `--push` nếu máy đó có token Gist).
+            st.subheader("📥 Nạp video từ app VCAM (máy shop)")
+            _return_info("Máy trong shop chạy **vcam_scan.py** (quét ổ \\192.168.1.3\VideoDongHang) "
+                         "→ ra file **vcam_index.json** → kéo vào ô dưới. Video VCAM nhập chung kho với "
+                         "video Dohana nên mọi báo cáo/đối chiếu dùng lại được ngay, không cần sửa gì thêm.")
+            _vc_up = st.file_uploader("Chọn file vcam_index.json", type=["json"], key="vcam_index_up")
+            if _vc_up is not None:
+                if not _can_match_clip:
+                    st.error("Chỉ NV kho, quản lý và chủ shop mới được nạp video.")
+                elif not picklog.configured():
+                    st.error("Chưa cấu hình kho picklog/Gist nên chưa lưu được.")
+                else:
+                    try:
+                        _vc_raw = json.loads(_vc_up.getvalue().decode("utf-8"))
+                        _vc_rows = _vc_raw.get("videos") if isinstance(_vc_raw, dict) else _vc_raw
+                        _vc_rows = [r for r in (_vc_rows or [])
+                                    if isinstance(r, dict) and str(r.get("code") or "").strip()
+                                    and str(r.get("type") or "") in ("inbound", "package")]
+                    except Exception as _ve:
+                        _vc_rows = []
+                        st.error(f"File không đọc được: `{_ve}`")
+                    if _vc_rows:
+                        _vc_days = {}
+                        for _r in _vc_rows:
+                            _dd = _vc_days.setdefault(str(_r.get("date") or "?"), {"inbound": 0, "package": 0})
+                            _dd[_r.get("type")] = _dd.get(_r.get("type"), 0) + 1
+                        st.caption("Trong file: " + " · ".join(
+                            f"{_d}: khui {_v['inbound']}/đóng {_v['package']}"
+                            for _d, _v in sorted(_vc_days.items())))
+                        if st.button(f"💾 Nạp {len(_vc_rows)} video vào kho", key="vcam_index_save",
+                                     type="primary"):
+                            try:
+                                picklog.merge_dohana_videos(_vc_rows)
+                                load_dohana_video_store.clear()
+                                st.cache_data.clear()
+                                st.success(f"Đã nạp {len(_vc_rows)} video VCAM vào kho.")
+                                st.rerun()
+                            except Exception as _ve2:
+                                st.error(f"Nạp lỗi: `{_ve2}`")
+
             # ── 🎥 KHO VIDEO DOHANA (lưu CẢ NĂM, vượt hạn 30 ngày của Dohana) — tra cứu metadata ──
             st.divider()
             st.subheader("🎥 Kho video Dohana (lưu cả năm)")
