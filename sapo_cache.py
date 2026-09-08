@@ -104,7 +104,7 @@ RETURNS_FILE = "vitran_cache_returns.json"
 
 # Giữ bao nhiêu ngày trong kho (theo created_on). Đơn hàng nặng nên giữ ngắn hơn;
 # đơn hoàn cần cả năm cho bảng Cần KN.
-ORDERS_KEEP_DAYS = int(os.environ.get("CACHE_ORDER_DAYS") or 60)
+ORDERS_KEEP_DAYS = int(os.environ.get("CACHE_ORDER_DAYS") or 35)   # đủ cho báo cáo ngày + tổng hợp 30 ngày
 RETURNS_KEEP_DAYS = int(os.environ.get("CACHE_RETURN_DAYS") or 400)
 # Lùi lại vài phút mỗi lần đồng bộ để không lọt bản ghi sửa ngay lúc giao thời.
 OVERLAP_MIN = 10
@@ -143,14 +143,47 @@ def _unpack(blob) -> tuple[dict, str]:
         return {}, ""
 
 
+def _orders_shard(month: str) -> str:
+    """Đơn hàng nhiều gấp ~5 lần phiếu trả → chia kho theo THÁNG cho vừa Gist."""
+    return f"vitran_cache_orders_{month}.json"
+
+
+def _months_back(n_days: int) -> list[str]:
+    out, d = [], _now_utc()
+    while True:
+        m = d.strftime("%Y-%m")
+        if m not in out:
+            out.append(m)
+        d -= timedelta(days=28)
+        if (_now_utc() - d).days > n_days + 31:
+            break
+    return out
+
+
 def load(kind: str) -> tuple[dict, str]:
     """kind = 'orders' | 'returns' → ({id: record}, synced_until)."""
-    return _unpack(_read_file(ORDERS_FILE if kind == "orders" else RETURNS_FILE))
+    if kind != "orders":
+        return _unpack(_read_file(RETURNS_FILE))
+    rows, synced = {}, ""
+    for m in _months_back(ORDERS_KEEP_DAYS):
+        part, at = _unpack(_read_file(_orders_shard(m)))
+        rows.update(part)
+        if at > synced:
+            synced = at
+    return rows, synced
 
 
 def save(kind: str, rows: dict, synced_until: str) -> bool:
-    return bool(_write_file(ORDERS_FILE if kind == "orders" else RETURNS_FILE,
-                            _pack(rows, synced_until)))
+    if kind != "orders":
+        return bool(_write_file(RETURNS_FILE, _pack(rows, synced_until)))
+    by_month: dict[str, dict] = {}
+    for rid, r in rows.items():
+        by_month.setdefault(str((r or {}).get("created_on") or "")[:7] or "unknown", {})[rid] = r
+    ok = True
+    for m, part in by_month.items():
+        if not _write_file(_orders_shard(m), _pack(part, synced_until)):
+            ok = False
+    return ok
 
 
 def _prune(rows: dict, keep_days: int) -> int:
