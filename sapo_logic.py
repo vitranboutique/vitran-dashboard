@@ -3731,15 +3731,32 @@ def _merge_returns_results(parts):
     return out
 
 
+def _month_store():
+    """(đọc, ghi) cho kho số-theo-tháng trên Gist.
+
+    Trong app thì dùng picklog. Ở runner nền KHÔNG có streamlit nên `import picklog` hỏng
+    → trước đây coi như không có kho, mỗi mốc doanh thu quét lại CẢ NĂM (3 mốc = 3 lượt
+    quét năm, ~414 lượt gọi Sapo, 26 phút). Nay lùi về sapo_cache đọc/ghi Gist thẳng."""
+    try:
+        import picklog
+        if picklog.configured():
+            return picklog._read_gist_file, picklog._write_gist_file
+    except Exception:
+        pass
+    try:
+        import sapo_cache
+        if sapo_cache._token():
+            return sapo_cache._read_file, sapo_cache._write_file
+    except Exception:
+        pass
+    return None, None
+
+
 def _cached_by_month(fetch_json, start, end, gist_prefix, fetch_one, merge_fn):
     """Khung chung: quét [start,end] theo tháng, THÁNG ĐÃ KẾT THÚC lấy từ Gist (hoặc tính rồi lưu),
     THÁNG chứa hôm nay luôn fetch mới. Trả kết quả đã GỘP. Không có Gist → fetch thẳng (không cache)."""
-    try:
-        import picklog
-        _ok = bool(picklog.configured())
-    except Exception:
-        picklog, _ok = None, False
-    if not _ok:
+    _gread, _gwrite = _month_store()
+    if _gread is None:
         return merge_fn([fetch_one(fetch_json, s, e) for s, e in _month_chunks(start, end)])
     today = (_now_utc() + timedelta(hours=7)).date()
     cache, dirty, parts = {}, set(), []
@@ -3747,7 +3764,7 @@ def _cached_by_month(fetch_json, start, end, gist_prefix, fetch_one, merge_fn):
     def _load(yr):
         if yr not in cache:
             try:
-                cache[yr] = picklog._read_gist_file(f"{gist_prefix}_{yr}.json") or {}
+                cache[yr] = _gread(f"{gist_prefix}_{yr}.json") or {}
             except Exception:
                 cache[yr] = {}
         return cache[yr]
@@ -3766,7 +3783,7 @@ def _cached_by_month(fetch_json, start, end, gist_prefix, fetch_one, merge_fn):
             dirty.add(seg_s.year)
     for yr in dirty:
         try:
-            picklog._write_gist_file(f"{gist_prefix}_{yr}.json", cache[yr])
+            _gwrite(f"{gist_prefix}_{yr}.json", cache[yr])
         except Exception:
             pass
     return merge_fn(parts)
