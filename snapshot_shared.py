@@ -33,9 +33,16 @@ def main() -> None:
 
     # ĐẾM lượt gọi Sapo THẬT + đo thời gian từng phần: để biết chỗ nào còn nặng mà cắt tiếp.
     _calls = {"n": 0}
+    _paths = {}                # gọi thẳng Sapo ở ĐƯỜNG nào — để biết chỗ nào lọt khỏi kho đệm
+    _first = []                # 8 lượt đầu kèm tham số, đủ để chỉ mặt
 
     def real_fetch(path, **params):
         _calls["n"] += 1
+        _k = f"{path}?{params.get('status') or ''}"
+        _paths[_k] = _paths.get(_k, 0) + 1
+        if len(_first) < 8:
+            _first.append({k: str(v)[:32] for k, v in params.items()
+                           if k not in ("limit", "fields")} | {"_p": path})
         return _real(path, **params)
 
     _t_last = [time.time(), 0]
@@ -49,9 +56,11 @@ def main() -> None:
         _t_last[0], _t_last[1] = time.time(), _calls["n"]
 
     fetch_json = real_fetch
+    _kho_info = "khong doc duoc"
     try:                      # đọc từ KHO ĐỆM, chỉ ra API khi hỏi ngoài phạm vi kho
         import sapo_cache
         _ok, _info = sapo_cache.cache_ready()
+        _kho_info = _info
         print(("Kho dem SAN SANG: " if _ok else "Kho dem CHUA DU: ") + _info)
         if _ok:
             fetch_json = sapo_cache.make_cached_fetch_json(real_fetch)
@@ -92,7 +101,8 @@ def main() -> None:
         "ttkh": ttkh,
         "catalog": catalog,
         "stock": stock,
-        "_diag": {"buoc": _diag, "tong_goi_sapo": _calls["n"]},
+        "_diag": {"buoc": _diag, "tong_goi_sapo": _calls["n"],
+                  "duong_goi": _paths, "vd_tham_so": _first, "kho": _kho_info},
     }
     token = os.environ.get("GITHUB_TOKEN")
     if not token:

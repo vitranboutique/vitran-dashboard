@@ -20,6 +20,7 @@ import base64
 import gzip
 import json
 import os
+import time
 from datetime import datetime, timedelta, timezone
 
 import requests
@@ -67,7 +68,19 @@ def _gid() -> str:
     return ""
 
 
-def _read_file(fname):
+def _read_file(fname, _tries: int = 3):
+    """Đọc 1 file trong kho. THỬ LẠI vài lượt: đọc hụt 1 mảnh là kho bị THIẾU NGÀY mà
+    không ai biết, rồi báo cáo lại đi quét thẳng Sapo cả tháng (từng xảy ra 09/09/2026)."""
+    for _i in range(max(1, int(_tries))):
+        d = _read_file_once(fname)
+        if d is not None:
+            return d
+        if _i + 1 < _tries:
+            time.sleep(1.5 * (_i + 1))
+    return None
+
+
+def _read_file_once(fname):
     if picklog is not None and getattr(picklog, "configured", lambda: False)():
         return picklog._read_gist_file(fname)
     gid = _gid()
@@ -311,10 +324,27 @@ def make_cached_fetch_json(real_fetch, *, log=print):
     return fetch
 
 
+# Kho phải phủ ít nhất ngần này ngày mới được tin. Đọc hụt vài mảnh → chỉ còn vài ngày,
+# lúc đó mọi câu hỏi cũ hơn đều rơi ra API thật và quét lại cả tháng — thà nói thẳng
+# "kho chưa đủ" để bên gọi biết đường.
+MIN_ORDER_DAYS = 60
+
+
 def cache_ready() -> tuple[bool, str]:
     """Kho đã có dữ liệu chưa (để quyết định dùng kho hay gọi Sapo như cũ)."""
     o, o_at = load("orders")
     r, r_at = load("returns")
     if not o or not r:
         return False, f"kho chưa đủ: {len(o)} đơn / {len(r)} phiếu trả"
-    return True, f"{len(o)} đơn (tới {o_at}) · {len(r)} phiếu trả (tới {r_at})"
+    o_from = min((_day(x.get("created_on")) for x in o.values() if x.get("created_on")), default="")
+    days = 0
+    try:
+        _f = datetime.strptime(o_from, "%Y-%m-%d").date()
+        days = ((datetime.now(timezone.utc) + timedelta(hours=7)).date() - _f).days
+    except Exception:
+        days = 0
+    info = (f"{len(o)} đơn (từ {o_from} = {days} ngày, tới {o_at}) · "
+            f"{len(r)} phiếu trả (tới {r_at})")
+    if days < MIN_ORDER_DAYS:
+        return False, "PHỦ THIẾU NGÀY (đọc hụt mảnh kho?) — " + info
+    return True, info

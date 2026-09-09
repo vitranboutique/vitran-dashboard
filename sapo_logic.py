@@ -3493,8 +3493,14 @@ def _sales_fetch_range(fetch_json, start, end, max_pages=280):
                               created_on_min=_cmin, created_on_max=_cmax).get("orders", [])
             if not rows:
                 break
+            # Sapo hay BỎ QUA created_on_min/max → trả cả kho đơn, mới→cũ. Gặp đơn cũ hơn
+            # đầu đoạn là đã đi hết đoạn này: dừng, khỏi lật đủ 120 trang cho mỗi đoạn
+            # (một đoạn lật cạn = 120 lượt gọi ≈ 4 phút, mà chẳng thêm số nào).
+            _seen_older = False
             for o in rows:
                 d = _vn_date_of(o.get("created_on"))
+                if d and d < _seg_s:
+                    _seen_older = True
                 if not d or d < start or d > end:
                     continue
                 tp = float(o.get("total_price") or 0)
@@ -3562,6 +3568,8 @@ def _sales_fetch_range(fetch_json, start, end, max_pages=280):
                     by_grp_qty[grp] += qty
                     store_qty[store] += qty
                     store_grp_qty[store][grp] += qty
+            if _seen_older:
+                break
             if p == 120 and rows:
                 truncated = True
     return {"total": total, "orders": orders_n, "by_month": dict(by_month),
