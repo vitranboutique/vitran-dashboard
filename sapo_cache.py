@@ -187,8 +187,20 @@ def _months_back(n_days: int) -> list[str]:
     return out
 
 
-def load(kind: str) -> tuple[dict, str]:
+_MEMO: dict = {}          # nhớ trong 1 lượt chạy: cache_ready() và make_cached_fetch_json()
+                          # phải nhìn CÙNG một bản kho, không được đọc Gist 2 lần rồi lệch nhau.
+
+
+def load(kind: str, *, fresh: bool = False) -> tuple[dict, str]:
     """kind = 'orders' | 'returns' → ({id: record}, synced_until)."""
+    if not fresh and kind in _MEMO:
+        return _MEMO[kind]
+    out = _load_raw(kind)
+    _MEMO[kind] = out
+    return out
+
+
+def _load_raw(kind: str) -> tuple[dict, str]:
     if kind != "orders":
         return _unpack(_read_file(RETURNS_FILE))
     rows, stamps = {}, []
@@ -203,6 +215,7 @@ def load(kind: str) -> tuple[dict, str]:
 
 
 def save(kind: str, rows: dict, synced_until: str) -> bool:
+    _MEMO.pop(kind, None)               # kho vừa đổi → lượt đọc sau phải lấy bản mới
     if kind != "orders":
         return bool(_write_file(RETURNS_FILE, _pack(rows, synced_until)))
     by_month: dict[str, dict] = {}
@@ -232,7 +245,7 @@ def sync(kind: str, fetch_json, *, backfill_days: int | None = None, max_pages: 
     path = "/admin/orders/search.json" if kind == "orders" else "/admin/order_returns/search.json"
     key = "orders" if kind == "orders" else "order_returns"
     keep = ORDERS_KEEP_DAYS if kind == "orders" else RETURNS_KEEP_DAYS
-    rows, synced_until = load(kind)
+    rows, synced_until = load(kind, fresh=True)
 
     now = _now_utc()
     if backfill_days:      # nêu rõ số ngày = ÉP nạp lại phạm vi đó (mở rộng kho), kể cả khi
