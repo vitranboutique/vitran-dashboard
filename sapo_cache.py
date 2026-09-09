@@ -102,14 +102,28 @@ def _read_file_once(fname):
         return None
 
 
-def _write_file(fname, data) -> bool:
+def _write_file(fname, data, _tries: int = 3) -> bool:
+    """Ghi 1 file vào kho, THỬ LẠI vài lượt. Ghi hụt 1 mảnh giữa chừng là kho thủng một
+    khoảng mà lượt sau không biết đường lấp (đã xảy ra 01:51 ngày 09/09/2026)."""
+    for _i in range(max(1, int(_tries))):
+        if _write_file_once(fname, data):
+            return True
+        if _i + 1 < _tries:
+            time.sleep(2.0 * (_i + 1))
+    return False
+
+
+def _write_file_once(fname, data) -> bool:
     if picklog is not None and getattr(picklog, "configured", lambda: False)():
         return bool(picklog._write_gist_file(fname, data))
     gid = _gid()
     if not gid:
         return False
     body = {"files": {fname: {"content": json.dumps(data, ensure_ascii=False)}}}
-    r = requests.patch(f"{_API}/gists/{gid}", headers=_hdr(), data=json.dumps(body), timeout=120)
+    try:
+        r = requests.patch(f"{_API}/gists/{gid}", headers=_hdr(), data=json.dumps(body), timeout=120)
+    except Exception:
+        return False
     return r.status_code == 200
 
 ORDERS_FILE = "vitran_cache_orders.json"
@@ -177,13 +191,15 @@ def load(kind: str) -> tuple[dict, str]:
     """kind = 'orders' | 'returns' → ({id: record}, synced_until)."""
     if kind != "orders":
         return _unpack(_read_file(RETURNS_FILE))
-    rows, synced = {}, ""
+    rows, stamps = {}, []
     for m in _months_back(ORDERS_KEEP_DAYS):
         part, at = _unpack(_read_file(_orders_shard(m)))
         rows.update(part)
-        if at > synced:
-            synced = at
-    return rows, synced
+        if part and at:
+            stamps.append(at)
+    # Lấy mốc CŨ NHẤT trong các mảnh: mảnh nào ghi hụt lượt trước thì mốc của nó còn cũ,
+    # lượt sau tự hỏi lại từ đó mà lấp. Ghi trót lọt cả loạt thì mọi mốc bằng nhau.
+    return rows, (min(stamps) if stamps else "")
 
 
 def save(kind: str, rows: dict, synced_until: str) -> bool:
