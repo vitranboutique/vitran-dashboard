@@ -3620,8 +3620,13 @@ def _sales_returns_period(fetch_json, start, end, max_pages=60):
                           created_on_min=cmin, created_on_max=cmax).get("order_returns", [])
         if not rows:
             break
+        # Sapo cũng hay bỏ qua created_on_min ở đây → gặp phiếu cũ hơn đầu kỳ là dừng,
+        # khỏi lật cạn 60 trang mà không thêm số nào.
+        _seen_older = False
         for x in rows:
             d = _vn_date_of(x.get("created_on"))
+            if d and d < start:
+                _seen_older = True
             if not d or d < start or d > end:
                 continue
             amt = float(x.get("total_price") or 0)
@@ -3642,6 +3647,8 @@ def _sales_returns_period(fetch_json, start, end, max_pages=60):
                 _q = float(li.get("quantity") or 0)
                 grp_ret_qty[_g] += _q
                 store_grp_ret_qty[store][_g] += _q
+        if _seen_older:
+            break
     return {"cnt": dict(cnt), "val": dict(val), "won_n": won_n, "won_val": won_val,
             "store_cnt": {k: dict(v) for k, v in store_cnt.items()},
             "store_val": {k: dict(v) for k, v in store_val.items()},
