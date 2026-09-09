@@ -2922,14 +2922,23 @@ def get_daily_report(fetch_json, target_date=None) -> dict:
         return (None if not d else
                 (d.get("so_phieu") or 0, d.get("so_sp") or 0,
                  len(d.get("detail") or []), len(d.get("all_by_code") or {})))
+    # Dùng _month_store() chứ không gọi thẳng picklog: ở máy quét nền không có streamlit nên
+    # `import picklog` hỏng, tấm lưới "Sapo lỗi thì khôi phục số cũ" này coi như không tồn tại
+    # — mà đó đúng là chỗ cần nó nhất.
     try:
-        import picklog as _pl
+        _rd, _wr = _month_store()
         _day_iso = today.isoformat()
-        _saved = _pl.read_returns_received(_day_iso)
+        _RRF = "vitran_returns_received.json"
+        _store = (_rd(_RRF) or {}) if _rd else {}
+        _days = _store.get("days") if isinstance(_store.get("days"), dict) else {}
+        _saved = _days.get(str(_day_iso)) if isinstance(_days.get(str(_day_iso)), dict) else None
         if _nk_has(nhap_kho):
-            if _nk_sig(nhap_kho) != _nk_sig(_saved):     # có thay đổi → lưu bền
-                _pl.save_returns_received(_day_iso, nhap_kho)
-        elif _nk_has(_saved):                            # fetch rỗng/lỗi → khôi phục
+            if _wr and _nk_sig(nhap_kho) != _nk_sig(_saved):      # có thay đổi → lưu bền
+                _days[str(_day_iso)] = nhap_kho
+                for _k in sorted(_days.keys())[:-5]:              # chỉ giữ 5 ngày gần nhất
+                    _days.pop(_k, None)
+                _wr(_RRF, {"days": _days})
+        elif _nk_has(_saved):                                     # fetch rỗng/lỗi → khôi phục
             nhap_kho = _saved
     except Exception:
         pass
