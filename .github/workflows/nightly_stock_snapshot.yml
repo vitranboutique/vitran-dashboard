@@ -4,8 +4,11 @@ name: Chốt tồn kho cuối ngày
 # nên mốc chốt đúng là TỒN CUỐI NGÀY (gồm cả hàng nhập buổi tối). Hôm sau app lấy mốc
 # này làm "Tồn đầu ngày". Có thể chạy tay ở tab Actions.
 on:
-  schedule:
-    - cron: "40 16 * * *"
+# NGẮT KẾT NỐI SAPO (01/10/2026, theo yêu cầu chủ shop: không dùng app nữa).
+# Lịch tự chạy đã TẮT — không còn lượt gọi Sapo API nào từ GitHub.
+# Muốn bật lại: bỏ dấu # ở dòng schedule/cron bên dưới.
+  # schedule:
+    # - cron: "40 16 * * *"
   workflow_dispatch: {}
 
 jobs:

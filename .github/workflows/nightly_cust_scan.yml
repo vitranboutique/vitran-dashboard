@@ -2,8 +2,11 @@ name: Quét khách hàng chưa chuẩn (mỗi đêm)
 
 # Chạy 22:00 giờ VN mỗi ngày (15:00 UTC). Có thể chạy tay ở tab Actions.
 on:
-  schedule:
-    - cron: "0 15 * * *"
+# NGẮT KẾT NỐI SAPO (01/10/2026, theo yêu cầu chủ shop: không dùng app nữa).
+# Lịch tự chạy đã TẮT — không còn lượt gọi Sapo API nào từ GitHub.
+# Muốn bật lại: bỏ dấu # ở dòng schedule/cron bên dưới.
+  # schedule:
+    # - cron: "0 15 * * *"
   workflow_dispatch: {}
 
 jobs:

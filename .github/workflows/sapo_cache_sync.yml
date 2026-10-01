@@ -3,8 +3,11 @@ name: Dong bo kho dem Sapo (tang dan)
 # Chi hoi Sapo phan MOI/DOI ke tu lan dong bo truoc (modified_on_min/max) — theo dung
 # huong dan cua Sapo sau khi ho chan IP vi app quet lai toan bo lich su.
 on:
-  schedule:
-    - cron: "*/30 * * * *"
+# NGẮT KẾT NỐI SAPO (01/10/2026, theo yêu cầu chủ shop: không dùng app nữa).
+# Lịch tự chạy đã TẮT — không còn lượt gọi Sapo API nào từ GitHub.
+# Muốn bật lại: bỏ dấu # ở dòng schedule/cron bên dưới.
+  # schedule:
+    # - cron: "*/30 * * * *"
   workflow_dispatch:
     inputs:
       kind:

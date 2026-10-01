@@ -2,8 +2,11 @@ name: Snapshot don tra / don can KN
 
 # Quet don tra o runner nen; Streamlit chi doc Gist, khong quet hang tram trang Sapo.
 on:
-  schedule:
-    - cron: "*/15 * * * *"
+# NGẮT KẾT NỐI SAPO (01/10/2026, theo yêu cầu chủ shop: không dùng app nữa).
+# Lịch tự chạy đã TẮT — không còn lượt gọi Sapo API nào từ GitHub.
+# Muốn bật lại: bỏ dấu # ở dòng schedule/cron bên dưới.
+  # schedule:
+    # - cron: "*/15 * * * *"
   workflow_dispatch: {}
 
 concurrency:

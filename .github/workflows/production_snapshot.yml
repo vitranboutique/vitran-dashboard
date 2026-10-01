@@ -2,8 +2,11 @@ name: Snapshot du doan san xuat
 
 # Quet Sapo o runner nen; Streamlit chi doc Gist de tranh Cloudflare va treo trang.
 on:
-  schedule:
-    - cron: "17 * * * *"
+# NGẮT KẾT NỐI SAPO (01/10/2026, theo yêu cầu chủ shop: không dùng app nữa).
+# Lịch tự chạy đã TẮT — không còn lượt gọi Sapo API nào từ GitHub.
+# Muốn bật lại: bỏ dấu # ở dòng schedule/cron bên dưới.
+  # schedule:
+    # - cron: "17 * * * *"
   workflow_dispatch: {}
 
 concurrency:

@@ -1,8 +1,11 @@
 name: Shared Sapo snapshot
 
 on:
-  schedule:
-    - cron: "7 * * * *"
+# NGẮT KẾT NỐI SAPO (01/10/2026, theo yêu cầu chủ shop: không dùng app nữa).
+# Lịch tự chạy đã TẮT — không còn lượt gọi Sapo API nào từ GitHub.
+# Muốn bật lại: bỏ dấu # ở dòng schedule/cron bên dưới.
+  # schedule:
+    # - cron: "7 * * * *"
   workflow_dispatch:
 
 concurrency:
