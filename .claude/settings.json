@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__claude-code-remote__list_repos",
+      "mcp__github__list_issues",
+      "mcp__github__actions_list"
+    ]
+  }
+}
