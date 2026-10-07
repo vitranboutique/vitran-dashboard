@@ -1946,6 +1946,7 @@ PAGE_LUONG = "💰 Lương của tôi"
 PAGE_QRSHOP = "📲 QR chấm công (shop)"
 PAGE_QLCC = "🛠️ Quản lý chấm công"
 PAGE_TIKTOK_INBOX = "💬 TikTok Inbox"
+PAGE_PROFIT = "💰 Lợi nhuận theo SKU"   # giá vốn Sapo + đơn kho đệm (chỉ chủ shop)
 PAGE_COSTS = "💸 Chi phí đầu vào"   # công cụ mua vải / gia công → lưu chi phí đầu vào
 # (chủ shop + admin: đủ quyền · NV KHO: chỉ LƯU / XEM / IN, KHÔNG được xoá)
 PAGE_OPS = "📊 Vận hành"   # tab: Báo cáo cuối ngày + Đơn trả + Phiếu nhặt (CSKH chỉ thấy Báo cáo)
@@ -1991,6 +1992,8 @@ if _is_owner:                               # chủ shop + zenzen197: thêm tran
         _opts.insert(1, PAGE_TIKTOK_INBOX)
     if PAGE_COSTS not in _opts:             # chủ shop: thêm trang Chi phí đầu vào (mua vải / gia công)
         _opts.append(PAGE_COSTS)
+    if PAGE_PROFIT not in _opts:            # chủ shop: Lợi nhuận gộp theo SKU
+        _opts.append(PAGE_PROFIT)
 if (st.query_params.get("page_ttkh") or st.query_params.get("ttkh_phone")) and PAGE_TTKH in _opts:
     _default = PAGE_TTKH
 _sees_production = PAGE_PRODUCTION in _opts   # kho/admin: hiện cảnh báo việc SX/cắt tay mọi tab
@@ -2017,6 +2020,8 @@ if _page == PAGE_QLCC:
     cham_cong_ui.render_admin(); st.stop()
 if _page == PAGE_TIKTOK_INBOX:
     tiktok_inbox_ui.render(); st.stop()
+if _page == PAGE_PROFIT and _is_owner:
+    import profit_ui; profit_ui.render(); st.stop()
 if _page == PAGE_COSTS:
     # Xoá chi phí đã lưu: CHỈ chủ shop + quản lý. NV kho chỉ lưu / xem / in.
     input_costs_ui.render(can_delete=bool(_is_owner or _cc_role == "admin")); st.stop()
