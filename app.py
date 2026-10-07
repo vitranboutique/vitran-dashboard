@@ -1946,6 +1946,7 @@ PAGE_LUONG = "💰 Lương của tôi"
 PAGE_QRSHOP = "📲 QR chấm công (shop)"
 PAGE_QLCC = "🛠️ Quản lý chấm công"
 PAGE_TIKTOK_INBOX = "💬 TikTok Inbox"
+PAGE_PROFIT = "💰 Lợi nhuận theo SKU"   # giá vốn Sapo + đơn kho đệm (chỉ chủ shop)
 PAGE_COSTS = "💸 Chi phí đầu vào"   # công cụ mua vải / gia công → lưu chi phí đầu vào
 # (chủ shop + admin: đủ quyền · NV KHO: chỉ LƯU / XEM / IN, KHÔNG được xoá)
 PAGE_OPS = "📊 Vận hành"   # tab: Báo cáo cuối ngày + Đơn trả + Phiếu nhặt (CSKH chỉ thấy Báo cáo)
@@ -1991,6 +1992,8 @@ if _is_owner:                               # chủ shop + zenzen197: thêm tran
         _opts.insert(1, PAGE_TIKTOK_INBOX)
     if PAGE_COSTS not in _opts:             # chủ shop: thêm trang Chi phí đầu vào (mua vải / gia công)
         _opts.append(PAGE_COSTS)
+    if PAGE_PROFIT not in _opts:            # chủ shop: Lợi nhuận gộp theo SKU
+        _opts.append(PAGE_PROFIT)
 if (st.query_params.get("page_ttkh") or st.query_params.get("ttkh_phone")) and PAGE_TTKH in _opts:
     _default = PAGE_TTKH
 _sees_production = PAGE_PRODUCTION in _opts   # kho/admin: hiện cảnh báo việc SX/cắt tay mọi tab
@@ -2017,6 +2020,8 @@ if _page == PAGE_QLCC:
     cham_cong_ui.render_admin(); st.stop()
 if _page == PAGE_TIKTOK_INBOX:
     tiktok_inbox_ui.render(); st.stop()
+if _page == PAGE_PROFIT and _is_owner:
+    import profit_ui; profit_ui.render(); st.stop()
 if _page == PAGE_COSTS:
     # Xoá chi phí đã lưu: CHỈ chủ shop + quản lý. NV kho chỉ lưu / xem / in.
     input_costs_ui.render(can_delete=bool(_is_owner or _cc_role == "admin")); st.stop()
@@ -6070,6 +6075,37 @@ def _render_shared_sync_sidebar():
                 ("Đơn trả bị đóng cả năm", load_closed_returns_full_year, load_closed_returns_full_year.clear),
             ], fresh=fresh)
             st.session_state["shared_sync_at"] = datetime.now(timezone.utc) + timedelta(hours=7)
+        # Lấy tay phần MỚI/ĐỔI từ Sapo vào kho đệm (thay cho lịch chạy nền đã tắt 01/10).
+        # Chỉ hỏi Sapo từ mốc lần trước (modified_on_min), giãn 2s/request, cách nhau ≥5 phút
+        # để không lặp lại chuyện bị Sapo chặn IP vì quét lại cả lịch sử.
+        _last_pull = st.session_state.get("sapo_pull_at")
+        _wait = 300 - (time.time() - _last_pull) if _last_pull else 0
+        if st.button("🔄 Lấy đơn mới từ Sapo (chỉ phần mới)", width="stretch", key="shared_sync_pull",
+                     disabled=_wait > 0, help="Chỉ lấy đơn/phiếu trả mới hoặc đổi từ lần lấy trước"):
+            try:
+                import sapo_cache as _sc
+                _fj = make_fetch_json(build_session())
+                _pull = []
+                for _k in ("returns", "orders"):
+                    _r = _sc.sync(_k, _fj, max_pages=120)
+                    _pull.append({"Loại": _k, "Mới/đổi": _r["new"], "Trang": _r["pages"],
+                                  "Lưu": "OK" if _r.get("saved") else "LỖI"})
+                st.session_state["sapo_pull_rows"] = _pull
+                st.session_state["sapo_pull_at"] = time.time()
+            except Exception as e:
+                st.session_state["sapo_pull_rows"] = [{"Loại": "—", "Mới/đổi": 0, "Trang": 0,
+                                                       "Lưu": f"LỖI: {type(e).__name__}: {str(e)[:100]}"}]
+        if _wait > 0:
+            st.caption(f"Chờ {int(_wait)}s mới lấy lại được (tránh Sapo chặn).")
+        _pr = st.session_state.get("sapo_pull_rows")
+        if _pr:
+            st.dataframe(pd.DataFrame(_pr), hide_index=True, width="stretch")
+        try:
+            import sapo_cache as _sc2
+            st.caption("Kho đệm: đơn tới " + (_sc2.load("orders")[1] or "—")
+                       + " · phiếu trả tới " + (_sc2.load("returns")[1] or "—") + " (UTC)")
+        except Exception:
+            pass
         rows = st.session_state.get("shared_sync_rows") or []
         if rows:
             _at = st.session_state.get("shared_sync_at")
