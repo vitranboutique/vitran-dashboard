@@ -6070,6 +6070,37 @@ def _render_shared_sync_sidebar():
                 ("Đơn trả bị đóng cả năm", load_closed_returns_full_year, load_closed_returns_full_year.clear),
             ], fresh=fresh)
             st.session_state["shared_sync_at"] = datetime.now(timezone.utc) + timedelta(hours=7)
+        # Lấy tay phần MỚI/ĐỔI từ Sapo vào kho đệm (thay cho lịch chạy nền đã tắt 01/10).
+        # Chỉ hỏi Sapo từ mốc lần trước (modified_on_min), giãn 2s/request, cách nhau ≥5 phút
+        # để không lặp lại chuyện bị Sapo chặn IP vì quét lại cả lịch sử.
+        _last_pull = st.session_state.get("sapo_pull_at")
+        _wait = 300 - (time.time() - _last_pull) if _last_pull else 0
+        if st.button("🔄 Lấy đơn mới từ Sapo (chỉ phần mới)", width="stretch", key="shared_sync_pull",
+                     disabled=_wait > 0, help="Chỉ lấy đơn/phiếu trả mới hoặc đổi từ lần lấy trước"):
+            try:
+                import sapo_cache as _sc
+                _fj = make_fetch_json(build_session())
+                _pull = []
+                for _k in ("returns", "orders"):
+                    _r = _sc.sync(_k, _fj, max_pages=120)
+                    _pull.append({"Loại": _k, "Mới/đổi": _r["new"], "Trang": _r["pages"],
+                                  "Lưu": "OK" if _r.get("saved") else "LỖI"})
+                st.session_state["sapo_pull_rows"] = _pull
+                st.session_state["sapo_pull_at"] = time.time()
+            except Exception as e:
+                st.session_state["sapo_pull_rows"] = [{"Loại": "—", "Mới/đổi": 0, "Trang": 0,
+                                                       "Lưu": f"LỖI: {type(e).__name__}: {str(e)[:100]}"}]
+        if _wait > 0:
+            st.caption(f"Chờ {int(_wait)}s mới lấy lại được (tránh Sapo chặn).")
+        _pr = st.session_state.get("sapo_pull_rows")
+        if _pr:
+            st.dataframe(pd.DataFrame(_pr), hide_index=True, width="stretch")
+        try:
+            import sapo_cache as _sc2
+            st.caption("Kho đệm: đơn tới " + (_sc2.load("orders")[1] or "—")
+                       + " · phiếu trả tới " + (_sc2.load("returns")[1] or "—") + " (UTC)")
+        except Exception:
+            pass
         rows = st.session_state.get("shared_sync_rows") or []
         if rows:
             _at = st.session_state.get("shared_sync_at")
